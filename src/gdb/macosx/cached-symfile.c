@@ -45,6 +45,7 @@
 #include "macosx-nat-dyld-info.h"
 #include "macosx-nat-dyld-path.h"
 #include "macosx-nat-dyld-process.h"
+#include "cached-symfile.h"
 
 #define MAPPED_SYMFILES (USE_MMALLOC && HAVE_MMAP)
 
@@ -52,7 +53,7 @@
 
 static char *cached_symfile_path = NULL;
 
-static unsigned long cached_symfile_version = 1;
+static unsigned long cached_symfile_version = 3;
 
 extern int mapped_symbol_files;
 extern int use_mapped_symbol_files;
@@ -68,22 +69,6 @@ extern struct cmd_list_element *shliblist;
 #define TARGET_KEEP_SECTION(ASECT)	0
 #endif
 
-/* Declarations for functions defined in objfiles.c */
-
-extern struct objfile *allocate_objfile (bfd *, int, int, CORE_ADDR);
-
-extern int build_objfile_section_table (struct objfile *);
-
-extern struct objfile *open_objfile_from_mmalloc_pool (char *name, bfd *abfd, PTR md, int fd);
-
-extern struct objfile *create_objfile_from_mmalloc_pool (bfd *abfd, PTR md, int fd, CORE_ADDR mapaddr);
-
-extern struct objfile *open_mapped_objfile (bfd *abfd, CORE_ADDR mapaddr);
-
-struct objfile *create_mapped_objfile (bfd *abfd, CORE_ADDR mapaddr);
-
-struct objfile *create_objfile (bfd *abfd);
-
 int
 build_objfile_section_table (struct objfile *objfile)
 {
@@ -96,6 +81,7 @@ build_objfile_section_table (struct objfile *objfile)
     i++;
 
   objfile->sections = xmalloc (sizeof (struct obj_section) * i);
+  objfile->sections_end = objfile->sections;
 
   i = 0;
   for (asect = abfd->sections; asect != NULL; asect = asect->next)
@@ -253,6 +239,7 @@ open_objfile_from_mmalloc_pool (char *filename, bfd *abfd, PTR md, int fd)
   mdp->mfree_hook = abort;
 
   /* Update pointers to functions to *our* copies */
+#if 0
   objfile->psymbol_cache.cache.chunkfun = xmmalloc;
   objfile->psymbol_cache.cache.freefun = xmfree;
   objfile->psymbol_cache.cache.extra_arg = objfile->md;
@@ -265,6 +252,7 @@ open_objfile_from_mmalloc_pool (char *filename, bfd *abfd, PTR md, int fd)
   objfile->type_obstack.chunkfun = xmmalloc;
   objfile->type_obstack.freefun = xmfree;
   objfile->type_obstack.extra_arg = objfile->md;
+#endif
   
   return objfile;
 }
@@ -345,8 +333,20 @@ create_objfile_from_mmalloc_pool (bfd *abfd, PTR md, int fd, CORE_ADDR mapaddr)
   mmalloc_setkey (md, 2, bfd_get_mtime (abfd));
   mmalloc_setkey (md, 3, cached_symfile_version);
 
-  obstack_specify_allocation_with_arg
-    (&objfile->psymbol_cache.cache, 0, 0, xmmalloc, xmfree, objfile->md);
+#if 0
+  {
+    time_t mtime = bfd_get_mtime (abfd);
+    fprintf (stderr, "setting timestamp for %s to %s", bfd_get_filename (abfd), ctime (&mtime));
+  }
+#endif
+
+  objfile->psymbol_cache = bcache_xmalloc (objfile->md);
+  objfile->macro_cache = bcache_xmalloc (objfile->md);
+
+  bcache_specify_allocation_with_arg
+    (objfile->psymbol_cache, xmmalloc, xmfree, objfile->md);
+  bcache_specify_allocation_with_arg
+    (objfile->macro_cache, xmmalloc, xmfree, objfile->md);
   obstack_specify_allocation_with_arg
     (&objfile->psymbol_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
   obstack_specify_allocation_with_arg
@@ -399,7 +399,10 @@ create_objfile (bfd *abfd)
   objfile = (struct objfile *) xmalloc (sizeof (struct objfile));
   memset (objfile, 0, sizeof (struct objfile));
   objfile->md = NULL;
-  obstack_specify_allocation (&objfile->psymbol_cache.cache, 0, 0, xmalloc, xfree);
+  objfile->psymbol_cache = bcache_xmalloc (NULL);
+  objfile->macro_cache = bcache_xmalloc (NULL);
+  bcache_specify_allocation (objfile->psymbol_cache, xmalloc, xfree);
+  bcache_specify_allocation (objfile->macro_cache, xmalloc, xfree);
   obstack_specify_allocation (&objfile->psymbol_obstack, 0, 0, xmalloc, xfree);
   obstack_specify_allocation (&objfile->symbol_obstack, 0, 0, xmalloc, xfree);
   obstack_specify_allocation (&objfile->type_obstack, 0, 0, xmalloc, xfree);

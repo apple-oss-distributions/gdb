@@ -73,10 +73,6 @@ extern int addressprint;	/* Print machine addresses? */
  */  
 
 extern void output_command (char *, int);
-extern void registers_info (char *, int);
-extern void args_info (char *, int);
-extern void locals_info (char *, int);
-
 
 /* If this definition isn't overridden by the header files, assume
    that isatty and fileno exist on this system.  */
@@ -502,11 +498,11 @@ tracepoints_info (char *tpnum_exp, int from_tty)
 	  char *tmp;
 
 	  if (TARGET_ADDR_BIT <= 32)
-	    tmp = longest_local_hex_string_custom (t->address
-						   & (CORE_ADDR) 0xffffffff, 
-						   "08l");
+	    tmp = local_hex_string_custom (t->address
+					   & (CORE_ADDR) 0xffffffff, 
+					   "08l");
 	  else
-	    tmp = longest_local_hex_string_custom (t->address, "016l");
+	    tmp = local_hex_string_custom (t->address, "016l");
 
 	  printf_filtered ("%s ", tmp);
 	}
@@ -854,7 +850,7 @@ read_actions (struct tracepoint *t)
 	line = (*readline_hook) (prompt);
       else if (instream == stdin && ISATTY (instream))
 	{
-	  line = readline (prompt);
+	  line = gdb_readline_wrapper (prompt);
 	  if (line && *line)	/* add it to command history */
 	    add_history (line);
 	}
@@ -1928,7 +1924,7 @@ finish_tfind_command (char *msg,
 
   flush_cached_frames ();
   registers_changed ();
-  select_frame (get_current_frame (), 0);
+  select_frame (get_current_frame ());
   set_traceframe_num (target_frameno);
   set_tracepoint_num (target_tracept);
   if (target_frameno == -1)
@@ -1958,7 +1954,8 @@ finish_tfind_command (char *msg,
       else
 	source_only = 1;
 
-      print_stack_frame (selected_frame, selected_frame_level, source_only);
+      print_stack_frame (selected_frame, frame_relative_level (selected_frame),
+			 source_only);
       do_displays ();
     }
 }
@@ -2070,10 +2067,12 @@ trace_find_tracepoint_command (char *args, int from_tty)
   if (target_is_remote ())
     {
       if (args == 0 || *args == 0)
-	if (tracepoint_number == -1)
-	  error ("No current tracepoint -- please supply an argument.");
-	else
-	  tdp = tracepoint_number;	/* default is current TDP */
+	{
+	  if (tracepoint_number == -1)
+	    error ("No current tracepoint -- please supply an argument.");
+	  else
+	    tdp = tracepoint_number;	/* default is current TDP */
+	}
       else
 	tdp = parse_and_eval_long (args);
 

@@ -266,7 +266,7 @@ proc_update_sc (struct proc *proc)
       gdb_assert (proc_is_thread (proc));
       proc_debug (proc, "storing back changed thread state");
       err = thread_set_state (proc->port, THREAD_STATE_FLAVOR,
-			 (thread_state_t) & proc->state, THREAD_STATE_SIZE);
+			 (thread_state_t) &proc->state, THREAD_STATE_SIZE);
       if (!err)
 	proc->state_changed = 0;
     }
@@ -372,7 +372,7 @@ proc_get_state (struct proc *proc, int will_modify)
       mach_msg_type_number_t state_size = THREAD_STATE_SIZE;
       error_t err =
       thread_get_state (proc->port, THREAD_STATE_FLAVOR,
-			(thread_state_t) & proc->state, &state_size);
+			(thread_state_t) &proc->state, &state_size);
       proc_debug (proc, "getting thread state");
       proc->state_valid = !err;
     }
@@ -381,7 +381,7 @@ proc_get_state (struct proc *proc, int will_modify)
     {
       if (will_modify)
 	proc->state_changed = 1;
-      return (thread_state_t) & proc->state;
+      return (thread_state_t) &proc->state;
     }
   else
     return 0;
@@ -795,7 +795,7 @@ inf_validate_procinfo (struct inf *inf)
   int info_flags = 0;
   error_t err =
   proc_getprocinfo (proc_server, inf->pid, &info_flags,
-		    (procinfo_t *) & pi, &pi_len, &noise, &noise_len);
+		    (procinfo_t *) &pi, &pi_len, &noise, &noise_len);
 
   if (!err)
     {
@@ -1759,31 +1759,31 @@ ill_rpc (char *fun)
 error_t
 do_mach_notify_no_senders (mach_port_t notify, mach_port_mscount_t count)
 {
-  return ill_rpc (__FUNCTION__);
+  return ill_rpc ("do_mach_notify_no_senders");
 }
 
 error_t
 do_mach_notify_port_deleted (mach_port_t notify, mach_port_t name)
 {
-  return ill_rpc (__FUNCTION__);
+  return ill_rpc ("do_mach_notify_port_deleted");
 }
 
 error_t
 do_mach_notify_msg_accepted (mach_port_t notify, mach_port_t name)
 {
-  return ill_rpc (__FUNCTION__);
+  return ill_rpc ("do_mach_notify_msg_accepted");
 }
 
 error_t
 do_mach_notify_port_destroyed (mach_port_t notify, mach_port_t name)
 {
-  return ill_rpc (__FUNCTION__);
+  return ill_rpc ("do_mach_notify_port_destroyed");
 }
 
 error_t
 do_mach_notify_send_once (mach_port_t notify)
 {
-  return ill_rpc (__FUNCTION__);
+  return ill_rpc ("do_mach_notify_send_once");
 }
 
 
@@ -1845,13 +1845,13 @@ error_t
 S_proc_setmsgport_reply (mach_port_t reply, error_t err,
 			 mach_port_t old_msg_port)
 {
-  return ill_rpc (__FUNCTION__);
+  return ill_rpc ("S_proc_setmsgport_reply");
 }
 
 error_t
 S_proc_getmsgport_reply (mach_port_t reply, error_t err, mach_port_t msg_port)
 {
-  return ill_rpc (__FUNCTION__);
+  return ill_rpc ("S_proc_getmsgport_reply");
 }
 
 
@@ -1890,7 +1890,7 @@ S_msg_sig_post_untraced_reply (mach_port_t reply, error_t err)
 error_t
 S_msg_sig_post_reply (mach_port_t reply, error_t err)
 {
-  return ill_rpc (__FUNCTION__);
+  return ill_rpc ("S_msg_sig_post_reply");
 }
 
 
@@ -2069,7 +2069,7 @@ gnu_create_inferior (char *exec_file, char *allargs, char **env)
     inf_resume (inf);
     inferior_ptid = pid_to_ptid (inf_pick_first_thread ());
 
-    startup_inferior ();
+    startup_inferior (inf->pending_execs);
   }
 
   inf_debug (inf, "creating inferior");
@@ -2113,7 +2113,7 @@ gnu_attach (char *args, int from_tty)
   struct inf *inf = cur_inf ();
 
   if (!args)
-    error_no_arg ("PID to attach");
+    error_no_arg ("process-id to attach");
 
   pid = atoi (args);
 
@@ -2458,13 +2458,94 @@ gnu_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
   else
     {
       inf_debug (current_inferior, "%s %p[%d] %s %p",
-		 write ? "writing" : "reading", memaddr, len,
+		 write ? "writing" : "reading", (void *) memaddr, len,
 		 write ? "<--" : "-->", myaddr);
       if (write)
 	return gnu_write_inferior (task, memaddr, myaddr, len);
       else
 	return gnu_read_inferior (task, memaddr, myaddr, len);
     }
+}
+
+/* Call FUNC on each memory region in the task.  */
+static int
+gnu_find_memory_regions (int (*func) (CORE_ADDR,
+				      unsigned long,
+				      int, int, int,
+				      void *),
+			 void *data)
+{
+  error_t err;
+  task_t task;
+  vm_address_t region_address, last_region_address, last_region_end;
+  vm_prot_t last_protection;
+
+  if (current_inferior == 0 || current_inferior->task == 0)
+    return 0;
+  task = current_inferior->task->port;
+  if (task == MACH_PORT_NULL)
+    return 0;
+
+  region_address = last_region_address = last_region_end = VM_MIN_ADDRESS;
+  last_protection = VM_PROT_NONE;
+  while (region_address < VM_MAX_ADDRESS)
+    {
+      vm_prot_t protection;
+      vm_prot_t max_protection;
+      vm_inherit_t inheritance;
+      boolean_t shared;
+      mach_port_t object_name;
+      vm_offset_t offset;
+      vm_size_t region_length = VM_MAX_ADDRESS - region_address;
+      vm_address_t old_address = region_address;
+
+      err = vm_region (task,
+		       &region_address,
+		       &region_length,
+		       &protection,
+		       &max_protection,
+		       &inheritance,
+		       &shared,
+		       &object_name,
+		       &offset);
+      if (err == KERN_NO_SPACE)
+	break;
+      if (err != KERN_SUCCESS)
+	{
+	  warning ("vm_region failed: %s", mach_error_string (err));
+	  return -1;
+	}
+
+      if (protection == last_protection && region_address == last_region_end)
+	/* This region is contiguous with and indistinguishable from
+	   the previous one, so we just extend that one.  */
+	last_region_end = region_address += region_length;
+      else
+	{
+	  /* This region is distinct from the last one we saw, so report
+	     that previous one.  */
+	  if (last_protection != VM_PROT_NONE)
+	    (*func) (last_region_address,
+		     last_region_end - last_region_address,
+		     last_protection & VM_PROT_READ,
+		     last_protection & VM_PROT_WRITE,
+		     last_protection & VM_PROT_EXECUTE,
+		     data);
+	  last_region_address = region_address;
+	  last_region_end = region_address += region_length;
+	  last_protection = protection;
+	}
+    }
+
+  /* Report the final region.  */
+  if (last_region_end > last_region_address && last_protection != VM_PROT_NONE)
+    (*func) (last_region_address, last_region_end - last_region_address,
+	     last_protection & VM_PROT_READ,
+	     last_protection & VM_PROT_WRITE,
+	     last_protection & VM_PROT_EXECUTE,
+	     data);
+
+  return 0;
 }
 
 
@@ -2524,12 +2605,14 @@ init_gnu_ops (void)
   gnu_ops.to_store_registers = gnu_store_registers;    /* to_store_registers */
   gnu_ops.to_prepare_to_store = gnu_prepare_to_store; /* to_prepare_to_store */
   gnu_ops.to_xfer_memory = gnu_xfer_memory; /* to_xfer_memory */
+  gnu_ops.to_find_memory_regions = gnu_find_memory_regions;
   gnu_ops.to_files_info = 0;		/* to_files_info */
   gnu_ops.to_insert_breakpoint = memory_insert_breakpoint;
   gnu_ops.to_remove_breakpoint = memory_remove_breakpoint;
   gnu_ops.to_terminal_init = gnu_terminal_init_inferior;
   gnu_ops.to_terminal_inferior = terminal_inferior;
   gnu_ops.to_terminal_ours_for_output = terminal_ours_for_output;
+  gnu_ops.to_terminal_save_ours = terminal_save_ours;
   gnu_ops.to_terminal_ours = terminal_ours;
   gnu_ops.to_terminal_info = child_terminal_info;
   gnu_ops.to_kill = gnu_kill_inferior;	/* to_kill */

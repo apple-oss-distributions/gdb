@@ -24,7 +24,6 @@
 #include "inferior.h"
 #include "target.h"
 #include "terminal.h"		/* for job_control */
-#include "signals.h"
 #include "interpreter.h"
 #include "event-loop.h"
 #include "event-top.h"
@@ -560,8 +559,10 @@ command_handler (char *command)
 	(struct continuation_arg *) xmalloc (sizeof (struct continuation_arg));
       arg1->next = arg2;
       arg2->next = NULL;
-      arg1->data.integer = time_at_cmd_start;
-      arg2->data.integer = space_at_cmd_start;
+      arg1->data.longint = time_at_cmd_start;
+#ifdef HAVE_SBRK
+      arg2->data.longint = space_at_cmd_start;
+#endif
       add_continuation (command_line_handler_continuation, arg1);
     }
 
@@ -727,7 +728,7 @@ command_line_handler (char *rl)
 
   xfree (rl);			/* Allocated in readline.  */
 
-  if (*(p - 1) == '\\')
+  if (p > linebuffer && *(p - 1) == '\\')
     {
       p--;			/* Put on top of '\'.  */
 
@@ -1157,30 +1158,15 @@ set_async_prompt (char *args, int from_tty, struct cmd_list_element *c)
   PROMPT (0) = savestring (new_async_prompt, strlen (new_async_prompt));
 }
 
-/* Don't set up readline now, this is better done in the interpreter's
-   resume method, since we will have to do this coming back & forth
-   among interpreters anyway... */
-
-void
-_initialize_event_loop (void)
-{
-  /* Tell gdb to use the cli_command_loop as the main loop. */
-  if (event_loop_p && command_loop_hook == NULL)
-    {
-      command_loop_hook = cli_command_loop;
-    }
-}
-
 /* Set things up for readline to be invoked via the alternate
    interface, i.e. via a callback function (rl_callback_read_char),
    and hook up instream to the event loop. */
 void
 gdb_setup_readline (void)
 {
-
-  /* This function is a noop for the async case.  The assumption is that
-     the async setup is ALL done in gdb_init, and we would only mess it up
-     here.  The async stuff should really go away over time. */
+  /* This function is a noop for the sync case.  The assumption is that
+     the sync setup is ALL done in gdb_init, and we would only mess it up
+     here.  The sync stuff should really go away over time. */
 
   /* Note also that if instream == NULL, then we don't want to setup
      readline even IF event_loop_p is true, because we don't have an
@@ -1265,4 +1251,16 @@ gdb_disable_readline (void)
     }
 }
 
+/* Don't set up readline now, this is better done in the interpreter's
+   resume method, since we will have to do this coming back & forth
+   among interpreters anyway... */
 
+void
+_initialize_event_loop (void)
+{
+  /* Tell gdb to use the cli_command_loop as the main loop. */
+  if (event_loop_p && command_loop_hook == NULL)
+    {
+      command_loop_hook = cli_command_loop;
+    }
+}

@@ -83,9 +83,13 @@ get_debug_format
 proc local_compiler_xfail_check { } {
     global gcc_compiled;
 
+# APPLE LOCAL: Don't know what y'all are talking about - our stabs can handle
+# these cases just fine..
+
     if {$gcc_compiled} then {
 	if { ![test_debug_format "HP"] \
-		&& ![test_debug_format "DWARF 2"] } then {
+		&& ![test_debug_format "DWARF 2"] \
+                && ![istarget "*-apple-darwin*"] } then {
 	    setup_xfail "*-*-*" 
 	}
     }

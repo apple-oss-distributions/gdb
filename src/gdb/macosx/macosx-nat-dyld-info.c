@@ -25,6 +25,7 @@
 #include "macosx-nat-dyld-path.h"
 
 #include <string.h>
+#include <ctype.h>
 
 #include "defs.h"
 #include "inferior.h"
@@ -33,18 +34,17 @@
 #include "gdbcmd.h"
 #include "objfiles.h"
 
-void 
-dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames, 
-		 char **in_name, char **addr, char **slide, char **prefix);
-
 const char *dyld_reason_string (dyld_objfile_reason r)
 {
   switch (r) {
+  case dyld_reason_deallocated: return "deallocated";
+  case dyld_reason_user: return "user";
+  case dyld_reason_cached_library: return "cached-lib";
+  case dyld_reason_cached_executable: return "cached-exec";
   case dyld_reason_init: return "init";
-  case dyld_reason_cached: return "cached";
+  case dyld_reason_executable: return "exec";
   case dyld_reason_dyld: return "dyld";
   case dyld_reason_cfm: return "cfm";
-  case dyld_reason_executable: return "exec";
   default: return "???";
   }
 }    
@@ -64,8 +64,9 @@ void dyld_objfile_entry_clear (struct dyld_objfile_entry *e)
   e->dyld_slide = 0;
   e->dyld_index = 0;
   e->dyld_valid = 0;
+  e->dyld_length = 0;
 
-  e->cfm_connection = 0;
+  e->cfm_container = 0;
 
   e->user_name = NULL;
 
@@ -159,7 +160,7 @@ int dyld_objfile_entry_compare (struct dyld_objfile_entry *a, struct dyld_objfil
   COMPARE_SCALAR(dyld_index);
   COMPARE_SCALAR(dyld_valid);
 
-  COMPARE_SCALAR(cfm_connection);
+  COMPARE_SCALAR(cfm_container);
 
   COMPARE_STRING(user_name);
 
@@ -609,6 +610,23 @@ int dyld_resolve_shlib_num
   *eptr = NULL;
   *optr = NULL;
 
+  for (i = 0; i < s->nents; i++) {
+
+    struct dyld_objfile_entry *j = &s->entries[i];
+
+    if (! j->allocated) { 
+      continue;
+    }
+
+    num--;
+
+    if (num == 0) {
+      *eptr = j;
+      *optr = j->objfile;
+      return 0;
+    }
+  }
+
   ALL_OBJFILES_SAFE (objfile, temp) {
 
     int found = 0;
@@ -632,8 +650,23 @@ int dyld_resolve_shlib_num
       *optr = objfile;
       return 0;
     }
-  }		   
+  }	  
 
+  return -1;
+}
+
+/* Returns the shared library number of the entry at 'eptr' in
+   'numptr'.  Returns 0 on success, anything else on failure. */
+
+int dyld_entry_shlib_num
+(struct dyld_objfile_info *s, struct dyld_objfile_entry *eptr, unsigned int *numptr)
+{
+  unsigned int num = 0;
+  unsigned int i;
+
+  CHECK_FATAL (numptr != NULL);
+
+  *numptr = num;
 
   for (i = 0; i < s->nents; i++) {
 
@@ -643,24 +676,27 @@ int dyld_resolve_shlib_num
       continue;
     }
 
-    num--;
-
-    if (num == 0) {
-      *eptr = j;
-      *optr = j->objfile;
+    if (j == eptr) {
+      *numptr = num;
       return 0;
     }
+
+    num++;
   }
 
+  *numptr = 0;
   return -1;
 }
 
-void dyld_print_shlib_info (struct dyld_objfile_info *s, unsigned int reason_mask) 
+/* Returns the length of the longest field that would be printed when
+   displaying 's' according to 'reason_mask'. */
+
+unsigned int
+dyld_shlib_info_basename_length
+(struct dyld_objfile_info *s, unsigned int reason_mask)
 {
   unsigned int i;
   unsigned int baselen = 0;
-  unsigned int bpnum = 0; 
-  char *basepad;
   struct objfile *objfile, *temp;
 
   for (i = 0; i < s->nents; i++) {
@@ -692,20 +728,253 @@ void dyld_print_shlib_info (struct dyld_objfile_info *s, unsigned int reason_mas
     }
   }
 
-  if (baselen < 8) {
-    baselen = 8;
+  if (! (reason_mask & dyld_reason_user)) {
+    return baselen;
+  }
+
+  ALL_OBJFILES_SAFE (objfile, temp) {
+
+    const char *name = NULL;
+    const char *tfname = NULL;
+    unsigned int tfnamelen = 0;
+
+    int found = 0;
+    
+    for (i = 0; i < s->nents; i++) {
+      struct dyld_objfile_entry *j = &s->entries[i];
+      if (! j->allocated) {
+	continue; 
+      }
+      if (j->objfile == objfile) {
+	found = 1;
+      }
+    }
+    
+    if (! found) {
+      
+      struct dyld_objfile_entry tentry;
+      dyld_convert_entry (objfile, &tentry);
+
+      name = dyld_entry_source_filename (&tentry);
+      if (name == NULL) {
+	if (baselen < 1) {
+	  baselen = 1;
+	}
+      } else {
+	dyld_library_basename (name, &tfname, &tfnamelen, NULL, NULL);
+	if (baselen < tfnamelen) {
+	  baselen = tfnamelen;
+	}
+      }
+    }
+  }
+
+  return baselen;
+}
+
+/* Return true if and only if the shared library specifier 'shlibnum'
+   matches the string in 'args'.  Returns 'false' on error; outputs
+   warning messages only if 'verbose' is passed as true. */
+
+int dyld_entry_shlib_num_matches (int shlibnum, const char *args, int verbose)
+{
+  const char *p, *p1;
+  int num;
+
+  if (args == NULL)
+    error_no_arg ("one or more shlib numbers");
+
+  if (args[0] == '\0')
+    error_no_arg ("one or more shlib numbers");
+
+  p = args;
+  while (*p)
+    {
+      p1 = p;
+
+      num = get_number_or_range (&p1);
+      if (num == 0)
+	{
+	  if (verbose)
+	    warning ("bad shlib number at or near '%s'", p);
+	  return 0;
+	}
+
+      if (num == shlibnum)
+	return 1;
+
+      p = p1;
+    }
+
+  return 0;
+}
+
+void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
+			    unsigned int baselen)
+{
+  const char *name = NULL;
+  const char *tfname = NULL;
+  unsigned int tfnamelen = 0;
+  int is_framework, is_bundle;
+  char *fname = NULL;
+  char addrbuf[24];
+  const char *ptr;
+
+  name = dyld_entry_source_filename (j);
+  if (name == NULL) {
+    fname = savestring ("-", strlen ("-"));
+    is_framework = 0;
+    is_bundle = 0;
+  } else {
+    dyld_library_basename (name, &tfname, &tfnamelen, &is_framework, &is_bundle);
+    fname = savestring (tfname, tfnamelen);
+  }
+
+  if (j->dyld_valid) {
+    snprintf (addrbuf, 24, "0x%lx", (unsigned long) j->dyld_addr);
+  } else {
+    strcpy (addrbuf, "-");
+  }
+
+  if (baselen < strlen (fname)) {
+    baselen = strlen (fname);
+  }
+
+  ui_out_list_begin (uiout, "shlib-info");
+  if (shlibnum < 10)
+    ui_out_text (uiout, "  ");
+  else if (shlibnum < 100)
+    ui_out_text (uiout, " ");
+
+  ui_out_field_int (uiout, "num", shlibnum);
+  ui_out_spaces (uiout, 1);
+
+  ui_out_field_string (uiout, "name", fname);
+  ui_out_spaces (uiout, baselen - strlen (fname) + 1);
+
+  ptr = is_framework ? "F" : (is_bundle ? "B" : "-");
+  ui_out_field_string (uiout, "kind", ptr);
+  if (strlen (ptr) == 0)
+    ui_out_spaces (uiout, 1);
+
+  ui_out_spaces (uiout, 1);
+    
+  ui_out_field_string (uiout, "dyld-addr", addrbuf);
+  ui_out_spaces (uiout, 10 - strlen (addrbuf));
+  ui_out_spaces (uiout, 1);
+
+  ptr = dyld_reason_string (j->reason);
+  ui_out_spaces (uiout, 11 - strlen (ptr));
+  ui_out_field_string (uiout, "reason", ptr);
+  ui_out_spaces (uiout, 1);
+    
+  if (j->load_flag == OBJF_SYM_ALL) {
+    ptr = "Y";
+  } else if (j->load_flag == OBJF_SYM_NONE) {
+    ptr = "N";
+  } else if (j->load_flag == OBJF_SYM_EXTERN) {
+    ptr = "E";
+  } else {
+    ptr = "?";
+  }
+
+  ui_out_field_string (uiout, "requested-state", ptr);
+  ui_out_spaces (uiout, 1);
+    
+  if (j->loaded_error) {
+    ptr = "!";
+  } else {
+    if (j->objfile != NULL) {
+      if (! dyld_objfile_allocated (j->objfile)) {
+	ptr = "!";
+      } else if (j->objfile->symflags == OBJF_SYM_ALL) {
+	ptr = "Y";
+      } else if (j->objfile->symflags == OBJF_SYM_NONE) {
+	ptr = "N";
+      } else if (j->objfile->symflags == OBJF_SYM_EXTERN) {
+	ptr = "E";
+      } else {
+	ptr = "?";
+      }
+    } else if (j->abfd != NULL) {
+      ptr = "B";
+    } else {
+      ptr = "N";
+    }
+  }
+
+  ui_out_field_string (uiout, "state", ptr);
+  ui_out_spaces (uiout, 1);
+
+  dyld_entry_out (uiout, j, 1);
+
+  ui_out_list_end (uiout);
+
+  ui_out_text (uiout, "\n");
+}
+
+void dyld_convert_entry (struct objfile *o, struct dyld_objfile_entry *e)
+{
+  dyld_objfile_entry_clear (e);
+
+  e->allocated = 1;
+  e->reason = dyld_reason_user;
+
+  e->objfile = o;
+  e->abfd = o->obfd;
+
+  if (e->abfd != NULL)
+    e->loaded_name = bfd_get_filename (e->abfd);
+}
+
+void dyld_print_shlib_info (struct dyld_objfile_info *s, unsigned int reason_mask, int header, const char *args) 
+{
+  unsigned int baselen = 0;
+  char *basepad = NULL;
+  unsigned int shlibnum = 0; 
+  struct objfile *objfile, *temp;
+  unsigned int i;
+
+  baselen = dyld_shlib_info_basename_length (s, reason_mask);
+  if (baselen < 12) {
+    baselen = 12;
   }
 
   basepad = xmalloc (baselen + 1);
   memset (basepad, ' ', baselen);
   basepad[baselen] = '\0';
 
-  ui_out_text_fmt (uiout, 
-		   "%s     Framework?            Loaded? Error?                \n"
-		   "Num Basename%s | Address  Reason   | | Source              \n"
-		   "  | |%s        | |          |      | | |                   \n",
-		   basepad + 8, basepad + 8, basepad + 8);
+  if (header)
+    ui_out_text_fmt (uiout, 
+		     "%s                            Requested State Current State\n"
+		     "Num Basename%s  Type Address         Reason | | Source     \n"
+		     "  | |%s            | |                    | | | |          \n",
+		     basepad + 12, basepad + 12, basepad + 12);
   
+  if (args != NULL)
+    dyld_entry_shlib_num_matches (-1, args, 1);
+
+  for (i = 0; i < s->nents; i++) {
+
+    struct dyld_objfile_entry *j = &s->entries[i];
+
+    if (! j->allocated) { 
+      if (reason_mask & dyld_reason_deallocated)
+	printf_filtered ("[DEALLOCATED]\n");
+      continue;
+    }
+
+    shlibnum++;
+
+    if (! (j->reason & reason_mask)) {
+      continue;
+    }
+
+    if ((args == NULL) || dyld_entry_shlib_num_matches (shlibnum, args, 0)) {
+      dyld_print_entry_info (j, shlibnum, baselen);
+    }
+  }
+
   ALL_OBJFILES_SAFE (objfile, temp) {
 
     int found = 0;
@@ -722,183 +991,30 @@ void dyld_print_shlib_info (struct dyld_objfile_info *s, unsigned int reason_mas
 
     if (! found) {
 
-      bpnum++;
+      struct dyld_objfile_entry tentry;
+      shlibnum++;
 
-      if (reason_mask & dyld_reason_user) {
-	char *ptr;
+      if (! (reason_mask & dyld_reason_user)) {
+	continue;
+      }
 
-	ui_out_list_begin (uiout, "shlib-info");
-	if (bpnum < 10)
-	  ui_out_spaces (uiout, 2);
-	else if (bpnum < 100)
-	  ui_out_spaces (uiout, 1);
-	
-	ui_out_field_int (uiout, "num", bpnum);
-	ui_out_spaces (uiout, 1);
-	
-	ui_out_field_string (uiout, "name", "");
-	ui_out_spaces (uiout, baselen + 1);
-	
-	ui_out_field_string (uiout, "kind", "");
-	ui_out_spaces (uiout, 2);
-	
-	ui_out_spaces (uiout, 1);
-	
-	ui_out_spaces (uiout, 9);
-	ui_out_field_string (uiout, "dyld-addr", "");
-	ui_out_spaces (uiout, 1);
-	
-	ui_out_spaces (uiout, 6 - strlen ("user"));
-	ui_out_field_string (uiout, "reason", "user");
-	ui_out_spaces (uiout, 1);
-	
-	ptr = "-";
-	ui_out_field_string (uiout, "requested-state", ptr);
-	ui_out_spaces (uiout, 1);
-	
-	if (objfile->symflags == OBJF_SYM_ALL) {
-	  ptr = "Y";
-	} else if (objfile->symflags == OBJF_SYM_NONE) {
-	  ptr = "N";
-	} else if (objfile->symflags == OBJF_SYM_EXTERN) {
-	  ptr = "E";
-	} else if (objfile->symflags == OBJF_SYM_CONTAINER) {
-	  ptr = "C";
-	} else {
-	  ptr = "?";
-	}
-
-	ui_out_field_string (uiout, "state", ptr);
-	ui_out_spaces (uiout, 1);
-	
-	ptr = objfile->name ? objfile->name : "[UNKNOWN]";
-	ui_out_text (uiout, "\"");
-	ui_out_field_string (uiout, "path", ptr);
-	ui_out_text (uiout, "\"");
-	ui_out_field_skip (uiout, "slide");
-	ui_out_field_skip (uiout, "loaded-addr");
-	if ((objfile->prefix != NULL) && (objfile->prefix[0] != '\0'))
-	  {
-	    ui_out_text (uiout, " with prefix \"");
-	    ui_out_field_string (uiout, "prefix", objfile->prefix);
-	    ui_out_text (uiout, "\"");
-	  }
-	else
-	  {
-	    ui_out_field_skip (uiout, "prefix");
-	  }
-
-	ui_out_list_end (uiout);
-	ui_out_text (uiout, "\n");
+      if ((args == NULL) || dyld_entry_shlib_num_matches (shlibnum, args, 0)) {
+	dyld_convert_entry (objfile, &tentry);
+	dyld_print_entry_info (&tentry, shlibnum, baselen);
       }
     }
   }
+}
 
-  for (i = 0; i < s->nents; i++) {
-
-    const char *name = NULL;
-    const char *tfname = NULL;
-    unsigned int tfnamelen = 0;
-    int is_framework, is_bundle;
-    char *fname = NULL;
-    char addrbuf[24];
-    const char *ptr;
-
-    struct dyld_objfile_entry *j = &s->entries[i];
-
-    if (! j->allocated) { 
-      /* printf_filtered ("[DEALLOCATED]\n"); */
-      continue;
-    }
-
-    bpnum++;
-
-    if (! (j->reason & reason_mask)) {
-      continue;
-    }
-
-    name = dyld_entry_source_filename (j);
-    if (name == NULL) {
-      fname = savestring ("-", strlen ("-"));
-    } else {
-      dyld_library_basename (name, &tfname, &tfnamelen, &is_framework, &is_bundle);
-      fname = savestring (tfname, tfnamelen);
-    }
-
-    if (j->dyld_valid) {
-      snprintf (addrbuf, 24, "0x%lx", (unsigned long) j->dyld_addr);
-    } else {
-      strcpy (addrbuf, "-");
-    }
-
-    ui_out_list_begin(uiout, "shlib-info");
-    if (bpnum < 10)
-      ui_out_text (uiout, "  ");
-    else if (bpnum < 100)
-      ui_out_text (uiout, " ");
-
-    ui_out_field_int (uiout, "num", bpnum);
-    ui_out_spaces (uiout, 1);
-
-    ui_out_field_string (uiout, "name", fname);
-    ui_out_spaces (uiout, baselen - strlen (fname) + 1);
-
-    ptr = is_framework ? "F" : (is_bundle ? "B" : "");
-    ui_out_field_string (uiout, "kind", ptr);
-    if (strlen (ptr) == 0)
-	ui_out_spaces (uiout, 1);
-
-    ui_out_spaces (uiout, 1);
-    
-    ui_out_field_string (uiout, "dyld-addr", addrbuf);
-    ui_out_spaces (uiout, 10 - strlen (addrbuf));
-    ui_out_spaces (uiout, 1);
-
-    ptr = dyld_reason_string (j->reason);
-    ui_out_spaces (uiout, 6 - strlen(ptr));
-    ui_out_field_string (uiout, "reason", ptr);
-    ui_out_spaces (uiout, 1);
-    
-    if (j->load_flag == OBJF_SYM_ALL) {
-      ptr = "Y";
-    } else if (j->load_flag == OBJF_SYM_NONE) {
-      ptr = "N";
-    } else if (j->load_flag == OBJF_SYM_EXTERN) {
-      ptr = "E";
-    } else {
-      ptr = "?";
-    }
-
-    ui_out_field_string (uiout, "requested-state", ptr);
-    ui_out_spaces (uiout, 1);
-    
-    if (j->loaded_error) {
-      ptr = "!";
-    } else {
-      if (j->objfile != NULL) {
-	if (j->objfile->symflags == OBJF_SYM_ALL) {
-	  ptr = "Y";
-	} else if (j->objfile->symflags == OBJF_SYM_NONE) {
-	  ptr = "N";
-	} else if (j->objfile->symflags == OBJF_SYM_EXTERN) {
-	  ptr = "E";
-	} else {
-	  ptr = "?";
-	}
-      } else if (j->abfd != NULL) {
-	ptr = "B";
-      } else {
-	ptr = "N";
-      }
-    }
-
-    ui_out_field_string (uiout, "state", ptr);
-    ui_out_spaces (uiout, 1);
-
-    dyld_entry_out (uiout, j, 1);
-
-    ui_out_list_end (uiout);
-
-    ui_out_text (uiout, "\n");
+unsigned int dyld_next_allocated_shlib (struct dyld_objfile_info *info, unsigned int n)
+{
+  struct dyld_objfile_entry *o;
+  for (;;) {
+    if (n >= info->nents)
+      return n;
+    o = &info->entries[n];
+    if (o->allocated)
+      return n;
+    n++;    
   }
 }

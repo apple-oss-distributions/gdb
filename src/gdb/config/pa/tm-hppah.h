@@ -21,9 +21,6 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#ifndef _TM_HPPAH_H_
-#define _TM_HHPAH_H_
-
 #define HPUX_SNAP1
 #define HPUX_SNAP2
 
@@ -91,5 +88,3 @@
 
 /* Mostly it's common to all HPPA's.  */
 #include "pa/tm-hppa.h"
-
-#endif /* _TM_HHPAH_H_ */

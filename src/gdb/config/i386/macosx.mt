@@ -1,7 +1,8 @@
 # Target: IA86 running Mac OS X
 
 MT_CFLAGS = \
-	-DTARGET_I386
+	-DTARGET_I386 \
+	-I$(srcdir)/macosx
 
 TDEPFILES = \
 	core-macho.o \

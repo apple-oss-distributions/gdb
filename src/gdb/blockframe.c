@@ -1,7 +1,9 @@
-/* Get info from stack frames;
-   convert between frames, blocks, functions and pc values.
-   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
-   1996, 1997, 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+/* Get info from stack frames; convert between frames, blocks,
+   functions and pc values.
+
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
+   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -32,8 +34,27 @@
 #include "inferior.h"		/* for read_pc */
 #include "annotate.h"
 #include "regcache.h"
+#include "gdb_assert.h"
 
 /* Prototypes for exported functions. */
+
+static void generic_call_dummy_register_unwind (struct frame_info *frame,
+						void **cache,
+						int regnum,
+						int *optimized,
+						enum lval_type *lval,
+						CORE_ADDR *addrp,
+						int *realnum,
+						void *raw_buffer);
+static void frame_saved_regs_register_unwind (struct frame_info *frame,
+					      void **cache,
+					      int regnum,
+					      int *optimized,
+					      enum lval_type *lval,
+					      CORE_ADDR *addrp,
+					      int *realnum,
+					      void *buffer);
+
 
 void _initialize_blockframe (void);
 
@@ -206,6 +227,27 @@ set_current_frame (struct frame_info *frame)
   current_frame = frame;
 }
 
+
+/* Using the PC, select a mechanism for unwinding a frame returning
+   the previous frame.  The register unwind function should, on
+   demand, initialize the ->context object.  */
+
+static void
+set_unwind_by_pc (CORE_ADDR pc, CORE_ADDR fp,
+		  frame_register_unwind_ftype **unwind)
+{
+  if (!USE_GENERIC_DUMMY_FRAMES)
+    /* Still need to set this to something.  The ``info frame'' code
+       calls this function to find out where the saved registers are.
+       Hopefully this is robust enough to stop any core dumps and
+       return vaguely correct values..  */
+    *unwind = frame_saved_regs_register_unwind;
+  else if (PC_IN_CALL_DUMMY (pc, fp, fp))
+    *unwind = generic_call_dummy_register_unwind;
+  else
+    *unwind = frame_saved_regs_register_unwind;
+}
+
 /* Create an arbitrary (i.e. address specified by user) or innermost frame.
    Always returns a non-NULL value.  */
 
@@ -224,12 +266,14 @@ create_new_frame (CORE_ADDR addr, CORE_ADDR pc)
 
   fi->frame = addr;
   fi->pc = pc;
+  find_pc_partial_function (pc, &name, (CORE_ADDR *) NULL, (CORE_ADDR *) NULL);
+  fi->signal_handler_caller = PC_IN_SIGTRAMP (fi->pc, name);
 
   if (INIT_EXTRA_FRAME_INFO_P ())
     INIT_EXTRA_FRAME_INFO (0, fi);
 
-  find_pc_partial_function (pc, &name, (CORE_ADDR *) NULL, (CORE_ADDR *) NULL);
-  fi->signal_handler_caller = IN_SIGTRAMP (fi->pc, name);
+  /* Select/initialize an unwind function.  */
+  set_unwind_by_pc (fi->pc, fi->frame, &fi->register_unwind);
 
   return fi;
 }
@@ -248,15 +292,12 @@ get_next_frame (struct frame_info *frame)
 void
 flush_cached_frames (void)
 {
-  if (current_frame == NULL) 
-    return;
-
   /* Since we can't really be sure what the first object allocated was */
   obstack_free (&frame_cache_obstack, 0);
   obstack_init (&frame_cache_obstack);
 
-  current_frame = NULL;	/* Invalidate cache */
-  select_frame (NULL, -1);
+  current_frame = NULL;		/* Invalidate cache */
+  select_frame (NULL);
   annotate_frames_invalid ();
 }
 
@@ -270,7 +311,7 @@ reinit_frame_cache (void)
   /* FIXME: The inferior_ptid test is wrong if there is a corefile.  */
   if (PIDGET (inferior_ptid) != 0)
     {
-      select_frame (get_current_frame (), 0);
+      select_frame (get_current_frame ());
     }
 }
 
@@ -304,12 +345,6 @@ frameless_look_for_prologue (struct frame_info *frame)
        circumstances) backtrace by saying that it isn't.  */
     return 0;
 }
-
-/* Default a few macros that people seldom redefine.  */
-
-#ifndef FRAME_CHAIN_COMBINE
-#define	FRAME_CHAIN_COMBINE(chain, thisframe) (chain)
-#endif
 
 /* Return a structure containing various interesting information
    about the frame that called NEXT_FRAME.  Returns NULL
@@ -379,9 +414,17 @@ get_prev_frame (struct frame_info *next_frame)
          start go curfluy than have an abort called from main not show
          main.  */
       address = FRAME_CHAIN (next_frame);
+
+      /* FIXME: cagney/2002-06-08: There should be two tests here.
+         The first would check for a valid frame chain based on a user
+         selectable policy.  The default being ``stop at main'' (as
+         implemented by generic_func_frame_chain_valid()).  Other
+         policies would be available - stop at NULL, ....  The second
+         test, if provided by the target architecture, would check for
+         more exotic cases - most target architectures wouldn't bother
+         with this second case.  */
       if (!FRAME_CHAIN_VALID (address, next_frame))
 	return 0;
-      address = FRAME_CHAIN_COMBINE (address, next_frame);
     }
   if (address == 0)
     return 0;
@@ -397,6 +440,7 @@ get_prev_frame (struct frame_info *next_frame)
     next_frame->prev = prev;
   prev->next = next_frame;
   prev->frame = address;
+  prev->level = next_frame->level + 1;
 
 /* This change should not be needed, FIXME!  We should
    determine whether any targets *need* INIT_FRAME_PC to happen
@@ -464,9 +508,15 @@ get_prev_frame (struct frame_info *next_frame)
 	}
     }
 
+  /* Initialize the code used to unwind the frame PREV based on the PC
+     (and probably other architectural information).  The PC lets you
+     check things like the debug info at that point (dwarf2cfi?) and
+     use that to decide how the frame should be unwound.  */
+  set_unwind_by_pc (prev->pc, prev->frame, &prev->register_unwind);
+
   find_pc_partial_function (prev->pc, &name,
 			    (CORE_ADDR *) NULL, (CORE_ADDR *) NULL);
-  if (IN_SIGTRAMP (prev->pc, name))
+  if (PC_IN_SIGTRAMP (prev->pc, name))
     prev->signal_handler_caller = 1;
 
   return prev;
@@ -478,6 +528,26 @@ get_frame_pc (struct frame_info *frame)
   return frame->pc;
 }
 
+/* return the address of the PC for the given FRAME, ie the current PC value
+   if FRAME is the innermost frame, or the address adjusted to point to the
+   call instruction if not.  */
+
+CORE_ADDR
+frame_address_in_block (struct frame_info *frame)
+{
+  CORE_ADDR pc = frame->pc;
+
+  /* If we are not in the innermost frame, and we are not interrupted
+     by a signal, frame->pc points to the instruction following the
+     call. As a consequence, we need to get the address of the previous
+     instruction. Unfortunately, this is not straightforward to do, so
+     we just use the address minus one, which is a good enough
+     approximation.  */
+  if (frame->next != 0 && frame->next->signal_handler_caller == 0)
+    --pc;
+
+  return pc;
+}
 
 #ifdef FRAME_FIND_SAVED_REGS
 /* XXX - deprecated.  This is a compatibility function for targets
@@ -526,17 +596,7 @@ get_frame_saved_regs (struct frame_info *frame,
 struct block *
 get_frame_block (struct frame_info *frame, CORE_ADDR *addr_in_block)
 {
-  CORE_ADDR pc;
-
-  pc = frame->pc;
-  if (frame->next != 0 && frame->next->signal_handler_caller == 0)
-    /* We are not in the innermost frame and we were not interrupted
-       by a signal.  We need to subtract one to get the correct block,
-       in case the call instruction was the last instruction of the block.
-       If there are any machines on which the saved pc does not point to
-       after the call insn, we probably want to make frame->pc point after
-       the call insn anyway.  */
-    --pc;
+  const CORE_ADDR pc = frame_address_in_block (frame);
 
   if (addr_in_block)
     *addr_in_block = pc;
@@ -572,6 +632,8 @@ get_pc_function_start (CORE_ADDR pc)
   else if ((msymbol = lookup_minimal_symbol_by_pc (pc)) != NULL)
     {
       fstart = SYMBOL_VALUE_ADDRESS (msymbol);
+      if (!find_pc_section (fstart))
+	return 0;
     }
   else
     {
@@ -747,15 +809,14 @@ find_pc_sect_partial_function (CORE_ADDR pc, asection *section, char **name,
 
   mapped_pc = overlay_mapped_address (pc, section);
 
-  if (mapped_pc >= cache_pc_function_low &&
-      mapped_pc < cache_pc_function_high &&
-      section == cache_pc_function_section)
+  if (mapped_pc >= cache_pc_function_low
+      && mapped_pc < cache_pc_function_high
+      && section == cache_pc_function_section)
     goto return_cached_value;
 
   /* If sigtramp is in the u area, it counts as a function (especially
      important for step_1).  */
-#if defined SIGTRAMP_START
-  if (IN_SIGTRAMP (mapped_pc, (char *) NULL))
+  if (SIGTRAMP_START_P () && PC_IN_SIGTRAMP (mapped_pc, (char *) NULL))
     {
       cache_pc_function_low = SIGTRAMP_START (mapped_pc);
       cache_pc_function_high = SIGTRAMP_END (mapped_pc);
@@ -763,7 +824,6 @@ find_pc_sect_partial_function (CORE_ADDR pc, asection *section, char **name,
       cache_pc_function_section = section;
       goto return_cached_value;
     }
-#endif
 
   msymbol = lookup_minimal_symbol_by_pc_section (mapped_pc, section);
   pst = find_pc_sect_psymtab (mapped_pc, section);
@@ -855,7 +915,7 @@ find_pc_sect_partial_function (CORE_ADDR pc, asection *section, char **name,
   for (i = 1; SYMBOL_NAME (msymbol + i) != NULL; i++)
     {
       if (SYMBOL_VALUE_ADDRESS (msymbol + i) != SYMBOL_VALUE_ADDRESS (msymbol)
-	&& SYMBOL_BFD_SECTION (msymbol + i) == SYMBOL_BFD_SECTION (msymbol))
+	  && SYMBOL_BFD_SECTION (msymbol + i) == SYMBOL_BFD_SECTION (msymbol))
 	break;
     }
 
@@ -867,7 +927,7 @@ find_pc_sect_partial_function (CORE_ADDR pc, asection *section, char **name,
        So the end address is the end of the section.  */
     cache_pc_function_high = osect->endaddr;
 
-return_cached_value:
+ return_cached_value:
 
   if (address)
     {
@@ -886,8 +946,8 @@ return_cached_value:
 	{
 	  /* Because the high address is actually beyond the end of
 	     the function (and therefore possibly beyond the end of
-	     the overlay), we must actually convert (high - 1)
-	     and then add one to that. */
+	     the overlay), we must actually convert (high - 1) and
+	     then add one to that. */
 
 	  *endaddr = 1 + overlay_unmapped_address (cache_pc_function_high - 1,
 						   section);
@@ -899,7 +959,7 @@ return_cached_value:
   return 1;
 }
 
-/* Backward compatibility, no section argument */
+/* Backward compatibility, no section argument.  */
 
 int
 find_pc_partial_function (CORE_ADDR pc, char **name, CORE_ADDR *address,
@@ -920,6 +980,7 @@ block_innermost_frame (struct block *block)
   struct frame_info *frame;
   register CORE_ADDR start;
   register CORE_ADDR end;
+  CORE_ADDR calling_pc;
 
   if (block == NULL)
     return NULL;
@@ -933,7 +994,8 @@ block_innermost_frame (struct block *block)
       frame = get_prev_frame (frame);
       if (frame == NULL)
 	return NULL;
-      if (frame->pc >= start && frame->pc < end)
+      calling_pc = frame_address_in_block (frame);
+      if (calling_pc >= start && calling_pc < end)
 	return frame;
     }
 }
@@ -970,22 +1032,20 @@ sigtramp_saved_pc (struct frame_info *frame)
   int ptrbytes = TARGET_PTR_BIT / TARGET_CHAR_BIT;
   int sigcontext_offs = (2 * TARGET_INT_BIT) / TARGET_CHAR_BIT;
 
-  buf = alloca (ptrbytes);
   /* Get sigcontext address, it is the third parameter on the stack.  */
   if (frame->next)
-    sigcontext_addr = read_memory_unsigned_integer (FRAME_ARGS_ADDRESS (frame->next)
-       + FRAME_ARGS_SKIP
-       + sigcontext_offs,
-       ptrbytes);
+    sigcontext_addr = read_memory_typed_address
+      (FRAME_ARGS_ADDRESS (frame->next) + FRAME_ARGS_SKIP + sigcontext_offs,
+       builtin_type_void_data_ptr);
   else
-    sigcontext_addr = read_memory_unsigned_integer (read_register (SP_REGNUM)
-       + sigcontext_offs,
-       ptrbytes);
+    sigcontext_addr = read_memory_typed_address
+      (read_register (SP_REGNUM) + sigcontext_offs, builtin_type_void_data_ptr);
 
   /* Don't cause a memory_error when accessing sigcontext in case the stack
      layout has changed or the stack is corrupt.  */
+
   target_read_memory (sigcontext_addr + SIGCONTEXT_PC_OFFSET, buf, ptrbytes);
-  return extract_unsigned_integer (buf, ptrbytes);
+  return extract_typed_address (buf, builtin_type_void_data_ptr);
 }
 #endif /* SIGCONTEXT_PC_OFFSET */
 
@@ -1077,56 +1137,119 @@ struct dummy_frame
   CORE_ADDR fp;
   CORE_ADDR sp;
   CORE_ADDR top;
-  char *registers;
+  struct regcache *regcache;
+
+  /* Address range of the call dummy code.  Look for PC in the range
+     [LO..HI) (after allowing for DECR_PC_AFTER_BREAK).  */
+  CORE_ADDR call_lo;
+  CORE_ADDR call_hi;
 };
 
 static struct dummy_frame *dummy_frame_stack = NULL;
 
 /* Function: find_dummy_frame(pc, fp, sp)
-   Search the stack of dummy frames for one matching the given PC, FP and SP.
-   This is the work-horse for pc_in_call_dummy and read_register_dummy     */
 
-char *
+   Search the stack of dummy frames for one matching the given PC and
+   FP/SP.  Unlike PC_IN_CALL_DUMMY, this function doesn't need to
+   adjust for DECR_PC_AFTER_BREAK.  This is because it is only legal
+   to call this function after the PC has been adjusted.  */
+
+static struct regcache *
 generic_find_dummy_frame (CORE_ADDR pc, CORE_ADDR fp)
 {
   struct dummy_frame *dummyframe;
 
-  if (pc != entry_point_address ())
-    return 0;
-
   for (dummyframe = dummy_frame_stack; dummyframe != NULL;
        dummyframe = dummyframe->next)
-    if (fp == dummyframe->fp
-	|| fp == dummyframe->sp
-	|| fp == dummyframe->top)
-      /* The frame in question lies between the saved fp and sp, inclusive */
-      return dummyframe->registers;
+    {
+      /* Does the PC fall within the dummy frame's breakpoint
+         instruction.  If not, discard this one.  */
+      if (!(pc >= dummyframe->call_lo && pc < dummyframe->call_hi))
+	continue;
+      /* Does the FP match?  */
+      if (dummyframe->top != 0)
+	{
+	  /* If the target architecture explicitly saved the
+	     top-of-stack before the inferior function call, assume
+	     that that same architecture will always pass in an FP
+	     (frame base) value that eactly matches that saved TOS.
+	     Don't check the saved SP and SP as they can lead to false
+	     hits.  */
+	  if (fp != dummyframe->top)
+	    continue;
+	}
+      else
+	{
+	  /* An older target that hasn't explicitly or implicitly
+             saved the dummy frame's top-of-stack.  Try matching the
+             FP against the saved SP and FP.  NOTE: If you're trying
+             to fix a problem with GDB not correctly finding a dummy
+             frame, check the comments that go with FRAME_ALIGN() and
+             SAVE_DUMMY_FRAME_TOS().  */
+	  if (fp != dummyframe->fp && fp != dummyframe->sp)
+	    continue;
+	}
+      /* The FP matches this dummy frame.  */
+      return dummyframe->regcache;
+    }
 
   return 0;
 }
 
-/* Function: pc_in_call_dummy (pc, fp)
-   Return true if this is a dummy frame created by gdb for an inferior call */
+char *
+deprecated_generic_find_dummy_frame (CORE_ADDR pc, CORE_ADDR fp)
+{
+  struct regcache *regcache = generic_find_dummy_frame (pc, fp);
+  if (regcache == NULL)
+    return NULL;
+  return deprecated_grub_regcache_for_registers (regcache);
+}
+
+/* Function: pc_in_call_dummy (pc, sp, fp)
+
+   Return true if the PC falls in a dummy frame created by gdb for an
+   inferior call.  The code below which allows DECR_PC_AFTER_BREAK is
+   for infrun.c, which may give the function a PC without that
+   subtracted out.  */
 
 int
 generic_pc_in_call_dummy (CORE_ADDR pc, CORE_ADDR sp, CORE_ADDR fp)
 {
-  /* if find_dummy_frame succeeds, then PC is in a call dummy */
-  /* Note: SP and not FP is passed on. */
-  return (generic_find_dummy_frame (pc, sp) != 0);
+  struct dummy_frame *dummyframe;
+  for (dummyframe = dummy_frame_stack;
+       dummyframe != NULL;
+       dummyframe = dummyframe->next)
+    {
+      if ((pc >= dummyframe->call_lo)
+	  && (pc < dummyframe->call_hi + DECR_PC_AFTER_BREAK))
+	return 1;
+    }
+  return 0;
 }
 
 /* Function: read_register_dummy 
    Find a saved register from before GDB calls a function in the inferior */
 
 CORE_ADDR
-generic_read_register_dummy (CORE_ADDR pc, CORE_ADDR fp, int regno)
+deprecated_read_register_dummy (CORE_ADDR pc, CORE_ADDR fp, int regno)
 {
-  char *dummy_regs = generic_find_dummy_frame (pc, fp);
+  struct regcache *dummy_regs = generic_find_dummy_frame (pc, fp);
 
   if (dummy_regs)
-    return extract_address (&dummy_regs[REGISTER_BYTE (regno)],
-			    REGISTER_RAW_SIZE (regno));
+    {
+      /* NOTE: cagney/2002-08-12: Replaced a call to
+	 regcache_raw_read_as_address() with a call to
+	 regcache_cooked_read_unsigned().  The old, ...as_address
+	 function was eventually calling extract_unsigned_integer (via
+	 extract_address) to unpack the registers value.  The below is
+	 doing an unsigned extract so that it is functionally
+	 equivalent.  The read needs to be cooked as, otherwise, it
+	 will never correctly return the value of a register in the
+	 [NUM_REGS .. NUM_REGS+NUM_PSEUDO_REGS) range.  */
+      ULONGEST val;
+      regcache_cooked_read_unsigned (dummy_regs, regno, &val);
+      return val;
+    }
   else
     return 0;
 }
@@ -1153,7 +1276,7 @@ generic_push_dummy_frame (void)
     if (INNER_THAN (dummy_frame->fp, fp))	/* stale -- destroy! */
       {
 	dummy_frame_stack = dummy_frame->next;
-	xfree (dummy_frame->registers);
+	regcache_xfree (dummy_frame->regcache);
 	xfree (dummy_frame);
 	dummy_frame = dummy_frame_stack;
       }
@@ -1161,13 +1284,13 @@ generic_push_dummy_frame (void)
       dummy_frame = dummy_frame->next;
 
   dummy_frame = xmalloc (sizeof (struct dummy_frame));
-  dummy_frame->registers = xmalloc (REGISTER_BYTES);
+  dummy_frame->regcache = regcache_xmalloc (current_gdbarch);
 
   dummy_frame->pc = read_pc ();
   dummy_frame->sp = read_sp ();
-  dummy_frame->top = dummy_frame->sp;
+  dummy_frame->top = 0;
   dummy_frame->fp = fp;
-  read_register_bytes (0, dummy_frame->registers, REGISTER_BYTES);
+  regcache_cpy (dummy_frame->regcache, current_regcache);
   dummy_frame->next = dummy_frame_stack;
   dummy_frame_stack = dummy_frame;
 }
@@ -1176,6 +1299,15 @@ void
 generic_save_dummy_frame_tos (CORE_ADDR sp)
 {
   dummy_frame_stack->top = sp;
+}
+
+/* Record the upper/lower bounds on the address of the call dummy.  */
+
+void
+generic_save_call_dummy_addr (CORE_ADDR lo, CORE_ADDR hi)
+{
+  dummy_frame_stack->call_lo = lo;
+  dummy_frame_stack->call_hi = hi;
 }
 
 /* Restore the machine state from either the saved dummy stack or a
@@ -1206,10 +1338,10 @@ generic_pop_dummy_frame (void)
   if (!dummy_frame)
     error ("Can't pop dummy frame!");
   dummy_frame_stack = dummy_frame->next;
-  write_register_bytes (0, dummy_frame->registers, REGISTER_BYTES);
+  regcache_cpy (current_regcache, dummy_frame->regcache);
   flush_cached_frames ();
 
-  xfree (dummy_frame->registers);
+  regcache_xfree (dummy_frame->regcache);
   xfree (dummy_frame);
 }
 
@@ -1231,7 +1363,8 @@ generic_file_frame_chain_valid (CORE_ADDR fp, struct frame_info *fi)
 int
 generic_func_frame_chain_valid (CORE_ADDR fp, struct frame_info *fi)
 {
-  if (PC_IN_CALL_DUMMY ((fi)->pc, fp, fp))
+  if (USE_GENERIC_DUMMY_FRAMES
+      && PC_IN_CALL_DUMMY ((fi)->pc, 0, 0))
     return 1;			/* don't prune CALL_DUMMY frames */
   else				/* fall back to default algorithm (see frame.h) */
     return (fp != 0
@@ -1249,6 +1382,147 @@ generic_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR fun, int nargs,
 			struct value **args, struct type *type, int gcc_p)
 {
   return;
+}
+
+/* Given a call-dummy dummy-frame, return the registers.  Here the
+   register value is taken from the local copy of the register buffer.  */
+
+static void
+generic_call_dummy_register_unwind (struct frame_info *frame, void **cache,
+				    int regnum, int *optimized,
+				    enum lval_type *lvalp, CORE_ADDR *addrp,
+				    int *realnum, void *bufferp)
+{
+  gdb_assert (frame != NULL);
+  gdb_assert (PC_IN_CALL_DUMMY (frame->pc, frame->frame, frame->frame));
+
+  /* Describe the register's location.  Generic dummy frames always
+     have the register value in an ``expression''.  */
+  *optimized = 0;
+  *lvalp = not_lval;
+  *addrp = 0;
+  *realnum = -1;
+
+  /* If needed, find and return the value of the register.  */
+  if (bufferp != NULL)
+    {
+      struct regcache *registers;
+#if 1
+      /* Get the address of the register buffer that contains all the
+	 saved registers for this dummy frame.  Cache that address.  */
+      registers = (*cache);
+      if (registers == NULL)
+	{
+	  registers = generic_find_dummy_frame (frame->pc, frame->frame);
+	  (*cache) = registers;
+	}
+#else
+      /* Get the address of the register buffer that contains the
+         saved registers and then extract the value from that.  */
+      registers = generic_find_dummy_frame (frame->pc, frame->frame);
+#endif
+      gdb_assert (registers != NULL);
+      /* Return the actual value.  */
+      /* Use the regcache_cooked_read() method so that it, on the fly,
+         constructs either a raw or pseudo register from the raw
+         register cache.  */
+      regcache_cooked_read (registers, regnum, bufferp);
+    }
+}
+
+/* Return the register saved in the simplistic ``saved_regs'' cache.
+   If the value isn't here AND a value is needed, try the next inner
+   most frame.  */
+
+static void
+frame_saved_regs_register_unwind (struct frame_info *frame, void **cache,
+				  int regnum, int *optimizedp,
+				  enum lval_type *lvalp, CORE_ADDR *addrp,
+				  int *realnump, void *bufferp)
+{
+  /* There is always a frame at this point.  And THIS is the frame
+     we're interested in.  */
+  gdb_assert (frame != NULL);
+  /* If we're using generic dummy frames, we'd better not be in a call
+     dummy.  (generic_call_dummy_register_unwind ought to have been called
+     instead.)  */
+  gdb_assert (!(USE_GENERIC_DUMMY_FRAMES
+                && PC_IN_CALL_DUMMY (frame->pc, frame->frame, frame->frame)));
+
+  /* Load the saved_regs register cache.  */
+  if (frame->saved_regs == NULL)
+    FRAME_INIT_SAVED_REGS (frame);
+
+  if (frame->saved_regs != NULL
+      && frame->saved_regs[regnum] != 0)
+    {
+      if (regnum == SP_REGNUM)
+	{
+	  /* SP register treated specially.  */
+	  *optimizedp = 0;
+	  *lvalp = not_lval;
+	  *addrp = 0;
+	  *realnump = -1;
+	  if (bufferp != NULL)
+	    store_address (bufferp, REGISTER_RAW_SIZE (regnum),
+			   frame->saved_regs[regnum]);
+	}
+      else
+	{
+	  /* Any other register is saved in memory, fetch it but cache
+             a local copy of its value.  */
+	  *optimizedp = 0;
+	  *lvalp = lval_memory;
+	  *addrp = frame->saved_regs[regnum];
+	  *realnump = -1;
+	  if (bufferp != NULL)
+	    {
+#if 1
+	      /* Save each register value, as it is read in, in a
+                 frame based cache.  */
+	      void **regs = (*cache);
+	      if (regs == NULL)
+		{
+		  int sizeof_cache = ((NUM_REGS + NUM_PSEUDO_REGS)
+				      * sizeof (void *));
+		  regs = frame_obstack_alloc (sizeof_cache);
+		  memset (regs, 0, sizeof_cache);
+		  (*cache) = regs;
+		}
+	      if (regs[regnum] == NULL)
+		{
+		  regs[regnum]
+		    = frame_obstack_alloc (REGISTER_RAW_SIZE (regnum));
+		  read_memory (frame->saved_regs[regnum], regs[regnum],
+			       REGISTER_RAW_SIZE (regnum));
+		}
+	      memcpy (bufferp, regs[regnum], REGISTER_RAW_SIZE (regnum));
+#else
+	      /* Read the value in from memory.  */
+	      read_memory (frame->saved_regs[regnum], bufferp,
+			   REGISTER_RAW_SIZE (regnum));
+#endif
+	    }
+	}
+      return;
+    }
+
+  /* No luck, assume this and the next frame have the same register
+     value.  If a value is needed, pass the request on down the chain;
+     otherwise just return an indication that the value is in the same
+     register as the next frame.  */
+  if (bufferp == NULL)
+    {
+      *optimizedp = 0;
+      *lvalp = lval_register;
+      *addrp = 0;
+      *realnump = regnum;
+    }
+  else
+    {
+      frame_register_unwind (frame->next, regnum, optimizedp, lvalp, addrp,
+			     realnump, bufferp);
+    }
 }
 
 /* Function: get_saved_register
@@ -1302,10 +1576,13 @@ generic_get_saved_register (char *raw_buffer, int *optimized, CORE_ADDR *addrp,
 	  if (lval)		/* found it in a CALL_DUMMY frame */
 	    *lval = not_lval;
 	  if (raw_buffer)
-	    memcpy (raw_buffer,
-		    generic_find_dummy_frame (frame->pc, frame->frame) +
-		    REGISTER_BYTE (regnum),
-		    REGISTER_RAW_SIZE (regnum));
+	    /* FIXME: cagney/2002-06-26: This should be via the
+	       gdbarch_register_read() method so that it, on the fly,
+	       constructs either a raw or pseudo register from the raw
+	       register cache.  */
+	    regcache_raw_read (generic_find_dummy_frame (frame->pc,
+							 frame->frame),
+			       regnum, raw_buffer);
 	  return;
 	}
 
@@ -1342,6 +1619,53 @@ generic_get_saved_register (char *raw_buffer, int *optimized, CORE_ADDR *addrp,
     *addrp = REGISTER_BYTE (regnum);
   if (raw_buffer)
     read_register_gen (regnum, raw_buffer);
+}
+
+/* Given PC representing the starting address of a function, and
+   LIM_PC which is the (sloppy) limit to which to scan when looking
+   for a prologue, attempt to further refine this limit by using
+   the line data in the symbol table.  If successful, a better guess
+   on where the prologue ends is returned, otherwise the previous
+   value of lim_pc is returned.  */
+CORE_ADDR
+refine_prologue_limit (CORE_ADDR pc, CORE_ADDR lim_pc, int max_skip_non_prologue_insns)
+{
+  struct symtab_and_line prologue_sal;
+
+  prologue_sal = find_pc_line (pc, 0);
+  if (prologue_sal.line != 0)
+    {
+      int i;
+      CORE_ADDR addr = prologue_sal.end;
+
+      /* Handle the case in which compiler's optimizer/scheduler
+         has moved instructions into the prologue.  We scan ahead
+	 in the function looking for address ranges whose corresponding
+	 line number is less than or equal to the first one that we
+	 found for the function.  (It can be less than when the
+	 scheduler puts a body instruction before the first prologue
+	 instruction.)  */
+      for (i = 2 * max_skip_non_prologue_insns; 
+           i > 0 && (lim_pc == 0 || addr < lim_pc);
+	   i--)
+        {
+	  struct symtab_and_line sal;
+
+	  sal = find_pc_line (addr, 0);
+	  if (sal.line == 0)
+	    break;
+	  if (sal.line <= prologue_sal.line 
+	      && sal.symtab == prologue_sal.symtab)
+	    {
+	      prologue_sal = sal;
+	    }
+	  addr = sal.end;
+	}
+
+      if (lim_pc == 0 || prologue_sal.end < lim_pc)
+	lim_pc = prologue_sal.end;
+    }
+  return lim_pc;
 }
 
 void

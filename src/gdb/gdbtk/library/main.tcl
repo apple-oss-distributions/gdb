@@ -1,5 +1,5 @@
 # GDBtk (Insight) entry point
-# Copyright 1997, 1998, 1999 Cygnus Solutions
+# Copyright 1997, 1998, 1999, 2002 Red Hat, Inc.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License (GPL) as published by
@@ -33,15 +33,23 @@
 # Note: GDBTK_LIBRARY will be set in tcl_findLibrary before main.tcl is called.
 
 set gdb_plugins ""
-
 if {[info exists auto_path]} {
   if {[lsearch -exact $auto_path $GDBTK_LIBRARY] < 0} {
     lappend auto_path $GDBTK_LIBRARY
   }
-  # In any case, add the plugins directory if it exists
-  if {[file exists [file join $GDBTK_LIBRARY plugins]]} {
-    set gdb_plugins [file join $GDBTK_LIBRARY plugins]
-    lappend auto_path $gdb_plugins
+
+  # Add default plugins directory, which will be [name of exe]/../../lib/insight1.0
+  set exename [info nameofexecutable]
+  set dir [file join [file dirname [file dirname $exename]] lib insight1.0]
+  if {[file exists $dir]} {
+    lappend gdb_plugins $dir
+    lappend auto_path $dir
+  }
+  # Add any user-specified plugins directories
+  if {[info exists env(INSIGHT_PLUGINS)]} {
+    set dirs [split $env(INSIGHT_PLUGINS) :]
+    lappend gdb_plugins $dirs
+    lappend auto_path $dirs
   }
 }
 
@@ -107,12 +115,6 @@ if {[info exists env(GDBTK_DEBUG)] && $env(GDBTK_DEBUG) != 0} {
   } else {
     ::debug::logfile "insight.log"
   }
-}
-
-if {$tcl_platform(platform) == "unix"} {
-#  tix resetoptions TK TK
-#  tk_setPalette tan
-  tix resetoptions TixGray [tix cget -fontset]
 }
 
 # For testing

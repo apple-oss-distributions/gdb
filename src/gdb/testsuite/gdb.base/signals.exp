@@ -29,6 +29,14 @@ if $tracelevel then {
 set prms_id 0
 set bug_id 0
 
+# APPLE LOCAL jmolenda
+# r. 3058314 gdb can't backtrace through a signal handler
+set r3058314 "(r. 3058314)"
+# r. 3061801 gdb doesn't deliver signals to inferior proccess
+set r3061801 "(r. 3061801)"
+# r. 3061878 gdb confused by signal & breakpoint happening simultaneously
+set r3061878 "(r. 3061878)"
+
 set testfile signals
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
@@ -50,6 +58,9 @@ if {$hp_cc_compiler} {
 
 proc signal_tests_1 {} {
     global gdb_prompt
+    global r3058314
+    global r3061878
+    global r3061801
     if [runto_main] then {
 	gdb_test "next" "signal \\(SIGUSR1.*" \
 		"next over signal (SIGALRM, handler)"
@@ -186,7 +197,7 @@ proc signal_tests_1 {} {
 	# it quite possibly would introduce new FAILs on some systems).
 	setup_xfail "i*86-*-bsdi2.0"
 	gdb_test "backtrace 10" "#0.*handler.*#1.*#2.*main.*" \
-	    "backtrace in signals_tests_1"
+	    "backtrace in signals_tests_1 $r3058314"
 
 	gdb_test "break func1" "Breakpoint \[0-9\]+ .*"
 	gdb_test "break func2" "Breakpoint \[0-9\]+ .*"
@@ -208,7 +219,7 @@ proc signal_tests_1 {} {
 		# The set trace flag in the restored context is causing
 		# the SIGTRAP, without stepping an instruction.
 
-		fail "continue to func1 (probably kernel bug)"
+		fail "continue to func1 (probably kernel bug) $r3061878"
 		gdb_test "continue" "Breakpoint.*func1.*" \
 		    "extra continue to func1"
 	    }
@@ -218,12 +229,12 @@ proc signal_tests_1 {} {
 		# context is causing the SIGTRAP, but after stepping one
 		# instruction, as expected.
 
-		fail "continue to func1 (probably kernel bug)"
+		fail "continue to func1 (probably kernel bug) $r3061878"
 		gdb_test "continue" "Breakpoint.*func1.*" \
 		    "extra continue to func1"
 	    }
-	    -re ".*$gdb_prompt $" { fail "continue to func1" }
-	    default { fail "continue to func1" }
+	    -re ".*$gdb_prompt $" { fail "continue to func1 $r3061878" }
+	    default { fail "continue to func1 $r3061878" }
 	}
 
 	setup_xfail "*-*-irix*"
@@ -236,8 +247,8 @@ proc signal_tests_1 {} {
 		fail "signal SIGUSR1"
 		gdb_test "continue" "Breakpoint.*handler.*" "pass it SIGUSR1"
 	    }
-	    -re ".*$gdb_prompt $" { fail "signal SIGUSR1" }
-	    default { fail "signal SIGUSR1" }
+	    -re ".*$gdb_prompt $" { fail "signal SIGUSR1 $r3061801" }
+	    default { fail "signal SIGUSR1 $r3061801" }
 	}
 
 	# Will tend to wrongly require an extra continue.

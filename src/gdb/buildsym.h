@@ -277,11 +277,11 @@ extern int hashname (char *name);
 
 extern void free_pending_blocks (void);
 
-/* FIXME: Note that this is used only in buildsym.c and dstread.c,
-   which should be fixed to not need direct access to
-   make_blockvector. */
+/* OBSOLETE FIXME: Note that this is used only in buildsym.c and dstread.c, */
+/* OBSOLETE which should be fixed to not need direct access to */
+/* OBSOLETE make_blockvector. */
 
-extern struct blockvector *make_blockvector (struct objfile *objfile);
+/* OBSOLETE extern struct blockvector *make_blockvector (struct objfile *objfile); */
 
 /* FIXME: Note that this is used only in buildsym.c and dstread.c,
    which should be fixed to not need direct access to
@@ -295,6 +295,10 @@ extern void record_debugformat (char *format);
 
 extern void merge_symbol_lists (struct pending **srclist,
 				struct pending **targetlist);
+
+/* The macro table for the compilation unit whose symbols we're
+   currently reading.  All the symtabs for this CU will point to this.  */
+EXTERN struct macro_table *pending_macros;
 
 #undef EXTERN
 

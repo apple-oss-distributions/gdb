@@ -150,7 +150,7 @@ s390_memset_extra_info (struct frame_extra_info *fextra_info)
 
 
 
-char *
+const char *
 s390_register_name (int reg_nr)
 {
   static char *register_names[] = {
@@ -955,8 +955,8 @@ s390_frame_saved_pc_nofix (struct frame_info *fi)
   if (fi->extra_info && fi->extra_info->saved_pc_valid)
     return fi->extra_info->saved_pc;
 
-  if (generic_find_dummy_frame (fi->pc, fi->frame))
-    return generic_read_register_dummy (fi->pc, fi->frame, S390_PC_REGNUM);
+  if (deprecated_generic_find_dummy_frame (fi->pc, fi->frame))
+    return deprecated_read_register_dummy (fi->pc, fi->frame, S390_PC_REGNUM);
 
   s390_frame_init_saved_regs (fi);
   if (fi->extra_info)
@@ -1009,11 +1009,9 @@ s390_frame_chain (struct frame_info *thisframe)
 {
   CORE_ADDR prev_fp = 0;
 
-  if (thisframe->prev && thisframe->prev->frame)
-    prev_fp = thisframe->prev->frame;
-  else if (generic_find_dummy_frame (thisframe->pc, thisframe->frame))
-    return generic_read_register_dummy (thisframe->pc, thisframe->frame,
-                                        S390_SP_REGNUM);
+  if (deprecated_generic_find_dummy_frame (thisframe->pc, thisframe->frame))
+    return deprecated_read_register_dummy (thisframe->pc, thisframe->frame,
+					   S390_SP_REGNUM);
   else
     {
       int sigreturn = 0;
@@ -1191,7 +1189,7 @@ gdb_print_insn_s390 (bfd_vma memaddr, disassemble_info * info)
 
 /* Not the most efficent code in the world */
 int
-s390_fp_regnum ()
+s390_fp_regnum (void)
 {
   int regno = S390_SP_REGNUM;
   struct frame_extra_info fextra_info;
@@ -1206,7 +1204,7 @@ s390_fp_regnum ()
 }
 
 CORE_ADDR
-s390_read_fp ()
+s390_read_fp (void)
 {
   return read_register (s390_fp_regnum ());
 }
@@ -1248,7 +1246,7 @@ s390_pop_frame_regular (struct frame_info *frame)
    Used in the contexts of the "return" command, and of 
    target function calls from the debugger.  */
 void
-s390_pop_frame ()
+s390_pop_frame (void)
 {
   /* This function checks for and handles generic dummy frames, and
      calls back to our function for ordinary frames.  */
@@ -1700,7 +1698,7 @@ s390_store_struct_return (CORE_ADDR addr, CORE_ADDR sp)
 
 
 
-static unsigned char *
+const static unsigned char *
 s390_breakpoint_from_pc (CORE_ADDR *pcptr, int *lenptr)
 {
   static unsigned char breakpoint[] = { 0x0, 0x1 };
@@ -1775,8 +1773,8 @@ s390_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   /* We can't do this */
   set_gdbarch_frame_num_args (gdbarch, frame_num_args_unknown);
   set_gdbarch_store_struct_return (gdbarch, s390_store_struct_return);
-  set_gdbarch_extract_return_value (gdbarch, s390_extract_return_value);
-  set_gdbarch_store_return_value (gdbarch, s390_store_return_value);
+  set_gdbarch_deprecated_extract_return_value (gdbarch, s390_extract_return_value);
+  set_gdbarch_deprecated_store_return_value (gdbarch, s390_store_return_value);
   /* Amount PC must be decremented by after a breakpoint.
      This is often the number of bytes in BREAKPOINT
      but not always.  */
@@ -1813,14 +1811,14 @@ s390_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_num_regs (gdbarch, S390_NUM_REGS);
   set_gdbarch_cannot_fetch_register (gdbarch, s390_cannot_fetch_register);
   set_gdbarch_cannot_store_register (gdbarch, s390_cannot_fetch_register);
-  set_gdbarch_get_saved_register (gdbarch, generic_get_saved_register);
+  set_gdbarch_get_saved_register (gdbarch, generic_unwind_get_saved_register);
   set_gdbarch_use_struct_convention (gdbarch, s390_use_struct_convention);
   set_gdbarch_frame_chain_valid (gdbarch, func_frame_chain_valid);
   set_gdbarch_register_name (gdbarch, s390_register_name);
   set_gdbarch_stab_reg_to_regnum (gdbarch, s390_stab_reg_to_regnum);
   set_gdbarch_dwarf_reg_to_regnum (gdbarch, s390_stab_reg_to_regnum);
   set_gdbarch_dwarf2_reg_to_regnum (gdbarch, s390_stab_reg_to_regnum);
-  set_gdbarch_extract_struct_value_address
+  set_gdbarch_deprecated_extract_struct_value_address
     (gdbarch, generic_cannot_extract_struct_value_address);
 
   /* Parameters for inferior function calls.  */
@@ -1876,7 +1874,7 @@ s390_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
 
 void
-_initialize_s390_tdep ()
+_initialize_s390_tdep (void)
 {
 
   /* Hook us into the gdbarch mechanism.  */

@@ -126,7 +126,8 @@ body SrcWin::_build_win {} {
     set _status [conAdd status -resizable 0]
     set _statusframe [frame $_status]
     set _status $_statusframe.con
-    label $_status -relief sunken -bd 3 -font global/status -height 1
+    label $_status -relief sunken -bd 3 -font global/status -height 1 \
+      -anchor w
 
     # add download progress meter
     canvas $_statusframe.progress -relief sunken -borderwidth 2 \
@@ -388,7 +389,7 @@ body SrcWin::fillFuncCB {name} {
     set maxlen 10
     if {[catch {gdb_listfuncs $name} listfuncs]} {
       tk_messageBox -icon error -default ok \
-	-title "GDB" -type ok -modal system \
+	-title "GDB" -type ok \
 	-message "This file can not be found or does not contain\ndebugging information."
       _set_name ""
       return

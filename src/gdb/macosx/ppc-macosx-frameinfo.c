@@ -35,14 +35,12 @@
 #include "objfiles.h"
 #include "command.h"
 
-/* external definitions (should be provided by gdb) */
-
-extern struct obstack frame_cache_obstack;
-extern struct frame_info *parse_frame_specification PARAMS ((char *frame_exp));
-
-/* local definitions */
-
 #define	DEFAULT_LR_SAVE 8
+
+/* Limit the number of skipped non-prologue instructions, as the
+   examining of the prologue is expensive.  */
+
+static int max_skip_non_prologue_insns = 10;
 
 /* utility functions */
 
@@ -60,11 +58,8 @@ inline int GET_SRC_REG (long x)
   return (x >> 21) & 0x1f;
 }
 
-/* function definitions */
-
 void
-ppc_print_boundaries (bounds)
-     ppc_function_boundaries *bounds;
+ppc_print_boundaries (ppc_function_boundaries *bounds)
 {
   if (bounds->prologue_start != INVALID_ADDRESS) {
     printf_filtered 
@@ -89,8 +84,7 @@ ppc_print_boundaries (bounds)
 }
 
 void
-ppc_print_properties (props)
-     ppc_function_properties *props;
+ppc_print_properties (ppc_function_properties *props)
 {
   if (props->frameless) {
     printf_filtered (" No stack frame has been allocated.\n");
@@ -158,22 +152,23 @@ struct read_memory_unsigned_int_args
 int wrap_read_memory_unsigned_integer (void *in_args)
 {
   struct read_memory_unsigned_int_args *args 
-          = (struct read_memory_unsigned_int_args *) in_args;
+    = (struct read_memory_unsigned_int_args *) in_args;
           
   args->ret_val = read_memory_unsigned_integer (args->addr, args->len);
   return 1;
 }
 
 int
-safe_read_memory_unsigned_integer (CORE_ADDR addr, int len, unsigned long *val)
+safe_read_memory_unsigned_integer (CORE_ADDR addr, int len,
+				   unsigned long *val)
 {
     struct read_memory_unsigned_int_args args;
     
     args.addr = addr;
     args.len = len;
     
-    if (!catch_errors ((catch_errors_ftype *) wrap_read_memory_unsigned_integer,
-      &args,"", RETURN_MASK_ERROR))
+    if (! catch_errors (wrap_read_memory_unsigned_integer,
+			&args,"", RETURN_MASK_ERROR))
       {
           return 0;
       }
@@ -181,14 +176,12 @@ safe_read_memory_unsigned_integer (CORE_ADDR addr, int len, unsigned long *val)
     return 1;  
 }
 
-/* return pc value after skipping a function prologue and also return
+/* Return $pc value after skipping a function prologue and also return
    information about a function frame. */
 
 CORE_ADDR
-ppc_parse_instructions (start, end, props)
-     CORE_ADDR start;
-     CORE_ADDR end;
-     ppc_function_properties *props;
+ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
+			ppc_function_properties *props)
 {
   CORE_ADDR pc = start;
   CORE_ADDR last_recognized_insn = start;
@@ -399,7 +392,6 @@ ppc_parse_instructions (start, end, props)
            stack because we are a leaf function.  We are now
            moving it back to the lr, so the lr is again valid */
 
-        int target_reg = (op & 0x03e00000) >> 21;
         if (!props->lr_saved 
             && (props->lr_reg > -1))
           {
@@ -636,8 +628,7 @@ ppc_parse_instructions (start, end, props)
 }
 
 void
-ppc_clear_function_boundaries_request (request)
-     ppc_function_boundaries_request *request;
+ppc_clear_function_boundaries_request (ppc_function_boundaries_request *request)
 {
   request->min_start = INVALID_ADDRESS;
   request->max_end = INVALID_ADDRESS;
@@ -651,8 +642,7 @@ ppc_clear_function_boundaries_request (request)
 }
 
 void
-ppc_clear_function_boundaries (boundaries)
-     ppc_function_boundaries *boundaries;
+ppc_clear_function_boundaries (ppc_function_boundaries *boundaries)
 {
   boundaries->prologue_start = INVALID_ADDRESS;
   boundaries->body_start = INVALID_ADDRESS;
@@ -661,8 +651,7 @@ ppc_clear_function_boundaries (boundaries)
 }
 
 void
-ppc_clear_function_properties (properties)
-     ppc_function_properties *properties;
+ppc_clear_function_properties (ppc_function_properties *properties)
 {
   properties->offset = -1;
 
@@ -689,43 +678,56 @@ ppc_clear_function_properties (properties)
   properties->pic_base_reg = 0;
 }
 
-
 int
-ppc_find_function_boundaries (request, reply)
-     ppc_function_boundaries_request *request;
-     ppc_function_boundaries *reply;
+ppc_find_function_boundaries (ppc_function_boundaries_request *request,
+			      ppc_function_boundaries *reply)
 {
   ppc_function_properties props;
+  CORE_ADDR lim_pc;
 
   CHECK_FATAL (request != NULL);
   CHECK_FATAL (reply != NULL);
 
-  if (request->prologue_start != INVALID_ADDRESS) {
-    reply->prologue_start = request->prologue_start;
-  } else if (request->contains_pc != INVALID_ADDRESS) {
-    reply->prologue_start = get_pc_function_start (request->contains_pc);
-    if (reply->prologue_start == 0) { return -1; }
-  }
+  if (request->prologue_start != INVALID_ADDRESS)
+    {
+      reply->prologue_start = request->prologue_start;
+    }
+  else if (request->contains_pc != INVALID_ADDRESS)
+    {
+      reply->prologue_start = get_pc_function_start (request->contains_pc);
+      if (reply->prologue_start == 0)
+	return -1;
+    }
 
   CHECK_FATAL (reply->prologue_start != INVALID_ADDRESS);
 
-  if ((reply->prologue_start % 4) != 0) { return -1; }
-  reply->body_start = ppc_parse_instructions (reply->prologue_start, 
-					      INVALID_ADDRESS, &props);
+  if ((reply->prologue_start % 4) != 0)
+    return -1;
+
+  /* Use the line number information to limit the prologue search if
+     it is available */
+
+  lim_pc = refine_prologue_limit
+    (reply->prologue_start, 0, max_skip_non_prologue_insns);
+
+  if (lim_pc == 0)
+    lim_pc = INVALID_ADDRESS;
+  
+  reply->body_start = ppc_parse_instructions
+    (reply->prologue_start, lim_pc, &props);
   return 0;
 }
 
 int
-ppc_frame_cache_boundaries (frame, retbounds)
-     struct frame_info *frame;
-     struct ppc_function_boundaries *retbounds;
+ppc_frame_cache_boundaries (struct frame_info *frame, 
+			    struct ppc_function_boundaries *retbounds)
 {
   if (!frame->extra_info->bounds) {
 
     if (ppc_is_dummy_frame (frame)) {
 
       frame->extra_info->bounds = (struct ppc_function_boundaries *)
-	obstack_alloc (&frame_cache_obstack, sizeof (ppc_function_boundaries));
+	frame_obstack_alloc (sizeof (ppc_function_boundaries));
       CHECK_FATAL (frame->extra_info->bounds != NULL);
       
       frame->extra_info->bounds->prologue_start = INVALID_ADDRESS;
@@ -742,19 +744,21 @@ ppc_frame_cache_boundaries (frame, retbounds)
       ppc_clear_function_boundaries (&lbounds);
       ppc_clear_function_boundaries_request (&request);
 
-      request.contains_pc = frame->pc;
+      request.contains_pc = frame_address_in_block (frame);
       ret = ppc_find_function_boundaries (&request, &lbounds);
       if (ret != 0) { return ret; }
     
       frame->extra_info->bounds = (struct ppc_function_boundaries *)
-	obstack_alloc (&frame_cache_obstack, sizeof (ppc_function_boundaries));
+	frame_obstack_alloc (sizeof (ppc_function_boundaries));
       CHECK_FATAL (frame->extra_info->bounds != NULL);
-      memcpy (frame->extra_info->bounds, &lbounds, sizeof (ppc_function_boundaries));
+      memcpy (frame->extra_info->bounds, &lbounds,
+	      sizeof (ppc_function_boundaries));
     }
   }
 
   if (retbounds != NULL) { 
-    memcpy (retbounds, frame->extra_info->bounds, sizeof (ppc_function_boundaries));
+    memcpy (retbounds, frame->extra_info->bounds,
+	    sizeof (ppc_function_boundaries));
   }
 
   return 0;
@@ -769,9 +773,8 @@ ppc_frame_cache_boundaries (frame, retbounds)
  * Returns: 0 on success */
 
 int
-ppc_frame_cache_properties (frame, retprops)
-     struct frame_info *frame;
-     struct ppc_function_properties *retprops;
+ppc_frame_cache_properties (struct frame_info *frame,
+			    struct ppc_function_properties *retprops)
 {
   /* FIXME: I have seen a couple of cases where this function gets
      called with a frame whose extra_info has not been set yet.  It is
@@ -780,24 +783,21 @@ ppc_frame_cache_properties (frame, retprops)
      but at some point it might be good to look at this more
      closely. */
 
-  if (!frame->extra_info)
-    {
-      return 1;
-    }
+  if (! frame->extra_info)
+    return 1;
 
   if (! frame->extra_info->props) 
     {
-      
       if (ppc_is_dummy_frame (frame)) 
 	{
-	  
 	  ppc_function_properties *props;
 	  
 	  frame->extra_info->props = (struct ppc_function_properties *)
-	    obstack_alloc (&frame_cache_obstack, sizeof (ppc_function_properties));
+	    frame_obstack_alloc (sizeof (ppc_function_properties));
 	  CHECK_FATAL (frame->extra_info->props != NULL);
-	  ppc_clear_function_properties (frame->extra_info->props);
 	  props = frame->extra_info->props;
+
+	  ppc_clear_function_properties (props);
 	  
 	  props->offset = 0;
 	  props->saved_gpr = -1;
@@ -812,67 +812,77 @@ ppc_frame_cache_properties (frame, retprops)
 	  props->cr_saved = 0;
 	  props->cr_offset = -1;
 	  props->minimal_toc_loaded = 0;
-	  
 	} 
       else 
 	{
-	  
 	  int ret;
-	  ppc_function_properties lprops;
-	  
-	  ppc_clear_function_properties (&lprops);
+	  ppc_function_properties *props;
+	  ppc_function_boundaries *bounds;
 	  
 	  ret = ppc_frame_cache_boundaries (frame, NULL);
 	  if (ret != 0) { return ret; }
+	  bounds = frame->extra_info->bounds;
 	  
-	  if ((frame->extra_info->bounds->prologue_start % 4) != 0) { return -1; }
-	  if ((frame->pc % 4) != 0) { return -1; }
-	  ppc_parse_instructions (frame->extra_info->bounds->prologue_start, 
-				  frame->extra_info->bounds->function_end, &lprops);
+	  if ((bounds->prologue_start % 4) != 0)
+	    return -1;
+	  if ((frame->pc % 4) != 0)
+	    return -1;
+
 	  frame->extra_info->props = (struct ppc_function_properties *)
-	    obstack_alloc (&frame_cache_obstack, sizeof (ppc_function_properties));
+	    frame_obstack_alloc (sizeof (ppc_function_properties));
 	  CHECK_FATAL (frame->extra_info->props != NULL);
+	  props = frame->extra_info->props;
+	  ppc_clear_function_properties (props);
+
+	  /* By the time we get here, ppc_frame_cache_boundaries will
+	     have already called ppc_parse_instructions to find the
+	     body start.  If that is true, use the body start it found
+	     to limit the search. */
+
+	  ppc_parse_instructions (bounds->prologue_start, 
+				  bounds->function_end, props);
 	  
 	  /* ppc_parse_instructions sometimes gets the stored pc location
-	     wrong.  However, we KNOW that for all frames but frame 0
+	     wrong.  However, we know that for all frames but frame 0
 	     the pc is on the stack.  So force that here. */
 	  
-	  if (frame->next != NULL && !lprops.lr_saved)
+	  if (frame->next != NULL)
 	    {
-	      lprops.lr_offset = 8;
-	      /* This is bogus, just needs to be BEFORE where we are
-		 to get the rest of the code right. */
-	      lprops.lr_saved = frame->pc - 8;
-	      lprops.lr_reg = LR_REGNUM;
-	      lprops.lr_invalid = 0;
+	      props->lr_offset = 8;
+	      /* This is a bogus value, but we need to tell it some value
+		 before the current $pc for the rest of the code to
+		 work properly. */
+	      props->lr_saved = 1;
+	      props->lr_reg = LR_REGNUM;
+	      props->lr_invalid = 0;
 	      ppc_debug ("ppc_frame_cache_properties: %s\n",
-			 "thought a non-leaf frame didn't save the lr, correcting...");
+			 "a non-leaf frame appeared not to save $lr;"
+			 "overriding and fetching from link area");
 	    }
-	  
-	  memcpy (frame->extra_info->props, &lprops,
-		  sizeof (ppc_function_properties));
 	}
     } 
-  else if (frame->next != NULL && !frame->extra_info->props->lr_saved)
+  else if (frame->next != NULL)
     {
       /* We tried to correct this error from ppc_parse_instructions above,
 	 but the frame hadn't been fully set yet.  So we will do it again
-	 here... */
+	 here. */
       ppc_function_properties *props = frame->extra_info->props;
       
       props->lr_offset = 8;
-      /* This is bogus, just needs to be BEFORE where we are
-	 to get the rest of the code right. */
-      props->lr_saved = frame->pc - 8;
+      /* This is a bogus value, but we need to tell it some value
+	 before the current $pc for the rest of the code to work
+	 properly. */
+      props->lr_saved = 1;
       props->lr_reg = LR_REGNUM;
       props->lr_invalid = 0;
       ppc_debug ("ppc_frame_cache_properties: %s\n",
-		 "thought a non-leaf frame didn't save the lr, correcting...");
-      
+		 "a non-leaf frame appeared not to save $lr;"
+		 "overriding and fetching from link area");
     }
 
   if (retprops != NULL) {
-    memcpy (retprops, frame->extra_info->props, sizeof (ppc_function_properties));
+    memcpy (retprops, frame->extra_info->props,
+	    sizeof (ppc_function_properties));
   }
   
   return 0;    

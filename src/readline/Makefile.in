@@ -267,7 +267,7 @@ FRAMEWORK_SUFFIX =
 FRAMEWORK_VERSION_SUFFIX =
 FRAMEWORK_VERSION = A
 FRAMEWORK_OFILES = $(OBJECTS)
-FRAMEWORK_LIB = -F$(BINUTILS_FRAMEWORKS) -framework liberty -framework mmalloc -framework electric-fence $(SYSTEM_FRAMEWORK)
+FRAMEWORK_LIB = -F$(BINUTILS_FRAMEWORKS) -framework liberty -framework mmalloc $(SYSTEM_FRAMEWORK)
 
 stamp-framework-headers:
 	$(RM) -f stamp-framework stamp-framework-headers

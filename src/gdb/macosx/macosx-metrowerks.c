@@ -21,7 +21,6 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "ppc-macosx-regs.h"
 #include "macosx-nat-inferior.h"
 #include "macosx-nat-cfm.h"
 #include "macosx-nat-dyld-info.h"

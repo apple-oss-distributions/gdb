@@ -1,45 +1,21 @@
-dnl aclocal.m4 generated automatically by aclocal 1.4-p4
+# aclocal.m4 generated automatically by aclocal 1.6.1 -*- Autoconf -*-
 
-dnl Copyright (C) 1994, 1995-8, 1999 Free Software Foundation, Inc.
-dnl This file is free software; the Free Software Foundation
-dnl gives unlimited permission to copy and/or distribute it,
-dnl with or without modifications, as long as this notice is preserved.
+# Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002
+# Free Software Foundation, Inc.
+# This file is free software; the Free Software Foundation
+# gives unlimited permission to copy and/or distribute it,
+# with or without modifications, as long as this notice is preserved.
 
-dnl This program is distributed in the hope that it will be useful,
-dnl but WITHOUT ANY WARRANTY, to the extent permitted by law; without
-dnl even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-dnl PARTICULAR PURPOSE.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY, to the extent permitted by law; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE.
 
 dnl written by Rob Savoye <rob@cygnus.com> for Cygnus Support
 dnl major rewriting for Tcl 7.5 by Don Libes <libes@nist.gov>
 
-dnl See whether we need a declaration for a function.
-AC_DEFUN(BFD_NEED_DECLARATION,
-[AC_MSG_CHECKING([whether $1 must be declared])
-AC_CACHE_VAL(bfd_cv_decl_needed_$1,
-[AC_TRY_COMPILE([
-#include <stdio.h>
-#ifdef HAVE_STRING_H
-#include <string.h>
-#else
-#ifdef HAVE_STRINGS_H
-#include <strings.h>
-#endif
-#endif
-#ifdef HAVE_STDLIB_H
-#include <stdlib.h>
-#endif
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif],
-[char *(*pfn) = (char *(*)) $1],
-bfd_cv_decl_needed_$1=no, bfd_cv_decl_needed_$1=yes)])
-AC_MSG_RESULT($bfd_cv_decl_needed_$1)
-if test $bfd_cv_decl_needed_$1 = yes; then
-  bfd_tr_decl=NEED_DECLARATION_`echo $1 | tr 'abcdefghijklmnopqrstuvwxyz' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'`
-  AC_DEFINE_UNQUOTED($bfd_tr_decl)
-fi
-])dnl
+dnl gdb/configure.in uses BFD_NEED_DECLARATION, so get its definition.
+sinclude(../bfd/acinclude.m4)
 
 dnl This gets the standard macros, like the TCL, TK, etc ones.
 sinclude(../config/acinclude.m4)
@@ -904,57 +880,91 @@ ifelse(yes,no,[
 AC_DEFUN([CY_GNU_GETTEXT],)
 ])
 
-# Add --enable-maintainer-mode option to configure.
-# From Jim Meyering
+dnl From Bruno Haible.
 
-# serial 1
+AC_DEFUN([AM_ICONV],
+[
+  dnl Some systems have iconv in libc, some have it in libiconv (OSF/1 and
+  dnl those with the standalone portable GNU libiconv installed).
 
-AC_DEFUN(AM_MAINTAINER_MODE,
-[AC_MSG_CHECKING([whether to enable maintainer-specific portions of Makefiles])
-  dnl maintainer-mode is disabled by default
-  AC_ARG_ENABLE(maintainer-mode,
-[  --enable-maintainer-mode enable make rules and dependencies not useful
-                          (and sometimes confusing) to the casual installer],
-      USE_MAINTAINER_MODE=$enableval,
-      USE_MAINTAINER_MODE=no)
-  AC_MSG_RESULT($USE_MAINTAINER_MODE)
-  AM_CONDITIONAL(MAINTAINER_MODE, test $USE_MAINTAINER_MODE = yes)
-  MAINT=$MAINTAINER_MODE_TRUE
-  AC_SUBST(MAINT)dnl
-]
-)
+  AC_ARG_WITH([libiconv-prefix],
+[  --with-libiconv-prefix=DIR  search for libiconv in DIR/include and DIR/lib], [
+    for dir in `echo "$withval" | tr : ' '`; do
+      if test -d $dir/include; then CPPFLAGS="$CPPFLAGS -I$dir/include"; fi
+      if test -d $dir/lib; then LDFLAGS="$LDFLAGS -L$dir/lib"; fi
+    done
+   ])
 
-# Define a conditional.
+  AC_CACHE_CHECK(for iconv, am_cv_func_iconv, [
+    am_cv_func_iconv="no, consider installing GNU libiconv"
+    am_cv_lib_iconv=no
+    AC_TRY_LINK([#include <stdlib.h>
+#include <iconv.h>],
+      [iconv_t cd = iconv_open("","");
+       iconv(cd,NULL,NULL,NULL,NULL);
+       iconv_close(cd);],
+      am_cv_func_iconv=yes)
+    if test "$am_cv_func_iconv" != yes; then
+      am_save_LIBS="$LIBS"
+      LIBS="$LIBS -liconv"
+      AC_TRY_LINK([#include <stdlib.h>
+#include <iconv.h>],
+        [iconv_t cd = iconv_open("","");
+         iconv(cd,NULL,NULL,NULL,NULL);
+         iconv_close(cd);],
+        am_cv_lib_iconv=yes
+        am_cv_func_iconv=yes)
+      LIBS="$am_save_LIBS"
+    fi
+  ])
+  if test "$am_cv_func_iconv" = yes; then
+    AC_DEFINE(HAVE_ICONV, 1, [Define if you have the iconv() function.])
+    AC_MSG_CHECKING([for iconv declaration])
+    AC_CACHE_VAL(am_cv_proto_iconv, [
+      AC_TRY_COMPILE([
+#include <stdlib.h>
+#include <iconv.h>
+extern
+#ifdef __cplusplus
+"C"
+#endif
+#if defined(__STDC__) || defined(__cplusplus)
+size_t iconv (iconv_t cd, char * *inbuf, size_t *inbytesleft, char * *outbuf, size_t *outbytesleft);
+#else
+size_t iconv();
+#endif
+], [], am_cv_proto_iconv_arg1="", am_cv_proto_iconv_arg1="const")
+      am_cv_proto_iconv="extern size_t iconv (iconv_t cd, $am_cv_proto_iconv_arg1 char * *inbuf, size_t *inbytesleft, char * *outbuf, size_t *outbytesleft);"])
+    am_cv_proto_iconv=`echo "[$]am_cv_proto_iconv" | tr -s ' ' | sed -e 's/( /(/'`
+    AC_MSG_RESULT([$]{ac_t:-
+         }[$]am_cv_proto_iconv)
+    AC_DEFINE_UNQUOTED(ICONV_CONST, $am_cv_proto_iconv_arg1,
+      [Define as const if the declaration of iconv() needs const.])
+  fi
+  LIBICONV=
+  if test "$am_cv_lib_iconv" = yes; then
+    LIBICONV="-liconv"
+  fi
+  AC_SUBST(LIBICONV)
+])
 
-AC_DEFUN(AM_CONDITIONAL,
-[AC_SUBST($1_TRUE)
-AC_SUBST($1_FALSE)
-if $2; then
-  $1_TRUE=
-  $1_FALSE='#'
-else
-  $1_TRUE='#'
-  $1_FALSE=
-fi])
 
-#serial 1
-# This test replaces the one in autoconf.
-# Currently this macro should have the same name as the autoconf macro
-# because gettext's gettext.m4 (distributed in the automake package)
-# still uses it.  Otherwise, the use in gettext.m4 makes autoheader
-# give these diagnostics:
-#   configure.in:556: AC_TRY_COMPILE was called before AC_ISC_POSIX
-#   configure.in:556: AC_TRY_RUN was called before AC_ISC_POSIX
+# Copyright 1996, 1997, 1999, 2000, 2001 Free Software Foundation, Inc.
 
-undefine([AC_ISC_POSIX])
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
 
-AC_DEFUN([AC_ISC_POSIX],
-  [
-    dnl This test replaces the obsolescent AC_ISC_POSIX kludge.
-    AC_CHECK_LIB(cposix, strerror, [LIBS="$LIBS -lcposix"])
-  ]
-)
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+# 02111-1307, USA.
 
 # serial 1
 
@@ -973,7 +983,7 @@ AC_DEFUN([AC_ISC_POSIX],
 # program @code{ansi2knr}, which comes with Ghostscript.
 # @end defmac
 
-AC_DEFUN(AM_PROG_CC_STDC,
+AC_DEFUN([AM_PROG_CC_STDC],
 [AC_REQUIRE([AC_PROG_CC])
 AC_BEFORE([$0], [AC_C_INLINE])
 AC_BEFORE([$0], [AC_C_CONST])
@@ -983,7 +993,7 @@ dnl like #elif.
 dnl FIXME: can't do this because then AC_AIX won't work due to a
 dnl circular dependency.
 dnl AC_BEFORE([$0], [AC_PROG_CPP])
-AC_MSG_CHECKING(for ${CC-cc} option to accept ANSI C)
+AC_MSG_CHECKING([for ${CC-cc} option to accept ANSI C])
 AC_CACHE_VAL(am_cv_prog_cc_stdc,
 [am_cv_prog_cc_stdc=no
 ac_save_CC="$CC"
@@ -991,9 +1001,10 @@ ac_save_CC="$CC"
 # breaks some systems' header files.
 # AIX			-qlanglvl=ansi
 # Ultrix and OSF/1	-std1
-# HP-UX			-Aa -D_HPUX_SOURCE
+# HP-UX 10.20 and later	-Ae
+# HP-UX older versions	-Aa -D_HPUX_SOURCE
 # SVR4			-Xc -D__EXTENSIONS__
-for ac_arg in "" -qlanglvl=ansi -std1 "-Aa -D_HPUX_SOURCE" "-Xc -D__EXTENSIONS__"
+for ac_arg in "" -qlanglvl=ansi -std1 -Ae "-Aa -D_HPUX_SOURCE" "-Xc -D__EXTENSIONS__"
 do
   CC="$ac_save_CC $ac_arg"
   AC_TRY_COMPILE(
@@ -1035,7 +1046,7 @@ CC="$ac_save_CC"
 if test -z "$am_cv_prog_cc_stdc"; then
   AC_MSG_RESULT([none needed])
 else
-  AC_MSG_RESULT($am_cv_prog_cc_stdc)
+  AC_MSG_RESULT([$am_cv_prog_cc_stdc])
 fi
 case "x$am_cv_prog_cc_stdc" in
   x|xno) ;;
@@ -1043,114 +1054,84 @@ case "x$am_cv_prog_cc_stdc" in
 esac
 ])
 
-dnl See whether we need to use fopen-bin.h rather than fopen-same.h.
-AC_DEFUN(BFD_BINARY_FOPEN,
-[AC_REQUIRE([AC_CANONICAL_SYSTEM])
-case "${host}" in
-changequote(,)dnl
-*-*-msdos* | *-*-go32* | *-*-mingw32* | *-*-cygwin* | *-*-windows* | *-*pdo-winnt*)
-changequote([,])dnl
-  AC_DEFINE(USE_BINARY_FOPEN, 1, [Use b modifier when opening binary files?]) ;;
-esac])dnl
+# Add --enable-maintainer-mode option to configure.
+# From Jim Meyering
 
-dnl Get a default for CC_FOR_BUILD to put into Makefile.
-AC_DEFUN(BFD_CC_FOR_BUILD,
-[# Put a plausible default for CC_FOR_BUILD in Makefile.
-if test -z "$CC_FOR_BUILD"; then
-  if test "x$cross_compiling" = "xno"; then
-    CC_FOR_BUILD='$(CC)'
-  else
-    CC_FOR_BUILD=gcc
-  fi
-fi
-AC_SUBST(CC_FOR_BUILD)
-# Also set EXEEXT_FOR_BUILD.
-if test "x$cross_compiling" = "xno"; then
-  EXEEXT_FOR_BUILD='$(EXEEXT)'
+# Copyright 1996, 1998, 2000, 2001 Free Software Foundation, Inc.
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+# 02111-1307, USA.
+
+# serial 1
+
+AC_DEFUN([AM_MAINTAINER_MODE],
+[AC_MSG_CHECKING([whether to enable maintainer-specific portions of Makefiles])
+  dnl maintainer-mode is disabled by default
+  AC_ARG_ENABLE(maintainer-mode,
+[  --enable-maintainer-mode enable make rules and dependencies not useful
+                          (and sometimes confusing) to the casual installer],
+      USE_MAINTAINER_MODE=$enableval,
+      USE_MAINTAINER_MODE=no)
+  AC_MSG_RESULT([$USE_MAINTAINER_MODE])
+  AM_CONDITIONAL(MAINTAINER_MODE, [test $USE_MAINTAINER_MODE = yes])
+  MAINT=$MAINTAINER_MODE_TRUE
+  AC_SUBST(MAINT)dnl
+]
+)
+
+# AM_CONDITIONAL                                              -*- Autoconf -*-
+
+# Copyright 1997, 2000, 2001 Free Software Foundation, Inc.
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+# 02111-1307, USA.
+
+# serial 5
+
+AC_PREREQ(2.52)
+
+# AM_CONDITIONAL(NAME, SHELL-CONDITION)
+# -------------------------------------
+# Define a conditional.
+AC_DEFUN([AM_CONDITIONAL],
+[ifelse([$1], [TRUE],  [AC_FATAL([$0: invalid condition: $1])],
+        [$1], [FALSE], [AC_FATAL([$0: invalid condition: $1])])dnl
+AC_SUBST([$1_TRUE])
+AC_SUBST([$1_FALSE])
+if $2; then
+  $1_TRUE=
+  $1_FALSE='#'
 else
-  AC_CACHE_CHECK([for build system executable suffix], bfd_cv_build_exeext,
-    [rm -f conftest*
-     echo 'int main () { return 0; }' > conftest.c
-     bfd_cv_build_exeext=
-     ${CC_FOR_BUILD} -o conftest conftest.c 1>&5 2>&5
-     for file in conftest.*; do
-       case $file in
-       *.c | *.o | *.obj | *.ilk | *.pdb) ;;
-       *) bfd_cv_build_exeext=`echo $file | sed -e s/conftest//` ;;
-       esac
-     done
-     rm -f conftest*
-     test x"${bfd_cv_build_exeext}" = x && bfd_cv_build_exeext=no])
-  EXEEXT_FOR_BUILD=""
-  test x"${bfd_cv_build_exeext}" != xno && EXEEXT_FOR_BUILD=${bfd_cv_build_exeext}
+  $1_TRUE='#'
+  $1_FALSE=
 fi
-AC_SUBST(EXEEXT_FOR_BUILD)])dnl
-
-dnl See whether we need a declaration for a function.
-AC_DEFUN(BFD_NEED_DECLARATION,
-[AC_MSG_CHECKING([whether $1 must be declared])
-AC_CACHE_VAL(bfd_cv_decl_needed_$1,
-[AC_TRY_COMPILE([
-#include <stdio.h>
-#ifdef HAVE_STRING_H
-#include <string.h>
-#else
-#ifdef HAVE_STRINGS_H
-#include <strings.h>
-#endif
-#endif
-#ifdef HAVE_STDLIB_H
-#include <stdlib.h>
-#endif
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif],
-[char *(*pfn) = (char *(*)) $1],
-bfd_cv_decl_needed_$1=no, bfd_cv_decl_needed_$1=yes)])
-AC_MSG_RESULT($bfd_cv_decl_needed_$1)
-if test $bfd_cv_decl_needed_$1 = yes; then
-  AC_DEFINE([NEED_DECLARATION_]translit($1, [a-z], [A-Z]), 1,
-	    [Define if $1 is not declared in system header files.])
-fi
-])dnl
-
-dnl Check for existence of a type $1 in sys/procfs.h
-
-AC_DEFUN(BFD_HAVE_SYS_PROCFS_TYPE,
-[AC_MSG_CHECKING([for $1 in sys/procfs.h])
- AC_CACHE_VAL(bfd_cv_have_sys_procfs_type_$1,
-   [AC_TRY_COMPILE([
-#define _SYSCALL32
-#include <sys/procfs.h>],
-      [$1 avar],
-      bfd_cv_have_sys_procfs_type_$1=yes,
-      bfd_cv_have_sys_procfs_type_$1=no
-   )])
- if test $bfd_cv_have_sys_procfs_type_$1 = yes; then
-   AC_DEFINE([HAVE_]translit($1, [a-z], [A-Z]), 1,
-	     [Define if <sys/procfs.h> has $1.])
- fi
- AC_MSG_RESULT($bfd_cv_have_sys_procfs_type_$1)
-])
-
-
-dnl Check for existence of member $2 in type $1 in sys/procfs.h
-
-AC_DEFUN(BFD_HAVE_SYS_PROCFS_TYPE_MEMBER,
-[AC_MSG_CHECKING([for $1.$2 in sys/procfs.h])
- AC_CACHE_VAL(bfd_cv_have_sys_procfs_type_member_$1_$2,
-   [AC_TRY_COMPILE([
-#define _SYSCALL32
-#include <sys/procfs.h>],
-      [$1 avar; void* aref = (void*) &avar.$2],
-      bfd_cv_have_sys_procfs_type_member_$1_$2=yes,
-      bfd_cv_have_sys_procfs_type_member_$1_$2=no
-   )])
- if test $bfd_cv_have_sys_procfs_type_member_$1_$2 = yes; then
-   AC_DEFINE([HAVE_]translit($1, [a-z], [A-Z])[_]translit($2, [a-z], [A-Z]), 1,
-	     [Define if <sys/procfs.h> has $1.$2.])
- fi
- AC_MSG_RESULT($bfd_cv_have_sys_procfs_type_member_$1_$2)
-])
-
+AC_CONFIG_COMMANDS_PRE(
+[if test -z "${$1_TRUE}" && test -z "${$1_FALSE}"; then
+  AC_MSG_ERROR([conditional \"$1\" was never defined.
+Usually this means the macro was only invoked conditionally.])
+fi])])
 

@@ -88,7 +88,7 @@ int inhibit_gdbinit = 0;
 /* If nonzero, and GDB has been configured to be able to use windows,
    attempt to open them upon startup.  */
 
-int use_windows = 1;
+int use_windows = 0;
 
 extern char lang_frame_mismatch_warn[];		/* language.c */
 
@@ -755,12 +755,12 @@ execute_command (char *p, int from_tty)
 	execute_user_command (c, arg);
       else if (c->type == set_cmd || c->type == show_cmd)
 	do_setshow_command (arg, from_tty & caution, c);
-      else if (c->func == NULL)
+      else if (!cmd_func_p (c))
 	error ("That is not a command, just a help topic.");
       else if (call_command_hook)
 	call_command_hook (c, arg, from_tty & caution);
       else
-	(*c->func) (c, arg, from_tty & caution);
+	cmd_func (c, arg, from_tty & caution);
        
       /* If this command has been post-hooked, run the hook last. */
       execute_cmd_post_hook (c);
@@ -999,6 +999,29 @@ static int write_history_p;
 static int history_size;
 static char *history_filename;
 
+/* This is like readline(), but it has some gdb-specific behavior.
+   gdb can use readline in both the synchronous and async modes during
+   a single gdb invocation.  At the ordinary top-level prompt we might
+   be using the async readline.  That means we can't use
+   rl_pre_input_hook, since it doesn't work properly in async mode.
+   However, for a secondary prompt (" >", such as occurs during a
+   `define'), gdb just calls readline() directly, running it in
+   synchronous mode.  So for operate-and-get-next to work in this
+   situation, we have to switch the hooks around.  That is what
+   gdb_readline_wrapper is for.  */
+char *
+gdb_readline_wrapper (char *prompt)
+{
+  /* Set the hook that works in this case.  */
+  if (event_loop_p && after_char_processing_hook)
+    {
+      rl_pre_input_hook = (Function *) after_char_processing_hook;
+      after_char_processing_hook = NULL;
+    }
+
+  return readline (prompt);
+}
+
 
 #ifdef STOP_SIGNAL
 static void
@@ -1091,7 +1114,7 @@ static int operate_saved_history = -1;
 /* This is put on the appropriate hook and helps operate-and-get-next
    do its work.  */
 void
-gdb_rl_operate_and_get_next_completion ()
+gdb_rl_operate_and_get_next_completion (void)
 {
   int delta = where_history () - operate_saved_history;
   /* The `key' argument to rl_get_previous_history is ignored.  */
@@ -1113,6 +1136,8 @@ gdb_rl_operate_and_get_next_completion ()
 static int
 gdb_rl_operate_and_get_next (int count, int key)
 {
+  int where;
+
   if (event_loop_p)
     {
       /* Use the async hook.  */
@@ -1125,8 +1150,20 @@ gdb_rl_operate_and_get_next (int count, int key)
       rl_pre_input_hook = (Function *) gdb_rl_operate_and_get_next_completion;
     }
 
-  /* Add 1 because we eventually want the next line.  */
-  operate_saved_history = where_history () + 1;
+  /* Find the current line, and find the next line to use.  */
+  where = where_history();
+
+  /* FIXME: kettenis/20020817: max_input_history is renamed into
+     history_max_entries in readline-4.2.  When we do a new readline
+     import, we should probably change it here too, even though
+     readline maintains backwards compatibility for now by still
+     defining max_input_history.  */
+  if ((history_is_stifled () && (history_length >= max_input_history)) ||
+      (where >= history_length - 1))
+    operate_saved_history = where;
+  else
+    operate_saved_history = where + 1;
+
   return rl_newline (1, key);
 }
 
@@ -1235,7 +1272,7 @@ command_line_input (char *prompt_arg, int repeat, char *annotation_suffix)
 	}
       else if (command_editing_p && instream == stdin && ISATTY (instream))
 	{
-	  rl = readline (local_prompt);
+	  rl = gdb_readline_wrapper (local_prompt);
 	}
       else
 	{
@@ -1496,7 +1533,7 @@ get_prompt_1 (void *data)
 
 		  if (*promptp != gdb_prompt_escape)
 		    error ("Syntax error at prompt position %d",
-			   promptp - local_prompt);
+			   (int) (promptp - local_prompt));
 		  else
 		    {
 		      promptp++;	/* skip second escape char */
@@ -1642,7 +1679,7 @@ get_prompt_1 (void *data)
 		  break;	/* void type -- no output */
 		default:
 		  error ("bad data type at prompt position %d",
-			 promptp - local_prompt);
+			 (int) (promptp - local_prompt));
 		  break;
 		}
 	      outp += strlen (outp);
@@ -1987,6 +2024,7 @@ init_main (void)
 				 get_gdb_completer_word_break_characters ();
   rl_completer_quote_characters = get_gdb_completer_quote_characters ();
   rl_readline_name = "gdb";
+  rl_terminal_name = getenv ("TERM");
 
   /* The name for this defun comes from Bash, where it originated.
      15 is Control-o, the same binding this function has in Bash.  */
@@ -2065,7 +2103,7 @@ ie. the number of previous commands to keep a record of.", &sethistlist);
   c = add_set_cmd ("filename", no_class, var_filename,
 		   (char *) &history_filename,
 		   "Set the filename in which to record the command history\n\
- (the list of previous commands of which a record is kept).", &sethistlist);
+(the list of previous commands of which a record is kept).", &sethistlist);
   set_cmd_completer (c, filename_completer);
   /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
   add_show_from_set (c, &showhistlist);

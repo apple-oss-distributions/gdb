@@ -85,6 +85,7 @@ extern mi_cmd_argv_ftype mi_cmd_mi_no_op;
 extern mi_cmd_argv_ftype mi_cmd_stack_info_depth;
 extern mi_cmd_argv_ftype mi_cmd_stack_list_args;
 extern mi_cmd_argv_ftype mi_cmd_stack_list_frames;
+extern mi_cmd_argv_ftype mi_cmd_stack_list_frames_lite;
 extern mi_cmd_argv_ftype mi_cmd_stack_list_locals;
 extern mi_cmd_argv_ftype mi_cmd_stack_select_frame;
 extern mi_cmd_args_ftype mi_cmd_target_download;

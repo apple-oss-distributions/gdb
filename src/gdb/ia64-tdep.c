@@ -96,12 +96,11 @@ static gdbarch_frame_saved_pc_ftype ia64_frame_saved_pc;
 static gdbarch_skip_prologue_ftype ia64_skip_prologue;
 static gdbarch_frame_init_saved_regs_ftype ia64_frame_init_saved_regs;
 static gdbarch_get_saved_register_ftype ia64_get_saved_register;
-static gdbarch_extract_return_value_ftype ia64_extract_return_value;
-static gdbarch_extract_struct_value_address_ftype ia64_extract_struct_value_address;
+static gdbarch_deprecated_extract_return_value_ftype ia64_extract_return_value;
+static gdbarch_deprecated_extract_struct_value_address_ftype ia64_extract_struct_value_address;
 static gdbarch_use_struct_convention_ftype ia64_use_struct_convention;
 static gdbarch_frameless_function_invocation_ftype ia64_frameless_function_invocation;
 static gdbarch_init_extra_frame_info_ftype ia64_init_extra_frame_info;
-static gdbarch_store_return_value_ftype ia64_store_return_value;
 static gdbarch_store_struct_return_ftype ia64_store_struct_return;
 static gdbarch_push_arguments_ftype ia64_push_arguments;
 static gdbarch_push_return_address_ftype ia64_push_return_address;
@@ -243,7 +242,7 @@ struct gdbarch_tdep
 #define FIND_GLOBAL_POINTER \
   (gdbarch_tdep (current_gdbarch)->find_global_pointer)
 
-static char *
+static const char *
 ia64_register_name (int reg)
 {
   return ia64_register_names[reg];
@@ -564,6 +563,7 @@ ia64_memory_insert_breakpoint (CORE_ADDR addr, char *contents_cache)
   int slotnum = (int) (addr & 0x0f) / SLOT_MULTIPLIER;
   long long instr;
   int val;
+  int template;
 
   if (slotnum > 2)
     error("Can't insert breakpoint for slot numbers greater than 2.");
@@ -571,6 +571,15 @@ ia64_memory_insert_breakpoint (CORE_ADDR addr, char *contents_cache)
   addr &= ~0x0f;
 
   val = target_read_memory (addr, bundle, BUNDLE_LEN);
+
+  /* Check for L type instruction in 2nd slot, if present then
+     bump up the slot number to the 3rd slot */
+  template = extract_bit_field (bundle, 0, 5);
+  if (slotnum == 1 && template_encoding_table[template][1] == L)
+    {
+      slotnum = 2;
+    }
+
   instr = slotN_contents (bundle, slotnum);
   memcpy(contents_cache, &instr, sizeof(instr));
   replace_slotN_contents (bundle, BREAKPOINT, slotnum);
@@ -587,10 +596,20 @@ ia64_memory_remove_breakpoint (CORE_ADDR addr, char *contents_cache)
   int slotnum = (addr & 0x0f) / SLOT_MULTIPLIER;
   long long instr;
   int val;
+  int template;
 
   addr &= ~0x0f;
 
   val = target_read_memory (addr, bundle, BUNDLE_LEN);
+
+  /* Check for L type instruction in 2nd slot, if present then
+     bump up the slot number to the 3rd slot */
+  template = extract_bit_field (bundle, 0, 5);
+  if (slotnum == 1 && template_encoding_table[template][1] == L)
+    {
+      slotnum = 2;
+    }
+
   memcpy (&instr, contents_cache, sizeof instr);
   replace_slotN_contents (bundle, instr, slotnum);
   if (val == 0)
@@ -601,7 +620,7 @@ ia64_memory_remove_breakpoint (CORE_ADDR addr, char *contents_cache)
 
 /* We don't really want to use this, but remote.c needs to call it in order
    to figure out if Z-packets are supported or not.  Oh, well. */
-unsigned char *
+const unsigned char *
 ia64_breakpoint_from_pc (CORE_ADDR *pcptr, int *lenptr)
 {
   static unsigned char breakpoint[] =
@@ -704,7 +723,7 @@ ia64_frame_saved_pc (struct frame_info *frame)
   if (frame->signal_handler_caller)
     return read_sigcontext_register (frame, pc_regnum);
   else if (PC_IN_CALL_DUMMY (frame->pc, frame->frame, frame->frame))
-    return generic_read_register_dummy (frame->pc, frame->frame, pc_regnum);
+    return deprecated_read_register_dummy (frame->pc, frame->frame, pc_regnum);
   else
     {
       FRAME_INIT_SAVED_REGS (frame);
@@ -1481,10 +1500,12 @@ ia64_init_extra_frame_info (int fromleaf, struct frame_info *frame)
     }
   else if (next_frame_is_call_dummy)
     {
-      bsp = generic_read_register_dummy (frame->next->pc, frame->next->frame,
-                                         IA64_BSP_REGNUM);
-      cfm = generic_read_register_dummy (frame->next->pc, frame->next->frame,
-                                         IA64_CFM_REGNUM);
+      bsp = deprecated_read_register_dummy (frame->next->pc,
+					    frame->next->frame,
+					    IA64_BSP_REGNUM);
+      cfm = deprecated_read_register_dummy (frame->next->pc,
+					    frame->next->frame,
+					    IA64_CFM_REGNUM);
     }
   else
     {
@@ -1499,8 +1520,8 @@ ia64_init_extra_frame_info (int fromleaf, struct frame_info *frame)
       else if (frn->next
                && PC_IN_CALL_DUMMY (frn->next->pc, frn->next->frame,
 	                                           frn->next->frame))
-	cfm = generic_read_register_dummy (frn->next->pc, frn->next->frame,
-	                                   IA64_PFS_REGNUM);
+	cfm = deprecated_read_register_dummy (frn->next->pc, frn->next->frame,
+					      IA64_PFS_REGNUM);
       else
 	cfm = read_register (IA64_PFS_REGNUM);
 
@@ -2170,11 +2191,11 @@ ia64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_register_convert_to_raw (gdbarch, ia64_register_convert_to_raw);
 
   set_gdbarch_use_struct_convention (gdbarch, ia64_use_struct_convention);
-  set_gdbarch_extract_return_value (gdbarch, ia64_extract_return_value);
+  set_gdbarch_deprecated_extract_return_value (gdbarch, ia64_extract_return_value);
 
   set_gdbarch_store_struct_return (gdbarch, ia64_store_struct_return);
-  set_gdbarch_store_return_value (gdbarch, ia64_store_return_value);
-  set_gdbarch_extract_struct_value_address (gdbarch, ia64_extract_struct_value_address);
+  set_gdbarch_deprecated_store_return_value (gdbarch, ia64_store_return_value);
+  set_gdbarch_deprecated_extract_struct_value_address (gdbarch, ia64_extract_struct_value_address);
 
   set_gdbarch_memory_insert_breakpoint (gdbarch, ia64_memory_insert_breakpoint);
   set_gdbarch_memory_remove_breakpoint (gdbarch, ia64_memory_remove_breakpoint);

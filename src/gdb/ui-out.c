@@ -496,15 +496,37 @@ ui_out_field_int (struct ui_out *uiout,
 }
 
 void
+ui_out_field_fmt_int (struct ui_out *uiout,
+                      int input_width,
+                      enum ui_align input_align,
+		      const char *fldname,
+		      int value)
+{
+  int fldno;
+  int width;
+  int align;
+  struct ui_out_level *current = current_level (uiout);
+
+  verify_field (uiout, &fldno, &width, &align);
+
+  uo_field_int (uiout, fldno, input_width, input_align, fldname, value);
+}
+
+void
 ui_out_field_core_addr (struct ui_out *uiout,
 			const char *fldname,
 			CORE_ADDR address)
 {
   char addstr[20];
 
-  /* FIXME-32x64: need a print_address_numeric with field width */
+  /* FIXME: cagney/2002-05-03: Need local_address_string() function
+     that returns the language localized string formatted to a width
+     based on TARGET_ADDR_BIT.  */
   /* print_address_numeric (address, 1, local_stream); */
-  strcpy (addstr, local_hex_string_custom ((unsigned long) address, "08l"));
+  if (TARGET_ADDR_BIT <= 32)
+    strcpy (addstr, local_hex_string_custom (address, "08l"));
+  else
+    strcpy (addstr, local_hex_string_custom (address, "016l"));
 
   ui_out_field_string (uiout, fldname, addstr);
 }
@@ -696,22 +718,25 @@ ui_out_get_verblvl (struct ui_out *uiout)
 }
 
 /* 
- * Try to cleanup a ui_out UIOUT after an error; 
- * esp useful when the error happens in an MI command.
+   APPLE LOCAL: Try to cleanup a ui_out UIOUT after an error; 
+   esp useful when the error happens in an MI command.
+   FIXME: FSF gdb has adopted a different approach to this problem - they
+   use make_cleanup_ui_out_{list,tuple}_begin_end and the do_cleanups
+   mechanism.  We should switch to that.
  */
 void
 ui_out_cleanup_after_error (struct ui_out *uiout)
 {
   /* cleanup any pending lists first */
   while (uiout->level > 0) 
-    if (uiout->table.flag)
-      {
-	ui_out_table_end (uiout);
-      }
-    else
-      {
-	ui_out_list_end (uiout);
-      }
+    {
+      ui_out_end (uiout, current_level (uiout)->type);
+    }
+
+  if (uiout->table.flag)
+    {
+      ui_out_table_end (uiout);
+    }
 }
 
 struct cleanup *

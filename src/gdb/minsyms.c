@@ -91,7 +91,7 @@ msymbol_hash_iw (const char *string)
 	  ++string;
 	}
     }
-  return hash % MINIMAL_SYMBOL_HASH_SIZE;
+  return hash;
 }
 
 /* Compute a hash code for a string.  */
@@ -102,7 +102,7 @@ msymbol_hash (const char *string)
   unsigned int hash = 0;
   for (; *string; ++string)
     hash = hash * 67 + *string - 113;
-  return hash % MINIMAL_SYMBOL_HASH_SIZE;
+  return hash;
 }
 
 /* Add the minimal symbol SYM to an objfile's minsym hash table, TABLE.  */
@@ -112,7 +112,7 @@ add_minsym_to_hash_table (struct minimal_symbol *sym,
 {
   if (sym->hash_next == NULL)
     {
-      unsigned int hash = msymbol_hash (SYMBOL_NAME (sym));
+      unsigned int hash = msymbol_hash (SYMBOL_NAME (sym)) % MINIMAL_SYMBOL_HASH_SIZE;
       sym->hash_next = table[hash];
       table[hash] = sym;
     }
@@ -126,7 +126,7 @@ add_minsym_to_demangled_hash_table (struct minimal_symbol *sym,
 {
   if (sym->demangled_hash_next == NULL)
     {
-      unsigned int hash = msymbol_hash_iw (SYMBOL_DEMANGLED_NAME (sym));
+      unsigned int hash = msymbol_hash_iw (SYMBOL_DEMANGLED_NAME (sym)) % MINIMAL_SYMBOL_HASH_SIZE;
       sym->demangled_hash_next = table[hash];
       table[hash] = sym;
     }
@@ -154,8 +154,8 @@ lookup_minimal_symbol (register const char *name, const char *sfile,
   struct minimal_symbol *found_file_symbol = NULL;
   struct minimal_symbol *trampoline_symbol = NULL;
 
-  unsigned int hash = msymbol_hash (name);
-  unsigned int dem_hash = msymbol_hash_iw (name);
+  unsigned int hash = msymbol_hash (name) % MINIMAL_SYMBOL_HASH_SIZE;
+  unsigned int dem_hash = msymbol_hash_iw (name) % MINIMAL_SYMBOL_HASH_SIZE;
 
 #ifdef SOFUN_ADDRESS_MAYBE_MISSING
   if (sfile != NULL)
@@ -533,52 +533,6 @@ lookup_minimal_symbol_by_pc (CORE_ADDR pc)
 {
   return lookup_minimal_symbol_by_pc_section (pc, find_pc_mapped_section (pc));
 }
-
-#ifdef SOFUN_ADDRESS_MAYBE_MISSING
-CORE_ADDR
-find_stab_function_addr (char *namestring, char *filename,
-			 struct objfile *objfile)
-{
-  struct minimal_symbol *msym;
-  char *p;
-  int n;
-
-  p = strchr (namestring, ':');
-  if (p == NULL)
-    p = namestring;
-  n = p - namestring;
-  p = alloca (n + 2);
-  strncpy (p, namestring, n);
-  p[n] = 0;
-
-  msym = lookup_minimal_symbol (p, filename, objfile);
-  if (msym == NULL)
-    {
-      /* Sun Fortran appends an underscore to the minimal symbol name,
-         try again with an appended underscore if the minimal symbol
-         was not found.  */
-      p[n] = '_';
-      p[n + 1] = 0;
-      msym = lookup_minimal_symbol (p, filename, objfile);
-    }
-
-  if (msym == NULL && filename != NULL)
-    {
-      /* Try again without the filename. */
-      p[n] = 0;
-      msym = lookup_minimal_symbol (p, NULL, objfile);
-    }
-  if (msym == NULL && filename != NULL)
-    {
-      /* And try again for Sun Fortran, but without the filename. */
-      p[n] = '_';
-      p[n + 1] = 0;
-      msym = lookup_minimal_symbol (p, NULL, objfile);
-    }
-
-  return msym == NULL ? 0 : SYMBOL_VALUE_ADDRESS (msym);
-}
-#endif /* SOFUN_ADDRESS_MAYBE_MISSING */
 
 
 /* Return leading symbol character for a BFD. If BFD is NULL,

@@ -1,22 +1,101 @@
+2002-10-30  Jim Ingham   <jingham@apple.com>
+
+	* mi-cmd-var.c: Replace ui_out_list_end, etc, with the cleanup
+	versions.
+
+2002-10-30  Jim Ingham   <jingham@apple.com>
+
+	Changes to allow varobjs to follow the C++ dynamic type.
+	
+	* mi-cmd-var.c (mi_report_var_creation, mi_var_list_children):
+	report dynamic_type.
+	* (varobj_update_one): Handle the case where a child changes its
+	dynamic type.  Report this, and delete the children.  Also use the
+	new varobj_update interface.
+
+	Other little cleanups:
+	
+	* mi-cmd-var.c (mi_report_var_creation, mi_var_list_children,
+	mi_var_info_type): free the type strings, these are malloc'ed
+	copies that we are handed, these are ui_file_xstrdup'ed, and must
+	be freed.
+	
+	* (mi_cmd_var_list_children): Handle the case of no arguments (used
+	to crash).
+	
+2002-10-30  Klee Dienes <kdienes@apple.com>
+
+        * mi-main.c (mi_cmd_exec_interrupt): Replace call to
+        interrupt_target_command with an explicit SIGINT to the inferior
+        (this seems a bit hackish, but just code that was accidentally
+        misplaced in a source merge, so for now I'm just re-adding it
+        as-is).
+
+2002-10-25  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmd-var.c (mi_cmd_var_list_children): CHILDREN is a list,
+	not a tuple.
+	(mi_cmd_var_update): CHANGELIST is a list, not a tuple (this is a
+	mi2 vs mi1 difference at the FSF, but I don't want to waste time
+	supporting the broken mi1 behavior locally).
+	(varobj_update_one): VAROBJ is a named tuple, not an anonymous one
+	like the FSF.
+
+	* mi-cmd-stack.c (print_syms_for_block): Each
+	variable/varobj/variable+value are printed in their own
+	anonymous tuples (not a list).
+
+	* mi-cmd-disas.c (mi_cmd_disassemble): Hack around broken find_line_pc
+	replacement.
+	
+2002-10-24  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmd-stack.c (mi_cmd_stack_info_depth): Pass non-zero limit to
+	FAST_COUNT_STACK_DEPTH to indicate a specified limit, or 0 for 
+	unlimited.
+
+2002-10-17  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmd-var.c (mi_cmd_var_update): Remove duplicated "changelist"
+	initializer.
+
+2002-10-14  Klee Dienes <kdienes@apple.com>
+
+	* mi-out.c (mi_table_begin): Re-add support for mi0.
+	(mi_table_body): Ditto.
+	(mi_table_end): Ditto.
+	(mi_table_header): Ditto.
+	(mi_open): Ditto.
+	(mi_close): Ditto.
+	
+2002-07-16  Jim Ingham <jingham@apple.com>
+
+	* mi-cmd-stack.c (mi_cmd_stack_list_frames): Convert to use the
+	new version of the FAST_COUNT_STACK_DEPTH, and unify frame
+	printing in mi_print_frame_info_lite.
+	(mi_cmd_stack_info_depth): Convert to use new version of
+	FAST_COUNT_STACK_DEPTH.
+	(mi_print_frame_info_lite): New function, standard printer for the
+	list frames & list frames lite commands.
+	
 2002-06-10  Jim Ingham <jingham@apple.com>
 
-      * mi-stack-cmd.c (list_args_or_locals): endaddr should be a 
-      CORE_ADDR.
+	* mi-cmd-stack.c (list_args_or_locals): endaddr should be a
+	CORE_ADDR.
       
 2002-06-07  Jim Ingham <jingham@apple.com>
 
-      * mi-out.c: Add the mi versions of notify_begin and
-      notify_end.
+	* mi-out.c: Add the mi versions of notify_begin and notify_end.
 
 2002-05-30  Rab Hagy <rhagy@apple.com>
 
-      * mi-main.c (mi_verify_command): clean up output
-      * mi-cmd-var.c: added "unsigned" format specification
+	* mi-main.c (mi_verify_command): clean up output * mi-cmd-var.c:
+	added "unsigned" format specification
       
 2002-04-24  James Ingham <jingham@apple.com>
 
-      * mi-cmd-var.c (mi_report_var_creation): Use varobj_in_scope_p to figure
-      out whether a variable is in scope.
+	* mi-cmd-var.c (mi_report_var_creation): Use varobj_in_scope_p to
+	figure out whether a variable is in scope.
 
 2002-04-17  James Ingham <jingham@apple.com>
 

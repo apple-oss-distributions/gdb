@@ -56,8 +56,8 @@ struct hpread_symfile_info
     unsigned int gntt_symcount;
 
     /* To keep track of all the types we've processed.  */
-    struct type **type_vector;
-    int type_vector_length;
+    struct type **dntt_type_vector;
+    int dntt_type_vector_length;
 
     /* Keeps track of the beginning of a range of source lines.  */
     sltpointer sl_index;
@@ -80,8 +80,9 @@ struct hpread_symfile_info
 #define VT_SIZE(o)              (HPUX_SYMFILE_INFO(o)->vt_size)
 #define LNTT_SYMCOUNT(o)        (HPUX_SYMFILE_INFO(o)->lntt_symcount)
 #define GNTT_SYMCOUNT(o)        (HPUX_SYMFILE_INFO(o)->gntt_symcount)
-#define TYPE_VECTOR(o)          (HPUX_SYMFILE_INFO(o)->type_vector)
-#define TYPE_VECTOR_LENGTH(o)   (HPUX_SYMFILE_INFO(o)->type_vector_length)
+#define DNTT_TYPE_VECTOR(o)     (HPUX_SYMFILE_INFO(o)->dntt_type_vector)
+#define DNTT_TYPE_VECTOR_LENGTH(o) \
+  (HPUX_SYMFILE_INFO(o)->dntt_type_vector_length)
 #define SL_INDEX(o)             (HPUX_SYMFILE_INFO(o)->sl_index)
 #define WITHIN_FUNCTION(o)      (HPUX_SYMFILE_INFO(o)->within_function)
 #define CURRENT_FUNCTION_VALUE(o) (HPUX_SYMFILE_INFO(o)->current_function_value)
@@ -199,6 +200,9 @@ void hpread_build_psymtabs (struct objfile *, int);
 void hpread_symfile_finish (struct objfile *);
 
 static union dnttentry *hpread_get_gntt (int, struct objfile *);
+
+static union dnttentry *hpread_get_lntt (int index, struct objfile *objfile);
+
 
 static unsigned long hpread_get_textlow (int, int, struct objfile *, int);
 
@@ -1691,7 +1695,7 @@ hpread_symfile_init (struct objfile *objfile)
   memset (objfile->sym_private, 0, sizeof (struct hpread_symfile_info));
 
   /* We haven't read in any types yet.  */
-  TYPE_VECTOR (objfile) = 0;
+  DNTT_TYPE_VECTOR (objfile) = 0;
 
   /* Read in data from the $GNTT$ subspace.  */
   gntt_section = bfd_get_section_by_name (objfile->obfd, "$GNTT$");
@@ -2690,8 +2694,9 @@ hpread_psymtab_to_symtab_1 (struct partial_symtab *pst)
   /* Complain if we've already read in this symbol table.  */
   if (pst->readin)
     {
-      fprintf (stderr, "Psymtab for %s already read in.  Shouldn't happen.\n",
-	       pst->filename);
+      fprintf_unfiltered (gdb_stderr, "Psymtab for %s already read in."
+			  "  Shouldn't happen.\n",
+			  pst->filename);
       return;
     }
 
@@ -2745,8 +2750,9 @@ hpread_psymtab_to_symtab (struct partial_symtab *pst)
   /* Sanity check.  */
   if (pst->readin)
     {
-      fprintf (stderr, "Psymtab for %s already read in.  Shouldn't happen.\n",
-	       pst->filename);
+      fprintf_unfiltered (gdb_stderr, "Psymtab for %s already read in."
+			  "  Shouldn't happen.\n",
+			  pst->filename);
       return;
     }
 
@@ -3028,18 +3034,18 @@ hpread_lookup_type (dnttpointer hp_type, struct objfile *objfile)
 
   if (index < LNTT_SYMCOUNT (objfile))
     {
-      if (index >= TYPE_VECTOR_LENGTH (objfile))
+      if (index >= DNTT_TYPE_VECTOR_LENGTH (objfile))
 	{
-	  old_len = TYPE_VECTOR_LENGTH (objfile);
+	  old_len = DNTT_TYPE_VECTOR_LENGTH (objfile);
 
 	  /* See if we need to allocate a type-vector. */
 	  if (old_len == 0)
 	    {
-	      TYPE_VECTOR_LENGTH (objfile) = LNTT_SYMCOUNT (objfile) + GNTT_SYMCOUNT (objfile);
-	      TYPE_VECTOR (objfile) = (struct type **)
-		xmmalloc (objfile->md, TYPE_VECTOR_LENGTH (objfile) * sizeof (struct type *));
-	      memset (&TYPE_VECTOR (objfile)[old_len], 0,
-		      (TYPE_VECTOR_LENGTH (objfile) - old_len) *
+	      DNTT_TYPE_VECTOR_LENGTH (objfile) = LNTT_SYMCOUNT (objfile) + GNTT_SYMCOUNT (objfile);
+	      DNTT_TYPE_VECTOR (objfile) = (struct type **)
+		xmmalloc (objfile->md, DNTT_TYPE_VECTOR_LENGTH (objfile) * sizeof (struct type *));
+	      memset (&DNTT_TYPE_VECTOR (objfile)[old_len], 0,
+		      (DNTT_TYPE_VECTOR_LENGTH (objfile) - old_len) *
 		      sizeof (struct type *));
 	    }
 
@@ -3047,25 +3053,25 @@ hpread_lookup_type (dnttpointer hp_type, struct objfile *objfile)
 	   * initially allocate a correct-size type-vector, this code
 	   * should no longer trigger.
 	   */
-	  while (index >= TYPE_VECTOR_LENGTH (objfile))
+	  while (index >= DNTT_TYPE_VECTOR_LENGTH (objfile))
 	    {
-	      TYPE_VECTOR_LENGTH (objfile) *= 2;
+	      DNTT_TYPE_VECTOR_LENGTH (objfile) *= 2;
 	      size_changed = 1;
 	    }
 	  if (size_changed)
 	    {
-	      TYPE_VECTOR (objfile) = (struct type **)
+	      DNTT_TYPE_VECTOR (objfile) = (struct type **)
 		xmrealloc (objfile->md,
-			   (char *) TYPE_VECTOR (objfile),
-		   (TYPE_VECTOR_LENGTH (objfile) * sizeof (struct type *)));
+			   (char *) DNTT_TYPE_VECTOR (objfile),
+		   (DNTT_TYPE_VECTOR_LENGTH (objfile) * sizeof (struct type *)));
 
-	      memset (&TYPE_VECTOR (objfile)[old_len], 0,
-		      (TYPE_VECTOR_LENGTH (objfile) - old_len) *
+	      memset (&DNTT_TYPE_VECTOR (objfile)[old_len], 0,
+		      (DNTT_TYPE_VECTOR_LENGTH (objfile) - old_len) *
 		      sizeof (struct type *));
 	    }
 
 	}
-      return &TYPE_VECTOR (objfile)[index];
+      return &DNTT_TYPE_VECTOR (objfile)[index];
     }
   else
     return NULL;
@@ -3224,7 +3230,7 @@ hpread_read_function_type (dnttpointer hp_type, union dnttentry *dn_bufp,
       else			/* expect DNTT_TYPE_FUNC_TEMPLATE */
 	type1 = lookup_function_type (hpread_type_lookup (dn_bufp->dfunc_template.retval,
 							  objfile));
-      memcpy ((char *) type, (char *) type1, sizeof (struct type));
+      replace_type (type, type1);
 
       /* Mark it -- in the middle of processing */
       TYPE_FLAGS (type) |= TYPE_FLAG_INCOMPLETE;
@@ -3401,7 +3407,7 @@ hpread_read_doc_function_type (dnttpointer hp_type, union dnttentry *dn_bufp,
 	  dn_bufp->dblock.kind == DNTT_TYPE_DOC_MEMFUNC)
 	type1 = lookup_function_type (hpread_type_lookup (dn_bufp->ddocfunc.retval,
 							  objfile));
-      memcpy ((char *) type, (char *) type1, sizeof (struct type));
+      replace_type (type, type1);
 
       /* Mark it -- in the middle of processing */
       TYPE_FLAGS (type) |= TYPE_FLAG_INCOMPLETE;
@@ -3953,33 +3959,10 @@ hpread_read_struct_type (dnttpointer hp_type, union dnttentry *dn_bufp,
 	      /* But mark it as NULL if the method was incompletely processed
 	         We'll fix this up later when the method is fully processed */
 	      if (TYPE_INCOMPLETE (memtype))
-		{
-		  fn_p->field.fn_fields[ix].type = NULL;
-		  fn_p->field.fn_fields[ix].args = NULL;
-		}
+		fn_p->field.fn_fields[ix].type = NULL;
 	      else
-		{
-		  fn_p->field.fn_fields[ix].type = memtype;
+		fn_p->field.fn_fields[ix].type = memtype;
 
-		  /* The argument list */
-		  fn_p->field.fn_fields[ix].type->type_specific.arg_types =
-		    (struct type **) obstack_alloc (&objfile->type_obstack,
-			   sizeof (struct type *) * (memtype->nfields + 1));
-		  for (i = 0; i < memtype->nfields; i++)
-		    fn_p->field.fn_fields[ix].type->type_specific.arg_types[i] = memtype->fields[i].type;
-		  /* void termination */
-		  fn_p->field.fn_fields[ix].type->type_specific.arg_types[memtype->nfields] = builtin_type_void;
-
-		  /* pai: It's not clear why this args field has to be set.  Perhaps
-		   * it should be eliminated entirely. */
-		  fn_p->field.fn_fields[ix].args =
-		    (struct type **) obstack_alloc (&objfile->type_obstack,
-			   sizeof (struct type *) * (memtype->nfields + 1));
-		  for (i = 0; i < memtype->nfields; i++)
-		    fn_p->field.fn_fields[ix].args[i] = memtype->fields[i].type;
-		  /* null-terminated, unlike arg_types above e */
-		  fn_p->field.fn_fields[ix].args[memtype->nfields] = NULL;
-		}
 	      /* For virtual functions, fill in the voffset field with the
 	       * virtual table offset. (This is just copied over from the
 	       * SOM record; not sure if it is what GDB expects here...).
@@ -4055,7 +4038,6 @@ hpread_read_struct_type (dnttpointer hp_type, union dnttentry *dn_bufp,
 	      list = new;
 
 	      list->field.name = VT (objfile) + fn_fieldp->dsvar.name;
-	      FIELD_BITSIZE (list->field) = -1;		/* indicates static member */
 	      SET_FIELD_PHYSNAME (list->field, 0);	/* initialize to empty */
 	      memtype = hpread_type_lookup (fn_fieldp->dsvar.type, objfile);
 
@@ -4392,9 +4374,6 @@ hpread_read_struct_type (dnttpointer hp_type, union dnttentry *dn_bufp,
   /* Clear the global saying what template we are in the middle of processing */
   current_template = NULL;
 
-  /* Fix up any cv-qualified versions of this type.  */
-  finish_cv_type (type);
-
   return type;
 }
 
@@ -4422,7 +4401,7 @@ fix_static_member_physnames (struct type *type, char *class_name,
 	if (TYPE_FIELD_STATIC_PHYSNAME (type, i))
 	  return;		/* physnames are already set */
 
-	SET_FIELD_PHYSNAME (type->fields[i],
+	SET_FIELD_PHYSNAME (TYPE_FIELDS (type)[i],
 			    obstack_alloc (&objfile->type_obstack,
 	     strlen (class_name) + strlen (TYPE_FIELD_NAME (type, i)) + 3));
 	strcpy (TYPE_FIELD_STATIC_PHYSNAME (type, i), class_name);
@@ -4458,24 +4437,6 @@ fixup_class_method_type (struct type *class, struct type *method,
 	{
 	  /* Set the method type */
 	  TYPE_FN_FIELD_TYPE (TYPE_FN_FIELDLIST1 (class, i), j) = method;
-	  /* The argument list */
-	  (TYPE_FN_FIELD_TYPE (TYPE_FN_FIELDLIST1 (class, i), j))->type_specific.arg_types
-	    = (struct type **) obstack_alloc (&objfile->type_obstack,
-			    sizeof (struct type *) * (method->nfields + 1));
-	  for (k = 0; k < method->nfields; k++)
-	    (TYPE_FN_FIELD_TYPE (TYPE_FN_FIELDLIST1 (class, i), j))->type_specific.arg_types[k] = method->fields[k].type;
-	  /* void termination */
-	  (TYPE_FN_FIELD_TYPE (TYPE_FN_FIELDLIST1 (class, i), j))->type_specific.arg_types[method->nfields] = builtin_type_void;
-
-	  /* pai: It's not clear why this args field has to be set.  Perhaps
-	   * it should be eliminated entirely. */
-	  (TYPE_FN_FIELD (TYPE_FN_FIELDLIST1 (class, i), j)).args
-	    = (struct type **) obstack_alloc (&objfile->type_obstack,
-			    sizeof (struct type *) * (method->nfields + 1));
-	  for (k = 0; k < method->nfields; k++)
-	    (TYPE_FN_FIELD (TYPE_FN_FIELDLIST1 (class, i), j)).args[k] = method->fields[k].type;
-	  /* null-terminated, unlike arg_types above */
-	  (TYPE_FN_FIELD (TYPE_FN_FIELDLIST1 (class, i), j)).args[method->nfields] = NULL;
 
 	  /* Break out of both loops -- only one method to fix up in a class */
 	  goto finish;
@@ -4844,7 +4805,7 @@ hpread_type_lookup (dnttpointer hp_type, struct objfile *objfile)
 	  }
 
 	/* Build the correct name.  */
-	structtype->name
+	TYPE_NAME (structtype)
 	  = (char *) obstack_alloc (&objfile->type_obstack,
 				    strlen (prefix) + strlen (suffix) + 1);
 	TYPE_NAME (structtype) = strcpy (TYPE_NAME (structtype), prefix);
@@ -4929,21 +4890,18 @@ hpread_type_lookup (dnttpointer hp_type, struct objfile *objfile)
 	struct type *retvaltype;
 	int nargs;
 	int i;
-	struct type **args_type;
 	class_type = hpread_type_lookup (dn_bufp->dptrmem.pointsto,
 					 objfile);
 	functype = hpread_type_lookup (dn_bufp->dptrmem.memtype,
 				       objfile);
 	retvaltype = TYPE_TARGET_TYPE (functype);
 	nargs = TYPE_NFIELDS (functype);
-	args_type = (struct type **) xmalloc ((nargs + 1) * sizeof (struct type *));
-	for (i = 0; i < nargs; i++)
-	  {
-	    args_type[i] = TYPE_FIELD_TYPE (functype, i);
-	  }
-	args_type[nargs] = NULL;
 	ptrmemtype = alloc_type (objfile);
-	smash_to_method_type (ptrmemtype, class_type, retvaltype, args_type);
+
+	smash_to_method_type (ptrmemtype, class_type, retvaltype,
+			      TYPE_FIELDS (functype),
+			      TYPE_NFIELDS (functype),
+			      0);
 	return make_pointer_type (ptrmemtype, NULL);
       }
       break;

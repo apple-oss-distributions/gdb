@@ -23,6 +23,9 @@
 #if !defined (INFERIOR_H)
 #define INFERIOR_H 1
 
+struct gdbarch;
+struct regcache;
+
 /* For bpstat.  */
 #include "breakpoint.h"
 
@@ -151,9 +154,11 @@ extern void kill_inferior (void);
 
 extern void generic_mourn_inferior (void);
 
+extern void terminal_save_ours (void);
+
 extern void terminal_ours (void);
 
-extern int run_stack_dummy (CORE_ADDR, char *);
+extern int run_stack_dummy (CORE_ADDR , struct regcache *);
 
 extern CORE_ADDR read_pc (void);
 
@@ -204,7 +209,10 @@ extern void resume (int, enum target_signal);
 
 /* From misc files */
 
-extern void do_registers_info (int, int);
+extern void default_print_registers_info (struct gdbarch *gdbarch,
+					  struct ui_file *file,
+					  struct frame_info *frame,
+					  int regnum, int all);
 
 extern void store_inferior_registers (int);
 
@@ -311,6 +319,16 @@ extern char *set_inferior_args (char *);
 
 extern void set_inferior_args_vector (int, char **);
 
+extern void registers_info (char *, int);
+
+extern void nexti_command (char *, int);
+
+extern void stepi_command (char *, int);
+
+extern void continue_command (char *, int);
+
+extern void interrupt_target_command (char *args, int from_tty);
+
 /* Last signal that the inferior received (why it stopped).  */
 
 extern enum target_signal stop_signal;
@@ -398,35 +416,12 @@ extern int proceed_to_finish;
    Thus this contains the return value from the called function (assuming
    values are returned in a register).  */
 
-extern char *stop_registers;
+extern struct regcache *stop_registers;
 
 /* Nonzero if the child process in inferior_ptid was attached rather
    than forked.  */
 
 extern int attach_flag;
-
-/* Sigtramp is a routine that the kernel calls (which then calls the
-   signal handler).  On most machines it is a library routine that
-   is linked into the executable.
-
-   This macro, given a program counter value and the name of the
-   function in which that PC resides (which can be null if the
-   name is not known), returns nonzero if the PC and name show
-   that we are in sigtramp.
-
-   On most machines just see if the name is sigtramp (and if we have
-   no name, assume we are not in sigtramp).  */
-#if !defined (IN_SIGTRAMP)
-#if defined (SIGTRAMP_START)
-#define IN_SIGTRAMP(pc, name) \
-       ((pc) >= SIGTRAMP_START(pc)   \
-        && (pc) < SIGTRAMP_END(pc) \
-        )
-#else
-#define IN_SIGTRAMP(pc, name) \
-       (name && STREQ ("_sigtramp", name))
-#endif
-#endif
 
 /* Possible values for CALL_DUMMY_LOCATION.  */
 #define ON_STACK 1

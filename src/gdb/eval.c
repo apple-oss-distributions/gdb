@@ -82,7 +82,7 @@ parse_and_eval_address (char *exp)
   struct expression *expr = parse_expression (exp);
   register CORE_ADDR addr;
   register struct cleanup *old_chain =
-  make_cleanup (free_current_contents, &expr);
+    make_cleanup (free_current_contents, &expr);
 
   addr = value_as_address (evaluate_expression (expr));
   do_cleanups (old_chain);
@@ -98,7 +98,7 @@ parse_and_eval_address_1 (char **expptr)
   struct expression *expr = parse_exp_1 (expptr, (struct block *) 0, 0);
   register CORE_ADDR addr;
   register struct cleanup *old_chain =
-  make_cleanup (free_current_contents, &expr);
+    make_cleanup (free_current_contents, &expr);
 
   addr = value_as_address (evaluate_expression (expr));
   do_cleanups (old_chain);
@@ -125,8 +125,8 @@ parse_and_eval (char *exp)
 {
   struct expression *expr = parse_expression (exp);
   struct value *val;
-  register struct cleanup *old_chain
-  = make_cleanup (free_current_contents, &expr);
+  register struct cleanup *old_chain =
+    make_cleanup (free_current_contents, &expr);
 
   val = evaluate_expression (expr);
   do_cleanups (old_chain);
@@ -142,8 +142,8 @@ parse_to_comma_and_eval (char **expp)
 {
   struct expression *expr = parse_exp_1 (expp, (struct block *) 0, 1);
   struct value *val;
-  register struct cleanup *old_chain
-  = make_cleanup (free_current_contents, &expr);
+  register struct cleanup *old_chain =
+    make_cleanup (free_current_contents, &expr);
 
   val = evaluate_expression (expr);
   do_cleanups (old_chain);
@@ -190,8 +190,8 @@ get_label (register struct expression *exp, int *pos)
     return NULL;
 }
 
-/* This function evaluates tuples (in Chill) or brace-initializers
-   (in C/C++) for structure types.  */
+/* This function evaluates tuples (in (OBSOLETE) Chill) or
+   brace-initializers (in C/C++) for structure types.  */
 
 static struct value *
 evaluate_struct_tuple (struct value *struct_val,
@@ -329,13 +329,11 @@ evaluate_struct_tuple (struct value *struct_val,
   return struct_val;
 }
 
-/* Recursive helper function for setting elements of array tuples for Chill.
-   The target is ARRAY (which has bounds LOW_BOUND to HIGH_BOUND);
-   the element value is ELEMENT;
-   EXP, POS and NOSIDE are as usual.
-   Evaluates index expresions and sets the specified element(s) of
-   ARRAY to ELEMENT.
-   Returns last index value.  */
+/* Recursive helper function for setting elements of array tuples for
+   (OBSOLETE) Chill.  The target is ARRAY (which has bounds LOW_BOUND
+   to HIGH_BOUND); the element value is ELEMENT; EXP, POS and NOSIDE
+   are as usual.  Evaluates index expresions and sets the specified
+   element(s) of ARRAY to ELEMENT.  Returns last index value.  */
 
 static LONGEST
 init_array_element (struct value *array, struct value *element,
@@ -454,7 +452,8 @@ evaluate_subexp_standard (struct type *expect_type,
 	struct value *val = value_of_register (regno, selected_frame);
 	(*pos) += 2;
 	if (val == NULL)
-	  error ("Value of register %s not available.", REGISTER_NAME (regno));
+	  error ("Value of register %s not available.",
+		 frame_map_regnum_to_name (regno));
 	else
 	  return val;
       }
@@ -877,7 +876,7 @@ evaluate_subexp_standard (struct type *expect_type,
 	    funaddr = find_function_addr (method, &value_type);
 	    CHECK_TYPEDEF (value_type);
 	  
-	    if ((value_type == NULL) || (value_type->code == TYPE_CODE_ERROR))
+	    if ((value_type == NULL) || (TYPE_CODE (value_type) == TYPE_CODE_ERROR))
 	      {
 		if (expect_type != NULL)
 		  value_type = expect_type;

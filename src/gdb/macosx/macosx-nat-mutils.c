@@ -416,7 +416,6 @@ int macosx_thread_valid (task_t task, thread_t thread)
   CHECK_FATAL (task != TASK_NULL);
 
   kret = task_threads (task, &thread_list, &thread_count);
-  /* Rhapsody can incorrectly return *_INVALID_PORT */
   if ((kret == KERN_INVALID_ARGUMENT) 
       || (kret == MACH_SEND_INVALID_RIGHT) 
       || (kret == MACH_RCV_INVALID_NAME)) { 

@@ -91,6 +91,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define	yylloc	f_lloc
 #define yyreds	f_reds		/* With YYDEBUG defined */
 #define yytoks	f_toks		/* With YYDEBUG defined */
+#define yyname	f_name		/* With YYDEBUG defined */
+#define yyrule	f_rule		/* With YYDEBUG defined */
 #define yylhs	f_yylhs
 #define yylen	f_yylen
 #define yydefred f_yydefred
@@ -102,8 +104,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define yycheck	 f_yycheck
 
 #ifndef YYDEBUG
-#define	YYDEBUG	1		/* Default to no yydebug support */
+#define	YYDEBUG	1		/* Default to yydebug support */
 #endif
+
+#define YYFPRINTF parser_fprintf
 
 int yyparse (void);
 
@@ -924,7 +928,9 @@ yylex ()
   char *tokstart;
   
  retry:
-  
+ 
+  prev_lexptr = lexptr;
+ 
   tokstart = lexptr;
   
   /* First of all, let us make sure we are not dealing with the 
@@ -1171,5 +1177,8 @@ void
 yyerror (msg)
      char *msg;
 {
+  if (prev_lexptr)
+    lexptr = prev_lexptr;
+
   error ("A %s in expression, near `%s'.", (msg ? msg : "error"), lexptr);
 }

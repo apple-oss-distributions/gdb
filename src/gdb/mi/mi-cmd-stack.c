@@ -133,6 +133,96 @@ mi_cmd_stack_list_frames (char *command, char **argv, int argc)
   return MI_CMD_DONE;
 }
 
+/* Helper print function for mi_cmd_stack_list_frames_lite */
+static void
+mi_print_frame_info_lite (struct ui_out *uiout,
+			  int frame_num,
+			  CORE_ADDR pc,
+			  CORE_ADDR fp)
+{
+  char num_buf[8];
+
+  sprintf (num_buf, "%d", frame_num);
+  ui_out_text (uiout, "Frame ");
+  ui_out_text(uiout, num_buf);
+  ui_out_text(uiout, ": ");
+  ui_out_list_begin (uiout, num_buf);
+  ui_out_field_core_addr (uiout, "pc", pc);
+  ui_out_field_core_addr (uiout, "fp", fp);
+  ui_out_text (uiout, "\n");
+  ui_out_list_end (uiout);
+
+}
+
+/* Print a list of the PC and Frame Pointers for each frame in the stack;
+   also return the total number of frames. An optional argument "-limit"
+   can be give to limit the number of frames printed.
+  */
+
+enum mi_cmd_result
+mi_cmd_stack_list_frames_lite (char *command, char **argv, int argc)
+{
+    int i;
+    int limit = 0;
+    int valid;
+    int count = 0;
+    struct frame_info *fi;
+
+    if (!target_has_stack)
+        error ("mi_cmd_stack_list_frames_lite: No stack.");
+
+    if (argc == 2)
+      {
+        if (strcmp (argv[0], "-limit") == 0)
+          {
+            limit = atoi (argv[1]);
+          }
+        else
+          {
+            limit = -1;
+          }
+      }
+      else if ((argc > 2) || (argc == 1))
+        error ("mi_cmd_stack_list_frames_lite: Usage: [-limit max_frame_number]");
+
+#ifdef FAST_COUNT_STACK_DEPTH
+    valid = FAST_COUNT_STACK_DEPTH (1/*show_frames*/, 0 /*get_names*/, limit, &count, mi_print_frame_info_lite);
+#else
+    /* Start at the inner most frame */
+    for (fi = get_current_frame (); fi ; fi = get_next_frame(fi))
+        ;
+
+    fi = get_current_frame ();
+    
+    if (fi == NULL)
+        error ("mi_cmd_stack_list_frames_lite: No frames in stack.");
+
+    ui_out_list_begin (uiout, "frames");
+
+    for (i = 0; fi != NULL; (fi = get_prev_frame (fi)), i++) 
+      {
+        QUIT;
+
+        if ((limit == 0) || (i < limit))
+          {
+	    mi_print_frame_info_lite (uiout, i, fi->pc, FRAME_FP(fi));
+          }
+      }
+
+    count = i;
+    valid = 1;
+    ui_out_list_end (uiout);
+#endif
+    
+    ui_out_text (uiout, "Valid: ");
+    ui_out_field_int (uiout, "valid", valid);
+    ui_out_text (uiout, "\nCount: ");
+    ui_out_field_int (uiout, "count", count);
+    ui_out_text (uiout, "\n");
+    
+    return MI_CMD_DONE;
+}
+
 void 
 mi_print_frame_more_info (struct ui_out *uiout,
 				struct symtab_and_line *sal,
@@ -168,7 +258,8 @@ mi_cmd_stack_info_depth (char *command, char **argv, int argc)
     frame_high = -1;
 
 #ifdef FAST_COUNT_STACK_DEPTH
-  if (!FAST_COUNT_STACK_DEPTH (&i))
+  if (!FAST_COUNT_STACK_DEPTH (0, 0, (frame_high == -1 ? 0 : frame_high), 
+                               &i, NULL))
 #endif
     {
       for (i = 0, fi = get_current_frame ();
@@ -417,9 +508,9 @@ print_syms_for_block (struct block *block,
 
 	  if (!create_varobj && !values)
 	    {
-	      ui_out_list_begin (uiout, NULL);
+	      ui_out_tuple_begin (uiout, NULL);
 	      ui_out_field_string (uiout, "name", SYMBOL_NAME (sym));
-	      ui_out_list_end (uiout);
+	      ui_out_tuple_end (uiout);
 	      continue;
 	    }
 
@@ -447,7 +538,7 @@ print_syms_for_block (struct block *block,
 	      if (new_var == NULL)
 		continue;
 
-	      ui_out_list_begin (uiout, "varobj");
+	      ui_out_tuple_begin (uiout, "varobj");
 	      ui_out_field_string (uiout, "exp", SYMBOL_NAME (sym));
 	      if (values)
 		{
@@ -481,13 +572,13 @@ print_syms_for_block (struct block *block,
 	    }	  
 	  else
 	    {
-	      ui_out_list_begin (uiout, NULL);
+	      ui_out_tuple_begin (uiout, NULL);
 	      ui_out_field_string (uiout, "name", SYMBOL_NAME (sym));
 	      print_variable_value (sym2, fi, stb->stream);
 	      ui_out_field_stream (uiout, "value", stb);
 	    }
-	  ui_out_list_end (uiout);
-	}      
+	  ui_out_tuple_end (uiout);
+	}
     }
 
   do_cleanups (old_chain);

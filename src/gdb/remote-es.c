@@ -136,9 +136,9 @@ static int es1800_insert_breakpoint (CORE_ADDR, char *);
 
 static void es1800_files_info (struct target_ops *);
 
-static int
-es1800_xfer_inferior_memory (CORE_ADDR, char *, int, int,
-			     struct mem_attrib *, struct target_ops *);
+static int es1800_xfer_inferior_memory (CORE_ADDR, char *, int, int,
+					struct mem_attrib *,
+					struct target_ops *);
 
 static void es1800_prepare_to_store (void);
 
@@ -1616,7 +1616,7 @@ send (char *string)
 {
   if (kiodebug)
     {
-      fprintf (stderr, "Sending: %s\n", string);
+      fprintf_unfiltered (gdb_stderr, "Sending: %s\n", string);
     }
   serial_write (es1800_desc, string, strlen (string));
 }
@@ -1663,7 +1663,7 @@ getmessage (char *buf, int len)
 
   if (kiodebug)
     {
-      fprintf (stderr, "message received :%s\n", buf);
+      fprintf_unfiltered (gdb_stderr, "message received :%s\n", buf);
     }
 }
 

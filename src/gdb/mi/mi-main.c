@@ -42,6 +42,8 @@
 #include "wrapper.h"
 #include "regcache.h"
 #include "gdb.h"
+#include "frame.h"
+
 #include <ctype.h>
 #include <sys/time.h>
 #include <signal.h>            /* for kill() */
@@ -51,6 +53,29 @@ enum
     FROM_TTY = 0
   };
 
+/* Enumerations of the actions that may result from calling
+   captured_mi_execute_command */
+
+enum captured_mi_execute_command_actions
+  {
+    EXECUTE_COMMAND_DISPLAY_PROMPT,
+    EXECUTE_COMMAND_SUPRESS_PROMPT,
+    EXECUTE_COMMAND_DISPLAY_ERROR
+  };
+
+/* This structure is used to pass information from captured_mi_execute_command
+   to mi_execute_command. */
+struct captured_mi_execute_command_args
+{
+  /* This return result of the MI command (output) */
+  enum mi_cmd_result rc;
+
+  /* What action to perform when the call is finished (output) */
+  enum captured_mi_execute_command_actions action;
+
+  /* The command context to be executed (input) */
+  struct mi_parse *command;
+};
 
 int mi_debug_p;
 
@@ -72,6 +97,7 @@ static char *old_regs;
 struct gdb_interpreter *mi_interp;
 struct gdb_interpreter *mi0_interp;
 struct gdb_interpreter *mi1_interp;
+struct gdb_interpreter *mi2_interp;
 
 extern void _initialize_mi_main (void);
 static char *mi_input (char *);
@@ -91,6 +117,12 @@ static void mi_load_progress (const char *section_name,
 			      unsigned long total_section,
 			      unsigned long total_sent,
 			      unsigned long grand_total);
+
+/* FIXME: these should go in some .h file, but infcmd.c doesn't have a
+   corresponding .h file. These wrappers will be obsolete anyway, once
+   we pull the plug on the sanitization. */
+extern void interrupt_target_command_wrapper (char *, int);
+extern void return_command_wrapper (char *, int);
 
 /* FIXME: these should go in some .h file, but infcmd.c doesn't have a
    corresponding .h file. These wrappers will be obsolete anyway, once
@@ -213,16 +245,16 @@ mi_cmd_exec_return (char *args, int from_tty)
   if (*args)
     /* Call return_command with from_tty argument equal to 0 so as to
        avoid being queried. */
-    return_command_wrapper (args, 0);
+    return_command (args, 0);
   else
     /* Call return_command with from_tty argument equal to 0 so as to
        avoid being queried. */
-    return_command_wrapper (NULL, 0);
+    return_command (NULL, 0);
 
   /* Because we have called return_command with from_tty = 0, we need
      to print the frame here. */
   show_and_print_stack_frame (selected_frame,
-			      selected_frame_level,
+			      frame_relative_level (selected_frame),
 			      LOC_AND_ADDRESS);
 
   return MI_CMD_DONE;
@@ -250,16 +282,16 @@ mi_cmd_exec_interrupt (char *args, int from_tty)
       return MI_CMD_ERROR;
     }
     
-  if (0) 
+  if (0)
     {
-      interrupt_target_command_wrapper (args, from_tty);
+      interrupt_target_command (args, from_tty);
     }
-  else 
+  else
     {
       int pid = PIDGET (inferior_ptid);
       kill (pid, SIGINT);
     }
-    
+
   if (last_async_command) {
     fputs_unfiltered (last_async_command, raw_stdout);
     /* FYI: last_async_command could be on a exec cleanup chain,
@@ -325,6 +357,7 @@ mi_cmd_data_list_register_names (char *command, char **argv, int argc)
 {
   int regnum, numregs;
   int i;
+  struct cleanup *cleanup;
 
   /* Note that the test for a valid register must include checking the
      REGISTER_NAME because NUM_REGS may be allocated for the union of
@@ -334,7 +367,7 @@ mi_cmd_data_list_register_names (char *command, char **argv, int argc)
 
   numregs = NUM_REGS + NUM_PSEUDO_REGS;
 
-  ui_out_list_begin (uiout, "register-names");
+  cleanup = make_cleanup_ui_out_list_begin_end (uiout, "register-names");
 
   if (argc == 0)		/* No args, just do all the regs */
     {
@@ -356,6 +389,7 @@ mi_cmd_data_list_register_names (char *command, char **argv, int argc)
       regnum = atoi (argv[i]);
       if (regnum < 0 || regnum >= numregs)
 	{
+	  do_cleanups (cleanup);
 	  xasprintf (&mi_error_message, "bad register number");
 	  return MI_CMD_ERROR;
 	}
@@ -365,7 +399,7 @@ mi_cmd_data_list_register_names (char *command, char **argv, int argc)
       else
 	ui_out_field_string (uiout, NULL, REGISTER_NAME (regnum));
     }
-  ui_out_list_end (uiout);
+  do_cleanups (cleanup);
   return MI_CMD_DONE;
 }
 
@@ -374,6 +408,7 @@ mi_cmd_data_list_changed_registers (char *command, char **argv, int argc)
 {
   int regnum, numregs, changed;
   int i;
+  struct cleanup *cleanup;
 
   /* Note that the test for a valid register must include checking the
      REGISTER_NAME because NUM_REGS may be allocated for the union of
@@ -383,7 +418,7 @@ mi_cmd_data_list_changed_registers (char *command, char **argv, int argc)
 
   numregs = NUM_REGS;
 
-  ui_out_list_begin (uiout, "changed-registers");
+  cleanup = make_cleanup_ui_out_list_begin_end (uiout, "changed-registers");
 
   if (argc == 0)		/* No args, just do all the regs */
     {
@@ -397,6 +432,7 @@ mi_cmd_data_list_changed_registers (char *command, char **argv, int argc)
 	  changed = register_changed_p (regnum);
 	  if (changed < 0)
 	    {
+	      do_cleanups (cleanup);
 	      xasprintf (&mi_error_message,
 			 "mi_cmd_data_list_changed_registers: Unable to read register contents.");
 	      return MI_CMD_ERROR;
@@ -419,6 +455,7 @@ mi_cmd_data_list_changed_registers (char *command, char **argv, int argc)
 	  changed = register_changed_p (regnum);
 	  if (changed < 0)
 	    {
+	      do_cleanups (cleanup);
 	      xasprintf (&mi_error_message,
 			 "mi_cmd_data_list_register_change: Unable to read register contents.");
 	      return MI_CMD_ERROR;
@@ -428,11 +465,12 @@ mi_cmd_data_list_changed_registers (char *command, char **argv, int argc)
 	}
       else
 	{
+	  do_cleanups (cleanup);
 	  xasprintf (&mi_error_message, "bad register number");
 	  return MI_CMD_ERROR;
 	}
     }
-  ui_out_list_end (uiout);
+  do_cleanups (cleanup);
   return MI_CMD_DONE;
 }
 
@@ -441,7 +479,7 @@ register_changed_p (int regnum)
 {
   char *raw_buffer = alloca (MAX_REGISTER_RAW_SIZE);
 
-  if (read_relative_register_raw_bytes (regnum, raw_buffer))
+  if (! frame_register_read (selected_frame, regnum, raw_buffer))
     return -1;
 
   if (memcmp (&old_regs[REGISTER_BYTE (regnum)], raw_buffer,
@@ -468,6 +506,7 @@ mi_cmd_data_list_register_values (char *command, char **argv, int argc)
 {
   int regnum, numregs, format, result;
   int i;
+  struct cleanup *list_cleanup, *tuple_cleanup;
 
   /* Note that the test for a valid register must include checking the
      REGISTER_NAME because NUM_REGS may be allocated for the union of
@@ -493,7 +532,7 @@ mi_cmd_data_list_register_values (char *command, char **argv, int argc)
       return MI_CMD_ERROR;
     }
 
-  ui_out_list_begin (uiout, "register-values");
+  list_cleanup = make_cleanup_ui_out_list_begin_end (uiout, "register-values");
 
   if (argc == 1)		/* No args, beside the format: do all the regs */
     {
@@ -504,12 +543,15 @@ mi_cmd_data_list_register_values (char *command, char **argv, int argc)
 	  if (REGISTER_NAME (regnum) == NULL
 	      || *(REGISTER_NAME (regnum)) == '\0')
 	    continue;
-	  ui_out_tuple_begin (uiout, NULL);
+	  tuple_cleanup = make_cleanup_ui_out_tuple_begin_end (uiout, NULL);
 	  ui_out_field_int (uiout, "number", regnum);
 	  result = get_register (regnum, format);
 	  if (result == -1)
-	    return MI_CMD_ERROR;
-	  ui_out_tuple_end (uiout);
+	    {
+	      do_cleanups (list_cleanup);
+	      return MI_CMD_ERROR;
+	    }
+	  do_cleanups (tuple_cleanup);
 	}
     }
 
@@ -523,20 +565,24 @@ mi_cmd_data_list_register_values (char *command, char **argv, int argc)
 	  && REGISTER_NAME (regnum) != NULL
 	  && *REGISTER_NAME (regnum) != '\000')
 	{
-	  ui_out_tuple_begin (uiout, NULL);
+	  tuple_cleanup = make_cleanup_ui_out_tuple_begin_end (uiout, NULL);
 	  ui_out_field_int (uiout, "number", regnum);
 	  result = get_register (regnum, format);
 	  if (result == -1)
-	    return MI_CMD_ERROR;
-	  ui_out_tuple_end (uiout);
+	    {
+	      do_cleanups (list_cleanup);
+	      return MI_CMD_ERROR;
+	    }
+	  do_cleanups (tuple_cleanup);
 	}
       else
 	{
+	  do_cleanups (list_cleanup);
 	  xasprintf (&mi_error_message, "bad register number");
 	  return MI_CMD_ERROR;
 	}
     }
-  ui_out_list_end (uiout);
+  do_cleanups (list_cleanup);
   return MI_CMD_DONE;
 }
 
@@ -554,10 +600,6 @@ get_register (int regnum, int format)
   if (format == 'N')
     format = 0;
 
-  /* read_relative_register_raw_bytes returns a virtual frame pointer
-     (FRAME_FP (selected_frame)) if regnum == FP_REGNUM instead
-     of the real contents of the register. To get around this,
-     use get_saved_register instead. */
   get_saved_register (raw_buffer, &optim, (CORE_ADDR *) NULL, selected_frame,
 		      regnum, (enum lval_type *) NULL);
   if (optim)
@@ -1171,9 +1213,11 @@ mi_cmd_mi_no_op (char *command, char **argv, int argc)
    extracted from error_last_message(). */
 
 static int
-captured_mi_execute_command (void *data)
+captured_mi_execute_command (struct ui_out *uiout, void *data)
 {
-  struct mi_parse *context = data;
+  struct captured_mi_execute_command_args *args =
+    (struct captured_mi_execute_command_args *) data;
+  struct mi_parse *context = args->command;
   struct ui_out *saved_uiout = uiout;
   enum mi_cmd_result rc = MI_CMD_DONE;
 
@@ -1190,7 +1234,9 @@ captured_mi_execute_command (void *data)
          condition expression, each function should return an
          indication of what action is required and then switch on
          that. */
-      rc = mi_cmd_execute (context);
+      args->action = EXECUTE_COMMAND_DISPLAY_PROMPT;
+      args->rc = mi_cmd_execute (context);
+
       if (!target_can_async_p () || !target_executing)
 	{
 	  /* print the result if there were no errors 
@@ -1201,7 +1247,7 @@ captured_mi_execute_command (void *data)
 	     will most likely crash in the mi_out_* routines. 
 	  */
 			    
-	  if (rc == MI_CMD_DONE)
+	  if (args->rc == MI_CMD_DONE)
 	    {
 	      fputs_unfiltered (context->token, raw_stdout);
 	      fputs_unfiltered ("^done", raw_stdout);
@@ -1209,7 +1255,7 @@ captured_mi_execute_command (void *data)
 	      mi_out_rewind (saved_uiout);
 	      fputs_unfiltered ("\n", raw_stdout);
 	    }
-	  else if (rc == MI_CMD_ERROR)
+	  else if (args->rc == MI_CMD_ERROR)
 	    {
 	      if (mi_error_message)
 		{
@@ -1221,18 +1267,22 @@ captured_mi_execute_command (void *data)
 		}
 	      mi_out_rewind (saved_uiout);
 	    }
-	  else if (rc == MI_CMD_CAUGHT_ERROR)
+	  else if (args->rc == MI_CMD_CAUGHT_ERROR)
 	    {
 	      mi_out_rewind (saved_uiout);
-	      return 0;
+	      args->action = EXECUTE_COMMAND_DISPLAY_ERROR;
+	      return 1;
 	    }
 	  else
 	    mi_out_rewind (saved_uiout);
 	}
       else if (sync_execution)
-	/* Don't print the prompt. We are executing the target in
-	   synchronous mode. */
-	return -1;
+	{
+	  /* Don't print the prompt. We are executing the target in
+	     synchronous mode. */
+	  args->action = EXECUTE_COMMAND_SUPRESS_PROMPT;
+	  return 1;
+	}
       break;
 
     case CLI_COMMAND:
@@ -1256,6 +1306,8 @@ captured_mi_execute_command (void *data)
       mi_out_put (saved_uiout, raw_stdout);
       mi_out_rewind (saved_uiout);
       fputs_unfiltered ("\n", raw_stdout);
+      args->action = EXECUTE_COMMAND_DISPLAY_PROMPT;
+      args->rc = MI_CMD_DONE;
       break;
 
     }
@@ -1269,6 +1321,8 @@ mi_execute_command (char *cmd, int from_tty)
   struct mi_parse *command;
   struct ui_out *saved_uiout = uiout;
   int rc = MI_CMD_DONE;
+  struct captured_mi_execute_command_args args;
+  int result;
 
   /* This is to handle EOF (^D). We just quit gdb. */
   /* FIXME: we should call some API function here. */
@@ -1279,18 +1333,20 @@ mi_execute_command (char *cmd, int from_tty)
 
   if (command != NULL)
     {
-      /* FIXME: cagney/1999-11-04: Can this use of catch_errors either
+      /* FIXME: cagney/1999-11-04: Can this use of catch_exceptions either
          be pushed even further down or even eliminated? */
-      rc = catch_errors (captured_mi_execute_command, command, "",
-			     RETURN_MASK_ALL);
-      if (rc < 0)
+      args.command = command;
+      result = catch_exceptions (uiout, captured_mi_execute_command, &args, "",
+				 RETURN_MASK_ALL);
+
+      if (args.action == EXECUTE_COMMAND_SUPRESS_PROMPT)
 	{
 	  /* The command is executing synchronously.  Bail out early
 	     suppressing the finished prompt. */
 	  mi_parse_free (command);
 	  return;
 	}
-      if (rc == 0)
+      if (args.action == EXECUTE_COMMAND_DISPLAY_ERROR || result < 0)
 	{
 	  char *msg = error_last_message ();
 	  struct cleanup *cleanup = make_cleanup (xfree, msg);
@@ -1699,7 +1755,7 @@ _initialize_mi_main (void)
   mi_interp = mi_create_interpreter ("mi", 0);
   mi0_interp = mi_create_interpreter ("mi0", 0);
   mi1_interp = mi_create_interpreter ("mi1", 1);
-
+  mi2_interp = mi_create_interpreter ("mi2", 1);
 }
 
 int 

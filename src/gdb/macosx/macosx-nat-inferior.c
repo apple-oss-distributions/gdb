@@ -256,10 +256,7 @@ macosx_handle_exception (macosx_exception_thread_message *msg,
       CHECK_FATAL (! macosx_status->stopped_in_ptrace);
     }
 
-  if (inferior_debug_flag) 
-    {
-      inferior_debug (2, "macosx_handle_exception: received exception message\n");
-    }
+  inferior_debug (2, "macosx_handle_exception: received exception message\n");
   
   if (msg->task_port != macosx_status->task)
     {
@@ -520,7 +517,7 @@ macosx_service_event (enum macosx_source_type source,
     }
   else if (source == NEXT_SOURCE_SIGNAL) 
     {
-      inferior_debug (2, "macosx_service_events: got signal message\n");
+      inferior_debug (1, "macosx_service_events: got signal message\n");
       macosx_handle_signal ((macosx_signal_thread_message *) buf, status);
       CHECK_FATAL (status->kind != TARGET_WAITKIND_SPURIOUS);
       if (!inferior_handle_all_events_flag) 
@@ -659,7 +656,6 @@ macosx_child_resume (ptid_t ptid, int step, enum target_signal signal)
   pid = ptid_get_pid (ptid);
   thread = ptid_get_tid (ptid);
 
-  CHECK_FATAL (tm_print_insn != NULL);
   CHECK_FATAL (macosx_status != NULL);
 
   macosx_inferior_check_stopped (macosx_status);
@@ -800,18 +796,10 @@ static void macosx_mourn_inferior ()
      state without all the bad effects of the full function. */
 
 #if 0
-  if (symfile_objfile != NULL) 
-    {
-      CHECK_FATAL (symfile_objfile->obfd != NULL);
-      macosx_init_dyld_symfile (symfile_objfile->obfd);
-    } 
-  else 
-    {
-      macosx_init_dyld_symfile (NULL); 
-    }
+  macosx_init_dyld_symfile (symfile_objfile, exec_bfd);
 #endif
 
-  macosx_clear_pending_events();
+  macosx_clear_pending_events ();
 }
 
 void macosx_fetch_task_info (struct kinfo_proc **info, size_t *count)
@@ -1051,19 +1039,16 @@ macosx_set_auto_start_dyld (char *args, int from_tty,
   if (ptid_equal (inferior_ptid, null_ptid))
     return;
 
-  macosx_dyld_update (1);
-  macosx_set_start_breakpoint (exec_bfd);
-  macosx_dyld_update (0);
-  
+  macosx_solib_add (NULL, 0, NULL, 0);
 }
 
 static void macosx_child_attach (char *args, int from_tty)
 {
-  struct target_waitstatus w;
   task_t itask;
   int pid;
   int ret;
   kern_return_t kret;
+  char *exec_file = NULL;
 
   if (args == NULL) {
     error_no_arg ("process-id to attach");
@@ -1080,6 +1065,14 @@ static void macosx_child_attach (char *args, int from_tty)
 
   CHECK_FATAL (macosx_status != NULL);
   macosx_inferior_destroy (macosx_status);
+
+  exec_file = get_exec_file (0);
+  if (exec_file)
+    printf_filtered ("Attaching to program: `%s', %s.\n", 
+		     exec_file, target_pid_to_str (pid_to_ptid (pid)));
+  else
+    printf_filtered ("Attaching to %s.\n",
+		     target_pid_to_str (pid_to_ptid (pid)));
 
   macosx_create_inferior_for_task (macosx_status, itask, pid);
 
@@ -1125,17 +1118,18 @@ static void macosx_child_attach (char *args, int from_tty)
   push_target (&macosx_child_ops);
 
   if (macosx_status->attached_in_ptrace) {
+
     /* read attach notification */
-    macosx_wait (macosx_status, &w, NULL);
+    stop_soon_quietly = 1;
+    wait_for_inferior ();
 
     macosx_signal_thread_create (&macosx_status->signal_status, macosx_status->pid);
-    macosx_wait (macosx_status, &w, NULL);
+    stop_soon_quietly = 1;
+    wait_for_inferior ();
   }
   
   if (inferior_auto_start_dyld_flag) {
-    macosx_dyld_update (1);
-    macosx_set_start_breakpoint (exec_bfd);
-    macosx_dyld_update (0);
+    macosx_solib_add (NULL, 0, NULL, 0);
   }
 }
 
@@ -1147,6 +1141,16 @@ static void macosx_child_detach (char *args, int from_tty)
 
   if (ptid_equal (inferior_ptid, null_ptid)) {
     return;
+  }
+
+  if (from_tty) {
+    char *exec_file = get_exec_file (0);
+    if (exec_file)
+      printf_filtered ("Detaching from program: `%s', %s.\n", 
+		       exec_file, target_pid_to_str (inferior_ptid));
+    else
+      printf_filtered ("Detaching from %s.\n",
+		       target_pid_to_str (inferior_ptid));
   }
 
   if (! macosx_inferior_valid (macosx_status)) {
@@ -1161,7 +1165,7 @@ static void macosx_child_detach (char *args, int from_tty)
       && (! macosx_status->stopped_in_ptrace)
       && (! macosx_status->stopped_in_softexc)) {
     macosx_inferior_suspend_ptrace (macosx_status);
-    CHECK_FATAL (macosx_status->stopped_in_ptrace);
+    CHECK_FATAL (macosx_status->stopped_in_ptrace || macosx_status->stopped_in_softexc);
   }
 
   if (inferior_bind_exception_port_flag) {
@@ -1329,13 +1333,20 @@ static void macosx_ptrace_him (int pid)
 
 static void macosx_child_create_inferior (char *exec_file, char *allargs, char **env)
 {
+  if ((exec_bfd != NULL) &&
+      (exec_bfd->xvec->flavour == bfd_target_pef_flavour
+       || exec_bfd->xvec->flavour == bfd_target_pef_xlib_flavour))
+    {
+      error ("Can't run a PEF binary - use LaunchCFMApp as the executable file.");
+    }
+
   fork_inferior (exec_file, allargs, env, macosx_ptrace_me, macosx_ptrace_him, NULL, NULL);
   if (ptid_equal (inferior_ptid, null_ptid))
     return;
 
   macosx_clear_start_breakpoint ();
   if (inferior_auto_start_dyld_flag) {
-    macosx_set_start_breakpoint (exec_bfd);
+    macosx_dyld_init (&macosx_status->dyld_status, exec_bfd);
   }
 
   attach_flag = 0;

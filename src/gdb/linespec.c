@@ -26,6 +26,7 @@
 #include "command.h"
 #include "symfile.h"
 #include "objfiles.h"
+#include "source.h"
 #include "demangle.h"
 #include "value.h"
 #include "completer.h"
@@ -134,6 +135,7 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
 			 (struct symtab **) NULL)))
     {
       int method_counter;
+      int name_len = strlen (name);
 
       CHECK_TYPEDEF (t);
 
@@ -206,7 +208,9 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
 		     */
 		  }
 	      }
-	  else if (strcmp_iw (class_name, name) == 0)
+	  else if (strncmp (class_name, name, name_len) == 0
+		   && (class_name[name_len] == '\0'
+		       || class_name[name_len] == '<'))
 	    {
 	      /* For GCC 3.x and stabs, constructors and destructors have names
 		 like __base_ctor and __complete_dtor.  Check the physname for now
@@ -307,9 +311,13 @@ build_canonical_line_spec (struct symtab_and_line *sal, char *symname,
   canonical_arr[0] = canonical_name;
 }
 
+
+
 /* Find an instance of the character C in the string S that is outside
    of all parenthesis pairs, single-quoted strings, and double-quoted
-   strings.  */
+   strings.  Also, ignore the char within a template name, like a ','
+   within foo<int, int>.  */
+
 static char *
 find_toplevel_char (char *s, char c)
 {
@@ -332,9 +340,9 @@ find_toplevel_char (char *s, char c)
 	return scan;
       else if (*scan == '"' || *scan == '\'')
 	quoted = *scan;
-      else if (*scan == '(')
+      else if (*scan == '(' || *scan == '<')
 	depth++;
-      else if (*scan == ')' && depth > 0)
+      else if ((*scan == ')' || *scan == '>') && depth > 0)
 	depth--;
     }
 
@@ -356,12 +364,8 @@ find_toplevel_char (char *s, char c)
  */
 
 static struct symtabs_and_lines
-decode_line_2 (sym_arr, nelts, nsym, funfirstline, canonical)
-     struct symbol *sym_arr[];
-     int nelts;
-     int nsym;
-     int funfirstline;
-     char ***canonical;
+decode_line_2 (struct symbol *sym_arr[], int nelts, int nsym, int funfirstline,
+              char ***canonical)
 {
   struct symtabs_and_lines values, return_values;
   char *args, *arg1;
@@ -565,9 +569,9 @@ decode_line_2 (sym_arr, nelts, nsym, funfirstline, canonical)
    lack of single quotes.  FIXME: write a linespec_completer which we
    can use as appropriate instead of make_symbol_completion_list.  */
 
-struct symtabs_and_lines
-decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
-	       int default_line, char ***canonical)
+static struct symtabs_and_lines
+decode_line_1a (char **argptr, int funfirstline, struct symtab *default_symtab,
+		int default_line, char ***canonical)
 {
   struct symtabs_and_lines values;
   struct symtab_and_line val;
@@ -590,7 +594,6 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
   int is_quoted;
   int is_quote_enclosed;
   int has_parens;
-  int has_if = 0;
   int has_comma = 0;
   struct symbol **sym_arr;
   struct type *t;
@@ -603,8 +606,14 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 
   if (default_symtab == 0)
     {
-      default_symtab = current_source_symtab;
-      default_line = current_source_line;
+      /* Use whatever we have for the default source line.  We don't use
+         get_current_or_default_symtab_and_line as it can recurse and call
+	 us back! */
+      struct symtab_and_line cursal = 
+      			get_current_source_symtab_and_line ();
+      
+      default_symtab = cursal.symtab;
+      default_line = cursal.line;
     }
 
   /* See if arg is *PC */
@@ -625,25 +634,6 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
       return values;
     }
 
-  /* 'has_if' is for the syntax:
-   *     (gdb) break foo if (a==b)
-   */
-  if ((ii = strstr (*argptr, " if ")) != NULL ||
-      (ii = strstr (*argptr, "\tif ")) != NULL ||
-      (ii = strstr (*argptr, " if\t")) != NULL ||
-      (ii = strstr (*argptr, "\tif\t")) != NULL ||
-      (ii = strstr (*argptr, " if(")) != NULL ||
-      (ii = strstr (*argptr, "\tif( ")) != NULL)
-    has_if = 1;
-  /* Temporarily zap out "if (condition)" to not
-   * confuse the parenthesis-checking code below.
-   * This is undone below. Do not change ii!!
-   */
-  if (has_if)
-    {
-      *ii = '\0';
-    }
-
   /* Set various flags.
    * 'has_parens' is important for overload checking, where
    * we allow things like: 
@@ -659,12 +649,6 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 
   has_parens = ((pp = strchr (*argptr, '(')) != NULL
 		&& (pp = strrchr (pp, ')')) != NULL);
-
-  /* Now that we're safely past the has_parens check,
-   * put back " if (condition)" so outer layers can see it 
-   */
-  if (has_if)
-    *ii = ' ';
 
   /* Maybe we were called with a line range FILENAME:LINENUM,FILENAME:LINENUM
      and we must isolate the first half.  Outer layers will call again later
@@ -754,7 +738,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
    * the existing C++ code to let the user choose one.
    */
 
-  if (allow_objc_selectors_flag && !has_if && !has_comma)
+  if (allow_objc_selectors_flag && !has_comma)
     {
       char *copy = NULL;
       struct block *block;
@@ -818,8 +802,16 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 	      values.sals[0].end = 0;
 	      values.sals[0].pc = SYMBOL_VALUE_ADDRESS (sym_arr[0]);
 	    }
-	  return values;
-	}
+          if (is_quoted) 
+            {
+              if (!**argptr 
+                  || strchr (get_gdb_completer_quote_characters (), **argptr) == NULL)
+                ;
+              else
+                *argptr = *argptr + 1;
+            }
+          return values;
+        }
 
       if (i1 > 1)
 	{
@@ -1050,7 +1042,6 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 	  /* Look up entire name */
 	  sym = lookup_symbol (copy, 0, VAR_NAMESPACE, 0, &sym_symtab);
 	  s = (struct symtab *) 0;
-	  /* Prepare to jump: restore the " if (condition)" so outer layers see it */
 	  /* Symbol was found --> jump to normal symbol processing.
 	     Code following "symbol_found" expects "copy" to have the
 	     symbol name, "sym" to have the symbol pointer, "s" to be
@@ -1077,20 +1068,12 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
       if ((*p == '"') && is_quote_enclosed)
 	--p;
       copy = (char *) alloca (p - *argptr + 1);
-      if ((**argptr == '"') && is_quote_enclosed)
-	{
-	  memcpy (copy, *argptr + 1, p - *argptr - 1);
-	  /* It may have the ending quote right after the file name */
-	  if (copy[p - *argptr - 2] == '"')
-	    copy[p - *argptr - 2] = 0;
-	  else
-	    copy[p - *argptr - 1] = 0;
-	}
+      memcpy (copy, *argptr, p - *argptr);
+      /* It may have the ending quote right after the file name */
+      if (is_quote_enclosed && copy[p - *argptr - 1] == '"')
+	copy[p - *argptr - 1] = 0;
       else
-	{
-	  memcpy (copy, *argptr, p - *argptr);
-	  copy[p - *argptr] = 0;
-	}
+	copy[p - *argptr] = 0;
 
       /* Find that file's data.  */
       s = lookup_symtab (copy);
@@ -1171,13 +1154,19 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
       /* This is where we need to make sure that we have good defaults.
          We must guarantee that this section of code is never executed
          when we are called with just a function name, since
-         select_source_symtab calls us with such an argument  */
+	 set_default_source_symtab_and_line uses
+         select_source_symtab that calls us with such an argument  */
 
       if (s == 0 && default_symtab == 0)
 	{
-	  select_source_symtab (0);
-	  default_symtab = current_source_symtab;
-	  default_line = current_source_line;
+          struct symtab_and_line cursal;
+
+	  /* Make sure we have at least a default source file. */
+	  set_default_source_symtab_and_line ();
+          cursal = get_current_source_symtab_and_line ();
+      
+          default_symtab = cursal.symtab;
+          default_line = cursal.line;
 	}
 
       if (**argptr == '+')
@@ -1462,4 +1451,35 @@ minimal_symbol_found:		/* We also jump here from the case for variables
     error ("Function \"%s\" not defined in file %s.", copy, s->filename);
 
   return values;		/* for lint */
+}
+
+struct symtabs_and_lines
+decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
+		int default_line, char ***canonical)
+{
+  struct symtabs_and_lines sal;
+  char *ii = NULL;
+  int has_if = 0;
+
+  if ((ii = strstr (*argptr, " if ")) != NULL ||
+      (ii = strstr (*argptr, "\tif ")) != NULL ||
+      (ii = strstr (*argptr, " if\t")) != NULL ||
+      (ii = strstr (*argptr, "\tif\t")) != NULL ||
+      (ii = strstr (*argptr, " if(")) != NULL ||
+      (ii = strstr (*argptr, "\tif( ")) != NULL)
+    has_if = 1;
+
+  /* Temporarily zap out "if (condition)" */
+
+  if (has_if)
+    *ii = '\0';
+
+  sal = decode_line_1a (argptr, funfirstline, default_symtab, default_line, canonical);
+
+  /* put back " if (condition)" so outer layers can see it */
+
+  if (has_if)
+    *ii = ' ';
+
+  return sal;
 }

@@ -29,6 +29,12 @@
 load_lib mi-support.exp
 set MIFLAGS "-i=mi"
 
+# APPLE LOCAL: For now, ignore all non-mi1 tests.
+if [istarget "*-apple-darwin*"] then {
+  gdb_suppress_entire_file "Not testing non-mi1 on Darwin at this time."
+  return
+}
+
 gdb_exit
 if [mi_gdb_start] {
     continue
@@ -78,6 +84,9 @@ proc test_stepi_nexti {} {
 	-re "111\\^running\r\n${mi_gdb_prompt}111\\*stopped,reason=\"end-stepping-range\",thread-id=\"\[0-9]\",frame=\{addr=\"$hex\",func=\"main\",args=\\\[\\\],file=\".*basics.c\",line=\"3.\"\}\r\n$mi_gdb_prompt$" {
 	    pass "step-instruction at main"
 	}
+	-re ".*$mi_gdb_prompt$" {
+	    fail "step-instruction at main (2)"
+	}
 	timeout {
 	    fail "step-instruction at main (timeout)"
 	}
@@ -87,6 +96,9 @@ proc test_stepi_nexti {} {
 	-re "222\\^running\r\n${mi_gdb_prompt}222\\*stopped,reason=\"end-stepping-range\",thread-id=\"\[0-9\]\",frame=\{addr=\"$hex\",func=\"main\",args=\\\[\\\],file=\".*basics.c\",line=\"3.\"\}\r\n$mi_gdb_prompt$" {
 	    pass "next-instruction at main"
 	}
+	-re ".*$mi_gdb_prompt$" {
+	    fail "next-instruction at main (2)"
+	}
 	timeout {
 	    fail "next-instruction at main (timeout)"
 	}
@@ -94,10 +106,13 @@ proc test_stepi_nexti {} {
     send_gdb "333-exec-next-instruction\n"
     gdb_expect {
 	-re "333\\^running\r\n${mi_gdb_prompt}333\\*stopped,reason=\"end-stepping-range\",thread-id=\"\[0-9\]\",frame=\{addr=\"$hex\",func=\"main\",args=\\\[\\\],file=\".*basics.c\",line=\"3.\"\}\r\n$mi_gdb_prompt$" {
-	    pass "next-instruction at main"
+	    pass "exec-next-instruction at main"
+	}
+	-re ".*$mi_gdb_prompt$" {
+	    fail "exec-next-instruction at main (2)"
 	}
 	timeout {
-	    fail "next-instruction at main (timeout)"
+	    fail "exec-next-instruction at main (timeout)"
 	}
     }
 }

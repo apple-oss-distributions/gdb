@@ -65,6 +65,9 @@
 /* Define if <sys/link.h> has struct link_map32 */
 #undef HAVE_STRUCT_LINK_MAP32
 
+/* Define if <sys/link.h> has link_map32 (solaris sparc-64 target) */
+#undef _SYSCALL32
+
 /* Define if the prfpregset_t type is broken. */
 #undef PRFPREGSET_T_BROKEN
 
@@ -173,3 +176,5 @@
 
 /* nativefile */
 #undef GDB_NM_FILE
+
+#undef HAVE_LONG_DOUBLE

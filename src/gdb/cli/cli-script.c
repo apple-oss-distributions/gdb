@@ -28,11 +28,16 @@
 #include <ctype.h>
 
 #include "ui-out.h"
+#include "gdb_string.h"
 
 #include "top.h"
 #include "cli/cli-cmds.h"
 #include "cli/cli-decode.h"
 #include "cli/cli-script.h"
+
+/* Need this for the MI_CMD_ERROR, so we can call mi_interpreter_exec
+   in execute_control_command when the interpreter is mi.  */
+#include "mi/mi-cmds.h"
 
 /* From gdb/top.c */
 
@@ -248,6 +253,15 @@ execute_cmd_post_hook (struct cmd_list_element *c)
 }
 
 /* Execute the command in CMD.  */
+void
+do_restore_user_call_depth (void * call_depth)
+{	
+  int * depth = call_depth;
+  /* We will be returning_to_top_level() at this point, so we want to
+     reset our depth. */
+  (*depth) = 0;
+}
+
 
 void
 execute_user_command (struct cmd_list_element *c, char *args)
@@ -256,6 +270,8 @@ execute_user_command (struct cmd_list_element *c, char *args)
   struct cleanup *old_chain;
   enum command_control_type ret;
   int saved_async;
+  static int user_call_depth = 0;
+  extern int max_user_call_depth;
 
   old_chain = setup_user_args (args);
 
@@ -263,6 +279,11 @@ execute_user_command (struct cmd_list_element *c, char *args)
   if (cmdlines == 0)
     /* Null command */
     return;
+
+  if (++user_call_depth > max_user_call_depth)
+    error ("Max user call depth exceeded -- command aborted\n");
+
+  old_chain = make_cleanup (do_restore_user_call_depth, &user_call_depth);
 
   /* Set the instream to 0, indicating execution of a
      user-defined function.  */
@@ -290,6 +311,8 @@ execute_user_command (struct cmd_list_element *c, char *args)
       cmdlines = cmdlines->next;
     }
   do_cleanups (old_chain);
+
+  user_call_depth--;
 }
 
 enum command_control_type
@@ -332,9 +355,18 @@ execute_control_command (struct command_line *cmd)
 	{
 	  char *argv[2];
 	  int argc = 2;
+	  enum mi_cmd_result result;
 	  argv[0] = "console";
 	  argv[1] = new_line;
-	  mi_cmd_interpreter_exec (new_line, argv, argc);
+	  result = mi_cmd_interpreter_exec (new_line, argv, argc);
+	  /* This is a hack.  If there is an error executing this command
+	     then throw_exception will call bpstat_clear_actions on the way
+	     out, which - if we are dealing with breakpoint commands - will
+	     clear the commands out from under bpstat_do_actions.  I am
+	     returning invalid_control to indicate that something bad has
+	     Happened, so bpstat_do_actions can do the right thing. */
+	  if (result == MI_CMD_ERROR)
+	    return invalid_control;
 	}
       else
 	execute_command (new_line, 0);
@@ -1060,6 +1092,36 @@ static struct cleanup *
 make_cleanup_free_command_lines (struct command_line **arg)
 {
   return make_cleanup (do_free_command_lines_cleanup, arg);
+}
+
+struct command_line *
+copy_command_lines (struct command_line *cmds)
+{
+  struct command_line *result = NULL;
+
+  if (cmds)
+    {
+      result = (struct command_line *) xmalloc (sizeof (struct command_line));
+
+      result->next = copy_command_lines (cmds->next);
+      result->line = xstrdup (cmds->line);
+      result->control_type = cmds->control_type;
+      result->body_count = cmds->body_count;
+      if (cmds->body_count > 0)
+        {
+          int i;
+
+          result->body_list = (struct command_line **)
+            xmalloc (sizeof (struct command_line *) * cmds->body_count);
+
+          for (i = 0; i < cmds->body_count; i++)
+            result->body_list[i] = copy_command_lines (cmds->body_list[i]);
+        }
+      else
+        result->body_list = NULL;
+    }
+
+  return result;
 }
 
 static void

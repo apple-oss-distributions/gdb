@@ -32,33 +32,32 @@ extern int child_wait (int, struct target_waitstatus *, void *);
 #define FETCH_INFERIOR_REGISTERS
 
 #define CHILD_PREPARE_TO_STORE() \
-	read_register_bytes (0, (char *) NULL, REGISTER_BYTES)
+  read_register_bytes (0, (char *) NULL, REGISTER_BYTES)
 
 #define DISABLE_UNSETTABLE_BREAK(addr) 1
 
-extern int macosx_try_start_dyld ();
-
+struct target_ops;
+int
+macosx_solib_add (const char *filename, int from_tty,
+		  struct target_ops *targ, int loadsyms);
 #define SOLIB_ADD(filename, from_tty, targ, loadsyms) \
-  macosx_try_start_dyld ()
+  macosx_solib_add (filename, from_tty, targ, loadsyms)
 
-#define SOLIB_IN_DYNAMIC_LINKER(pid,pc) \
-(0)
+#define SOLIB_IN_DYNAMIC_LINKER(pid,pc) 0
 
-#define SOLIB_UNLOADED_LIBRARY_PATHNAME(pid) \
-(0)
+#define SOLIB_UNLOADED_LIBRARY_PATHNAME(pid) 0
 
-#define SOLIB_LOADED_LIBRARY_PATHNAME(pid) \
-(0)
+#define SOLIB_LOADED_LIBRARY_PATHNAME(pid) 0
 
 #define SOLIB_CREATE_CATCH_LOAD_HOOK(pid,tempflag,filename,cond_string) \
-   error("catch of library loads/unloads not yet implemented on this platform")
+  error("catch of library loads/unloads not yet implemented on this platform")
 
 #define SOLIB_CREATE_CATCH_UNLOAD_HOOK(pid,tempflag,filename,cond_string) \
-   error("catch of library loads/unloads not yet implemented on this platform")
+  error("catch of library loads/unloads not yet implemented on this platform")
 
 extern void macosx_add_shared_symbol_files ();
 #define ADD_SHARED_SYMBOL_FILES(args, from_tty) \
-  macosx_add_shared_symbol_files ()
+  macosx_add_shared_symbol_files (args, from_tty)
 
 enum ptracereq {
   PTRACE_TRACEME = 0,		/* 0, by tracee to begin tracing */
@@ -93,26 +92,28 @@ char **macosx_process_completer (char *text, char *word);
 macosx_can_use_hw_watchpoint(type, cnt, ot)
 
 #define TARGET_REGION_OK_FOR_HW_WATCHPOINT(start, len) \
-macosx_region_ok_for_hw_watchpoint (start, len)
+  macosx_region_ok_for_hw_watchpoint (start, len)
 
 #define STOPPED_BY_WATCHPOINT(w) \
-macosx_stopped_by_watchpoint (&w, stop_signal, stepped_after_stopped_by_watchpoint)
+  macosx_stopped_by_watchpoint (&w, stop_signal, stepped_after_stopped_by_watchpoint)
 
 #undef HAVE_STEPPABLE_WATCHPOINT
-#define HAVE_NONSTEPPABLE_WATCHPOINT
+#define HAVE_NONSTEPPABLE_WATCHPOINT 1
 #undef HAVE_CONTINUABLE_WATCHPOINT
 
 #define TARGET_ENABLE_HW_WATCHPOINTS(pid) \
-macosx_enable_page_protection_events (pid)
+  macosx_enable_page_protection_events (pid)
 
+void
+macosx_disable_page_protection_events (int pid);
 #define TARGET_DISABLE_HW_WATCHPOINTS(pid) \
-macosx_disable_page_protection_events (pid)
+  macosx_disable_page_protection_events (pid)
 
 #define target_insert_watchpoint(addr, len, type) \
-macosx_insert_watchpoint (addr, len, type)
+  macosx_insert_watchpoint (addr, len, type)
 
 #define target_remove_watchpoint(addr, len, type) \
-macosx_remove_watchpoint (addr, len, type)
+  macosx_remove_watchpoint (addr, len, type)
 
 #define PROCESS_COMPLETER macosx_process_completer
 #define PROCESS_COMPLETER_WORD_BREAK_CHARACTERS gdb_completer_filename_word_break_characters

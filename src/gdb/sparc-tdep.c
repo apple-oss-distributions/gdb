@@ -1,6 +1,8 @@
 /* Target-dependent code for the SPARC for GDB, the GNU debugger.
-   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-   1997, 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+
+   Copyright 1986, 1987, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software Foundation,
+   Inc.
 
    This file is part of GDB.
 
@@ -25,12 +27,12 @@
 #include "arch-utils.h"
 #include "frame.h"
 #include "inferior.h"
-#include "obstack.h"
 #include "target.h"
 #include "value.h"
 #include "bfd.h"
 #include "gdb_string.h"
 #include "regcache.h"
+#include "osabi.h"
 
 #ifdef	USE_PROC_FS
 #include <sys/procfs.h>
@@ -109,6 +111,8 @@ struct gdbarch_tdep
     int reg_save_offset;
     int call_dummy_call_offset;
     int print_insn_mach;
+
+    enum gdb_osabi osabi;
   };
 
 /* Now make GDB_TARGET_IS_SPARC64 a runtime test.  */
@@ -683,10 +687,36 @@ examine_prologue (CORE_ADDR start_pc, int frameless_p, struct frame_info *fi,
   return pc;
 }
 
+/* Advance PC across any function entry prologue instructions to reach
+   some "real" code.  */
+
 CORE_ADDR
-sparc_skip_prologue (CORE_ADDR start_pc, int frameless_p)
+sparc_skip_prologue (CORE_ADDR start_pc)
 {
-  return examine_prologue (start_pc, frameless_p, NULL, NULL);
+  struct symtab_and_line sal;
+  CORE_ADDR func_start, func_end;
+
+  /* This is the preferred method, find the end of the prologue by
+     using the debugging information.  */
+  if (find_pc_partial_function (start_pc, NULL, &func_start, &func_end))
+    {
+      sal = find_pc_line (func_start, 0);
+
+      if (sal.end < func_end
+	  && start_pc <= sal.end)
+	return sal.end;
+    }
+
+  /* Oh well, examine the code by hand.  */
+  return examine_prologue (start_pc, 0, NULL, NULL);
+}
+
+/* Is the prologue at IP frameless?  */
+
+int
+sparc_prologue_frameless_p (CORE_ADDR ip)
+{
+  return ip == examine_prologue (ip, 1, NULL, NULL);
 }
 
 /* Check instruction at ADDR to see if it is a branch.
@@ -827,11 +857,21 @@ sparc_get_saved_register (char *raw_buffer, int *optimized, CORE_ADDR *addrp,
 	    addr = frame1->frame + (regnum - G0_REGNUM) * SPARC_INTREG_SIZE
 	      - (FP_REGISTER_BYTES + 8 * SPARC_INTREG_SIZE);
 	  else if (regnum >= I0_REGNUM && regnum < I0_REGNUM + 8)
-	    addr = (frame1->prev->extra_info->bottom
+	    /* NOTE: cagney/2002-05-04: The call to get_prev_frame()
+               is safe/cheap - there will always be a prev frame.
+               This is because frame1 is initialized to frame->next
+               (frame1->prev == frame) and is then advanced towards
+               the innermost (next) frame.  */
+	    addr = (get_prev_frame (frame1)->extra_info->bottom
 		    + (regnum - I0_REGNUM) * SPARC_INTREG_SIZE
 		    + FRAME_SAVED_I0);
 	  else if (regnum >= L0_REGNUM && regnum < L0_REGNUM + 8)
-	    addr = (frame1->prev->extra_info->bottom
+	    /* NOTE: cagney/2002-05-04: The call to get_prev_frame()
+               is safe/cheap - there will always be a prev frame.
+               This is because frame1 is initialized to frame->next
+               (frame1->prev == frame) and is then advanced towards
+               the innermost (next) frame.  */
+	    addr = (get_prev_frame (frame1)->extra_info->bottom
 		    + (regnum - L0_REGNUM) * SPARC_INTREG_SIZE
 		    + FRAME_SAVED_L0);
 	  else if (regnum >= O0_REGNUM && regnum < O0_REGNUM + 8)
@@ -873,11 +913,11 @@ sparc_get_saved_register (char *raw_buffer, int *optimized, CORE_ADDR *addrp,
 	{
 	  /* Normal frame.  Local and In registers are saved on stack.  */
 	  if (regnum >= I0_REGNUM && regnum < I0_REGNUM + 8)
-	    addr = (frame1->prev->extra_info->bottom
+	    addr = (get_prev_frame (frame1)->extra_info->bottom
 		    + (regnum - I0_REGNUM) * SPARC_INTREG_SIZE
 		    + FRAME_SAVED_I0);
 	  else if (regnum >= L0_REGNUM && regnum < L0_REGNUM + 8)
-	    addr = (frame1->prev->extra_info->bottom
+	    addr = (get_prev_frame (frame1)->extra_info->bottom
 		    + (regnum - L0_REGNUM) * SPARC_INTREG_SIZE
 		    + FRAME_SAVED_L0);
 	  else if (regnum >= O0_REGNUM && regnum < O0_REGNUM + 8)
@@ -1252,7 +1292,7 @@ sparc_pop_frame (void)
 
       char *reg_temp;
 
-      reg_temp = alloca (REGISTER_BYTES);
+      reg_temp = alloca (SPARC_INTREG_SIZE * 16);
 
       read_memory (fsr[I0_REGNUM], raw_buffer, 8 * SPARC_INTREG_SIZE);
 
@@ -1829,8 +1869,8 @@ sparc_print_register_hook (int regno)
     {
       char value[16];
 
-      if (!read_relative_register_raw_bytes (regno, value)
-	  && !read_relative_register_raw_bytes (regno + 1, value + 4))
+      if (frame_register_read (selected_frame, regno, value)
+	  && frame_register_read (selected_frame, regno + 1, value + 4))
 	{
 	  printf_unfiltered ("\t");
 	  print_floating (value, builtin_type_double, gdb_stdout);
@@ -1838,8 +1878,8 @@ sparc_print_register_hook (int regno)
 #if 0				/* FIXME: gdb doesn't handle long doubles */
       if ((regno & 3) == 0)
 	{
-	  if (!read_relative_register_raw_bytes (regno + 2, value + 8)
-	      && !read_relative_register_raw_bytes (regno + 3, value + 12))
+	  if (frame_register_read (selected_frame, regno + 2, value + 8)
+	      && frame_register_read (selected_frame, regno + 3, value + 12))
 	    {
 	      printf_unfiltered ("\t");
 	      print_floating (value, builtin_type_long_double, gdb_stdout);
@@ -1858,8 +1898,8 @@ sparc_print_register_hook (int regno)
     {
       char value[16];
 
-      if (!read_relative_register_raw_bytes (regno, value)
-	  && !read_relative_register_raw_bytes (regno + 1, value + 8))
+      if (frame_register_read (selected_frame, regno, value)
+	  && frame_register_read (selected_frame, regno + 1, value + 8))
 	{
 	  printf_unfiltered ("\t");
 	  print_floating (value, builtin_type_long_double, gdb_stdout);
@@ -2234,12 +2274,13 @@ sparc_target_architecture_hook (const bfd_arch_info_type *ap)
 
 static struct gdbarch * sparc_gdbarch_init (struct gdbarch_info info,
 					    struct gdbarch_list *arches);
+static void sparc_dump_tdep (struct gdbarch *, struct ui_file *);
 
 void
 _initialize_sparc_tdep (void)
 {
   /* Hook us into the gdbarch mechanism.  */
-  register_gdbarch_init (bfd_arch_sparc, sparc_gdbarch_init);
+  gdbarch_register (bfd_arch_sparc, sparc_gdbarch_init, sparc_dump_tdep);
 
   tm_print_insn = gdb_print_insn_sparc;
   tm_print_insn_info.mach = TM_PRINT_INSN_MACH;		/* Selects sparc/sparclite */
@@ -2509,7 +2550,7 @@ sparc_print_extra_frame_info (struct frame_info *fi)
 
 /* MULTI_ARCH support */
 
-static char *
+static const char *
 sparc32_register_name (int regno)
 {
   static char *register_names[] = 
@@ -2533,7 +2574,7 @@ sparc32_register_name (int regno)
     return register_names[regno];
 }
 
-static char *
+static const char *
 sparc64_register_name (int regno)
 {
   static char *register_names[] = 
@@ -2565,7 +2606,7 @@ sparc64_register_name (int regno)
     return register_names[regno];
 }
 
-static char *
+static const char *
 sparclite_register_name (int regno)
 {
   static char *register_names[] = 
@@ -2590,7 +2631,7 @@ sparclite_register_name (int regno)
     return register_names[regno];
 }
 
-static char *
+static const char *
 sparclet_register_name (int regno)
 {
   static char *register_names[] = 
@@ -2774,18 +2815,6 @@ sparc64_register_byte (int regno)
     return 64 * 8 + (regno - 80) * 8;
 }
 
-/* Advance PC across any function entry prologue instructions to reach
-   some "real" code.  SKIP_PROLOGUE_FRAMELESS_P advances the PC past
-   some of the prologue, but stops as soon as it knows that the
-   function has a frame.  Its result is equal to its input PC if the
-   function is frameless, unequal otherwise.  */
-
-static CORE_ADDR
-sparc_gdbarch_skip_prologue (CORE_ADDR ip)
-{
-  return examine_prologue (ip, 0, NULL, NULL);
-}
-
 /* Immediately after a function call, return the saved pc.
    Can't go through the frames for this because on some machines
    the new frame is not set up until the new function executes
@@ -2904,6 +2933,7 @@ sparc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
   struct gdbarch *gdbarch;
   struct gdbarch_tdep *tdep;
+  enum gdb_osabi osabi = GDB_OSABI_UNKNOWN;
 
   static LONGEST call_dummy_32[] = 
     { 0xbc100001, 0x9de38000, 0xbc100002, 0xbe100003,
@@ -2927,10 +2957,29 @@ sparc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     };
   static LONGEST call_dummy_nil[] = {0};
 
+  /* Try to determine the OS ABI of the object we are loading.  */
+
+  if (info.abfd != NULL)
+    {
+      osabi = gdbarch_lookup_osabi (info.abfd);
+      if (osabi == GDB_OSABI_UNKNOWN)
+	{
+	  /* If it's an ELF file, assume it's Solaris.  */
+	  if (bfd_get_flavour (info.abfd) == bfd_target_elf_flavour)
+	    osabi = GDB_OSABI_SOLARIS;
+	}
+    }
+
   /* First see if there is already a gdbarch that can satisfy the request.  */
-  arches = gdbarch_list_lookup_by_info (arches, &info);
-  if (arches != NULL)
-    return arches->gdbarch;
+  for (arches = gdbarch_list_lookup_by_info (arches, &info);
+       arches != NULL;
+       arches = gdbarch_list_lookup_by_info (arches->next, &info))
+    {
+      /* Make sure the ABI selection matches.  */
+      tdep = gdbarch_tdep (arches->gdbarch);
+      if (tdep && tdep->osabi == osabi)
+	return arches->gdbarch;
+    }
 
   /* None found: is the request for a sparc architecture? */
   if (info.bfd_arch_info->arch != bfd_arch_sparc)
@@ -2939,6 +2988,8 @@ sparc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   /* Yes: create a new gdbarch for the specified machine type.  */
   tdep = (struct gdbarch_tdep *) xmalloc (sizeof (struct gdbarch_tdep));
   gdbarch = gdbarch_alloc (&info, tdep);
+
+  tdep->osabi = osabi;
 
   /* First set settings that are common for all sparc architectures.  */
   set_gdbarch_believe_pcc_promotion (gdbarch, 1);
@@ -2950,8 +3001,7 @@ sparc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_call_dummy_stack_adjust_p (gdbarch, 1);
   set_gdbarch_decr_pc_after_break (gdbarch, 0);
   set_gdbarch_double_bit (gdbarch, 8 * TARGET_CHAR_BIT);
-  set_gdbarch_extract_struct_value_address (gdbarch, 
-					    sparc_extract_struct_value_address);
+  set_gdbarch_deprecated_extract_struct_value_address (gdbarch, sparc_extract_struct_value_address);
   set_gdbarch_fix_call_dummy (gdbarch, sparc_gdbarch_fix_call_dummy);
   set_gdbarch_float_bit (gdbarch, 4 * TARGET_CHAR_BIT);
   set_gdbarch_fp_regnum (gdbarch, SPARC_FP_REGNUM);
@@ -2984,8 +3034,9 @@ sparc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_reg_struct_has_addr (gdbarch, sparc_reg_struct_has_addr);
   set_gdbarch_return_value_on_stack (gdbarch, sparc_return_value_on_stack);
   set_gdbarch_saved_pc_after_call (gdbarch, sparc_saved_pc_after_call);
+  set_gdbarch_prologue_frameless_p (gdbarch, sparc_prologue_frameless_p);
   set_gdbarch_short_bit (gdbarch, 2 * TARGET_CHAR_BIT);
-  set_gdbarch_skip_prologue (gdbarch, sparc_gdbarch_skip_prologue);
+  set_gdbarch_skip_prologue (gdbarch, sparc_skip_prologue);
   set_gdbarch_sp_regnum (gdbarch, SPARC_SP_REGNUM);
   set_gdbarch_use_generic_dummy_frames (gdbarch, 0);
   set_gdbarch_write_pc (gdbarch, generic_target_write_pc);
@@ -3009,6 +3060,50 @@ sparc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
       set_gdbarch_call_dummy_address (gdbarch, sparc_call_dummy_address);
       set_gdbarch_call_dummy_breakpoint_offset (gdbarch, 0x30);
       set_gdbarch_call_dummy_length (gdbarch, 0x38);
+
+      /* NOTE: cagney/2002-04-26: Based from info posted by Peter
+	 Schauer around Oct '99.  Briefly, due to aspects of the SPARC
+	 ABI, it isn't possible to use ON_STACK with a strictly
+	 compliant compiler.
+
+	 Peter Schauer writes ...
+
+	 No, any call from GDB to a user function returning a
+	 struct/union will fail miserably. Try this:
+
+	 *NOINDENT*
+	 struct x
+	 {
+           int a[4];
+         };
+
+	 struct x gx;
+
+	 struct x
+	 sret ()
+	 {
+	   return gx;
+	 }
+
+	 main ()
+	 {
+	   int i;
+	   for (i = 0; i < 4; i++)
+	     gx.a[i] = i + 1;
+	   gx = sret ();
+	 }
+	 *INDENT*
+
+	 Set a breakpoint at the gx = sret () statement, run to it and
+	 issue a `print sret()'. It will not succed with your
+	 approach, and I doubt that continuing the program will work
+	 as well.
+
+	 For details of the ABI see the Sparc Architecture Manual.  I
+	 have Version 8 (Prentice Hall ISBN 0-13-825001-4) and the
+	 calling conventions for functions returning aggregate values
+	 are explained in Appendix D.3.  */
+
       set_gdbarch_call_dummy_location (gdbarch, ON_STACK);
       set_gdbarch_call_dummy_words (gdbarch, call_dummy_32);
 #else
@@ -3120,96 +3215,109 @@ sparc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   switch (info.bfd_arch_info->mach)
     {
     case bfd_mach_sparc:
-      set_gdbarch_extract_return_value (gdbarch, sparc32_extract_return_value);
+      set_gdbarch_deprecated_extract_return_value (gdbarch, sparc32_extract_return_value);
       set_gdbarch_frame_chain_valid (gdbarch, file_frame_chain_valid);
       set_gdbarch_num_regs (gdbarch, 72);
       set_gdbarch_register_bytes (gdbarch, 32*4 + 32*4 + 8*4);
       set_gdbarch_register_name (gdbarch, sparc32_register_name);
-      set_gdbarch_store_return_value (gdbarch, sparc_store_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, sparc_store_return_value);
       tdep->has_fpu = 1;	/* (all but sparclet and sparclite) */
       tdep->fp_register_bytes = 32 * 4;
       tdep->print_insn_mach = bfd_mach_sparc;
       break;
     case bfd_mach_sparc_sparclet:
-      set_gdbarch_extract_return_value (gdbarch, 
-					sparclet_extract_return_value);
+      set_gdbarch_deprecated_extract_return_value (gdbarch, sparclet_extract_return_value);
       set_gdbarch_frame_chain_valid (gdbarch, file_frame_chain_valid);
       set_gdbarch_num_regs (gdbarch, 32 + 32 + 8 + 8 + 8);
       set_gdbarch_register_bytes (gdbarch, 32*4 + 32*4 + 8*4 + 8*4 + 8*4);
       set_gdbarch_register_name (gdbarch, sparclet_register_name);
-      set_gdbarch_store_return_value (gdbarch, sparclet_store_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, sparclet_store_return_value);
       tdep->has_fpu = 0;	/* (all but sparclet and sparclite) */
       tdep->fp_register_bytes = 0;
       tdep->print_insn_mach = bfd_mach_sparc_sparclet;
       break;
     case bfd_mach_sparc_sparclite:
-      set_gdbarch_extract_return_value (gdbarch, sparc32_extract_return_value);
+      set_gdbarch_deprecated_extract_return_value (gdbarch, sparc32_extract_return_value);
       set_gdbarch_frame_chain_valid (gdbarch, func_frame_chain_valid);
       set_gdbarch_num_regs (gdbarch, 80);
       set_gdbarch_register_bytes (gdbarch, 32*4 + 32*4 + 8*4 + 8*4);
       set_gdbarch_register_name (gdbarch, sparclite_register_name);
-      set_gdbarch_store_return_value (gdbarch, sparc_store_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, sparc_store_return_value);
       tdep->has_fpu = 0;	/* (all but sparclet and sparclite) */
       tdep->fp_register_bytes = 0;
       tdep->print_insn_mach = bfd_mach_sparc_sparclite;
       break;
     case bfd_mach_sparc_v8plus:
-      set_gdbarch_extract_return_value (gdbarch, sparc32_extract_return_value);
+      set_gdbarch_deprecated_extract_return_value (gdbarch, sparc32_extract_return_value);
       set_gdbarch_frame_chain_valid (gdbarch, file_frame_chain_valid);
       set_gdbarch_num_regs (gdbarch, 72);
       set_gdbarch_register_bytes (gdbarch, 32*4 + 32*4 + 8*4);
       set_gdbarch_register_name (gdbarch, sparc32_register_name);
-      set_gdbarch_store_return_value (gdbarch, sparc_store_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, sparc_store_return_value);
       tdep->print_insn_mach = bfd_mach_sparc;
       tdep->fp_register_bytes = 32 * 4;
       tdep->has_fpu = 1;	/* (all but sparclet and sparclite) */
       break;
     case bfd_mach_sparc_v8plusa:
-      set_gdbarch_extract_return_value (gdbarch, sparc32_extract_return_value);
+      set_gdbarch_deprecated_extract_return_value (gdbarch, sparc32_extract_return_value);
       set_gdbarch_frame_chain_valid (gdbarch, file_frame_chain_valid);
       set_gdbarch_num_regs (gdbarch, 72);
       set_gdbarch_register_bytes (gdbarch, 32*4 + 32*4 + 8*4);
       set_gdbarch_register_name (gdbarch, sparc32_register_name);
-      set_gdbarch_store_return_value (gdbarch, sparc_store_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, sparc_store_return_value);
       tdep->has_fpu = 1;	/* (all but sparclet and sparclite) */
       tdep->fp_register_bytes = 32 * 4;
       tdep->print_insn_mach = bfd_mach_sparc;
       break;
     case bfd_mach_sparc_sparclite_le:
-      set_gdbarch_extract_return_value (gdbarch, sparc32_extract_return_value);
+      set_gdbarch_deprecated_extract_return_value (gdbarch, sparc32_extract_return_value);
       set_gdbarch_frame_chain_valid (gdbarch, func_frame_chain_valid);
       set_gdbarch_num_regs (gdbarch, 80);
       set_gdbarch_register_bytes (gdbarch, 32*4 + 32*4 + 8*4 + 8*4);
       set_gdbarch_register_name (gdbarch, sparclite_register_name);
-      set_gdbarch_store_return_value (gdbarch, sparc_store_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, sparc_store_return_value);
       tdep->has_fpu = 0;	/* (all but sparclet and sparclite) */
       tdep->fp_register_bytes = 0;
       tdep->print_insn_mach = bfd_mach_sparc_sparclite;
       break;
     case bfd_mach_sparc_v9:
-      set_gdbarch_extract_return_value (gdbarch, sparc64_extract_return_value);
+      set_gdbarch_deprecated_extract_return_value (gdbarch, sparc64_extract_return_value);
       set_gdbarch_frame_chain_valid (gdbarch, file_frame_chain_valid);
       set_gdbarch_num_regs (gdbarch, 125);
       set_gdbarch_register_bytes (gdbarch, 32*8 + 32*8 + 45*8);
       set_gdbarch_register_name (gdbarch, sparc64_register_name);
-      set_gdbarch_store_return_value (gdbarch, sparc_store_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, sparc_store_return_value);
       tdep->has_fpu = 1;	/* (all but sparclet and sparclite) */
       tdep->fp_register_bytes = 64 * 4;
       tdep->print_insn_mach = bfd_mach_sparc_v9a;
       break;
     case bfd_mach_sparc_v9a:
-      set_gdbarch_extract_return_value (gdbarch, sparc64_extract_return_value);
+      set_gdbarch_deprecated_extract_return_value (gdbarch, sparc64_extract_return_value);
       set_gdbarch_frame_chain_valid (gdbarch, file_frame_chain_valid);
       set_gdbarch_num_regs (gdbarch, 125);
       set_gdbarch_register_bytes (gdbarch, 32*8 + 32*8 + 45*8);
       set_gdbarch_register_name (gdbarch, sparc64_register_name);
-      set_gdbarch_store_return_value (gdbarch, sparc_store_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, sparc_store_return_value);
       tdep->has_fpu = 1;	/* (all but sparclet and sparclite) */
       tdep->fp_register_bytes = 64 * 4;
       tdep->print_insn_mach = bfd_mach_sparc_v9a;
       break;
     }
 
+  /* Hook in OS ABI-specific overrides, if they have been registered.  */
+  gdbarch_init_osabi (info, gdbarch, osabi);
+
   return gdbarch;
 }
 
+static void
+sparc_dump_tdep (struct gdbarch *current_gdbarch, struct ui_file *file)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep (current_gdbarch);
+
+  if (tdep == NULL)
+    return;
+
+  fprintf_unfiltered (file, "sparc_dump_tdep: OS ABI = %s\n",
+		      gdbarch_osabi_name (tdep->osabi));
+}

@@ -1,27 +1,823 @@
- 2002-08-06  Klee Dienes  <kdienes@bluegill.localnet>
+2002-12-06  Klee Dienes  <kdienes@apple.com>
 
-       * (macosx-nat-watchpoint.c): Rename
-       target_range_profitable_for_hw_watchpoint to
-       target_range_ok_for_hw_watchpoint.
+	* macosx-nat-dyld-process.c (library_offset): Revert change from
+	2002-12-06.
 
+2002-12-06  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.c (dyld_current_image_added_event_counter): New
+	variable.
+	(macosx_solib_add): Don't disable the "generic" dyld breakpoint
+	after the first time it is triggered.  Upon receiving an
+	IMAGE_ADDED event, don't stop for stop-on-solib-events; just
+	increment dyld_current_image_added_event_counter.  Upon completion
+	of a full set of dyld events, stop for stop-on-solib events if at
+	least one IMAGE_ADDED event was received.
+	
+2002-12-04  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-process.c (library_offset): Use e->loaded_addr
+	as a source of information, if appropriate.
+
+2002-12-01  Klee Dienes  <kdienes@apple.com>
+
+        * macosx-nat-dyld-process.c (dyld_update_shlibs): Update the
+        section information for current_target, not exec_ops.
+        (dyld_purge_cached_libraries): Ditto.
+        * macosx-nat-dyld.c (update_section_tables): Re-implement.  Now
+        uses target_resize_to_sections instead of managing to_sections by
+        hand.
+
+2002-11-26  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_fast_show_stack): limit was being 
+	handled wrong.  Should stop printing at limit, but keep counting.
+
+2002-11-23  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.c (extend_slide): Make static.
+	(macosx_solib_add): Extend the slide from a dyld image added
+	breakpoint event.
+	
+2002-11-13  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-inferior.c (macosx_child_detach): Accept
+	'stopped_in_softec' when returning from suspend_ptrace as well.
+
+2002-11-12  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_fast_show_stack): The order of the fp & pc
+	reversed going to print_fun.
+	
+2002-11-07  Klee Dienes  <kdienes@apple.com>
+
+        * macosx-nat-dyld.c (macosx_solib_add): Remove leakage of
+	stop_on_shlibs_added from top-of-tree.
+
+2002-11-07  Klee Dienes  <kdienes@apple.com>
+
+        * macosx-nat-dyld.c (macosx_solib_add): Don't assume that entry
+        pointers will remain valid after a call to dyld_update_shlibs (it
+	can pack the entries).
+
+2002-11-07  Jim Ingham <jingham@apple.com>
+
+	* ppc-macosx-tdep.c: Missed a couple of places where the sigcontext
+	offset is used.
+	
+2002-11-06  Klee Dienes  <kdienes@apple.com>
+
+        * macosx-nat-dyld.c (macosx_init_dyld): Only add the
+        dyld_reason_executable entry if symfile_objfile is set.
+        * macosx-nat-dyld-process.c (dyld_load_symfile): If an executable,
+        check to make sure it matches symfile objfile.  Propagate back any
+        changes to e->objfile to symfile_objfile (i.e., replace the
+        special-case handling with the standard mechanism).
+
+2002-11-06  Klee Dienes  <kdienes@apple.com>
+ 
+ 	* macosx-nat-dyld-process.c (dyld_load_library): If an executable,
+ 	check to make sure it matches symfile objfile.  Propagate back any
+ 	changes to e->objfile to symfile_objfile.
+ 	(dyld_load_symfile): Ditto.
+ 	(dyld_remove_objfile): Ditto.
+ 	(dyld_remove_objfiles): If an executable, check to make sure it
+ 	matches symfile objfile.
+ 	* macosx-nat-dyld.c (macosx_init_dyld): Clear the objfile/bfd for
+ 	any existing executable entries.  Set the objfile/bfd field for
+ 	the new executable entry to include all available information.
+	
+2002-11-06  Klee Dienes  <kdienes@apple.com>
+ 
+ 	* macosx-nat-dyld-info.c (dyld_next_allocated_shlib): Formerly
+ 	next_allocated, moved from macosx-nat-dyld-process.c.
+ 	* macosx-nat-dyld-info.h (dyld_next_allocated_shlib): Add
+ 	prototype.
+ 	(DYLD_ALL_OBJFILE_INFO_ENTRIES): Moved from
+ 	macosx-nat-dyld-process.c.
+ 	* macosx-nat-dyld-process.c (DYLD_ALL_OBJFILE_INFO_ENTRIES): Moved
+ 	to macosx-nat-dyld-info.h
+ 	(next_allocated): Moved to macosx-nat-dyld-info.h
+ 	* macosx-nat-inferior.c (macosx_mourn_inferior): Replace
+ 	hand-written code in the #if 0 with a call to
+ 	macosx_init_dyld_symfile.
+ 	
+2002-11-06  Jim Ingham   <jingham@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_frame_find_pc, ppc_frame_chain): The signal
+	context offset area changed from 0x70 to 0x98 in Jaguar.  Changing
+	gdb to match.
+	
+2002-11-04  Jim Ingham   <jingham@apple.com>
+
+	* macosx-nat-dyld-process.c (dyld_add_image_libraries): Treat 
+	BFD_MACH_O_LC_LOAD_WEAK_DYLIB the same as the non-weak case.
+	
+2002-11-01  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.c (dyld_info_read): Remember the saved space for
+	the executable as an index into the info, not a pointer ---
+	otherwise it can end up pointing to stale data if
+	dyld_objfile_entry_alloc ends up reallocating the array.
+	
+2002-11-01  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-process.c (dyld_prune_shlibs): New function.
+	Remove all shared libraries in 'old' that match the entry 'n'.
+	(dyld_merge_shlibs): Update to use dyld_prune_shlibs.  Algorithm
+	is (finally) reasonably simple --- copy the old shlibs that can be
+	re-used; purge the ones that shouldn't be cached; cache the rest.
+	Update prototype to be "update from 'old' into 'new'" (previously
+	it was "update from 'old' into 'result' according to 'new'").
+	* macosx-nat-dyld-process.h (dyld_prune_shlibs): Update prototype.
+
+	* macosx-nat-dyld.c (macosx_init_dyld): Update to new prototype
+	for dyld_merge_shlibs.
+	(macosx_dyld_update): Ditto.
+	(dyld_add_symbol_file_command): Ditto.
+	(dyld_remove_symbol_file_command): Ditto.
+	(dyld_set_load_state_command): Ditto.
+	
+2002-10-31  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_objfile_entry_clear): Initialize
+	dyld_length to 0.
+	(dyld_resolve_shlib_num): Swap the order of "user" and non-user
+	shared library ordering.  The new order in all cases should be
+	exec, dyld, dyld libraries, cached objects, user libraries.
+	(dyld_entry_shlib_num): Remove the section for counting
+	user-loaded libraires (they now come last).
+	(dyld_print_entry_info): Print a "!" in the "reason" field if the
+	objfile is invalid, rather than crashing.
+	(dyld_print_shlib_info): Reformat the table header.  Increase the
+	minimum library field width to 12, to accomodate the new table
+	headers (in practice the field is always that long anyway).  Swap
+	the order of "user" and non-user shared library ordering.
+
+	* macosx-nat-dyld-io.c (extend_vma): Remove.
+	(inferior_bfd_generic): No longer call extend_vma; rely on offset
+	to be properly sign-extended.
+
+	* macosx-nat-dyld-process.c (dyld_objfile_allocated): Export.
+	(dyld_libraries_compatible): Libraries are incompatible if
+	_either_ offset is non-zero and not equal to the other offset
+	(previously both had to be non-zero).
+	(next_allocated): New function.  Returns the next index into
+	'info' that points to an allocated shared library entry.
+	(DYLD_ALL_OBJFILE_INFO_ENTRIES): New macro.  Iterates 'o', 'n'
+	through the allocated shared library entries of 'info'.
+	(dyld_merge_shlib): No longer tries to handle removal of
+	old/cached libraries; only handles copying of objfile information
+	from the previous info into the new entry (if possible).
+	(dyld_merge_shlibs): Re-implement (see comments in
+	dyld_merge_shlib).  No longer call dyld_remove_objfiles or
+	dyld_objfile_info_pack (these have been moved into
+	dyld_update_shlibs).
+	* macosx-nat-dyld-process.h (dyld_objfile_allocated): Add prototype.
+
+	* macosx-nat-dyld.c (struct dyld_raw_info): Revert 'slide' to a
+	CORE_ADDR.  We don't know whether a slide of a 32-bit address will
+	be positive or negative until we know the address upon which it
+	operates.
+	(dyld_info_process_raw): Revert 'slide' to a CORE_ADDR.
+	(macosx_init_dyld): Move the 'exec' entry to the top of the info
+	list.
+	(extend_slide): New function.  Given a slide and an address,
+	sign-extend the slide as appropriate to operate as a CORE_ADDR.
+	(dyld_info_read_raw): Read 'slide' as an unsigned integer; instead
+	use extend_slide to extend it once we have read the address.
+	(dyld_info_read): Reserve space for the 'exec' entry; fill it with
+	the first entry of dyld_reason_executable ready by dyld.
+
+>>>>>>> 1.52.2.4
+2002-10-31  Klee Dienes  <kdienes@apple.com>
+
+        * macosx-nat-dyld.c (macosx_solib_add): Recognize DYLD_MODULE_*,
+        DYLD_PAST_EVENTS_END, and DYLD_IMAGE_REMOVED.  Do a full dyld
+        update on DYLD_IMAGE_REMOVED; ignore all other events.  For
+        unknown events, emit a warning and do a fulld dyld update.
+        (macosx_dyld_update): Only emit a shlibs-updated notification if
+        the library state has actually changed.
+
+2002-10-28  Klee Dienes  <kdienes@apple.com>
+
+        * ppc-macosx-frameops.c (ppc_frame_saved_regs): Use signed long
+        for the offset, not unsigned, to prevent bogus values on 64-bit
+        BFDs.
+
+2002-10-30  Jim Ingham   <jingham@apple.com>
+
+	* macosx-nat-dyld-path.c (dyld_resolve_image): Handle the case
+	where the dyld name contains @executable_path.
+	
+2002-10-24  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-tdep.c (ppc_fast_show_stack): Stop counting frames
+	at the limit, if a limit is given.
+
+2002-10-23  Klee Dienes  <kdienes@apple.com>
+	
+	* i386-macosx-tdep.c (i386_macosx_sigcontext_addr): New function.
+	(i386_macosx_init_abi): Set tdep->sigcontext_addr to
+	i386_macosx_sigcontext_addr; set values for tdep->sc_pc_offset and
+	tdep->sc_sp_offset.
+
+2002-10-23  Klee Dienes  <kdienes@apple.com>
+	
+	* i386-macosx-nat-exec.c (store_inferior_registers): Disable the
+	attempt to set the FP registers (until #3067308 is fixed).
+	* macosx-nat-inferior-debug.c (macosx_debug_region): Use 0x%lx
+	instead of 0x%ulx as a format string for unsigned long.
+	* macosx-nat-inferior.c: Update debug levels passed to
+	inferior_debug.
+	* i386-macosx-tdep.c (i386_macosx_fetch-fp_registers): Handle SSE
+	registers.
+	(i386_macosx_store_fp_registers): Ditto.
+	
+2002-10-23  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-excthread.c (macosx_exception_thread): Include the
+	exception data in exception thread debug output.
+
+2002-10-22  Klee Dienes  <kdienes@apple.com>
+
+	* i386-macosx-tdep.c (i386_macosx_init_abi): Set the target
+	struct_return field to reg_struct_return.
+	
+2002-10-21  Klee Dienes  <kdienes@apple.com>
+
+	* cached-symfile.h: New file.  Add prototypes for functions in
+	* cached-symfile.c: Include cached-symfile.h.  Remove local
+	declarations for exported functions.
+
+	* macosx-nat-cfm.c (cfm_update): Convert to use
+	cfm_fetch_context_containers instead of
+	cfm_fetch_context_connections.
+	(cfm_fetch_context_connections): Remove, and replace with
+	cfm_fetch_context_containers.
+	(cfm_parse_container_info): Also parse the 'next' field of the
+	container.
+	(cfm_fetch_connection_section_info): Remove, and replace with
+	cfm_fetch_container_section_info.  No longer return the instance
+	information; it's difficult to access since it is part of the
+	connection structure, and it appears to be unused.
+	* macosx-nat-cfm.h: Update prototypes.
+	(NCFragContainerInfo): Add 'next' pointer.
+
+	* macosx-nat-cfmthread.c (macosx_cfm_thread_init): Clear the
+	breakpoint_offset and cfm_breakpoint fields.
+	(macosx_cfm_thread_create): Store the cfm breakpoint in the thread
+	status for future reference.
+	(macosx_cfm-thread_destroy): Delete the cfm breakpoint, if present.
+	* macosx-nat-cfmthread.h (macosx_cfm_thread_status): Add cfm_breakpoint.
+
+	* macosx-nat-dyld-process.c (dyld_load_symfile): When generating
+	the cfm parser, set cfm breakpoint offset to the last instruction
+	of PrepareClosure.
+	(dyld_libraries_similar): If both libraries provide a load address
+	or offset, they compare similar only if the addresses or offsets
+	are the same.  This allows for images to have multiple bundles
+	with the same basename loaded simultaneously, yet still replace
+	'cached' libraries with ones supplied by dyld.
+	(dyld_libraries_compatible): Fix bug that would trigger a fatal
+	assertion if (fres == lres == NULL), but fname and lname compared
+	equal.
+	(dyld_merge_shlib): New function.  Like dyld_merge_shlibs, but for
+	a single library.  Fill in a dyld_objfile_entry 'n' with any
+	objfile data from the dyld_objfile_info passed in as 'old'.
+	Removes the objfile data from 'old' as it merges it into 'n'.
+	(dyld_merge_shlibs): Update to use dyld_merge_shlib.
+	(dyld_update_shlibs): No longer call dyld_merge_shlibs (it must
+	now be called explicitly).
+	* macosx-nat-dyld-process.h: Update prototypes.
+	
+	* macosx-nat-dyld-info.c (dyld_entry_info): Remove prototype.
+	(dyld_reason_string): Add vlaues for dyld_reason_deallocated,
+	dyld_reason_user, and dyld_reason_init.
+	(dyld_objfile_entry_clear): Clear cfm_container instead of
+	cfm_connection.
+	(dyld_objfile_entry_compare): Compare cfm_container instead of
+	cfm_connection.
+	(dyld_entry_shlib_num): New function. Returns the shared library
+	number of the entry at 'eptr' in 'numptr'.  Returns 0 on success,
+	anything else on failure.
+	(dyld_shlib_info_basename_length): New function.  Returns the
+	length of the longest field that would be printed when displaying
+	's' according to 'reason_mask'.  Code was previously in
+	dyld_print_entry info.  Convert to use dyld_convert_entry.
+	(dyld_entry_shlib_num_matches): New function.  Return true if and
+	only if the shared library specifier 'shlibnum' matches the string
+	in 'args'.  Returns 'false' on error; outputs warning messages
+	only if 'verbose' is passed as true.
+	(dyld_print_entry_info): New function.  Prints a
+	dyld_obfile_entry, using 'shlibnum' as the shared library number
+	and 'baselen' to determine the padding.
+	(dyld_convert_entry): Fill a dyld_objfile_entry structure based on
+	the contents of a struct objfile.
+	(dyld_print_shlib_info): Convert to use
+	dyld_shlib_info_basename_length, dyld_entry_shlib_num_matches,
+	dyld_print_entry_info, and dyld_convert_entry.  Only output the
+	table header if 'header' is specified as true.  Fix the table
+	header to line up properly.
+	* macosx-nat-dyld-info.h: Update prototyles.
+	(enum dyld_objfile_reason): Add exclude
+	'user' objects from dyld_reason_all_mask.
+	(struct dyld_objfile_entry): Replace cfm_connection with
+	cfm_container.
+	
+	* macosx-nat-dyld.c (_initialize_macosx_nat_dyld): Add new command
+	"info sharedlibrary all", both for general use, and to allow "info
+	sharedlibrary all 1-4 10".  It would be nice to have "info
+	sharedlibrary" accept this same syntax, but since "info
+	sharedlibrary" is a prefix command, that is a bit more
+	challenging.
+	(info_raw_cfm_comamnd, info_cfm_command, info_dyld_command,
+	info_sharedlibrary_command): Replace with
+	info_sharedlibrary_command, info_sharedlibrary_all_command,
+	info_sharedlibrary_dyld_command, info_sharedlibrary_cfm_command,
+	and info_sharedlibrary_raw_cfm_command. Update to use new
+	interfaces to dyld_print_status_info and dyld_print_shlib_info.
+	Only print 'status' information for info_sharedlibrary_command.
+	(section_info_helper): Convert to use cfm_fetch_container_info
+	instead of cfm_fetch_connection_info.
+	(dyld_add_symbol_file_command): Call dyld_merge_shlibs explicitly;
+	it's no longer called by dyld_update_shlibs.
+	(dyld_remove_symbol_file_command): Ditto.
+	(dyld_set_load_state_command): Ditto.
+	(struct dyld_raw_info): New structure.  Used by dyld_info_read_raw
+	to return raw dyld address information read from the target.
+	(dyld_info_read): The dyld_info_read_raw function has been split
+	into dyld_info_read_raw, dyld_info_process_raw, and
+	dyld_info_read.  The dyld_info_read_raw function reads the raw
+	information from dyld into a dyld_raw_info structure;
+	dyld_info_process_raw processes the raw information into
+	dyld_objfile_entries, and dyld_info_read adds the dyld
+	pseudo-entry and uses dyld_info_read_raw and dyld_info_process_raw
+	to implement the previous behavior of dyld_info_read_raw.
+	(dyld_info_read_raw): See above.
+	(dyld_info_process_raw): See above.  Update to read name
+	information from the LC_ID entry of the library itself if no name
+	information is provided by the caller (by specifying a 'name'
+	argument of INVALID_ADDRESS)
+	(dyld_print_status_info): Update to allow lists of libraires to be
+	processed.  Remove check for 'uses_dyld' (it will now just print
+	an empty list).
+	(macosx_set_start_breakpoint): Also take a
+	macosx_dyld_thread_status; update the dyld_breakpoint if it has
+	not already been set.
+	(FETCH_ARGUMENT): Ugly, and should be replaced, but stolen from
+	the Objective-C code.  Returns the value at the n'th argument of
+	the currently-executing stack frame.
+	(macosx_add_shard_symbol_files): No longer check the value of
+	uses_dyld.
+	(macosx_dyld_update): Update to use dyld_info_read instead of
+	dyld_info_read_raw.  Update to call dyld_merge_shlibs expliicitly.
+	Add MI notification ("=shlibs-updated") that the shared library
+	state needs to be fully refreshed.
+	(macosx_solib_add): Properly return the value of libraries_changed
+	to the calling code.  Add support to break at the DYLD event
+	routine used by the old dyld_debug code, to detect individual
+	shared library events.  Dispatch based on the location at which
+	GDB has stopped in the inferior; if we have stopped at the event
+	routine, do an incremental update where possible, otherwise revert
+	to re-parsing the entire shared library state.  Add MI
+	notification ("=shlibs-added") for the incremental-update case.
+	* macosx-nat-dyld.h (macosx_dyld_thread_status): Convert unsigned
+	ints to unsigned longs.  Add dyld_event_breakpoint.  Remove uses_dyld.
+	(dyld_print_status_info): Update prototype.
+	(macosx_set_start_breakpoint): Update prototype.
+	(macosx_solib_add): Update prototype.
+
+	* macosx-nat-mutils.c (macosx_thread_valid): Remove obsolete comment.
+
+2002-10-17  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-inferior.c (macosx_child_detach): Print "Detaching from
+	program" message when detaching.
+
+2002-10-17  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-inferior.c (macosx_child_attach): Use
+	stop_soon_quietly/wait_for_inferior, not macosx_wait, to read the
+	initial attach-events.  Otherwise the stop-status doesn't get
+	correctly set, and we end up not printing the current stack frame
+	in normal_stop after the attach.
+	(macosx_child_attach): Print "Attaching to program" message
+	when attaching.
+
+2002-10-17  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.c (dyld_info_read_raw): Don't bother reading if
+	status->dyld_addr hasn't yet been set.  Set prefix to
+	dyld_symbols_prefix, not hardcoded to "__dyld_".  Set the name
+	from status->dyld_name, not hard-coded to "/usr/lib/dyld" (this is
+	set as the default if no dyld_name is provided).  Only set
+	dyld_slide if status->dyld_slide has been set.  No longer call
+	macosx_init_addresses; that's handled by macosx_dyld_init.  Don't
+	bother checking for images if dyld_slide isn't set.  Improve
+	sanity-checking and error-handling for bogus dyld data; no longer
+	call error (instead, print a warning and stop processing
+	libraries, returning any libraries already processed).
+	(dyld_info_process_raw): Don't mess around with crazy bit-shifting
+	tactics for the slide; just read it as a signed integer.
+	(macosx_init_dyld): Only use o->obfd to set the bfd for the entry
+	if 'o' is non-NULL.
+	(macosx_dyld_thread_init): Initialize the dyld fields to
+	NULL/INVALID_ADDRESS.
+	(macosx_solib_add); Just call macosx_dyld_init to "do the right
+	thing" to update the dyld state.
+	(info_sharedlibrary_command): Update to use dyld_reason_all_mask.
+	(macosx_init_addresses): Pass in a dyld_thread_status; don't use
+	global.
+	(lookup_dyld_value): Ditto.
+	(lookup_dyld_address): Ditto.  Use the slide from the
+	dyld_thread_status, not a global.
+	(dyld_starts_here_p): Pass a correct value for the 'count' field
+	into vm_region.  Reformat.
+	(macosx_lookup_dyld_name): New function.  Tries to find the name
+	string for the dynamic linker used by the bfd given as an
+	argument.  Returns 1 if it found a name, 0 if it didn't, -1 if
+	there was an error.
+	(macosx_locate_dyld): New function.  Searches the target address
+	space for dyld itself, returning it in 'value'.  Returns 1 if it
+	found dyld, 0 if it didn't, -1 if there was an error.  If 'hint'
+	is not INVALID_ADDRESS, check there first as a hint for where to
+	find dyld.
+	(macosx_locate_dyld_static): New function.  Determine the address
+	where the current target expected DYLD to be loaded.  This is used
+	when first guessing the address of dyld for symbol loading on
+	dynamic executables, and also to compute the proper slide to be
+	applied to values found in the dyld memory itself. Returns 1 if
+	it found the address, 0 if it did not.
+	(macosx_dyld_init): Update to use the new functions defined above.
+	This function should now be able to be called at any time, and
+	should always do as much of the right thing as possible based on
+	the information available at the time.  See the comments in the
+	function for more details.
+		
+	* macosx-nat-dyld-process.c (dyld_load_library): Use
+	dyld_reason_executable_mask to account for an entry in state
+	dyld_reason_cached_executable.
+	(dyld_load_symfile): Ditto.
+	(dyld_remove_objfile): Ditto.
+	(dyld_remove_objfiles): Ditto.
+	(dyld_merge_shlibs): Ditto.  Also, when marking an entry as
+	'cached', use dyld_reason_cached_executable or
+	dyld_reason_cached_library, as appropriate.
+	(dyld_purge_cached_libries): Update to use
+	dyld_reason_cached_mask, not dyld_reason_cached.
+	
+	* macosx-nat-dyld.h: Add new fields dyld_addr, dyld_slide, and
+	dyld_name.  Update function declarations to match
+	macosx-nat-dyld.c.
+
+	* macosx-nat-inferior.c (macosx_child_create_inferior): Replace
+	call to macosx_set_start_breakpoint with macosx_dyld_init.
+	
+	* ppc-macosx-tdep.h (INVALID_ADDRESS): Define as ((CORE_ADDR) -1),
+	not 0xffffffff, for proper behavior when building 64-bit.
+
+	* macosx-nat-dyld-info.h (dyld_objfile_reason): Split the 'cached'
+	value into 'cached_library' and 'dyld_reason_cached_executable'.
+	Replace the masks 'image', 'shlib', and 'all' with 'cached_mask',
+	'executable_mask', 'image_mask', and 'all_mask'.
+
+	* macosx-nat-dyld-info.c (dyld_reason_string): Add string values
+	for dyld_reason_cached_library and dyld_reason_cached_executable.
+	(dyld_print_shlib_info): Update output accomdate wider values for
+	the 'reason' field.
+
+2002-10-14  Klee Dienes  <kdienes@apple.com>
+
+	* i386-macosx-thread-status.h (GDB_i386_FP_SSE2): Define.
+	(GDB_i386_FP_387_STATE_SIZE): Define.
+	(GDB_i386_FP_SSE2_STATE_SIZE): Define.
+	(gdb_i386_thread_fpstate): Use GDB_i386_FP_SSE2_STATE_SIZE
+	instead of hard-coding the value.
+
+2002-10-13  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c (ppc_frame_cache_boundaries): Use
+	frame_address_in_block to choose the address to pass to
+	ppc_find_function_boundaries.
+
+2002-10-13  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c: Remove local declarations for
+	types/functions now provided by core GDB header files.  Convert
+	functions to ANSI prototypes.  Convert calls from obstack_alloc to
+	frame_obstack_alloc.
+	(ppc_frame_cache_properties): Parse function properties directly
+	into frame->extra_info->props, rather than storing in a local
+	variable first.  Force the properties to set lr_saved to '1' for
+	all non-leaf functions, regardless of what ppc_parse_instructions
+	claims (previously it would only set it to ($pc - 8), when it was
+	not set by ppc_parse_instructions).  This solved a problem where a
+	function was calling a function declared 'volatile' and not
+	expecting it to return, so the prev-frame $pc was past the end of
+	the calling function and at the beginning of the next.
+	ppc_parse_instructions was returning (correctly) that the function
+	saved its $lr at ($pc + 8), and so the prev_saved_pc code was
+	(incorrectly) deducing that the register had not been saved on the
+	stack.  The real place to fix this problem is by calling
+	ppc_parse_instructions on the correct address range ... but
+	regardless, there's nothing that GDB can do if $lr isn't saved on
+	a non-leaf, and so it's best for it to look in the $lr save-area
+	in all situations.
+	* ppc-macosx-frameops.h: Remove obsolete function declarations.
+	* ppc-macosx-frameops.c: Remove local declarations for
+	types/functions now provided by core GDB header files.  Convert
+	functions to ANSI prototypes.
+	(ppc_frame_saved_regs): Offset should be a CORE_ADDR, not a signed
+	long.
+
+2002-10-13  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-tdep.c Convert functions to ANSI prototypes.
+	(ppc_null_fix_call_dummy): Remove.
+	(gdb_register_names): Convert to const char *.
+	
+2002-10-13  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-tdep.h: Remove SKIP_TRAMPOLINE_CODE,
+	DYNAMIC_TRAMPOLINE_NEXTPC, IN_SOLIB_DYNSYM_RESOLVE_CODE,
+	IN_SOLIB_CALL_TRAMPOLINE, IN_SOLIB_RETURN_TRAMPOLINE,
+	INIT_FRAME_PC_FIRST, INIT_FRAME_PC, and CONVERT_FROM_FUNC_PTR_ADDR
+	(they will be moved to use gdbarch in macosx-nat-tdep.c).  Remove
+	STACK_ALLOC.
+	* ppc-macosx-tdep.c: Remove ppc_convert_from_func_ptr_addr,
+	ppc_find_toc_address, and ppc_macosx_in_solib_dynsym_resolve_code.
+	Use gdbarch to set init_frame_pc_first, skip_trampoline_code,
+	dynamic_trampoline_nextpc, in_solib_call_trampoline,
+	in_solib_return_trampoline, init_frame_pc_first, and
+	init_frame_pc.
+	* ppc-macosx-frameinfo.c (ppc_parse_instructions): Remove unused
+	target_reg declaration (removes compiler warning).
+	
+2002-10-06  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_extract_return_value): Remove unused tdep
+	pointer.  Convert to ANSI prototype.
+	(_initialize_ppc_tdep): Add command for "info powerpc" (to match
+	RS/6000 behavior).
+	(ppc_breakpoint_from_pc): Now returned a const unsigned char *.
+
+2002-10-05  Klee Dienes  <kdienes@apple.com>
+
+	* i386-macosx-nat-exec.c (fetch_inferior_regsisters): Mark all
+	SSE registers as NULL.  Add i386-tdep.h for IS_SSE_REGNUM ().
+	* i386-macosx-tdep.c Include i386-tdep.h, i387-tdep.h, and osabi.h.
+	(i386_macosx_fetch_fp_registers): Mark all FP registers as
+	invalid, if declared so by the kernel.
+	(sigtramp_saved_pc): Convert to ANSI-style declaration.
+	(i386_macosx_init_abi): New function.  Update NUM_REGS to
+	include the SSE registers.
+	(i386_mach_o_osabi_sniffer): New function.  Return
+	GDB_OSABI_MACOSX if debugging any Mach-O file.
+	(_initialize_i386_macosx_tdep): New function.  Register
+	i386_macosx_init_abi and i386_mach_o_osabi_sniffer.
+
+2002-10-04  Klee Dienes <kdienes@apple.com>
+
+	* ppc-macosx-regs.h: Remove 'registers' argument from fetch/set
+	function prototypes.
+	* i386-macosx-tdep.h: Remove IS_GSP_REGNUM, add IS_VP_REGNUM.
+	Provide correct values for FIRST/LAST_*_REGNUM and NUM_*_REGS.
+	Prototype i386_macosx_fetch/store_*_registers.
+	* ppc-macosx-thread-status.h: Regularize names of function and
+	macros to gdb_i386_thread_state/fpstate/vpstate.
+	* i386-macosx-thread-status.h: Use the FLOAT_STATE instead of the
+	THREAD_FPSTATE interface to fetch registers from the thread.
+	Remove structures used for decoding floating-point information
+	(the new interface provides a single buffer of raw data in FSAVE
+	format).  Regularize names of function and macros to
+	gdb_i386_thread_state/fpstate/vpstate.
+	* ppc-macosx-regs.c (ppc_macosx_fetch/store_gp/fp/vp_registers):
+	Re-implement using regcache_collect and supply_register.
+	* i386-macosx-tdep.c: (ppc_macosx_fetch/store_gp/fp/vp_registers):
+	Re-implement using regcache_collect, supply_register, and the new
+	thread interface from i386-macosx-thread-status.h.
+	* ppc-macosx-nat-exec.c: Include "regcache.h".
+	(fetch_inferior_registers): Convert to new interface from
+	ppc-macosx-tdep.h.  No longer set register_valid directly.
+	(store_inferior_registers): Ditto.
+	* i386-macosx-nat-exec.c: Include "regcache.h".
+	(fetch_inferior_registers): Convert to new interface from
+	i386-macosx-tdep.h.  No longer set register_valid directly.
+	(store_inferior_registers): Ditto.
+	* core-macho.c: Include the proper register definition header
+	based on the target.  Convert to new register interface for both
+	i386 and powerpc (we now use supply/collect_register instead of
+	registers/register_valid).
+	* remote-kdp.c: Properly conditionalize inclusion of
+	"ppc-macosx-regs.h" and "i386-macosx-tdep.h".  Move inclusion
+	before "defs.h" to avoid conflicting with the target.h definitions
+	of PC_REGNUM and the like.  Fix compiler warnings.
+	* macosx-nat-inferior.c: No longer check for tm_print_insn; it's
+	not used by function any more (it used to be used for debugging
+	output) (previous ChangeLog entry is spurious; change was
+	mistakenly not committed previously).
+	* macosx-metrowerks.c: No longer include ppc-macosx-tdep.h
+	directly.
+
+2002-10-02  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-tdep.c (ppc_gdbarch_init): Don't say chars
+	are unsigned.  This is causing some fails from the improperly
+	written charset.exp test cases; there are precisely four
+	targets that set char_signed to 0, and I can't come up with
+	any benefit from being one of them.
+
+2002-09-30  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-inferior.c: No longer check for tm_print_insn; it's
+	not used by function any more (it used to be used for debugging
+	output).
+
+2002-09-27  Jason Molenda  (jmolenda@apple.com)
+
+        * macosx-nat-inferior.c (macosx_pid_to_str): Revert last - adjusting
+        the testsuite is the right way to go on this one.
+
+2002-09-27  Jason Molenda  (jmolenda@apple.com)
+
+        * macosx-nat-inferior.c (macosx_pid_to_str): Change text to match
+        pthreads.exp's expectations.
+        * macosx-nat-mutils.h (__MACH_CHECK_FUNCTION): Don't bother
+        checking for gcc's older than 2.6.
+
+2002-09-29  Klee Dienes  <kdienes@apple.com>
+
+	* cached-symfile.c (build_objfile_section_table): Properly
+	Terminate objfiles->sections_end even if there are no sections in
+	the objfile.  * core-macho.c (check_thread): Use a process-id of 1
+	for the core threads; store (1, logical thread number, bfd section
+	number) as
+	(pid, lwp, tid).  This allows proper output of thread numbers when
+	displaying threads, and avoids a previous bug where a thread
+	stored as the first load command in a core file would be confused
+	with null_ptid (since both tuples are 0, 0, 0).
+	(macosx_core_ptid_to_str): Output correct thread IDs, not "??".  :
+	Use the new macros for ptid access instead of PITGET/TIDGET.
+	
+2002-09-28  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.h (macosx_dyld_thread_init): Add.
+	(macosx_dyld_thread_status): Add dyld_breakpoint field.
+	* macosx-nat-dyld.c (macosx_dyld_thread_init): Add.
+	(macosx_set_start_breakpoint): Only set the breakpoint if it
+	hasn't already been created.
+	(macosx_solib_add): Don't call macosx_remove_start_breakpoint ---
+	this breaks stop-on-solib, since macosx_solib_add gets called from
+	the stop-on-solib breakpoint, and ends up trashing the stop_bpstat
+	when it removes and re-adds the breakpoint.  Instead, rely on
+	macosx_set_start_breakpoint to only set the breakpoint if it
+	hasn't been created yet.
+	* macosx-nat-inferior-util.c (macosx_inferior_reset): Call
+	macosx_dyld_thread_init.
+
+2002-09-28  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_store_return_value): Convert floats to
+	doubles before storing in registers.  Store shorts and chars in
+	the proper end of registers on big-endian machines.
+
+2002-09-27  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-inferior.c (macosx_pid_to_str): Revert last - adjusting
+	the testsuite is the right way to go on this one.
+
+2002-09-27  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-inferior.c (macosx_pid_to_str): Change text to match
+	pthreads.exp's expectations.
+	* macosx-nat-mutils.h (__MACH_CHECK_FUNCTION): Don't bother
+	checking for gcc's older than 2.6.
+
+2002-09-26  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-mutils.h (__MACH_CHECK_FUNCTION): Update to account
+	for gcc3.
+
+2002-09-24  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.c (macosx_locate_dyld): Don't check for the
+	Mach-O structures for non- Mach-O files.
+
+2002-09-24  Klee Dienes  <kdienes@apple.com>
+
+	See comments in the top-level ChangeLog.
+	
+	* macosx-nat-dyld.c (lookup_dyld_address): Return -1 on error,
+	instead of throwing an error.
+	* (lookup_dyld_address): Propagate -1 from lookup_dyld_address.
+	* (macosx_locate_dyld): No longer called from SOLIB_ADD; update comment.
+	* (macosx_locate_dyld): Warn, rather than error, when unable to find address
+	of dylinker.
+	* (macosx_set_start_breakpoint): Just set the breakpoint; don't
+	try to locate dyld or init addresses.
+	* (macosx_solib_add): Replaces macosx_try_start_dyld.  Inits
+	addresses, sets start breakpoint, does section table updates.
+	Designed to be able to be called repeatedly and "do the right
+	thing" whenever.
+	* (macosx_init_dyld): Update to take exec_bfd as an argument.  If
+	exec_bfd does not match the bfd for the current symfile, use it in
+	preference.
+	* (update_section_tables): Move from objfile.c.  Re-implement to
+	base section tables off of a dyld_objfile_info, not the list of
+	objfiles (which is more correctly a list of symbols loaded, not
+	executables).
+	* macosx-nat-dyld.h (update_section_tables): Add prototype.
+	* (macosx_init_dyld_symfile): Add exec_bfd as argument.
+	* macosx-nat-inferior.c (macosx_set_auto_start_dyld): Use macosx_solib_add.
+	* (macosx_child_attach): Ditto.
+	
+2002-09-23  Jim Ingham (jingham@apple.com)
+
+	* ppc-macosx-tdep.c (ppc_find_function_boundaries): Use refine_prologue_limit so
+	if there is line number information, we get its benefit in trying to skip the 
+	prologue.
+	
+2002-09-20  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-tdep.c (ppc_gdbarch_init):  Set pop_frame to
+	rs6000_pop_frame, not generic_pop_dummy_frame.  Set ppc_lr_regnum -
+	rs600-tdep.c uses this way of storing these register numbers
+	and rs6000_pop_frame needs to know the $lr regnum.
+
+2002-08-27  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-frameops.c: Delete all but ppc_frame_cache_saved_regs
+	and ppc_frame_saved_regs.  We now use the rs6000 code for pushing
+	function arguments.
+
+	* ppc-macosx-tdep.c: Remove gdbarch_tdep; we now use the one from
+	"ppc-tdep.h".
+
+	* ppc-macos-tdep.c: Update to use the rs6000 and generic call-dummy support.
+	(ppc_push_return_address): Store the new return address in the LR
+	and in the saved LR location in the linkage area.
+	(ppc_call_dummy_words): Remove.	
+	(ppc_frame_find_pc): Update to use generic call_dummy support.
+	(rs6000_push_arguments): Add local prototype.
+	(ppc_gdbarch_init): Update to use the rs6000 and generic call-dummy support.
+	
+	* macosx-nat-inferior.c (macosx_child_create_inferior): Make sure
+	exec_bfd isn't NULL before checking to see if it is a PEF binary.
+
+	* ppc-macosx-frameops.c (ppc_push_dummy_frame): Delete.
+	
+2002-08-20  Jim Ingham   <jingham@apple.com>
+ 
+ 	* macosx-tdep.c (macosx_symbol_type): If the section is not the
+ 	first section, see if it is in the TEXT segment to determine
+ 	whether to label it TEXT or DATA...
+ 	
 2002-08-06  Klee Dienes  <kdienes@bluegill.localnet>
 
-	* macosx-nat-inferior-util.c (macosx_inferior_resume_ptrace): Pass
+	* (macosx-nat-watchpoint.c): Rename
+	target_range_profitable_for_hw_watchpoint to
+	target_range_ok_for_hw_watchpoint.
+
+2002-08-06  Klee Dienes  <kdienes@bluegill.localnet>
+	 
+        * macosx-nat-inferior.c (macosx_handle_exception): macosx_status
+        is already a pointer; pass it to macosx_inferior_resume_mach, not
+        its address.
+
+        * macosx-nat-inferior-util.c (macosx_inferior_resume_ptrace): Pass
 	the signal to ptrace whever the inferior is either (a) detaching,
 	or (b) not stopped by a software exception.
-
-	* macosx-nat-inferior.c (macosx_handle_exception): macosx_status
-	is already a pointer; pass it to macosx_inferior_resume_mach, not
-	its address.
-
+	
 2002-08-06  Klee Dienes  <kdienes@bluegill.localnet>
 
-	* ppc-macosx-tdep.c: Made the maximum stack frame size
-	configurable via 'ppp-maximum-frame-size', and set the default to
-	'unlimited'.  It's tempting to have ppc-maximum-frame-size default
-	to 512K, since that's the default stack allocation size on Mac OS
-	X.  But I couldn't think of a compelling reason to do it, and
-	UINT_MAX is much less dependent on OS-leve
+        * ppc-macosx-tdep.c: Made the maximum stack frame size
+        configurable via 'ppp-maximum-frame-size', and set the default to
+        'unlimited'.  It's tempting to have ppc-maximum-frame-size default
+        to 512K, since that's the default stack allocation size on Mac OS
+        X.  But I couldn't think of a compelling reason to do it, and
+        UINT_MAX is much less dependent on OS-level changes.
+
+2002-07-19  Jim Ingham   <jingham@apple.com>
+
+	* macosx-nat-inferior.c (macosx_child_create_inferior): Don't let someone
+	try to run a CFM binary, error out here instead.
+	
+2002-07-12  Jim Ingham   <jingham@apple.com>
+
+	* tm-ppc-macosx.h: Change FAST_SHOW_STACK macro to take a 
+	print function.
+	* ppc-macosx-tdep.c: Remove the ppc_fast_show_stack command,
+	only the MI version is really interesting.  ppc_fast_show_stack_helper
+	becomes ppc_fast_show_stack, and now takes the print_fun argument.
+	
+2002-07-09  Jim Ingham   <jingham@apple.com>
+
+	* machoread.c (macho_symfile_offsets): don't cast a CORE_ADDR
+	as a long, that's no way to truncate it...
+	* macosx-nat-dyld.c (dyld_info_process_raw): Handle the case
+	where a CORE_ADDR is bigger than the native address size, and
+	the dyld slide causes the load address to wrap around.
 
 2002-06-27  Jim Ingham <jingham@apple.com>
 

@@ -22,9 +22,6 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#ifndef _TM_HHPA_H_
-#define _TM_HHPA_H_
-
 #include "regcache.h"
 
 /* Forward declarations of some types we use in prototypes */
@@ -302,7 +299,7 @@ extern void pa_do_strcat_registers_info (int, int, struct ui_file *, enum precis
    of data in register N.  */
 
 #define REGISTER_VIRTUAL_TYPE(N) \
- ((N) < FP4_REGNUM ? builtin_type_unsigned_int : builtin_type_float)
+ ((N) < FP4_REGNUM ? builtin_type_int : builtin_type_float)
 
 /* Store the address of the place in which to copy the structure the
    subroutine will return.  This is called from call_function. */
@@ -313,7 +310,8 @@ extern void pa_do_strcat_registers_info (int, int, struct ui_file *, enum precis
    a function return value of type TYPE, and copy that, in virtual format,
    into VALBUF.  */
 
-#define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
+void hppa_extract_return_value (struct type *type, char *regbuf, char *valbuf);
+#define DEPRECATED_EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
   hppa_extract_return_value (TYPE, REGBUF, VALBUF);
 
  /* elz: decide whether the function returning a value of type type
@@ -333,27 +331,30 @@ extern use_struct_convention_fn hppa_use_struct_convention;
 /* Write into appropriate registers a function return value
    of type TYPE, given in virtual format.  */
 
-#define STORE_RETURN_VALUE(TYPE,VALBUF) \
+
+extern void hppa_store_return_value (struct type *type, char *valbuf);
+#define DEPRECATED_STORE_RETURN_VALUE(TYPE,VALBUF) \
   hppa_store_return_value (TYPE, VALBUF);
 
 /* Extract from an array REGBUF containing the (raw) register state
    the address in which a function should return its structure value,
    as a CORE_ADDR (or an expression that can be used as one).  */
 
-#define EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
+#define DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS(REGBUF) \
   (*(int *)((REGBUF) + REGISTER_BYTE (28)))
 
 /* elz: Return a large value, which is stored on the stack at addr.
-   This is defined only for the hppa, at this moment. 
-   The above macro EXTRACT_STRUCT_VALUE_ADDRESS is not called anymore,
-   because it assumes that on exit from a called function which returns
-   a large structure on the stack, the address of the ret structure is 
-   still in register 28. Unfortunately this register is usually overwritten
-   by the called function itself, on hppa. This is specified in the calling
-   convention doc. As far as I know, the only way to get the return value
-   is to have the caller tell us where it told the callee to put it, rather
-   than have the callee tell us.
- */
+   This is defined only for the hppa, at this moment.  The above macro
+   DEPRECATED_EXTRACT_STRUCT_VALUE_ADDRESS is not called anymore,
+   because it assumes that on exit from a called function which
+   returns a large structure on the stack, the address of the ret
+   structure is still in register 28. Unfortunately this register is
+   usually overwritten by the called function itself, on hppa. This is
+   specified in the calling convention doc. As far as I know, the only
+   way to get the return value is to have the caller tell us where it
+   told the callee to put it, rather than have the callee tell us.  */
+struct value *hppa_value_returned_from_stack (register struct type *valtype,
+					      CORE_ADDR addr);
 #define VALUE_RETURNED_FROM_STACK(valtype,addr) \
   hppa_value_returned_from_stack (valtype, addr)
 
@@ -379,15 +380,8 @@ extern void init_extra_frame_info (int, struct frame_info *);
 /* Describe the pointer in each stack frame to the previous stack frame
    (its caller).  */
 
-/* FRAME_CHAIN takes a frame's nominal address
-   and produces the frame's chain-pointer.
-
-   FRAME_CHAIN_COMBINE takes the chain pointer and the frame's nominal address
-   and produces the nominal address of the caller frame.
-
-   However, if FRAME_CHAIN_VALID returns zero,
-   it means the given frame is the outermost one and has no caller.
-   In that case, FRAME_CHAIN_COMBINE is not used.  */
+/* FRAME_CHAIN takes a frame's nominal address and produces the
+   frame's chain-pointer.  */
 
 /* In the case of the PA-RISC, the frame's nominal address
    is the address of a 4-byte word containing the calling frame's
@@ -398,8 +392,6 @@ extern CORE_ADDR frame_chain (struct frame_info *);
 
 extern int hppa_frame_chain_valid (CORE_ADDR, struct frame_info *);
 #define FRAME_CHAIN_VALID(chain, thisframe) hppa_frame_chain_valid (chain, thisframe)
-
-#define FRAME_CHAIN_COMBINE(chain, thisframe) (chain)
 
 /* Define other aspects of the stack frame.  */
 
@@ -772,5 +764,3 @@ extern void hppa_skip_permanent_breakpoint (void);
    calls on PA-RISC.  Tell the expression parser to check for those
    when parsing tokens that begin with "$".  */
 #define SYMBOLS_CAN_START_WITH_DOLLAR (1)
-
-#endif /* _TM_HHPA_H_ */

@@ -26,6 +26,7 @@
 #include "value.h"
 #include "language.h"
 #include "parser-defs.h"
+#include "frame.h"		/* For frame_map_regnum_to_name.  */
 
 #ifdef HAVE_CTYPE_H
 #include <ctype.h>
@@ -119,10 +120,12 @@ print_subexp (register struct expression *exp, register int *pos,
       return;
 
     case OP_REGISTER:
-      (*pos) += 2;
-      fprintf_filtered (stream, "$%s",
-	      REGISTER_NAME (longest_to_int (exp->elts[pc + 1].longconst)));
-      return;
+      {
+	int regnum = longest_to_int (exp->elts[pc + 1].longconst);
+	(*pos) += 2;
+	fprintf_filtered (stream, "$%s", frame_map_regnum_to_name (regnum));
+	return;
+      }
 
     case OP_BOOL:
       (*pos) += 2;
@@ -262,8 +265,9 @@ print_subexp (register struct expression *exp, register int *pos,
 	}
       else
 	{
-	  int is_chill = exp->language_defn->la_language == language_chill;
-	  fputs_filtered (is_chill ? " [" : " {", stream);
+	  /* OBSOLETE int is_chill = exp->language_defn->la_language == language_chill; */
+	  /* OBSOLETE fputs_filtered (is_chill ? " [" : " {", stream); */
+	  fputs_filtered (" {", stream);
 	  for (tem = 0; tem < nargs; tem++)
 	    {
 	      if (tem != 0)
@@ -272,7 +276,8 @@ print_subexp (register struct expression *exp, register int *pos,
 		}
 	      print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
 	    }
-	  fputs_filtered (is_chill ? "]" : "}", stream);
+	  /* OBSOLETE fputs_filtered (is_chill ? "]" : "}", stream); */
+	  fputs_filtered ("}", stream);
 	}
       return;
 
@@ -280,15 +285,17 @@ print_subexp (register struct expression *exp, register int *pos,
       tem = longest_to_int (exp->elts[pc + 1].longconst);
       (*pos) += 3 + BYTES_TO_EXP_ELEM (tem + 1);
 
-      if (exp->language_defn->la_language == language_chill)
-	{
-	  fputs_filtered (".", stream);
-	  fputs_filtered (&exp->elts[pc + 2].string, stream);
-	  fputs_filtered (exp->elts[*pos].opcode == OP_LABELED ? ", "
-			  : ": ",
-			  stream);
-	}
-      else
+#if 0
+      if (0 /* OBSOLETE exp->language_defn->la_language == language_chill */)
+	{ /* OBSOLETE */
+	  fputs_filtered (".", stream); /* OBSOLETE */
+	  fputs_filtered (&exp->elts[pc + 2].string, stream); /* OBSOLETE */
+	  fputs_filtered (exp->elts[*pos].opcode == OP_LABELED ? ", " /* OBSOLETE */
+			  : ": ", /* OBSOLETE */
+			  stream); /* OBSOLETE */
+	} /* OBSOLETE */
+      else /* OBSOLETE */
+#endif
 	{
 	  /* Gcc support both these syntaxes.  Unsure which is preferred.  */
 #if 1
@@ -379,7 +386,7 @@ print_subexp (register struct expression *exp, register int *pos,
       (*pos) += 2;
       if ((int) prec > (int) PREC_PREFIX)
 	fputs_filtered ("(", stream);
-      if (exp->elts[pc + 1].type->code == TYPE_CODE_FUNC &&
+      if (TYPE_CODE (exp->elts[pc + 1].type) == TYPE_CODE_FUNC &&
 	  exp->elts[pc + 3].opcode == OP_LONG)
 	{
 	  /* We have a minimal symbol fn, probably.  It's encoded

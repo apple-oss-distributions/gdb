@@ -124,7 +124,7 @@ void macosx_debug_region (task_t task, vm_address_t address)
   kret = vm_region (task, &address, &size, VM_REGION_BASIC_INFO, (vm_region_info_t) &info, &count, &object_name);
   MACH_CHECK_ERROR (kret);
 
-  printf_filtered ("Region from 0x%ulx to 0x%ulx (size 0x%ulx) "
+  printf_filtered ("Region from 0x%lx to 0x%lx (size 0x%lx) "
 		   "(currently %s; max %s; inheritance \"%s\"; %s; %s\n",
 		   address, address + size, size,
 		   unparse_protection (info.protection),
@@ -159,7 +159,7 @@ void macosx_debug_regions (task_t task)
     } else {
       printf_filtered ("Region ");
     }
-    printf_filtered ("from 0x%ulx to 0x%ulx (size 0x%ulx) "
+    printf_filtered ("from 0x%lx to 0x%lx (size 0x%lx) "
 		     "(currently %s; max %s; inheritance \"%s\"; %s; %s\n",
 		     address, address + size, size,
 		     unparse_protection (info.protection),

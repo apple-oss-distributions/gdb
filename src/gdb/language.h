@@ -35,7 +35,7 @@ struct expression;
 /* #include "lang_def.h" */
 #define	_LANG_c
 #define	_LANG_m2
-#define	_LANG_chill
+/* OBSOLETE #define	_LANG_chill */
 #define  _LANG_fortran
 #define  _LANG_pascal
 
@@ -397,13 +397,9 @@ extern char *longest_raw_hex_string (LONGEST);
    (language-specific) formats.  Result is static and is overwritten by
    the next call.  Takes printf options like "08l" or "l".  */
 
-extern char *local_hex_string (unsigned long);	/* language.c */
+extern char *local_hex_string (LONGEST);	/* language.c */
 
-extern char *longest_local_hex_string (LONGEST);	/* language.c */
-
-extern char *local_hex_string_custom (unsigned long, char *);	/* language.c */
-
-extern char *longest_local_hex_string_custom (LONGEST, char *);	/* language.c */
+extern char *local_hex_string_custom (LONGEST, char *);	/* language.c */
 
 /* Type predicates */
 

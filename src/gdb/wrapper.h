@@ -19,6 +19,7 @@
 #ifndef WRAPPER_H
 #define WRAPPER_H 1
 #include "gdb.h"
+#include "varobj.h"
 
 struct value;
 

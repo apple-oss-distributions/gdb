@@ -53,6 +53,8 @@ static void kill_or_be_killed (int);
 
 static void default_terminal_info (char *, int);
 
+static int default_region_size_ok_for_hw_watchpoint (int);
+
 static int nosymbol (char *, CORE_ADDR *);
 
 static void tcomplain (void);
@@ -62,6 +64,8 @@ static int nomemory (CORE_ADDR, char *, int, int, struct target_ops *);
 static int return_zero (void);
 
 static int return_one (void);
+
+static int return_minus_one (void);
 
 void target_ignore (void);
 
@@ -106,9 +110,8 @@ static void debug_to_store_registers (int);
 
 static void debug_to_prepare_to_store (void);
 
-static int
-debug_to_xfer_memory (CORE_ADDR, char *, int, int, struct mem_attrib *, 
-		      struct target_ops *);
+static int debug_to_xfer_memory (CORE_ADDR, char *, int, int,
+				 struct mem_attrib *, struct target_ops *);
 
 static void debug_to_files_info (struct target_ops *);
 
@@ -116,11 +119,29 @@ static int debug_to_insert_breakpoint (CORE_ADDR, char *);
 
 static int debug_to_remove_breakpoint (CORE_ADDR, char *);
 
+static int debug_to_can_use_hw_breakpoint (int, int, int);
+
+static int debug_to_insert_hw_breakpoint (CORE_ADDR, char *);
+
+static int debug_to_remove_hw_breakpoint (CORE_ADDR, char *);
+
+static int debug_to_insert_watchpoint (CORE_ADDR, int, int);
+
+static int debug_to_remove_watchpoint (CORE_ADDR, int, int);
+
+static int debug_to_stopped_by_watchpoint (void);
+
+static CORE_ADDR debug_to_stopped_data_address (void);
+
+static int debug_to_region_size_ok_for_hw_watchpoint (int);
+
 static void debug_to_terminal_init (void);
 
 static void debug_to_terminal_inferior (void);
 
 static void debug_to_terminal_ours_for_output (void);
+
+static void debug_to_terminal_save_ours (void);
 
 static void debug_to_terminal_ours (void);
 
@@ -400,6 +421,29 @@ cleanup_target (struct target_ops *t)
 	    memory_insert_breakpoint);
   de_fault (to_remove_breakpoint, 
 	    memory_remove_breakpoint);
+  de_fault (to_can_use_hw_breakpoint,
+	    (int (*) (int, int, int))
+	    return_zero);
+  de_fault (to_insert_hw_breakpoint,
+	    (int (*) (CORE_ADDR, char *))
+	    return_minus_one);
+  de_fault (to_remove_hw_breakpoint,
+	    (int (*) (CORE_ADDR, char *))
+	    return_minus_one);
+  de_fault (to_insert_watchpoint,
+	    (int (*) (CORE_ADDR, int, int))
+	    return_minus_one);
+  de_fault (to_remove_watchpoint,
+	    (int (*) (CORE_ADDR, int, int))
+	    return_minus_one);
+  de_fault (to_stopped_by_watchpoint,
+	    (int (*) (void))
+	    return_zero);
+  de_fault (to_stopped_data_address,
+	    (CORE_ADDR (*) (void))
+	    return_zero);
+  de_fault (to_region_size_ok_for_hw_watchpoint,
+	    default_region_size_ok_for_hw_watchpoint);
   de_fault (to_terminal_init, 
 	    (void (*) (void)) 
 	    target_ignore);
@@ -410,6 +454,9 @@ cleanup_target (struct target_ops *t)
 	    (void (*) (void)) 
 	    target_ignore);
   de_fault (to_terminal_ours, 
+	    (void (*) (void)) 
+	    target_ignore);
+  de_fault (to_terminal_save_ours, 
 	    (void (*) (void)) 
 	    target_ignore);
   de_fault (to_terminal_info, 
@@ -568,10 +615,19 @@ update_current_target (void)
       INHERIT (to_files_info, t);
       INHERIT (to_insert_breakpoint, t);
       INHERIT (to_remove_breakpoint, t);
+      INHERIT (to_can_use_hw_breakpoint, t);
+      INHERIT (to_insert_hw_breakpoint, t);
+      INHERIT (to_remove_hw_breakpoint, t);
+      INHERIT (to_insert_watchpoint, t);
+      INHERIT (to_remove_watchpoint, t);
+      INHERIT (to_stopped_data_address, t);
+      INHERIT (to_stopped_by_watchpoint, t);
+      INHERIT (to_region_size_ok_for_hw_watchpoint, t);
       INHERIT (to_terminal_init, t);
       INHERIT (to_terminal_inferior, t);
       INHERIT (to_terminal_ours_for_output, t);
       INHERIT (to_terminal_ours, t);
+      INHERIT (to_terminal_save_ours, t);
       INHERIT (to_terminal_info, t);
       INHERIT (to_kill, t);
       INHERIT (to_load, t);
@@ -876,9 +932,9 @@ do_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
 
   if (!write && trust_readonly)
     {
-      /* User-settable option, "trust-readonly".  If true, then
-	 memory from any SEC_READONLY bfd section may be read
-	 directly from the bfd file. */
+      /* User-settable option, "trust-readonly-sections".  If true,
+         then memory from any SEC_READONLY bfd section may be read
+         directly from the bfd file. */
 
       struct section_table *secp;
 
@@ -1088,7 +1144,10 @@ target_info (char *args, int from_tty)
 
   for (item = target_stack; item; item = item->next)
     {
-      t = item->target_ops;
+      if (item == target_stack) 
+	t = &current_target;
+      else
+	t = item->target_ops;
 
       if (!t->to_has_memory)
 	continue;
@@ -1257,6 +1316,12 @@ find_default_clone_and_follow_inferior (int child_pid, int *followed_child)
 }
 
 static int
+default_region_size_ok_for_hw_watchpoint (int byte_count)
+{
+  return (byte_count <= REGISTER_SIZE);
+}
+
+static int
 return_zero (void)
 {
   return 0;
@@ -1266,6 +1331,12 @@ static int
 return_one (void)
 {
   return 1;
+}
+
+static int
+return_minus_one (void)
+{
+  return -1;
 }
 
 /*
@@ -1311,6 +1382,11 @@ target_resize_to_sections (struct target_ops *target, int num_added)
 	      (*t)->to_sections = target->to_sections;
 	      (*t)->to_sections_end = target->to_sections_end;
 	    }
+	}
+      if (current_target.to_sections == old_value)
+	{
+	  current_target.to_sections = target->to_sections;
+	  current_target.to_sections_end = target->to_sections_end;
 	}
     }
   
@@ -1682,33 +1758,47 @@ debug_to_post_wait (ptid_t ptid, int status)
 }
 
 static void
+debug_print_register (const char * func, int regno)
+{
+  fprintf_unfiltered (gdb_stdlog, "%s ", func);
+  if (regno >= 0 && regno < NUM_REGS + NUM_PSEUDO_REGS
+      && REGISTER_NAME (regno) != NULL && REGISTER_NAME (regno)[0] != '\0')
+    fprintf_unfiltered (gdb_stdlog, "(%s)", REGISTER_NAME (regno));
+  else
+    fprintf_unfiltered (gdb_stdlog, "(%d)", regno);
+  if (regno >= 0)
+    {
+      int i;
+      unsigned char *buf = alloca (MAX_REGISTER_RAW_SIZE);
+      read_register_gen (regno, buf);
+      fprintf_unfiltered (gdb_stdlog, " = ");
+      for (i = 0; i < REGISTER_RAW_SIZE (regno); i++)
+	{
+	  fprintf_unfiltered (gdb_stdlog, "%02x", buf[i]);
+	}
+      if (REGISTER_RAW_SIZE (regno) <= sizeof (LONGEST))
+	{
+	  fprintf_unfiltered (gdb_stdlog, " 0x%s %s",
+			      paddr_nz (read_register (regno)),
+			      paddr_d (read_register (regno)));
+	}
+    }
+  fprintf_unfiltered (gdb_stdlog, "\n");
+}
+
+static void
 debug_to_fetch_registers (int regno)
 {
   debug_target.to_fetch_registers (regno);
-
-  fprintf_unfiltered (gdb_stdlog, "target_fetch_registers (%s)",
-		      regno != -1 ? REGISTER_NAME (regno) : "-1");
-
-  /* FIXME-32x64 */
-  if (regno != -1)
-    fprintf_unfiltered (gdb_stdlog, " = 0x%lx %ld",
-			(unsigned long) read_register (regno),
-			(unsigned long) read_register (regno));
-  fprintf_unfiltered (gdb_stdlog, "\n");
+  debug_print_register ("target_fetch_registers", regno);
 }
 
 static void
 debug_to_store_registers (int regno)
 {
   debug_target.to_store_registers (regno);
-
-  if (regno >= 0 && regno < NUM_REGS)
-    fprintf_unfiltered (gdb_stdlog, "target_store_registers (%s) = 0x%lx %ld\n",
-			REGISTER_NAME (regno),
-			(unsigned long) read_register (regno),
-			(unsigned long) read_register (regno));
-  else
-    fprintf_unfiltered (gdb_stdlog, "target_store_registers (%d)\n", regno);
+  debug_print_register ("target_store_registers", regno);
+  fprintf_unfiltered (gdb_stdlog, "\n");
 }
 
 static void
@@ -1793,6 +1883,116 @@ debug_to_remove_breakpoint (CORE_ADDR addr, char *save)
   return retval;
 }
 
+static int
+debug_to_can_use_hw_breakpoint (int type, int cnt, int from_tty)
+{
+  int retval;
+
+  retval = debug_target.to_can_use_hw_breakpoint (type, cnt, from_tty);
+
+  fprintf_unfiltered (gdb_stdlog,
+		      "target_can_use_hw_breakpoint (%ld, %ld, %ld) = %ld\n",
+		      (unsigned long) type,
+		      (unsigned long) cnt,
+		      (unsigned long) from_tty,
+		      (unsigned long) retval);
+  return retval;
+}
+
+static int
+debug_to_region_size_ok_for_hw_watchpoint (int byte_count)
+{
+  CORE_ADDR retval;
+
+  retval = debug_target.to_region_size_ok_for_hw_watchpoint (byte_count);
+
+  fprintf_unfiltered (gdb_stdlog,
+		      "TARGET_REGION_SIZE_OK_FOR_HW_WATCHPOINT (%ld) = 0x%lx\n",
+		      (unsigned long) byte_count,
+		      (unsigned long) retval);
+  return retval;
+}
+
+static int
+debug_to_stopped_by_watchpoint (void)
+{
+  int retval;
+
+  retval = debug_target.to_stopped_by_watchpoint ();
+
+  fprintf_unfiltered (gdb_stdlog,
+		      "STOPPED_BY_WATCHPOINT () = %ld\n",
+		      (unsigned long) retval);
+  return retval;
+}
+
+static CORE_ADDR
+debug_to_stopped_data_address (void)
+{
+  CORE_ADDR retval;
+
+  retval = debug_target.to_stopped_data_address ();
+
+  fprintf_unfiltered (gdb_stdlog,
+		      "target_stopped_data_address () = 0x%lx\n",
+		      (unsigned long) retval);
+  return retval;
+}
+
+static int
+debug_to_insert_hw_breakpoint (CORE_ADDR addr, char *save)
+{
+  int retval;
+
+  retval = debug_target.to_insert_hw_breakpoint (addr, save);
+
+  fprintf_unfiltered (gdb_stdlog,
+		      "target_insert_hw_breakpoint (0x%lx, xxx) = %ld\n",
+		      (unsigned long) addr,
+		      (unsigned long) retval);
+  return retval;
+}
+
+static int
+debug_to_remove_hw_breakpoint (CORE_ADDR addr, char *save)
+{
+  int retval;
+
+  retval = debug_target.to_remove_hw_breakpoint (addr, save);
+
+  fprintf_unfiltered (gdb_stdlog,
+		      "target_remove_hw_breakpoint (0x%lx, xxx) = %ld\n",
+		      (unsigned long) addr,
+		      (unsigned long) retval);
+  return retval;
+}
+
+static int
+debug_to_insert_watchpoint (CORE_ADDR addr, int len, int type)
+{
+  int retval;
+
+  retval = debug_target.to_insert_watchpoint (addr, len, type);
+
+  fprintf_unfiltered (gdb_stdlog,
+		      "target_insert_watchpoint (0x%lx, %d, %d) = %ld\n",
+		      (unsigned long) addr, len, type, (unsigned long) retval);
+  return retval;
+}
+
+static int
+debug_to_remove_watchpoint (CORE_ADDR addr, int len, int type)
+{
+  int retval;
+
+  retval = debug_target.to_insert_watchpoint (addr, len, type);
+
+  fprintf_unfiltered (gdb_stdlog,
+		      "target_insert_watchpoint (0x%lx, %d, %d) = %ld\n",
+		      (unsigned long) addr, len, type, (unsigned long) retval);
+  return retval;
+}
+
 static void
 debug_to_terminal_init (void)
 {
@@ -1823,6 +2023,14 @@ debug_to_terminal_ours (void)
   debug_target.to_terminal_ours ();
 
   fprintf_unfiltered (gdb_stdlog, "target_terminal_ours ()\n");
+}
+
+static void
+debug_to_terminal_save_ours (void)
+{
+  debug_target.to_terminal_save_ours ();
+
+  fprintf_unfiltered (gdb_stdlog, "target_terminal_save_ours ()\n");
 }
 
 static void
@@ -2267,10 +2475,19 @@ setup_target_debug (void)
   current_target.to_files_info = debug_to_files_info;
   current_target.to_insert_breakpoint = debug_to_insert_breakpoint;
   current_target.to_remove_breakpoint = debug_to_remove_breakpoint;
+  current_target.to_can_use_hw_breakpoint = debug_to_can_use_hw_breakpoint;
+  current_target.to_insert_hw_breakpoint = debug_to_insert_hw_breakpoint;
+  current_target.to_remove_hw_breakpoint = debug_to_remove_hw_breakpoint;
+  current_target.to_insert_watchpoint = debug_to_insert_watchpoint;
+  current_target.to_remove_watchpoint = debug_to_remove_watchpoint;
+  current_target.to_stopped_by_watchpoint = debug_to_stopped_by_watchpoint;
+  current_target.to_stopped_data_address = debug_to_stopped_data_address;
+  current_target.to_region_size_ok_for_hw_watchpoint = debug_to_region_size_ok_for_hw_watchpoint;
   current_target.to_terminal_init = debug_to_terminal_init;
   current_target.to_terminal_inferior = debug_to_terminal_inferior;
   current_target.to_terminal_ours_for_output = debug_to_terminal_ours_for_output;
   current_target.to_terminal_ours = debug_to_terminal_ours;
+  current_target.to_terminal_save_ours = debug_to_terminal_save_ours;
   current_target.to_terminal_info = debug_to_terminal_info;
   current_target.to_kill = debug_to_kill;
   current_target.to_load = debug_to_load;
@@ -2346,16 +2563,15 @@ initialize_targets (void)
 When non-zero, target debugging is enabled.", &setdebuglist),
      &showdebuglist);
 
-  add_show_from_set 
-    (add_set_boolean_cmd 
-     ("trust-readonly-sections", class_support, 
-      &trust_readonly, 
-      "Set mode for reading from readonly sections.\n\
+  add_setshow_boolean_cmd ("trust-readonly-sections", class_support, 
+			   &trust_readonly, "\
+Set mode for reading from readonly sections.\n\
 When this mode is on, memory reads from readonly sections (such as .text)\n\
 will be read from the object file instead of from the target.  This will\n\
-result in significant performance improvement for remote targets.",
-      &setlist),
-     &showlist);
+result in significant performance improvement for remote targets.", "\
+Show mode for reading from readonly sections.\n",
+			   NULL, NULL,
+			   &setlist, &showlist);
 
   add_com ("monitor", class_obscure, do_monitor_command,
 	   "Send a command to the remote monitor (remote targets only).");

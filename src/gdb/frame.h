@@ -1,6 +1,7 @@
 /* Definitions for dealing with stack frames, for GDB, the GNU debugger.
-   Copyright 1986, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1996, 1997,
-   1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+
+   Copyright 1986, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1996,
+   1997, 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,6 +22,29 @@
 
 #if !defined (FRAME_H)
 #define FRAME_H 1
+
+/* Return the location (and possibly value) of REGNUM for the previous
+   (older, up) frame.  All parameters except VALUEP can be assumed to
+   be non NULL.  When VALUEP is NULL, just the location of the
+   register should be returned.
+
+   UNWIND_CACHE is provided as mechanism for implementing a per-frame
+   local cache.  It's initial value being NULL.  Memory for that cache
+   should be allocated using frame_obstack_alloc().
+
+   Register window architectures (eg SPARC) should note that REGNUM
+   identifies the register for the previous frame.  For instance, a
+   request for the value of "o1" for the previous frame would be found
+   in the register "i1" in this FRAME.  */
+
+typedef void (frame_register_unwind_ftype) (struct frame_info *frame,
+					    void **unwind_cache,
+					    int regnum,
+					    int *optimized,
+					    enum lval_type *lvalp,
+					    CORE_ADDR *addrp,
+					    int *realnump,
+					    void *valuep);
 
 /* Describe the saved registers of a frame.  */
 
@@ -63,6 +87,17 @@ struct frame_info
        For other frames, it is a pc saved in the next frame.  */
     CORE_ADDR pc;
 
+    /* Level of this frame.  The inner-most (youngest) frame is at
+       level 0.  As you move towards the outer-most (oldest) frame,
+       the level increases.  This is a cached value.  It could just as
+       easily be computed by counting back from the selected frame to
+       the inner most frame.  */
+    /* NOTE: cagney/2002-04-05: Perhaphs a level of ``-1'' should be
+       reserved to indicate a bogus frame - one that has been created
+       just to keep GDB happy (GDB always needs a frame).  For the
+       moment leave this as speculation.  */
+    int level;
+
     /* Nonzero if this is a frame associated with calling a signal handler.
 
        Set by machine-dependent code.  On some machines, if
@@ -98,7 +133,12 @@ struct frame_info
 
     /* If dwarf2 unwind frame informations is used, this structure holds all
        related unwind data.  */
-    struct unwind_contect *context;
+    struct context *context;
+
+    /* See description above.  Return the register value for the
+       previous frame.  */
+    frame_register_unwind_ftype *register_unwind;
+    void *register_unwind_cache;
 
     /* Pointers to the next (down, inner) and previous (up, outer)
        frame_info's in the frame cache.  */
@@ -148,6 +188,11 @@ extern void frame_saved_regs_zalloc (struct frame_info *);
 
 #define FRAME_FP(fi) ((fi)->frame)
 
+/* Level of the frame: 0 for innermost, 1 for its caller, ...; or -1
+   for an invalid frame.  */
+
+extern int frame_relative_level (struct frame_info *fi);
+
 /* Define a default FRAME_CHAIN_VALID, in the form that is suitable for most
    targets.  If FRAME_CHAIN_VALID returns zero it means that the given frame
    is the outermost one and has no caller.
@@ -171,8 +216,6 @@ extern struct frame_info *selected_frame;
 /* Level of the selected frame:
    0 for innermost, 1 for its caller, ...
    or -1 for frame specified by address with no defined level.  */
-
-extern int selected_frame_level;
 
 extern struct frame_info *create_new_frame (CORE_ADDR, CORE_ADDR);
 
@@ -207,6 +250,8 @@ extern struct symbol *get_frame_function (struct frame_info *);
 
 extern CORE_ADDR get_frame_pc (struct frame_info *);
 
+extern CORE_ADDR frame_address_in_block (struct frame_info *);
+
 extern CORE_ADDR get_pc_function_start (CORE_ADDR);
 
 extern struct block *block_for_pc (CORE_ADDR);
@@ -229,17 +274,27 @@ extern void print_only_stack_frame (struct frame_info *, int, int);
 
 extern void show_stack_frame (struct frame_info *);
 
-extern void select_frame (struct frame_info *, int);
+extern void select_frame (struct frame_info *);
 
-extern void record_selected_frame (CORE_ADDR *, int *);
+/* Return an ID that can be used to re-find a frame.  */
 
-extern void select_and_print_frame (struct frame_info *, int);
+struct frame_id
+{
+  /* The frame's address.  This should be constant through out the
+     lifetime of a frame.  */
+  CORE_ADDR base;
+  /* The frame's current PC.  While this changes, the function that
+     the PC falls into, does not.  */
+  CORE_ADDR pc;
+};
+
+extern void get_frame_id (struct frame_info *fi, struct frame_id *id);
+
+extern struct frame_info *frame_find_by_id (struct frame_id id);
 
 extern void print_frame_info (struct frame_info *, int, int, int);
 
 extern void show_frame_info (struct frame_info *, int, int, int);
-
-extern CORE_ADDR find_saved_register (struct frame_info *, int);
 
 extern struct frame_info *block_innermost_frame (struct block *);
 
@@ -247,15 +302,24 @@ extern struct frame_info *find_frame_addr_in_frame_chain (CORE_ADDR);
 
 extern CORE_ADDR sigtramp_saved_pc (struct frame_info *);
 
-extern CORE_ADDR generic_read_register_dummy (CORE_ADDR pc,
-					      CORE_ADDR fp, int);
+/* NOTE: cagney/2002-09-13: There is no need for this function.
+   Instead either of frame_unwind_signed_register() or
+   frame_unwind_unsigned_register() can be used.  */
+extern CORE_ADDR deprecated_read_register_dummy (CORE_ADDR pc,
+						 CORE_ADDR fp, int);
 extern void generic_push_dummy_frame (void);
 extern void generic_pop_current_frame (void (*)(struct frame_info *));
 extern void generic_pop_dummy_frame (void);
 
 extern int generic_pc_in_call_dummy (CORE_ADDR pc,
 				     CORE_ADDR sp, CORE_ADDR fp);
-extern char *generic_find_dummy_frame (CORE_ADDR pc, CORE_ADDR fp);
+
+/* NOTE: cagney/2002-06-26: Targets should no longer use this
+   function.  Instead, the contents of a dummy frames registers can be
+   obtained by applying: frame_register_unwind to the dummy frame; or
+   get_saved_register to the next outer frame.  */
+
+extern char *deprecated_generic_find_dummy_frame (CORE_ADDR pc, CORE_ADDR fp);
 
 extern void generic_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR fun,
 				    int nargs, struct value **args,
@@ -265,9 +329,60 @@ extern void generic_get_saved_register (char *, int *, CORE_ADDR *,
 					struct frame_info *, int,
 					enum lval_type *);
 
+extern void generic_unwind_get_saved_register (char *raw_buffer,
+					       int *optimized,
+					       CORE_ADDR * addrp,
+					       struct frame_info *frame,
+					       int regnum,
+					       enum lval_type *lval);
+
+/* Unwind the stack frame so that the value of REGNUM, in the previous
+   frame is returned.  If VALUEP is NULL, don't fetch/compute the
+   value.  Instead just return the location of the value.  */
+
+extern void frame_register_unwind (struct frame_info *frame, int regnum,
+				   int *optimizedp, enum lval_type *lvalp,
+				   CORE_ADDR *addrp, int *realnump,
+				   void *valuep);
+
+/* Unwind FRAME so that the value of register REGNUM, in the previous
+   frame is returned.  Simplified versions of frame_register_unwind.  */
+/* NOTE: cagney/2002-09-13: Return void as one day these functions may
+   be changed to return an indication that the read succeeded.  */
+extern void frame_unwind_signed_register (struct frame_info *frame,
+					  int regnum, LONGEST *val);
+extern void frame_unwind_unsigned_register (struct frame_info *frame,
+					    int regnum, ULONGEST *val);
+
+extern void generic_save_call_dummy_addr (CORE_ADDR lo, CORE_ADDR hi);
+
 extern void get_saved_register (char *raw_buffer, int *optimized,
 				CORE_ADDR * addrp,
 				struct frame_info *frame,
 				int regnum, enum lval_type *lval);
+
+/* Return the register as found on the FRAME.  Return zero if the
+   register could not be found.  */
+extern int frame_register_read (struct frame_info *frame, int regnum,
+				void *buf);
+
+/* Map between a frame register number and its name.  A frame register
+   space is a superset of the cooked register space --- it also
+   includes builtin registers.  */
+
+extern int frame_map_name_to_regnum (const char *name, int strlen);
+extern const char *frame_map_regnum_to_name (int regnum);
+
+CORE_ADDR
+refine_prologue_limit (CORE_ADDR pc, CORE_ADDR lim_pc, int max_skip_non_prologue_insns);
+
+/* From stack.c.  */
+extern void args_info (char *, int);
+
+extern void locals_info (char *, int);
+
+extern void (*selected_frame_level_changed_hook) (int);
+
+extern void return_command (char *, int);
 
 #endif /* !defined (FRAME_H)  */

@@ -145,12 +145,6 @@ inferior_close (PTR iodata, bfd *abfd)
   return 1;
 }
 
-static bfd_vma
-extend_vma (unsigned long n)
-{
-  return (- ((bfd_vma) (- ((long) n))));
-}
-
 static bfd *
 inferior_bfd_generic
 (const char *name, CORE_ADDR addr, CORE_ADDR offset, CORE_ADDR len)
@@ -162,7 +156,7 @@ inferior_bfd_generic
 
   iptr = (struct inferior_info *) xmalloc (sizeof (struct inferior_info));
   iptr->addr = addr;
-  iptr->offset = extend_vma (offset);
+  iptr->offset = offset;
   iptr->len = len;
 
   fdata.iodata = iptr;

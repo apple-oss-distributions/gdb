@@ -34,6 +34,7 @@
 #include "gdbcmd.h"
 #include "regcache.h"
 #include "gdb.h"
+#include "gdb_string.h"
 
 #include <ctype.h>
 #include <sys/types.h>
@@ -425,7 +426,7 @@ info_threads_command (char *arg, int from_tty)
   struct thread_info *tp;
   ptid_t current_ptid;
   struct frame_info *cur_frame;
-  int saved_frame_level = selected_frame_level;
+  int saved_frame_level = frame_relative_level (selected_frame);
   int counter;
   char *extra_info;
 
@@ -480,7 +481,7 @@ info_threads_command (char *arg, int from_tty)
     }
   else
     {
-      select_frame (cur_frame, saved_frame_level);
+      select_frame (cur_frame);
     }
 
   /* re-show current frame. */
@@ -499,7 +500,7 @@ switch_to_thread (ptid_t ptid)
   flush_cached_frames ();
   registers_changed ();
   stop_pc = read_pc ();
-  select_frame (get_current_frame (), 0);
+  select_frame (get_current_frame ());
 }
 
 static void
@@ -717,14 +718,13 @@ do_captured_thread_select (struct ui_out *uiout,
 #endif
   ui_out_text (uiout, ")]\n");
 
-  print_stack_frame (selected_frame, selected_frame_level, 1);
-
   /* Remember to run the context hook here - since this changes
      thread context */
 
   if (context_hook)
     context_hook (ptid_get_tid (inferior_ptid));
 
+  print_stack_frame (selected_frame, frame_relative_level (selected_frame), 1);
   return GDB_RC_OK;
 }
 
@@ -732,8 +732,16 @@ enum gdb_rc
 gdb_thread_select (struct ui_out *uiout,
 		   char *tidstr)
 {
-  return catch_exceptions (uiout, do_captured_thread_select, tidstr,
-			   NULL, RETURN_MASK_ALL);
+ /* APPLE LOCAL: convert RETURN_ERROR to GDB_RC_FAIL because down in
+    mi/mi-main.c, it only expects to see a GDB_RC_* ret val from this func.
+    Should take this change to the FSF, or modify the caller in mi-main.c */
+
+  int retval = catch_exceptions (uiout, do_captured_thread_select, tidstr,
+			         NULL, RETURN_MASK_ALL);
+  if (retval == RETURN_ERROR)
+    return GDB_RC_FAIL;
+  else
+    return retval;
 }
 
 /* Commands with a prefix of `thread'.  */

@@ -1,6 +1,7 @@
 /* Definitions for symbol file management in GDB.
-   Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+
+   Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
+   2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,6 +22,11 @@
 
 #if !defined (OBJFILES_H)
 #define OBJFILES_H
+
+#include "gdb_obstack.h"	/* For obstack internals.  */
+#include "symfile.h"		/* For struct psymbol_allocation_list */
+
+struct bcache;
 
 /* This structure maintains information on a per-objfile basis about the
    "entry point" of the objfile, and the scope within which the entry point
@@ -284,7 +290,8 @@ struct objfile
     /* A byte cache where we can stash arbitrary "chunks" of bytes that
        will not change. */
 
-    struct bcache psymbol_cache;	/* Byte cache for partial syms */
+    struct bcache *psymbol_cache;	/* Byte cache for partial syms */
+    struct bcache *macro_cache;          /* Byte cache for macros */
 
     /* Vectors of all partial symbols read in from file.  The actual data
        is stored in the psymbol_obstack. */
@@ -369,7 +376,7 @@ struct objfile
        so that it gets freed automatically when reading a new object
        file. */
 
-    PTR obj_private;
+    void *obj_private;
 
     /* Set of relocation offsets to apply to each section.
        Currently on the psymbol_obstack (which makes no sense, but I'm
@@ -516,8 +523,6 @@ extern void unlink_objfile (struct objfile *);
 
 extern void free_objfile (struct objfile *);
 
-extern void update_section_tables (struct target_ops *target);
-
 extern struct cleanup *make_cleanup_free_objfile (struct objfile *);
 
 extern void free_all_objfiles (void);
@@ -547,6 +552,11 @@ extern struct obj_section *find_pc_sect_section (CORE_ADDR pc,
 extern int in_plt_section (CORE_ADDR, char *);
 
 extern int is_in_import_list (char *, struct objfile *);
+
+/* A convenience routine for demangling the msymbols in an objfile.
+   FIXME: We added this, and I don't think it is needed in all the 
+   places we are using it. */
+extern void objfile_demangle_msymbols (struct objfile *);
 
 /* Traverse all object files.  ALL_OBJFILES_SAFE works even if you delete
    the objfile during the traversal.  */

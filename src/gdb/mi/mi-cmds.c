@@ -115,7 +115,7 @@ struct mi_cmd mi_cmds[] =
   {"stack-list-arguments", 0, 0, mi_cmd_stack_list_args},
   {"stack-list-exception-handlers", 0, 0},
   {"stack-list-frames", 0, 0, mi_cmd_stack_list_frames},
-  {"stack-list-frames-lite", "ppc-fast-show-stack %s", 0, 0},
+  {"stack-list-frames-lite", 0, 0, mi_cmd_stack_list_frames_lite},
   {"stack-list-locals", 0, 0, mi_cmd_stack_list_locals},
   {"stack-select-frame", 0, 0, mi_cmd_stack_select_frame},
   {"symbol-info-address", 0, 0},

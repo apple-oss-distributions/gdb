@@ -31,6 +31,7 @@
 #include "value.h"
 #include "symfile.h"
 #include "objfiles.h"
+#include "source.h"
 #include "gdbcmd.h"
 #include "breakpoint.h"
 #include "language.h"
@@ -38,8 +39,9 @@
 #include "demangle.h"
 #include "inferior.h"		/* for write_pc */
 #include "gdb-stabs.h"
-#include "obstack.h"
+#include "gdb_obstack.h"
 #include "completer.h"
+#include "bcache.h"
 
 #include <sys/types.h>
 #include <fcntl.h>
@@ -69,7 +71,7 @@
 #endif
 
 #if HAVE_MMAP
-static boolean mmap_symbol_files_flag = 0;
+static int mmap_symbol_files_flag = 0;
 #endif /* HAVE_MMAP */
 
 #ifdef HPUXHPPA
@@ -100,21 +102,6 @@ static void clear_symtab_users_cleanup (void *ignore);
 /* Global variables owned by this file */
 int readnow_symbol_files;	/* Read full symbols immediately */
 
-struct complaint oldsyms_complaint =
-{
-  "Replacing old symbols for `%s'", 0, 0
-};
-
-struct complaint empty_symtab_complaint =
-{
-  "Empty symbol table found for `%s'", 0, 0
-};
-
-struct complaint unknown_option_complaint =
-{
-  "Unknown option `%s' ignored", 0, 0
-};
-
 /* External variables and functions referenced. */
 
 extern void report_transfer_performance (unsigned long, time_t, time_t);
@@ -143,6 +130,8 @@ static int compare_psymbols (const void *, const void *);
 static int compare_symbols (const void *, const void *);
 
 bfd *symfile_bfd_open (const char *);
+
+int get_section_index (struct objfile *, char *);
 
 static void find_sym_fns (struct objfile *);
 
@@ -561,6 +550,34 @@ default_symfile_offsets (struct objfile *objfile,
   if (sect)
     objfile->sect_index_rodata = sect->index;
 
+  /* This is where things get really weird...  We MUST have valid
+     indices for the various sect_index_* members or gdb will abort.
+     So if for example, there is no ".text" section, we have to
+     accomodate that.  Except when explicitly adding symbol files at
+     some address, section_offsets contains nothing but zeros, so it
+     doesn't matter which slot in section_offsets the individual
+     sect_index_* members index into.  So if they are all zero, it is
+     safe to just point all the currently uninitialized indices to the
+     first slot. */
+
+  for (i = 0; i < objfile->num_sections; i++)
+    {
+      if (ANOFFSET (objfile->section_offsets, i) != 0)
+	{
+	  break;
+	}
+    }
+  if (i == objfile->num_sections)
+    {
+      if (objfile->sect_index_text == -1)
+	objfile->sect_index_text = 0;
+      if (objfile->sect_index_data == -1)
+	objfile->sect_index_data = 0;
+      if (objfile->sect_index_bss == -1)
+	objfile->sect_index_bss = 0;
+      if (objfile->sect_index_rodata == -1)
+	objfile->sect_index_rodata = 0;
+    }
 }
 
 /* Process a symbol file, as either the main file or as a dynamically
@@ -621,6 +638,9 @@ syms_from_objfile (struct objfile *objfile, struct section_addr_info *addrs,
 	{
 	  free_objfile (symfile_objfile);
 	  symfile_objfile = NULL;
+#ifdef NM_NEXTSTEP
+	  macosx_init_dyld_symfile (symfile_objfile, exec_bfd);
+#endif
 	}
 
       /* Currently we keep symbols from the add-symbol-file command.
@@ -706,7 +726,7 @@ syms_from_objfile (struct objfile *objfile, struct section_addr_info *addrs,
      initial symbol reading for this file. */
 
   (*objfile->sf->sym_init) (objfile);
-  clear_complaints (1, verbo);
+  clear_complaints (&symfile_complaints, 1, verbo);
 
   (*objfile->sf->sym_offsets) (objfile, addrs);
 
@@ -819,6 +839,9 @@ new_symfile_objfile (struct objfile *objfile, int mainline, int verbo)
     {
       /* OK, make it the "real" symbol file.  */
       symfile_objfile = objfile;
+#ifdef NM_NEXTSTEP
+      macosx_init_dyld_symfile (symfile_objfile, exec_bfd);
+#endif
 
       clear_symtab_users ();
     }
@@ -828,7 +851,7 @@ new_symfile_objfile (struct objfile *objfile, int mainline, int verbo)
     }
 
   /* We're done reading the symbol file; finish off complaints.  */
-  clear_complaints (0, verbo);
+  clear_complaints (&symfile_complaints, 0, verbo);
 }
 
 /* Process a symbol file, as either the main file or as a dynamically
@@ -881,7 +904,12 @@ symbol_file_add_bfd (abfd, from_tty, addrs, mainline, flags, symflags, mapaddr, 
       && !query ("Load new symbol table from \"%s\"? ", abfd->filename))
     error ("Not confirmed.");
 
+#ifdef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
   objfile = allocate_objfile (abfd, flags, symflags, mapaddr);
+#else
+  objfile = allocate_objfile (abfd, flags);
+#endif
+
   objfile->prefix = prefix;
 
   /* If the objfile uses a mapped symbol file, and we have a psymtab for
@@ -954,21 +982,16 @@ symbol_file_add_bfd (abfd, from_tty, addrs, mainline, flags, symflags, mapaddr, 
 	}
     }
 
+#ifndef NM_NEXTSTEP
   if (objfile->sf == NULL)
     return objfile;	/* No symbols. */
+#endif
 
   new_symfile_objfile (objfile, mainline, from_tty);
 
   if (target_new_objfile_hook)
     target_new_objfile_hook (objfile);
 
-  {
-    extern struct target_ops exec_ops;
-
-    update_section_tables (&current_target);
-    update_section_tables (&exec_ops);
-  }
-  
   return (objfile);
 }
 
@@ -996,7 +1019,7 @@ symbol_file_add_main_1 (char *args, int from_tty, int flags)
 #endif
 
 #ifdef NM_NEXTSTEP
-  macosx_init_dyld_symfile (symfile_objfile);
+  macosx_init_dyld_symfile (symfile_objfile, exec_bfd);
 #endif
 
   /* Getting new symbols may change our opinion about
@@ -1014,7 +1037,17 @@ symbol_file_clear (int from_tty)
       && !query ("Discard symbol table from `%s'? ",
 		 symfile_objfile->name))
     error ("Not confirmed.");
-    free_all_objfiles ();
+
+#ifdef NM_NEXTSTEP
+  if (symfile_objfile != NULL)
+    {
+      free_objfile (symfile_objfile);
+      symfile_objfile = NULL;
+      macosx_init_dyld_symfile (symfile_objfile, exec_bfd);
+    }
+#else
+  free_all_objfiles ();
+#endif
 
     /* solib descriptors may have handles to objfiles.  Since their
        storage has just been released, we'd better wipe the solib
@@ -1242,6 +1275,18 @@ symfile_bfd_open (const char *name)
 	     bfd_errmsg (bfd_get_error ()));
     }
   return (sym_bfd);
+}
+
+/* Return the section index for the given section name. Return -1 if
+   the section was not found. */
+int
+get_section_index (struct objfile *objfile, char *section_name)
+{
+  asection *sect = bfd_get_section_by_name (objfile->obfd, section_name);
+  if (sect)
+    return sect->index;
+  else
+    return -1;
 }
 
 /* Link a new symtab_fns into the global symtab_fns list.  Called on gdb
@@ -1580,6 +1625,8 @@ add_symbol_file_command (char *args, int from_tty)
   int i;
   int expecting_sec_name = 0;
   int expecting_sec_addr = 0;
+  static char *usage_string =
+    "USAGE: add-symbol-file <filename> [-mapped] [-readnow] [-s <secname> <addr>]*";
 
   struct
   {
@@ -1593,7 +1640,7 @@ add_symbol_file_command (char *args, int from_tty)
   dont_repeat ();
 
   if (args == NULL)
-    error ("add-symbol-file takes a file name and an address");
+    error (usage_string);
 
   /* Make a copy of the string that we can safely write into. */
   args = xstrdup (args);
@@ -1690,7 +1737,7 @@ add_symbol_file_command (char *args, int from_tty)
 		      section_index++;		  
 		    }
 		  else
-		    error ("USAGE: add-symbol-file <filename> [-mapped] [-readnow] [-s <secname> <addr>]*");
+		    error (usage_string);
 	      }
 	  }
       argcnt++;
@@ -1875,7 +1922,10 @@ reread_symbols (void)
 		      sizeof (objfile->static_psymbols));
 
 	      /* Free the obstacks for non-reusable objfiles */
-	      free_bcache (&objfile->psymbol_cache);
+	      bcache_xfree (objfile->psymbol_cache);
+	      objfile->psymbol_cache = bcache_xmalloc (NULL);
+	      bcache_xfree (objfile->macro_cache);
+	      objfile->macro_cache = bcache_xmalloc (NULL);
 	      obstack_free (&objfile->psymbol_obstack, 0);
 	      obstack_free (&objfile->symbol_obstack, 0);
 	      obstack_free (&objfile->type_obstack, 0);
@@ -1900,8 +1950,8 @@ reread_symbols (void)
 	      objfile->md = NULL;
 	      /* obstack_specify_allocation also initializes the obstack so
 	         it is empty.  */
-	      obstack_specify_allocation (&objfile->psymbol_cache.cache, 0, 0,
-					  xmalloc, xfree);
+	      objfile->psymbol_cache = bcache_xmalloc (NULL);
+	      objfile->macro_cache = bcache_xmalloc (NULL);
 	      obstack_specify_allocation (&objfile->psymbol_obstack, 0, 0,
 					  xmalloc, xfree);
 	      obstack_specify_allocation (&objfile->symbol_obstack, 0, 0,
@@ -1933,7 +1983,7 @@ reread_symbols (void)
 		}
 
 	      (*objfile->sf->sym_init) (objfile);
-	      clear_complaints (1, 1);
+	      clear_complaints (&symfile_complaints, 1, 1);
 	      /* The "mainline" parameter is a hideous hack; I think leaving it
 	         zero is OK since dbxread.c also does what it needs to do if
 	         objfile->global_psymbols.size is 0.  */
@@ -1948,7 +1998,7 @@ reread_symbols (void)
 	      objfile->flags |= OBJF_SYMS;
 
 	      /* We're done reading the symbol file; finish off complaints.  */
-	      clear_complaints (0, 1);
+	      clear_complaints (&symfile_complaints, 0, 1);
 
 	      /* Getting new symbols may change our opinion about what is
 	         frameless.  */
@@ -2057,9 +2107,9 @@ add_filename_language (char *ext, enum language lang)
   if (fl_table_next >= fl_table_size)
     {
       fl_table_size += 10;
-      filename_language_table =
-        xrealloc (filename_language_table,
-                  (fl_table_size * sizeof (* filename_language_table)));
+      filename_language_table = 
+	xrealloc (filename_language_table,
+		  fl_table_size * sizeof (*filename_language_table));
     }
 
   filename_language_table[fl_table_next].ext = xstrdup (ext);
@@ -2157,9 +2207,9 @@ init_filename_language_table (void)
       add_filename_language (".c++", language_cplus);
       add_filename_language (".java", language_java);
       add_filename_language (".class", language_java);
-      add_filename_language (".ch", language_chill);
-      add_filename_language (".c186", language_chill);
-      add_filename_language (".c286", language_chill);
+      /* OBSOLETE add_filename_language (".ch", language_chill); */
+      /* OBSOLETE add_filename_language (".c186", language_chill); */
+      /* OBSOLETE add_filename_language (".c286", language_chill); */
       add_filename_language (".m", language_objc);
       add_filename_language (".mm", language_objcplus);
       add_filename_language (".M", language_objcplus);
@@ -2315,8 +2365,7 @@ clear_symtab_users (void)
   clear_internalvars ();
   breakpoint_re_set ();
   set_default_breakpoint (0, 0, 0, 0);
-  current_source_symtab = 0;
-  current_source_line = 0;
+  clear_current_source_symtab_and_line ();
   clear_pc_function_cache ();
   if (target_new_objfile_hook)
     target_new_objfile_hook (NULL);
@@ -2502,15 +2551,16 @@ again2:
 	  || BLOCK_NSYMS (BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK))
 	  || BLOCK_NSYMS (BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK)))
 	{
-	  complain (&oldsyms_complaint, name);
-
+	  complaint (&symfile_complaints, "Replacing old symbols for `%s'",
+		     name);
 	  clear_symtab_users_queued++;
 	  make_cleanup (clear_symtab_users_once, 0);
 	  blewit = 1;
 	}
       else
 	{
-	  complain (&empty_symtab_complaint, name);
+	  complaint (&symfile_complaints, "Empty symbol table found for `%s'",
+		     name);
 	}
 
       free_symtab (s);
@@ -2575,7 +2625,7 @@ add_psymbol_to_list (char *name, int namelength, namespace_enum namespace,
   /* Create local copy of the partial symbol */
   memcpy (buf, name, namelength);
   buf[namelength] = '\0';
-  SYMBOL_NAME (&psymbol) = bcache (buf, namelength + 1, &objfile->psymbol_cache);
+  SYMBOL_NAME (&psymbol) = bcache (buf, namelength + 1, objfile->psymbol_cache);
   /* val and coreaddr are mutually exclusive, one of them *will* be zero */
   if (val != 0)
     {
@@ -2592,7 +2642,7 @@ add_psymbol_to_list (char *name, int namelength, namespace_enum namespace,
   SYMBOL_INIT_LANGUAGE_SPECIFIC (&psymbol, language);
 
   /* Stash the partial symbol away in the cache */
-  psym = bcache (&psymbol, sizeof (struct partial_symbol), &objfile->psymbol_cache);
+  psym = bcache (&psymbol, sizeof (struct partial_symbol), objfile->psymbol_cache);
 
   /* Save pointer to partial symbol in psymtab, growing symtab if needed. */
   if (list->next >= list->list + list->size)
@@ -2627,7 +2677,7 @@ add_psymbol_with_dem_name_to_list (char *name, int namelength, char *dem_name,
 
   memcpy (buf, name, namelength);
   buf[namelength] = '\0';
-  SYMBOL_NAME (&psymbol) = bcache (buf, namelength + 1, &objfile->psymbol_cache);
+  SYMBOL_NAME (&psymbol) = bcache (buf, namelength + 1, objfile->psymbol_cache);
 
   buf = alloca (dem_namelength + 1);
   memcpy (buf, dem_name, dem_namelength);
@@ -2638,11 +2688,11 @@ add_psymbol_with_dem_name_to_list (char *name, int namelength, char *dem_name,
     case language_c:
     case language_cplus:
       SYMBOL_CPLUS_DEMANGLED_NAME (&psymbol) =
-	bcache (buf, dem_namelength + 1, &objfile->psymbol_cache);
+	bcache (buf, dem_namelength + 1, objfile->psymbol_cache);
       break;
-    case language_chill:
-      SYMBOL_CHILL_DEMANGLED_NAME (&psymbol) =
-	bcache (buf, dem_namelength + 1, &objfile->psymbol_cache);
+      /* OBSOLETE case language_chill: */
+      /* OBSOLETE   SYMBOL_CHILL_DEMANGLED_NAME (&psymbol) = */
+      /* OBSOLETE     bcache (buf, dem_namelength + 1, objfile->psymbol_cache); */
 
       /* FIXME What should be done for the default case? Ignoring for now. */
     default:
@@ -2666,7 +2716,7 @@ add_psymbol_with_dem_name_to_list (char *name, int namelength, char *dem_name,
   SYMBOL_INIT_LANGUAGE_SPECIFIC (&psymbol, language);
 
   /* Stash the partial symbol away in the cache */
-  psym = bcache (&psymbol, sizeof (struct partial_symbol), &objfile->psymbol_cache);
+  psym = bcache (&psymbol, sizeof (struct partial_symbol), objfile->psymbol_cache);
 
   /* Save pointer to partial symbol in psymtab, growing symtab if needed. */
   if (list->next >= list->list + list->size)
@@ -3350,7 +3400,7 @@ simple_read_overlay_region_table (void)
   simple_free_overlay_region_table ();
   msym = lookup_minimal_symbol ("_novly_regions", NULL, NULL);
   if (msym != NULL)
-    cache_novly_regions = read_memory_unsigned_integer (SYMBOL_VALUE_ADDRESS (msym), 4);
+    cache_novly_regions = read_memory_integer (SYMBOL_VALUE_ADDRESS (msym), 4);
   else
     return 0;			/* failure */
   cache_ovly_region_table = (void *) xmalloc (cache_novly_regions * 12);

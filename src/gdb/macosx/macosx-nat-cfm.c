@@ -58,11 +58,11 @@ cfm_update (task_t task, struct dyld_objfile_info *info)
 {
   long ret;
 
-  unsigned long n_connection_ids;
-  unsigned long nread_connection_ids;
-  unsigned long *connection_ids;
+  unsigned long n_container_ids;
+  unsigned long nread_container_ids;
+  unsigned long *container_ids;
 
-  unsigned long connection_index;
+  unsigned long container_index;
 
   CORE_ADDR cfm_cookie;
   CORE_ADDR cfm_context;
@@ -76,35 +76,31 @@ cfm_update (task_t task, struct dyld_objfile_info *info)
 
   cfm_context = read_memory_unsigned_integer (cfm_cookie, 4);
 
-  ret = cfm_fetch_context_connections (cfm_parser, cfm_context, 0, 0, &n_connection_ids, NULL);
+  ret = cfm_fetch_context_containers (cfm_parser, cfm_context, 0, 0, &n_container_ids, NULL);
   if (ret != noErr)
       return ret;
 
-  connection_ids = (unsigned long *) xmalloc (n_connection_ids * sizeof (unsigned long));
+  container_ids = (unsigned long *) xmalloc (n_container_ids * sizeof (unsigned long));
 
-  ret = cfm_fetch_context_connections (cfm_parser, cfm_context, n_connection_ids, 0, &nread_connection_ids, connection_ids);
+  ret = cfm_fetch_context_containers 
+    (cfm_parser, cfm_context, 
+     n_container_ids, 0, &nread_container_ids, container_ids);
   if (ret != noErr)
       return ret;
 
-  CHECK (n_connection_ids == nread_connection_ids);
+  CHECK (n_container_ids == nread_container_ids);
 
-  for (connection_index = 0; connection_index < n_connection_ids; connection_index++)
+  for (container_index = 0; container_index < n_container_ids; container_index++)
     {
-      NCFragConnectionInfo connection_info;
       NCFragContainerInfo container_info;
       NCFragSectionInfo section_info;
-      NCFragInstanceInfo instance_info;
 
-      ret = cfm_fetch_connection_info (cfm_parser, connection_ids[connection_index], &connection_info);
-      if (ret != noErr)
-	continue;
-      
-      ret = cfm_fetch_container_info (cfm_parser, connection_info.container, &container_info);
+      ret = cfm_fetch_container_info (cfm_parser, container_ids[container_index], &container_info);
       if (ret != noErr)
 	continue;
       
       if (container_info.sectionCount > 0) {
-	ret = cfm_fetch_connection_section_info (cfm_parser, connection_ids[connection_index], 0, &section_info, &instance_info);
+	ret = cfm_fetch_container_section_info (cfm_parser, container_ids[container_index], 0, &section_info);
 	if (ret != noErr)
 	  continue;
       }
@@ -123,72 +119,12 @@ cfm_update (task_t task, struct dyld_objfile_info *info)
 	entry->dyld_index = 0;
 	entry->dyld_valid = 1;
 
-	entry->cfm_connection = connection_ids[connection_index];
+	entry->cfm_container = container_ids[container_index];
 
 	entry->reason = dyld_reason_cfm;
       }
     }
 
-  return noErr;
-}
-
-long
-cfm_fetch_context_connections
-(struct cfm_parser *parser,
- CORE_ADDR contextAddr,
- unsigned long requestedCount, unsigned long skipCount,
- unsigned long *totalCount_o, unsigned long* connectionIDs_o)
-{
-  int ret;
-
-  unsigned long localTotal = 0;
-  unsigned long currIDSlot;
-
-  NCFragUniverseInfo universe;
-  NCFragConnectionInfo connection;
-
-  CORE_ADDR curConnection = 0;
-
-  *totalCount_o = 0;
-
-  ret = cfm_fetch_universe_info (parser, contextAddr, &universe);
-
-  localTotal = universe.connections.length;
-
-  if (skipCount >= localTotal)
-    {
-      *totalCount_o = localTotal;
-      return noErr;
-    }
-
-  if (requestedCount > (localTotal - skipCount))
-    requestedCount = localTotal - skipCount;
-
-  curConnection = universe.connections.head;
-
-  while (skipCount > 0)
-    {
-      if (curConnection == 0)
-	return cfragCFMInternalErr;
-
-      ret = cfm_fetch_connection_info (parser, curConnection, &connection);
-
-      curConnection = connection.next;
-      skipCount -= 1;
-    }
-
-  for (currIDSlot = 0; currIDSlot < requestedCount; currIDSlot += 1)
-    {
-      if (curConnection == 0)
-	return cfragCFMInternalErr;
-
-      ret = cfm_fetch_connection_info (parser, curConnection, &connection);
-
-      connectionIDs_o[currIDSlot] = curConnection;
-      curConnection = connection.next;
-    }
-
-  *totalCount_o = localTotal;
   return noErr;
 }
 
@@ -232,6 +168,7 @@ long
 cfm_parse_container_info
 (struct cfm_parser *parser, unsigned char *buf, size_t len, NCFragContainerInfo *info)
 {
+  info->next = bfd_getb32 (buf + 0);
   info->address = bfd_getb32 (buf + parser->container_address_offset);
   info->length = bfd_getb32 (buf + parser->container_length_offset);
   info->sectionCount = bfd_getb32 (buf + parser->container_section_count_offset);
@@ -322,52 +259,89 @@ cfm_parse_instance_info
 }
 
 long
-cfm_fetch_connection_section_info
-(struct cfm_parser *parser, CORE_ADDR addr, unsigned long sectionIndex, NCFragSectionInfo *section, NCFragInstanceInfo *instance)
+cfm_fetch_context_containers
+(struct cfm_parser *parser,
+ CORE_ADDR contextAddr,
+ unsigned long requestedCount, unsigned long skipCount,
+ unsigned long *totalCount_o, unsigned long* containerIDs_o)
+{
+  int ret;
+
+  unsigned long localTotal = 0;
+  unsigned long currIDSlot;
+
+  NCFragUniverseInfo universe;
+  NCFragContainerInfo container;
+
+  CORE_ADDR curContainer = 0;
+
+  *totalCount_o = 0;
+
+  ret = cfm_fetch_universe_info (parser, contextAddr, &universe);
+
+  localTotal = universe.containers.length;
+
+  if (skipCount >= localTotal)
+    {
+      *totalCount_o = localTotal;
+      return noErr;
+    }
+
+  if (requestedCount > (localTotal - skipCount))
+    requestedCount = localTotal - skipCount;
+
+  curContainer = universe.containers.head;
+
+  while (skipCount > 0)
+    {
+      if (curContainer == 0)
+	return cfragCFMInternalErr;
+
+      ret = cfm_fetch_container_info (parser, curContainer, &container);
+
+      curContainer = container.next;
+      skipCount -= 1;
+    }
+
+  for (currIDSlot = 0; currIDSlot < requestedCount; currIDSlot += 1)
+    {
+      if (curContainer == 0)
+	return cfragCFMInternalErr;
+
+      ret = cfm_fetch_container_info (parser, curContainer, &container);
+
+      containerIDs_o[currIDSlot] = curContainer;
+      curContainer = container.next;
+    }
+
+  *totalCount_o = localTotal;
+  return noErr;
+}
+
+long
+cfm_fetch_container_section_info
+(struct cfm_parser *parser, CORE_ADDR addr, unsigned long sectionIndex,
+ NCFragSectionInfo *section)
 {
   int ret, err;
   unsigned long offset;
 
-  NCFragConnectionInfo connection;
   NCFragContainerInfo container;
   unsigned char section_buf[CFM_MAX_SECTION_LENGTH];
-  unsigned char instance_buf[CFM_MAX_INSTANCE_LENGTH];
-  unsigned long instance_ptr;
 
-  ret = cfm_fetch_connection_info (parser, addr, &connection);
-  if (ret < 0)
-    return cfragCFMInternalErr;
-
-  ret = cfm_fetch_container_info (parser, connection.container, &container);
+  ret = cfm_fetch_container_info (parser, addr, &container);
   if (ret < 0)
     return cfragCFMInternalErr;
   
   if (sectionIndex >= container.sectionCount)
     return cfragNoSectionErr;
 
-  offset = (connection.container + parser->container_length - (2 * parser->section_length) + (sectionIndex * parser->section_length));
-  
+  offset = (addr + parser->container_length - (2 * parser->section_length) + (sectionIndex * parser->section_length));
   ret = target_read_memory_partial (offset, section_buf, parser->section_length, &err);
   if (ret < 0)
     return cfragCFMInternalErr;
   
-  offset = (addr + parser->connection_length - (2 * sizeof (unsigned long)) + (sectionIndex * sizeof (unsigned long)));
-  
-  ret = target_read_memory_partial (offset, (unsigned char *) &instance_ptr, sizeof (unsigned long), &err);
-  if (ret < 0)
-	return cfragCFMInternalErr;
-  if (instance_ptr == 0)
-    return cfragNoSectionErr;
-  
-  ret = target_read_memory_partial (instance_ptr, instance_buf, parser->instance_length, &err);
-  if (ret < 0)
-    return cfragCFMInternalErr;
-  
   ret = cfm_parse_section_info (parser, section_buf, parser->section_length, section);
-  if (ret < 0)
-    return ret;
-
-  ret = cfm_parse_instance_info (parser, instance_buf, parser->instance_length, instance);
   if (ret < 0)
     return ret;
 

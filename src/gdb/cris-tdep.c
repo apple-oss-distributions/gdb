@@ -37,6 +37,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "solib.h"              /* Support for shared libraries. */
 #include "solib-svr4.h"         /* For struct link_map_offsets.  */
+#include "gdb_string.h"
 
 
 enum cris_num_regs
@@ -762,7 +763,7 @@ cris_skip_prologue_main (CORE_ADDR pc, int frameless_p)
    adjusts pcptr (if necessary) to point to the actual memory location where
    the breakpoint should be inserted.  */
 
-unsigned char *
+const unsigned char *
 cris_breakpoint_from_pc (CORE_ADDR *pcptr, int *lenptr)
 {
   static unsigned char break_insn[] = {0x38, 0xe9};
@@ -774,8 +775,8 @@ cris_breakpoint_from_pc (CORE_ADDR *pcptr, int *lenptr)
 /* Returns the register SRP (subroutine return pointer) which must contain 
    the content of the register PC after a function call.  */
 
-CORE_ADDR
-cris_saved_pc_after_call ()
+static CORE_ADDR
+cris_saved_pc_after_call (struct frame_info *frame)
 {
   return read_register (SRP_REGNUM);
 }
@@ -995,7 +996,7 @@ cris_abi_v2_store_return_value (struct type *type, char *valbuf)
 /* Return the name of register regno as a string. Return NULL for an invalid or
    unimplemented register.  */
 
-char *
+const char *
 cris_register_name (int regno)
 {
   static char *cris_genreg_names[] =
@@ -1155,7 +1156,7 @@ cris_frame_init_saved_regs (struct frame_info *fi)
   CORE_ADDR ip;
   struct symtab_and_line sal;
   int best_limit;
-  char *dummy_regs = generic_find_dummy_frame (fi->pc, fi->frame);
+  char *dummy_regs = deprecated_generic_find_dummy_frame (fi->pc, fi->frame);
   
   /* Examine the entire prologue.  */
   register int frameless_p = 0; 
@@ -1214,9 +1215,10 @@ cris_init_extra_frame_info (int fromleaf, struct frame_info *fi)
     {    
       /* We need to setup fi->frame here because run_stack_dummy gets it wrong
          by assuming it's always FP.  */
-      fi->frame = generic_read_register_dummy (fi->pc, fi->frame, SP_REGNUM);
+      fi->frame = deprecated_read_register_dummy (fi->pc, fi->frame,
+						  SP_REGNUM);
       fi->extra_info->return_pc = 
-        generic_read_register_dummy (fi->pc, fi->frame, PC_REGNUM);
+        deprecated_read_register_dummy (fi->pc, fi->frame, PC_REGNUM);
 
       /* FIXME: Is this necessarily true?  */
       fi->extra_info->leaf_function = 0;
@@ -1520,7 +1522,7 @@ cris_push_return_address (CORE_ADDR pc, CORE_ADDR sp)
    all saved registers.  */
 
 void 
-cris_pop_frame ()
+cris_pop_frame (void)
 {
   register struct frame_info *fi = get_current_frame ();
   register int regno;
@@ -4100,17 +4102,19 @@ cris_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
           cris_abi = CRIS_ABI_V2;
         }
     }
-  else if (gdbarch_tdep (current_gdbarch))
+  else if (arches != NULL)
     {
-      /* No bfd available.  Stick with whatever ABI we're currently using.  
-         (This is to avoid changing the ABI when the user updates the 
-         architecture with the 'set cris-version' command.)  */
-      cris_abi = gdbarch_tdep (current_gdbarch)->cris_abi;
+      /* No bfd available.  Stick with the ABI from the most recently
+         selected architecture of this same family (the head of arches
+         always points to this).  (This is to avoid changing the ABI
+         when the user updates the architecture with the 'set
+         cris-version' command.)  */
+      cris_abi = gdbarch_tdep (arches->gdbarch)->cris_abi;
     }
   else
     {
-      /* No bfd, and no current architecture available.  Assume it's the 
-         new ABI.  */
+      /* No bfd, and no previously selected architecture available.
+         Assume it's the new ABI.  */
       cris_abi = CRIS_ABI_V2;
     }
 
@@ -4159,9 +4163,9 @@ cris_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     {
       set_gdbarch_double_bit (gdbarch, 32);
       set_gdbarch_push_arguments (gdbarch, cris_abi_original_push_arguments);
-      set_gdbarch_store_return_value (gdbarch, 
+      set_gdbarch_deprecated_store_return_value (gdbarch, 
                                       cris_abi_original_store_return_value);
-      set_gdbarch_extract_return_value 
+      set_gdbarch_deprecated_extract_return_value 
         (gdbarch, cris_abi_original_extract_return_value);
       set_gdbarch_reg_struct_has_addr 
         (gdbarch, cris_abi_original_reg_struct_has_addr);
@@ -4170,9 +4174,9 @@ cris_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     {
       set_gdbarch_double_bit (gdbarch, 64);
       set_gdbarch_push_arguments (gdbarch, cris_abi_v2_push_arguments);
-      set_gdbarch_store_return_value (gdbarch, cris_abi_v2_store_return_value);
-      set_gdbarch_extract_return_value (gdbarch, 
-                                        cris_abi_v2_extract_return_value);
+      set_gdbarch_deprecated_store_return_value (gdbarch, cris_abi_v2_store_return_value);
+      set_gdbarch_deprecated_extract_return_value
+	(gdbarch, cris_abi_v2_extract_return_value);
       set_gdbarch_reg_struct_has_addr (gdbarch, 
                                        cris_abi_v2_reg_struct_has_addr);
     }
@@ -4295,8 +4299,8 @@ cris_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_pop_frame (gdbarch, cris_pop_frame);
 
   set_gdbarch_store_struct_return (gdbarch, cris_store_struct_return);
-  set_gdbarch_extract_struct_value_address (gdbarch, 
-                                            cris_extract_struct_value_address);
+  set_gdbarch_deprecated_extract_struct_value_address
+    (gdbarch, cris_extract_struct_value_address);
   set_gdbarch_use_struct_convention (gdbarch, cris_use_struct_convention);
 
   set_gdbarch_frame_init_saved_regs (gdbarch, cris_frame_init_saved_regs);

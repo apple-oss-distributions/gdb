@@ -1,5 +1,5 @@
-# Copyright 1992, 1994, 1995, 1996, 1997, 1999, 2000
-# Free Software Foundation, Inc.
+# Copyright 1992, 1994, 1995, 1996, 1997, 1999, 2000, 2002 Free
+# Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -33,6 +33,10 @@ set binfile ${objdir}/${subdir}/${testfile}
 if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
+
+# APPLE LOCAL jmolenda
+# r. 3056074 gdb expression parser misunderstands array typedef
+set r3056074 "(r. 3056074)"
 
 # Set the current language to C.  This counts as a test.  If it
 # fails, then we skip the other tests.
@@ -98,8 +102,8 @@ proc test_integer_literals_rejected {} {
     global gdb_prompt
 
     test_print_reject "p 0x" 
-    gdb_test "p ''" "Empty character constant\\."
-    gdb_test "p '''" "Empty character constant\\."
+    gdb_test "p ''" "(Empty character constant\\.|A character constant must contain at least one character\\.)"
+    gdb_test "p '''" "(Empty character constant\\.|A character constant must contain at least one character\\.)"
     test_print_reject "p '\\'"
 
     # Note that this turns into "p '\\\'" at gdb's input.
@@ -555,18 +559,19 @@ proc test_print_int_arrays {} {
 
 proc test_print_typedef_arrays {} {
     global gdb_prompt
+    global r3056074
 
     gdb_test "set print elements 24" ""
 
     gdb_test_escape_braces "p a1" \
 	" = {2, 4, 6, 8, 10, 12, 14, 16, 18, 20}"
-    gdb_test "p a1\[0\]" " = 2"
-    gdb_test "p a1\[9\]" " = 20"
+    gdb_test "p a1\[0\]" " = 2" "p a1_0 $r3056074"
+    gdb_test "p a1\[9\]" " = 20" "p a1_9 $r3056074"
 
     gdb_test "p a2" \
 	" = \"abcd\""
-    gdb_test "p a2\[0\]" " = 97 'a'"
-    gdb_test "p a2\[3\]" " = 100 'd'"
+    gdb_test "p a2\[0\]" " = 97 'a'" "p a2_0 $r3056074"
+    gdb_test "p a2\[3\]" " = 100 'd'" "p a2_3 $r3056074"
 }
 
 proc test_artificial_arrays {} {
@@ -619,25 +624,16 @@ proc test_print_string_constants {} {
     # (Test may involve inferior malloc() calls).
     set timeout 60;
 
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "p \"a string\""		" = \"a string\""
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
-    gdb_test "p \"embedded \\000 null\"" " = \"embedded \\\\0 null\""
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
+    gdb_test "p \"embedded \\000 null\"" " = \"embedded \\\\000 null\""
     gdb_test "p \"abcd\"\[2\]"	" = 99 'c'"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "p sizeof (\"abcdef\")"	" = 7"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "ptype \"foo\""		" = char \\\[4\\\]"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "p *\"foo\""		" = 102 'f'"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "ptype *\"foo\""		" = char"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "p &*\"foo\""		" = \"foo\""
-    setup_xfail "*-*-*"
+    # setup_kfail "gdb/538"
     gdb_test "ptype &*\"foo\""	"type = char \\*"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "p (char *)\"foo\""	" = \"foo\""
 }
 
@@ -653,17 +649,11 @@ proc test_print_array_constants {} {
     # (Test may involve inferior malloc() calls).
     set timeout 60;
 
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "print {'a','b','c'}"	" = \"abc\""
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test_escape_braces "print {0,1,2}"    " = {0, 1, 2}"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test_escape_braces "print {(long)0,(long)1,(long)2}"  " = {0, 1, 2}"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test_escape_braces "print {{0,1,2},{3,4,5}}"  " = {{0, 1, 2}, {3, 4, 5}}"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "print {4,5,6}\[2\]"	" = 6"
-    # OBSOLETE setup_xfail "a29k-*-udi" 2416
     gdb_test "print *&{4,5,6}\[1\]"	" = 5"
 }
 

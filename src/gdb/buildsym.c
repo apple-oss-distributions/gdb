@@ -28,7 +28,7 @@
 
 #include "defs.h"
 #include "bfd.h"
-#include "obstack.h"
+#include "gdb_obstack.h"
 #include "symtab.h"
 #include "symfile.h"		/* Needed for "struct complaint" */
 #include "objfiles.h"
@@ -36,9 +36,11 @@
 #include "complaints.h"
 #include "gdb_string.h"
 #include "expression.h"		/* For "enum exp_opcode" used by... */
-#include "language.h"		/* For "longest_local_hex_string_custom" */
+#include "language.h"		/* For "local_hex_string" */
 #include "bcache.h"
 #include "filenames.h"		/* For DOSish file names */
+#include "macrotab.h"
+#include "demangle.h"		/* Needed by SYMBOL_INIT_DEMANGLED_NAME.  */
 /* Ask buildsym.h to define the vars it normally declares `extern'.  */
 #define	EXTERN
 /**/
@@ -192,6 +194,9 @@ really_free_pendings (PTR dummy)
       xfree ((void *) next);
     }
   global_symbols = NULL;
+
+  if (pending_macros)
+    free_macro_table (pending_macros);
 }
 
 /* This function is called to discard any pending blocks. */
@@ -239,17 +244,49 @@ finish_block (struct symbol *symbol, struct pending **listhead,
       /* EMPTY */ ;
     }
 
-  block = (struct block *) obstack_alloc (&objfile->symbol_obstack,
-	    (sizeof (struct block) + ((i - 1) * sizeof (struct symbol *))));
-
   /* Copy the symbols into the block.  */
 
-  BLOCK_NSYMS (block) = i;
-  for (next = *listhead; next; next = next->next)
+  if (symbol)
     {
-      for (j = next->nsyms - 1; j >= 0; j--)
+      block = (struct block *) 
+	obstack_alloc (&objfile->symbol_obstack,
+		       (sizeof (struct block) + 
+			((i - 1) * sizeof (struct symbol *))));
+      BLOCK_NSYMS (block) = i;
+      for (next = *listhead; next; next = next->next)
+	for (j = next->nsyms - 1; j >= 0; j--)
+	  {
+	    BLOCK_SYM (block, --i) = next->symbol[j];
+	  }
+    }
+  else
+    {
+      int htab_size = BLOCK_HASHTABLE_SIZE (i);
+
+      block = (struct block *) 
+	obstack_alloc (&objfile->symbol_obstack,
+		       (sizeof (struct block) + 
+			((htab_size - 1) * sizeof (struct symbol *))));
+      for (j = 0; j < htab_size; j++)
 	{
-	  BLOCK_SYM (block, --i) = next->symbol[j];
+	  BLOCK_BUCKET (block, j) = 0;
+	}
+      BLOCK_BUCKETS (block) = htab_size;
+      for (next = *listhead; next; next = next->next)
+	{
+	  for (j = next->nsyms - 1; j >= 0; j--)
+	    {
+	      struct symbol *sym;
+	      unsigned int hash_index;
+	      const char *name = SYMBOL_DEMANGLED_NAME (next->symbol[j]);
+	      if (name == NULL)
+		name = SYMBOL_NAME (next->symbol[j]);
+	      hash_index = msymbol_hash_iw (name);
+	      hash_index = hash_index % BLOCK_BUCKETS (block);
+	      sym = BLOCK_BUCKET (block, hash_index);
+	      BLOCK_BUCKET (block, hash_index) = next->symbol[j];
+	      next->symbol[j]->hash_next = sym;
+	    }
 	}
     }
 
@@ -267,6 +304,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
       struct type *ftype = SYMBOL_TYPE (symbol);
       SYMBOL_BLOCK_VALUE (symbol) = block;
       BLOCK_FUNCTION (block) = symbol;
+      BLOCK_HASHTABLE (block) = 0;
 
       if (TYPE_NFIELDS (ftype) <= 0)
 	{
@@ -348,6 +386,7 @@ finish_block (struct symbol *symbol, struct pending **listhead,
   else
     {
       BLOCK_FUNCTION (block) = NULL;
+      BLOCK_HASHTABLE (block) = 1;
     }
 
   /* Now "free" the links of the list, and empty the list.  */
@@ -386,7 +425,9 @@ finish_block (struct symbol *symbol, struct pending **listhead,
      start of this scope that don't have superblocks yet.  */
 
   opblock = NULL;
-  for (pblock = pending_blocks; pblock != old_blocks; pblock = pblock->next)
+  for (pblock = pending_blocks; 
+       pblock && pblock != old_blocks; 
+       pblock = pblock->next)
     {
       if (BLOCK_SUPERBLOCK (pblock->block) == NULL)
 	{
@@ -476,11 +517,11 @@ compare_blocks (const void *v1, const void *v2)
     return 0;
 }
 
-/* Note that this is only used in this file and in dstread.c, which
-   should be fixed to not need direct access to this function.  When
-   that is done, it can be made static again. */
+/* OBSOLETE Note that this is only used in this file and in dstread.c, which */
+/* OBSOLETE should be fixed to not need direct access to this function.  When */
+/* OBSOLETE that is done, it can be made static again. */
 
-struct blockvector *
+static struct blockvector *
 make_blockvector (struct objfile *objfile)
 {
   register struct pending_block *next;
@@ -563,7 +604,7 @@ make_blockvector (struct objfile *objfile)
 		= BLOCK_START (BLOCKVECTOR_BLOCK (blockvector, i));
 
 	      complain (&blockvector_complaint,
-			longest_local_hex_string ((LONGEST) start));
+			local_hex_string ((LONGEST) start));
 	    }
 	}
     }
@@ -942,7 +983,8 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
   if (pending_blocks == NULL
       && file_symbols == NULL
       && global_symbols == NULL
-      && have_line_numbers == 0)
+      && have_line_numbers == 0
+      && pending_macros == NULL)
     {
       /* Ignore symtabs that have no functions with real debugging
          info.  */
@@ -1003,6 +1045,7 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 
 	  /* Fill in its components.  */
 	  symtab->blockvector = blockvector;
+          symtab->macro_table = pending_macros;
 	  if (subfile->line_vector)
 	    {
 	      /* Reallocate the line table on the symbol obstack */
@@ -1081,6 +1124,7 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 
   last_source_file = NULL;
   current_subfile = NULL;
+  pending_macros = NULL;
 
   return symtab;
 }
@@ -1171,6 +1215,7 @@ buildsym_init (void)
   file_symbols = NULL;
   global_symbols = NULL;
   pending_blocks = NULL;
+  pending_macros = NULL;
 }
 
 /* Initialize anything that needs initializing when a completely new

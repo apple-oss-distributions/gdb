@@ -60,8 +60,8 @@ LONGEST arm_linux_call_dummy_words[] =
 };
 
 /* Description of the longjmp buffer.  */
-#define JB_ELEMENT_SIZE		INT_REGISTER_RAW_SIZE
-#define JB_PC			21
+#define ARM_LINUX_JB_ELEMENT_SIZE	INT_REGISTER_RAW_SIZE
+#define ARM_LINUX_JB_PC			21
 
 /* Extract from an array REGBUF containing the (raw) register state
    a function return value of type TYPE, and copy that, in virtual format,
@@ -524,15 +524,15 @@ arm_linux_init_abi (struct gdbarch_info info,
   tdep->arm_breakpoint = arm_linux_arm_le_breakpoint;
   tdep->arm_breakpoint_size = sizeof (arm_linux_arm_le_breakpoint);
 
-  tdep->jb_pc = JB_PC;
-  tdep->jb_elt_size = JB_ELEMENT_SIZE;
+  tdep->jb_pc = ARM_LINUX_JB_PC;
+  tdep->jb_elt_size = ARM_LINUX_JB_ELEMENT_SIZE;
 
   set_gdbarch_call_dummy_words (gdbarch, arm_linux_call_dummy_words);
   set_gdbarch_sizeof_call_dummy_words (gdbarch,
 				       sizeof (arm_linux_call_dummy_words));
 
   /* The following two overrides shouldn't be needed.  */
-  set_gdbarch_extract_return_value (gdbarch, arm_linux_extract_return_value);
+  set_gdbarch_deprecated_extract_return_value (gdbarch, arm_linux_extract_return_value);
   set_gdbarch_push_arguments (gdbarch, arm_linux_push_arguments);
 
   /* Shared library handling.  */
@@ -543,5 +543,5 @@ arm_linux_init_abi (struct gdbarch_info info,
 void
 _initialize_arm_linux_tdep (void)
 {
-  arm_gdbarch_register_os_abi (ARM_ABI_LINUX, arm_linux_init_abi);
+  gdbarch_register_osabi (bfd_arch_arm, GDB_OSABI_LINUX, arm_linux_init_abi);
 }

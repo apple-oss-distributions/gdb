@@ -1,0 +1,10 @@
+2002-10-01  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.c (gdb_set_register): Replace target_map_name_to_register
+	with frame_map_name_to_regnum.
+	(gdb_set_register): Ditto.
+	* gdb_testing.i (gdb_testz): Ditto.
+
+2002-09-24  Klee Dienes  <kdienes@apple.com>
+
+	* Makefile: Use (cd dir && command), not (cd dir; command).

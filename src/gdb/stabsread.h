@@ -154,8 +154,9 @@ extern void end_stabs (void);
 
 extern void finish_global_stabs (struct objfile *objfile);
 
-
-EXTERN int os9k_stabs;
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE EXTERN int os9k_stabs;
+#endif /* OBSOLETE OS9K */
 
 /* COFF files can have multiple .stab sections, if they are linked
    using --split-by-reloc.  This linked list is used to pass the
@@ -186,11 +187,11 @@ extern void
 process_one_symbol (int, int, CORE_ADDR, char *, const char *,
 		    struct section_offsets *, struct objfile *);
 
-extern void elfstab_build_psymtabs
-  (struct objfile *objfile,
-   int mainline,
-   file_ptr staboff, unsigned int stabsize,
-   file_ptr stabstroffset, unsigned int stabstrsize);
+extern void elfstab_build_psymtabs (struct objfile *objfile,
+				    int mainline,
+				    file_ptr staboff, unsigned int stabsize,
+				    file_ptr stabstroffset,
+				    unsigned int stabstrsize);
 
 extern void coffstab_build_psymtabs
   (struct objfile *objfile,

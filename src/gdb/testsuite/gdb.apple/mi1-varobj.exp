@@ -1,0 +1,116 @@
+#   Copyright (C) 2002 Free Software Foundation, Inc.
+#
+# This Program Is Free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+
+# Please email any bugs, comments, and/or additions to this file to:
+# bug-gdb@prep.ai.mit.edu
+
+# Test Apple local varobj features.
+#
+# Written by Jason Molenda (jmolenda@apple.com)
+
+# Initially, make use of the -stack-list-locals feature where
+# varobjs are created for all locals, and variables in a block
+# below the current block may not yet be in scope.
+
+load_lib mi-support.exp
+set MIFLAGS "-i=mi1"
+
+gdb_exit
+if [mi_gdb_start] {
+    continue
+}
+
+set testfile "objc-prog"
+set srcfile ${testfile}.m
+set binfile ${objdir}/${subdir}/${testfile}
+if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug additional_flags=-DFAKEARGV\ -framework\ Foundation}] != "" } {
+    gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
+}
+
+mi_delete_breakpoints
+mi_gdb_reinitialize_dir $srcdir/$subdir
+mi_gdb_load ${binfile}
+
+send_gdb "200-break-insert blocky\n"
+gdb_expect {
+  -re "200\\^done,bkpt=\{number=\"1\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"blocky\",file=\".*objc-prog.m\",line=\"($decimal)\",times=\"0\"\}\[\r\n\]+$mi_gdb_prompt$"  {
+    set blocky_line_number $expect_out(1,string)
+    pass "break-insert operation"
+  }
+  -re ".*$mi_gdb_prompt$" {
+    set blocky_line_number -1
+    fail "break-insert operation"
+  }
+  timeout {
+    fail "(timeout) break-insert operation"
+  }
+}
+
+mi_run_cmd
+# The running part has been checked already by mi_run_cmd
+mi_get_bp_stopped "1" "\[01\]" "" "blocky" "objc-prog.m" ".*" "run to blocky"
+
+# Normal stack-list-locals behavior
+
+mi_gdb_test "111-stack-list-locals 0 0" "111\\^done,locals=\\\[\{name=\"outer\"\}\\\]" "normal stack-list-locals behavior"
+mi_gdb_test "112-stack-list-locals 0" "112\\^done,locals=\\\[\{name=\"outer\"\}\\\]" "normal stack-list-locals behavior #2"
+
+# Test local extension of -stack-list-locals which works over all blocks.
+
+mi_gdb_test "113-stack-list-locals 0 1" "113\\^done,locals=\\\[\{name=\"outer\"\},\{name=\"inner1\"\},\{name=\"inner2\"\},\{name=\"outer\"\},\{name=\"flooooo\"\},\{name=\"chhhhh\"\}\\\]" "list locals in all subblocks"
+
+mi_next "step forward"
+mi_next "step forward again"
+
+mi_gdb_test "114-stack-list-locals 0" "114\\^done,locals=\\\[\{name=\"inner1\"\},\{name=\"inner2\"\},\{name=\"outer\"\}\\\]"
+
+# Apple local behavior - -stack-list-locals's first arg can be '2', in which
+# case varobjs are created for all loals.
+
+mi_gdb_test "115-stack-list-locals 2" \
+  "115\\^done,locals=\\\[varobj=\{exp=\"inner1\",value=\"97 'a'\",name=\"var1\",numchild=\"0\",type=\"char\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"\},varobj=\{exp=\"inner2\",value=\".*\",name=\"var2\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"\},varobj=\{exp=\"outer\",value=\"5\",name=\"var3\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"\}\\\]" \
+   "create varobjs for all locals in current scope"
+
+
+# Note the importance of var7 - the second 'outer' variable -- its in_scope
+# value is 'false'.  God help me, this may be the only test of that 
+# functionality we have in the whole testsuite.
+
+mi_gdb_test "116-stack-list-locals 2 1" \
+  "116\\^done,locals=\\\[varobj=\{exp=\"outer\",value=\"5\",name=\"var4\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"\},varobj=\{exp=\"inner1\",value=\"97 'a'\",name=\"var5\",numchild=\"0\",type=\"char\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"\},varobj=\{exp=\"inner2\",value=\".*\",name=\"var6\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"\},varobj=\{exp=\"outer\",value=\".*\",name=\"var7\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"false\"\},varobj=\{exp=\"flooooo\",value=\".*\",name=\"var8\",numchild=\"0\",type=\"float\",typecode=\"FLT\",dynamic_type=\"\",in_scope=\"false\"\},varobj=\{exp=\"chhhhh\",value=\".*\",name=\"var9\",numchild=\"0\",type=\"char\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"false\"\}\\\]" \
+ "create varobjs for all blocks visible"
+
+# The breakpoint on blocky() is on the first line of code in the func;
+# this second breakpoint should be about severn statements farther down -
+# on the line that reads "inner2 = 99".
+
+set second_blocky_bp [expr $blocky_line_number + 7]
+
+mi_gdb_test "-break-insert $second_blocky_bp" \
+	"\\^done,bkpt=\{number=\"2\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"blocky\",file=\".*objc-prog.m\",line=\"$second_blocky_bp\",times=\"0\"\}" \
+	"break-insert operation 2"
+mi_continue_to "2" "blocky" ".*" "objc-prog.m" "$second_blocky_bp"  "continue to line $second_blocky_bp"
+
+mi_gdb_test "-var-update *" "\\^done,changelist=\\\[varobj=\{name=\"var5\",in_scope=\"true\",type_changed=\"false\"\},varobj=\{name=\"var1\",in_scope=\"true\",type_changed=\"false\"\}\\\]" "simple var-update change"
+
+mi_finish_to "main" ".*" "objc-prog.m" ".*" ".*" ".*" "back to main"
+
+# Now make sure all the varobj's went away -
+
+mi_gdb_test "-var-update *" "\\^done,changelist=\\\[varobj=\{name=\"var6\",in_scope=\"false\"\},varobj=\{name=\"var5\",in_scope=\"false\"\},varobj=\{name=\"var4\",in_scope=\"false\"\},varobj=\{name=\"var3\",in_scope=\"false\"\},varobj=\{name=\"var2\",in_scope=\"false\"\},varobj=\{name=\"var1\",in_scope=\"false\"\}\\\]" "all varobjs go out of scope"
+
+mi_gdb_exit
+return 0

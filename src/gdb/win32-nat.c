@@ -1334,7 +1334,7 @@ static BOOL WINAPI (*DebugSetProcessKillOnExit)(BOOL);
 static BOOL WINAPI (*DebugActiveProcessStop)(DWORD);
 
 static int
-has_detach_ability ()
+has_detach_ability (void)
 {
   static HMODULE kernel32 = NULL;
 
@@ -1461,6 +1461,8 @@ child_create_inferior (char *exec_file, char *allargs, char **env)
   char *toexec;
   char shell[MAX_PATH + 1]; /* Path to shell */
   const char *sh;
+  int tty;
+  int ostdin, ostdout, ostderr;
 
   if (!exec_file)
     error ("No executable specified, use `target exec'.\n");
@@ -1573,6 +1575,27 @@ child_create_inferior (char *exec_file, char *allargs, char **env)
     *temp = 0;
   }
 
+  if (!inferior_io_terminal)
+    tty = ostdin = ostdout = ostderr = -1;
+  else
+    {
+      tty = open (inferior_io_terminal, O_RDWR | O_NOCTTY);
+      if (tty < 0)
+	{
+	  print_sys_errmsg (inferior_io_terminal, errno);
+	  ostdin = ostdout = ostderr = -1;
+	}
+      else
+	{
+	  ostdin = dup (0);
+	  ostdout = dup (1);
+	  ostderr = dup (2);
+	  dup2 (tty, 0);
+	  dup2 (tty, 1);
+	  dup2 (tty, 2);
+	}
+    }
+
   ret = CreateProcess (0,
 		       args,	/* command line */
 		       NULL,	/* Security */
@@ -1583,6 +1606,17 @@ child_create_inferior (char *exec_file, char *allargs, char **env)
 		       NULL,	/* current directory */
 		       &si,
 		       &pi);
+  if (tty >= 0)
+    {
+      close (tty);
+      dup2 (ostdin, 0);
+      dup2 (ostdout, 1);
+      dup2 (ostderr, 2);
+      close (ostdin);
+      close (ostdout);
+      close (ostderr);
+    }
+
   if (!ret)
     error ("Error creating process %s, (error %d)\n", exec_file, GetLastError ());
 
@@ -1791,6 +1825,7 @@ init_child_ops (void)
   child_ops.to_terminal_inferior = terminal_inferior;
   child_ops.to_terminal_ours_for_output = terminal_ours_for_output;
   child_ops.to_terminal_ours = terminal_ours;
+  child_ops.to_terminal_save_ours = terminal_save_ours;
   child_ops.to_terminal_info = child_terminal_info;
   child_ops.to_kill = child_kill_inferior;
   child_ops.to_load = 0;
@@ -1815,7 +1850,7 @@ init_child_ops (void)
 }
 
 void
-_initialize_inftarg (void)
+_initialize_win32_nat (void)
 {
   struct cmd_list_element *c;
 

@@ -10,17 +10,20 @@ typedef enum dyld_objfile_reason {
   dyld_reason_deallocated = 0x1, 
 
   dyld_reason_user = 0x02,
-  dyld_reason_cached = 0x04,
+  dyld_reason_cached_library = 0x04,
+  dyld_reason_cached_executable = 0x08,
 
-  dyld_reason_init = 0x08,
-  dyld_reason_executable = 0x10,
+  dyld_reason_init = 0x10,
+  dyld_reason_executable = 0x20,
 
-  dyld_reason_dyld = 0x20,
-  dyld_reason_cfm = 0x40, 
+  dyld_reason_dyld = 0x40,
+  dyld_reason_cfm = 0x80, 
 
-  dyld_reason_image = 0x18,
-  dyld_reason_shlib = 0xfc,
-  dyld_reason_all = 0xfe
+  dyld_reason_cached_mask = 0x0c,
+  dyld_reason_executable_mask = 0x28,
+  dyld_reason_image_mask = 0x30,
+
+  dyld_reason_all_mask = 0xfc
 
 } dyld_objfile_reason;
 
@@ -37,7 +40,7 @@ struct dyld_objfile_entry {
   unsigned long dyld_index;
   int dyld_valid;
 
-  unsigned long cfm_connection;
+  unsigned long cfm_container;
 
   char *user_name;
 
@@ -116,9 +119,38 @@ struct dyld_objfile_entry *dyld_objfile_entry_alloc
 PARAMS ((struct dyld_objfile_info *i));
 
 void dyld_print_shlib_info
-PARAMS ((struct dyld_objfile_info *s, unsigned int reason_mask));
+PARAMS ((struct dyld_objfile_info *s, unsigned int reason_mask, int header, const char *args));
 
-int dyld_objfile_info_compare (struct dyld_objfile_info *a, 
-			       struct dyld_objfile_info *b);
+int dyld_resolve_shlib_num
+PARAMS ((struct dyld_objfile_info *s, unsigned int num,
+	 struct dyld_objfile_entry **eptr, struct objfile **optr));
+
+int dyld_objfile_info_compare
+PARAMS ((struct dyld_objfile_info *a, struct dyld_objfile_info *b));
+
+void dyld_convert_entry PARAMS ((struct objfile *o, struct dyld_objfile_entry *e));
+
+void 
+dyld_entry_info PARAMS ((struct dyld_objfile_entry *e, int print_basenames, 
+			 char **in_name, char **addr, char **slide, char **prefix));
+
+void dyld_print_entry_info
+PARAMS ((struct dyld_objfile_entry *j, unsigned int shlibnum,
+	 unsigned int baselen));
+
+int dyld_entry_shlib_num
+PARAMS ((struct dyld_objfile_info *s, struct dyld_objfile_entry *eptr,
+	 unsigned int *numptr));
+
+int dyld_entry_shlib_num_matches
+PARAMS ((int shlibnum, const char *args, int verbose));
+
+unsigned int dyld_next_allocated_shlib
+PARAMS ((struct dyld_objfile_info *info, unsigned int n));
+
+#define DYLD_ALL_OBJFILE_INFO_ENTRIES(info, o, n)          	   \
+  for ((n) = dyld_next_allocated_shlib ((info), 0);		   \
+       ((n) < (info)->nents) ? (o = &(info)->entries[(n)], 1) : 0; \
+       (n) = dyld_next_allocated_shlib (info, (n) + 1))
 
 #endif /* __GDB_MACOSX_NAT_DYLD_INFO_H__ */

@@ -46,8 +46,6 @@
 
 #include <string.h>
 
-extern struct target_ops exec_ops;
-
 extern int dyld_preload_libraries_flag;
 extern int dyld_filter_events_flag;
 extern int dyld_always_read_from_memory_flag;
@@ -153,14 +151,17 @@ void dyld_add_image_libraries
 	break;
       }
       case BFD_MACH_O_LC_LOAD_DYLIB:
-      case BFD_MACH_O_LC_ID_DYLIB: {
+      case BFD_MACH_O_LC_ID_DYLIB: 
+      case BFD_MACH_O_LC_LOAD_WEAK_DYLIB:
+	{
 	bfd_mach_o_dylib_command *dcmd = &cmd->command.dylib;
 
 	name = xmalloc (dcmd->name_len + 1);
             
 	bfd_seek (abfd, dcmd->name_offset, SEEK_SET);
 	if (bfd_bread (name, dcmd->name_len, abfd) != dcmd->name_len) {
-	  warning ("Unable to find library name for LC_LOAD_DYLIB or LD_ID_DYLIB command; ignoring");
+	  warning ("Unable to find library name for LC_LOAD_DYLIB, "
+		   "LD_ID_DYLIB or LC_WEAK_LOAD_DYLIB command; ignoring");
 	  xfree (name);
 	  continue;
 	}
@@ -189,6 +190,7 @@ void dyld_add_image_libraries
 	break;
       case BFD_MACH_O_LC_LOAD_DYLIB:
       case BFD_MACH_O_LC_ID_DYLIB:
+      case BFD_MACH_O_LC_LOAD_WEAK_DYLIB:
 	break;
       default:
 	abort ();
@@ -446,9 +448,8 @@ void dyld_load_library (const struct dyld_path_info *d, struct dyld_objfile_entr
   if (e->abfd) { return; }
   if (e->loaded_error) { return; }
 
-  if ((e->reason == dyld_reason_executable) && (symfile_objfile != NULL)) {
-    e->abfd = symfile_objfile->obfd;
-    return;
+  if (e->reason & dyld_reason_executable_mask) {
+    CHECK_FATAL (e->objfile == symfile_objfile);
   }
 
   if (e->reason == dyld_reason_cfm) {
@@ -515,7 +516,7 @@ void dyld_load_library (const struct dyld_path_info *d, struct dyld_objfile_entr
     return;
   }
 
-  if (e->reason & dyld_reason_image) 
+  if (e->reason & dyld_reason_image_mask) 
     {
       asection *text_sect = bfd_get_section_by_name (e->abfd, "LC_SEGMENT.__TEXT");
       if (text_sect != NULL) {
@@ -526,6 +527,10 @@ void dyld_load_library (const struct dyld_path_info *d, struct dyld_objfile_entr
 	warning ("Unable to locate text section for %s (no section \"%s\")", s, "LC_SEGMENT.__TEXT");
       }
     }
+
+  if (e->reason & dyld_reason_executable_mask) {
+    symfile_objfile = e->objfile;
+  }
 }
 
 void dyld_load_libraries (const struct dyld_path_info *d, struct dyld_objfile_info *result)
@@ -561,14 +566,8 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
   CHECK_FATAL (e->dyld_valid || (e->image_addr != 0));
   CHECK_FATAL (e->abfd != NULL);
   
-  if ((e->reason == dyld_reason_executable) && (symfile_objfile != NULL)) {
-    e->objfile = symfile_objfile;
-    e->abfd = symfile_objfile->obfd;
-    e->loaded_from_memory = 0;
-    e->loaded_name = e->text_name;
-    e->loaded_addr = 0;
-    e->loaded_addrisoffset = 1;
-    return;
+  if (e->reason & dyld_reason_executable_mask) {
+    CHECK_FATAL (e->objfile == symfile_objfile);
   }
 
   name = dyld_entry_string (e, dyld_print_basenames_flag);
@@ -629,7 +628,7 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
       parser->section_total_length_offset = 12;
       parser->instance_length = 24;
       parser->instance_address_offset = 12;
-      macosx_status->cfm_status.breakpoint_offset = 392;
+      macosx_status->cfm_status.breakpoint_offset = 956;
     } else if (offset == 104) {
       parser->version = 2;
       parser->universe_length = 104;
@@ -700,7 +699,7 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
     return;
   }
 
-  if (e->reason == dyld_reason_executable) {
+  if (e->reason & dyld_reason_executable_mask) {
     CHECK_FATAL (symfile_objfile == NULL);
     symfile_objfile = e->objfile;
     return;
@@ -744,7 +743,7 @@ void dyld_load_symfiles (struct dyld_objfile_info *result)
   }
 }
 
-static int dyld_objfile_allocated (struct objfile *o)
+int dyld_objfile_allocated (struct objfile *o)
 {
   struct objfile *objfile, *temp;
 
@@ -762,10 +761,12 @@ void dyld_remove_objfile (struct dyld_objfile_entry *e)
 
   CHECK_FATAL (e->allocated);
 
-  if ((e->reason == dyld_reason_executable) && (e->objfile == NULL)) {
-    e->objfile = symfile_objfile;
+  if (e->reason & dyld_reason_executable_mask)
+    CHECK_FATAL (e->objfile == symfile_objfile);
+
+  if (e->objfile == NULL) {
+    return;
   }
-  if (e->objfile == NULL) { return; }
 
   CHECK_FATAL (dyld_objfile_allocated (e->objfile));
   CHECK_FATAL (e->objfile->obfd != NULL);
@@ -781,8 +782,8 @@ void dyld_remove_objfile (struct dyld_objfile_entry *e)
   e->abfd = NULL;
   gdb_flush (gdb_stdout);
 
-  if (e->reason == dyld_reason_executable) {
-    symfile_objfile = NULL;
+  if (e->reason & dyld_reason_executable_mask) {
+    symfile_objfile = e->objfile;
   }
 }
 
@@ -794,17 +795,13 @@ void dyld_remove_objfiles (const struct dyld_path_info *d, struct dyld_objfile_i
 
   for (i = 0; i < result->nents; i++) {
     struct dyld_objfile_entry *e = &result->entries[i];
-    struct objfile *o = NULL;
     if (! e->allocated) { continue; }
     if (e->load_flag < 0) {
       e->load_flag = dyld_default_load_flag (d, e) | dyld_minimal_load_flag (d, e);
     }
-    if ((e->reason == dyld_reason_executable) && (e->objfile == NULL)) {
-      o = symfile_objfile;
-    } else {
-      o = e->objfile;
-    }
-    if ((o != NULL) && (e->load_flag != o->symflags)) {
+    if (e->reason & dyld_reason_executable_mask)
+      CHECK_FATAL (e->objfile == symfile_objfile);
+    if ((e->objfile != NULL) && (e->load_flag != e->objfile->symflags)) {
       dyld_remove_objfile (e);
       if (first && (! info_verbose) && dyld_print_status()) {
 	first = 0;
@@ -837,6 +834,10 @@ static int dyld_libraries_similar
   CHECK_FATAL (f != NULL);
   CHECK_FATAL (l != NULL);
 
+  if ((library_offset (f) != 0) && (library_offset (l) != 0)) {
+    return (library_offset (f) == library_offset (l));
+  }
+
   fname = dyld_entry_source_filename (f);
   lname = dyld_entry_source_filename (l);
 
@@ -860,12 +861,6 @@ static int dyld_libraries_similar
     return 1;
   }
   
-  if (library_offset (f) == library_offset (l)
-      && (library_offset (f) != 0)
-      && (library_offset (l) != 0)) {
-    return 1;
-  }
-
   return 0;
 }
 
@@ -892,8 +887,8 @@ static int dyld_libraries_compatible
   }
 
   if (library_offset (f) != library_offset (l)
-      && (library_offset (f) != 0)
-      && (library_offset (l) != 0)) {
+      && ((library_offset (f) != 0)
+	  || (library_offset (l) != 0))) {
     return 0;
   }
 
@@ -910,12 +905,11 @@ static int dyld_libraries_compatible
       return 0;
     }
     if ((fres == NULL) && (lres == NULL)) {
-      if (strcmp (fname, lname) != 0) {
-	return 0;
-      }
+      fres = fname;
+      lres = lname;
     }
-    CHECK_FATAL ((fres != NULL) && (lres != NULL));
-    if (strcmp (fres, lres) != 0) {
+    CHECK_FATAL ((fname != NULL) && (lname != NULL));
+    if (strcmp (fname, lname) != 0) {
       return 0;
     }
   }
@@ -973,135 +967,108 @@ void dyld_check_discarded (struct dyld_objfile_info *info)
   }
 }
 
+/* Grab the shlib info for 'n' from 'old', if it exists there. */
+
+void dyld_merge_shlib
+(const struct macosx_dyld_thread_status *s,
+ struct dyld_path_info *d,
+ struct dyld_objfile_info *old, 
+ struct dyld_objfile_entry *n)
+{
+  unsigned int i;
+  struct dyld_objfile_entry *o;
+
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (old, o, i)
+    if (dyld_libraries_compatible (d, n, o))
+      dyld_objfile_move_load_data (o, n);
+
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (old, o, i)
+    if ((n->reason & dyld_reason_image_mask)
+	&& dyld_libraries_similar (n, o)
+	&& (o->objfile != NULL))
+      {
+	dyld_objfile_move_load_data (o, n);
+      }
+}
+
+void dyld_prune_shlib
+(const struct macosx_dyld_thread_status *s,
+ struct dyld_path_info *d,
+ struct dyld_objfile_info *old, 
+ struct dyld_objfile_entry *n)
+{
+  struct dyld_objfile_entry *o = NULL;
+  unsigned int i;
+
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (old, o, i)
+    {
+      if (o->reason & dyld_reason_executable_mask)
+	{
+	  if (n->reason & dyld_reason_executable_mask)
+	    dyld_objfile_entry_clear (o);
+	  continue;
+	}
+	    
+      if (dyld_libraries_similar (o, n))
+	{
+	  dyld_remove_objfile (o);
+	  dyld_objfile_entry_clear (o);
+	}
+    }
+}
+
 void dyld_merge_shlibs
 (const struct macosx_dyld_thread_status *s,
  struct dyld_path_info *d,
  struct dyld_objfile_info *old, 
- struct dyld_objfile_info *new, 
- struct dyld_objfile_info *result)
+ struct dyld_objfile_info *new)
 {
+  struct dyld_objfile_entry *n = NULL;
+  struct dyld_objfile_entry *o = NULL;
   unsigned int i;
-  unsigned int j;
 
   CHECK_FATAL (old != NULL);
   CHECK_FATAL (new != NULL);
-  CHECK_FATAL (result != NULL);
   CHECK_FATAL (old != new);
-  CHECK_FATAL (old != result);
-  CHECK_FATAL (new != result);
 
   dyld_resolve_filenames (s, new);
 
-  for (i = 0; i < new->nents; i++) {
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (new, n, i)
+    dyld_merge_shlib (s, d, old, n);
 
-    struct dyld_objfile_entry *n = &new->entries[i];
-    if (! n->allocated) { continue; }
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (new, n, i)
+    dyld_prune_shlib (s, d, old, n);
 
-    for (j = 0; j < old->nents; j++) {
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (old, o, i)
+    {
+      struct dyld_objfile_entry *e = NULL;
+      e = dyld_objfile_entry_alloc (new);
+      *e = *o;
 
-      struct dyld_objfile_entry *o = &old->entries[j];
-      if (! o->allocated) { continue; }
+      if (e->reason & dyld_reason_executable_mask)
+	e->reason = dyld_reason_cached_executable;
+      else
+	e->reason = dyld_reason_cached_library;
 
-      if (o->reason == dyld_reason_executable) { 
-	/* The executable's objfile gets cleaned up and the new 
-	   one set earlier on, so we can just get rid of the cached copy 
-	   here. */ 
-               
-	dyld_debug ("Removing old executable objfile entry\n"); 
-	dyld_objfile_entry_clear (o); 
-	continue;
-      }
-
-      if (dyld_libraries_similar (n, o)) {
-	
-	if (o->objfile != NULL) {
-	  
-	  char *ns = dyld_entry_string (n, dyld_print_basenames_flag);
-	  char *os = dyld_entry_string (o, dyld_print_basenames_flag);
-
-	  CHECK_FATAL (dyld_objfile_allocated (o->objfile));
-
-	  if (dyld_libraries_compatible (d, n, o)) {
-	    dyld_debug ("Symbols for %s already loaded; not re-processing\n", os);
-	    dyld_objfile_move_load_data (o, n);
-	  } else if (n->reason == dyld_reason_init) {
-	    dyld_debug ("Symbols for %s incompatible with %s, but may need to be re-loaded; deferring\n", os);
-	    dyld_objfile_move_load_data (o, n);
-	  } else {
-	    dyld_debug ("Symbols for %s incompatible with %s; reloading\n", os, ns);
-	    dyld_remove_objfile (o);
-	  }
-
-	  xfree (ns);
-	  xfree (os);
-
-	} else {
-
-	  if (dyld_libraries_compatible (d, n, o)) {
-	    dyld_objfile_move_load_data (o, n);
-	  }
-	}
-	
-	dyld_objfile_entry_clear (o);
-      } /* similar */ 
+      dyld_objfile_entry_clear (o);
     }
-  }
-
-  /* remaining files in 'old' will be cached for future use */
-  for (i = 0; i < old->nents; i++) {
-
-    struct dyld_objfile_entry *o = &old->entries[i];
-    struct dyld_objfile_entry *e = NULL;
-
-    if (! o->allocated) { continue; }
-
-    e = dyld_objfile_entry_alloc (result);
-    *e = *o;
-
-    e->reason = dyld_reason_cached;
-
-    dyld_objfile_entry_clear (o);
-  }
-    
-  /* all remaining files in 'new' will need to be loaded */
-  for (i = 0; i < new->nents; i++) {
-
-    struct dyld_objfile_entry *n = &new->entries[i];
-    struct dyld_objfile_entry *e = NULL;
-    
-    if (! n->allocated) { continue; }
-    
-    e = dyld_objfile_entry_alloc (result);
-    *e = *n;
-    
-    dyld_objfile_entry_clear (n);
-  }
-
-  dyld_remove_objfiles (d, result);
-
-  dyld_objfile_info_pack (result);
 }
 
 void dyld_update_shlibs
 (const struct macosx_dyld_thread_status *s,
  struct dyld_path_info *d,
- struct dyld_objfile_info *old, 
- struct dyld_objfile_info *new, 
  struct dyld_objfile_info *result)
 {
-  CHECK_FATAL (old != NULL);
-  CHECK_FATAL (new != NULL);
   CHECK_FATAL (result != NULL);
 
   dyld_debug ("dyld_update_shlibs: updating shared library information\n");
 
-  dyld_merge_shlibs (s, d, old, new, result);
-
+  dyld_remove_objfiles (d, result);
   dyld_load_libraries (d, result);
   dyld_load_symfiles (result);
+  dyld_objfile_info_pack (result);
 
-  update_section_tables (&current_target);
-  update_section_tables (&exec_ops);
+  update_section_tables (&current_target, result);
 
   reread_symbols ();
   breakpoint_re_set ();
@@ -1117,15 +1084,14 @@ void dyld_purge_cached_libraries (struct dyld_objfile_info *info)
   for (i = 0; i < info->nents; i++) {
     struct dyld_objfile_entry *e = &info->entries[i];
     if (! e->allocated) { continue; }
-    if (e->reason == dyld_reason_cached) {
+    if (e->reason & dyld_reason_cached_mask) {
       dyld_remove_objfile (e);
       dyld_objfile_entry_clear (e);
     }
   }
 
   dyld_objfile_info_pack (info);
-  update_section_tables (&current_target);
-  update_section_tables (&exec_ops);
+  update_section_tables (&current_target, info);
 
   reread_symbols ();
   breakpoint_re_set ();

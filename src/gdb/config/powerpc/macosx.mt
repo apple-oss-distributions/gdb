@@ -7,6 +7,8 @@ MT_CFLAGS = \
 TDEPFILES = \
 	core-macho.o \
 	xcoffread.o \
+	rs6000-tdep.o \
+	ppc-sysv-tdep.o \
 	ppc-macosx-tdep.o \
 	ppc-macosx-frameinfo.o \
 	ppc-macosx-frameops.o \

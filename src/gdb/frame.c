@@ -1,6 +1,7 @@
-/* Cache and manage the values of registers for GDB, the GNU debugger.
-   Copyright 1986, 1987, 1989, 1991, 1994, 1995, 1996, 1998, 2000, 2001
-   Free Software Foundation, Inc.
+/* Cache and manage frames for GDB, the GNU debugger.
+
+   Copyright 1986, 1987, 1989, 1991, 1994, 1995, 1996, 1998, 2000,
+   2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,143 +26,177 @@
 #include "value.h"
 #include "inferior.h"	/* for inferior_ptid */
 #include "regcache.h"
+#include "gdb_assert.h"
+#include "gdb_string.h"
+#include "builtin-regs.h"
 
-/* FIND_SAVED_REGISTER ()
+/* Return a frame uniq ID that can be used to, later re-find the
+   frame.  */
 
-   Return the address in which frame FRAME's value of register REGNUM
-   has been saved in memory.  Or return zero if it has not been saved.
-   If REGNUM specifies the SP, the value we return is actually
-   the SP value, not an address where it was saved.  */
-
-CORE_ADDR
-find_saved_register (struct frame_info *frame, int regnum)
+void
+get_frame_id (struct frame_info *fi, struct frame_id *id)
 {
-  register struct frame_info *frame1 = NULL;
-  register CORE_ADDR addr = 0;
-
-  if (frame == NULL)		/* No regs saved if want current frame */
-    return 0;
-
-#ifdef HAVE_REGISTER_WINDOWS
-  /* We assume that a register in a register window will only be saved
-     in one place (since the name changes and/or disappears as you go
-     towards inner frames), so we only call get_frame_saved_regs on
-     the current frame.  This is directly in contradiction to the
-     usage below, which assumes that registers used in a frame must be
-     saved in a lower (more interior) frame.  This change is a result
-     of working on a register window machine; get_frame_saved_regs
-     always returns the registers saved within a frame, within the
-     context (register namespace) of that frame. */
-
-  /* However, note that we don't want this to return anything if
-     nothing is saved (if there's a frame inside of this one).  Also,
-     callers to this routine asking for the stack pointer want the
-     stack pointer saved for *this* frame; this is returned from the
-     next frame.  */
-
-  if (REGISTER_IN_WINDOW_P (regnum))
+  if (fi == NULL)
     {
-      frame1 = get_next_frame (frame);
-      if (!frame1)
-	return 0;		/* Registers of this frame are active.  */
-
-      /* Get the SP from the next frame in; it will be this
-         current frame.  */
-      if (regnum != SP_REGNUM)
-	frame1 = frame;
-
-      FRAME_INIT_SAVED_REGS (frame1);
-      return frame1->saved_regs[regnum];	/* ... which might be zero */
+      id->base = 0;
+      id->pc = 0;
     }
-#endif /* HAVE_REGISTER_WINDOWS */
-
-  /* Note that this next routine assumes that registers used in
-     frame x will be saved only in the frame that x calls and
-     frames interior to it.  This is not true on the sparc, but the
-     above macro takes care of it, so we should be all right. */
-  while (1)
+  else
     {
-      QUIT;
-      frame1 = get_prev_frame (frame1);
-      if (frame1 == 0 || frame1 == frame)
-	break;
-      FRAME_INIT_SAVED_REGS (frame1);
-      if (frame1->saved_regs[regnum])
-	addr = frame1->saved_regs[regnum];
+      id->base = FRAME_FP (fi);
+      id->pc = fi->pc;
     }
-
-  return addr;
 }
 
-/* DEFAULT_GET_SAVED_REGISTER ()
-
-   Find register number REGNUM relative to FRAME and put its (raw,
-   target format) contents in *RAW_BUFFER.  Set *OPTIMIZED if the
-   variable was optimized out (and thus can't be fetched).  Set *LVAL
-   to lval_memory, lval_register, or not_lval, depending on whether
-   the value was fetched from memory, from a register, or in a strange
-   and non-modifiable way (e.g. a frame pointer which was calculated
-   rather than fetched).  Set *ADDRP to the address, either in memory
-   on as a REGISTER_BYTE offset into the registers array.
-
-   Note that this implementation never sets *LVAL to not_lval.  But
-   it can be replaced by defining GET_SAVED_REGISTER and supplying
-   your own.
-
-   The argument RAW_BUFFER must point to aligned memory.  */
-
-static void
-default_get_saved_register (char *raw_buffer,
-			    int *optimized,
-			    CORE_ADDR *addrp,
-			    struct frame_info *frame,
-			    int regnum,
-			    enum lval_type *lval)
+struct frame_info *
+frame_find_by_id (struct frame_id id)
 {
+  struct frame_info *frame;
+
+  /* ZERO denotes the null frame, let the caller decide what to do
+     about it.  Should it instead return get_current_frame()?  */
+  if (id.base == 0 && id.pc == 0)
+    return NULL;
+
+  for (frame = get_current_frame ();
+       frame != NULL;
+       frame = get_prev_frame (frame))
+    {
+      if (INNER_THAN (FRAME_FP (frame), id.base))
+	/* ``inner/current < frame < id.base''.  Keep looking along
+           the frame chain.  */
+	continue;
+      if (INNER_THAN (id.base, FRAME_FP (frame)))
+	/* ``inner/current < id.base < frame''.  Oops, gone past it.
+           Just give up.  */
+	return NULL;
+      /* FIXME: cagney/2002-04-21: This isn't sufficient.  It should
+	 use id.pc to check that the two frames belong to the same
+	 function.  Otherwise we'll do things like match dummy frames
+	 or mis-match frameless functions.  However, until someone
+	 notices, stick with the existing behavour.  */
+      return frame;
+    }
+  return NULL;
+}
+
+void
+frame_register_unwind (struct frame_info *frame, int regnum,
+		       int *optimizedp, enum lval_type *lvalp,
+		       CORE_ADDR *addrp, int *realnump, void *bufferp)
+{
+  struct frame_unwind_cache *cache;
+
+  /* Require all but BUFFERP to be valid.  A NULL BUFFERP indicates
+     that the value proper does not need to be fetched.  */
+  gdb_assert (optimizedp != NULL);
+  gdb_assert (lvalp != NULL);
+  gdb_assert (addrp != NULL);
+  gdb_assert (realnump != NULL);
+  /* gdb_assert (bufferp != NULL); */
+
+  /* NOTE: cagney/2002-04-14: It would be nice if, instead of a
+     special case, there was always an inner frame dedicated to the
+     hardware registers.  Unfortunatly, there is too much unwind code
+     around that looks up/down the frame chain while making the
+     assumption that each frame level is using the same unwind code.  */
+
+  if (frame == NULL)
+    {
+      /* We're in the inner-most frame, get the value direct from the
+	 register cache.  */
+      *optimizedp = 0;
+      *lvalp = lval_register;
+      /* ULGH!  Code uses the offset into the raw register byte array
+         as a way of identifying a register.  */
+      *addrp = REGISTER_BYTE (regnum);
+      /* Should this code test ``register_cached (regnum) < 0'' and do
+         something like set realnum to -1 when the register isn't
+         available?  */
+      *realnump = regnum;
+      if (bufferp)
+	read_register_gen (regnum, bufferp);
+      return;
+    }
+
+  /* Ask this frame to unwind its register.  */
+  frame->register_unwind (frame, &frame->register_unwind_cache, regnum,
+			  optimizedp, lvalp, addrp, realnump, bufferp);
+}
+
+void
+frame_unwind_signed_register (struct frame_info *frame, int regnum,
+			      LONGEST *val)
+{
+  int optimized;
   CORE_ADDR addr;
+  int realnum;
+  enum lval_type lval;
+  void *buf = alloca (MAX_REGISTER_RAW_SIZE);
+  frame_register_unwind (frame, regnum, &optimized, &lval, &addr,
+			 &realnum, buf);
+  (*val) = extract_signed_integer (buf, REGISTER_VIRTUAL_SIZE (regnum));
+}
+
+void
+frame_unwind_unsigned_register (struct frame_info *frame, int regnum,
+				ULONGEST *val)
+{
+  int optimized;
+  CORE_ADDR addr;
+  int realnum;
+  enum lval_type lval;
+  void *buf = alloca (MAX_REGISTER_RAW_SIZE);
+  frame_register_unwind (frame, regnum, &optimized, &lval, &addr,
+			 &realnum, buf);
+  (*val) = extract_unsigned_integer (buf, REGISTER_VIRTUAL_SIZE (regnum));
+}
+
+void
+generic_unwind_get_saved_register (char *raw_buffer,
+				   int *optimizedp,
+				   CORE_ADDR *addrp,
+				   struct frame_info *frame,
+				   int regnum,
+				   enum lval_type *lvalp)
+{
+  int optimizedx;
+  CORE_ADDR addrx;
+  int realnumx;
+  enum lval_type lvalx;
 
   if (!target_has_registers)
     error ("No registers.");
 
-  /* Normal systems don't optimize out things with register numbers.  */
-  if (optimized != NULL)
-    *optimized = 0;
-  addr = find_saved_register (frame, regnum);
-  if (addr != 0)
-    {
-      if (lval != NULL)
-	*lval = lval_memory;
-      if (regnum == SP_REGNUM)
-	{
-	  if (raw_buffer != NULL)
-	    {
-	      /* Put it back in target format.  */
-	      store_address (raw_buffer, REGISTER_RAW_SIZE (regnum),
-			     (LONGEST) addr);
-	    }
-	  if (addrp != NULL)
-	    *addrp = 0;
-	  return;
-	}
-      if (raw_buffer != NULL)
-	target_read_memory (addr, raw_buffer, REGISTER_RAW_SIZE (regnum));
-    }
-  else
-    {
-      if (lval != NULL)
-	*lval = lval_register;
-      addr = REGISTER_BYTE (regnum);
-      if (raw_buffer != NULL)
-	read_register_gen (regnum, raw_buffer);
-    }
-  if (addrp != NULL)
-    *addrp = addr;
-}
+  /* Keep things simple, ensure that all the pointers (except valuep)
+     are non NULL.  */
+  if (optimizedp == NULL)
+    optimizedp = &optimizedx;
+  if (lvalp == NULL)
+    lvalp = &lvalx;
+  if (addrp == NULL)
+    addrp = &addrx;
 
-#if !defined (GET_SAVED_REGISTER)
-#define GET_SAVED_REGISTER(raw_buffer, optimized, addrp, frame, regnum, lval) \
-  default_get_saved_register(raw_buffer, optimized, addrp, frame, regnum, lval)
-#endif
+  /* Reached the the bottom (youngest, inner most) of the frame chain
+     (youngest, inner most) frame, go direct to the hardware register
+     cache (do not pass go, do not try to cache the value, ...).  The
+     unwound value would have been cached in frame->next but that
+     doesn't exist.  This doesn't matter as the hardware register
+     cache is stopping any unnecessary accesses to the target.  */
+
+  /* NOTE: cagney/2002-04-14: It would be nice if, instead of a
+     special case, there was always an inner frame dedicated to the
+     hardware registers.  Unfortunatly, there is too much unwind code
+     around that looks up/down the frame chain while making the
+     assumption that each frame level is using the same unwind code.  */
+
+  if (frame == NULL)
+    frame_register_unwind (NULL, regnum, optimizedp, lvalp, addrp, &realnumx,
+			   raw_buffer);
+  else
+    frame_register_unwind (frame->next, regnum, optimizedp, lvalp, addrp,
+			   &realnumx, raw_buffer);
+}
 
 void
 get_saved_register (char *raw_buffer,
@@ -174,52 +209,70 @@ get_saved_register (char *raw_buffer,
   GET_SAVED_REGISTER (raw_buffer, optimized, addrp, frame, regnum, lval);
 }
 
-/* READ_RELATIVE_REGISTER_RAW_BYTES_FOR_FRAME
+/* frame_register_read ()
 
-   Copy the bytes of register REGNUM, relative to the input stack frame,
-   into our memory at MYADDR, in target byte order.
+   Find and return the value of REGNUM for the specified stack frame.
    The number of bytes copied is REGISTER_RAW_SIZE (REGNUM).
 
-   Returns 1 if could not be read, 0 if could.  */
+   Returns 0 if the register value could not be found.  */
 
-/* FIXME: This function increases the confusion between FP_REGNUM
-   and the virtual/pseudo-frame pointer.  */
-
-static int
-read_relative_register_raw_bytes_for_frame (int regnum,
-					    char *myaddr,
-					    struct frame_info *frame)
+int
+frame_register_read (struct frame_info *frame, int regnum, void *myaddr)
 {
   int optim;
-  if (regnum == FP_REGNUM && frame)
-    {
-      /* Put it back in target format. */
-      store_address (myaddr, REGISTER_RAW_SIZE (FP_REGNUM),
-		     (LONGEST) FRAME_FP (frame));
-
-      return 0;
-    }
-
   get_saved_register (myaddr, &optim, (CORE_ADDR *) NULL, frame,
 		      regnum, (enum lval_type *) NULL);
 
-  if (register_cached (regnum) < 0)
-    return 1;			/* register value not available */
+  /* FIXME: cagney/2002-05-15: This test, is just bogus.
 
-  return optim;
+     It indicates that the target failed to supply a value for a
+     register because it was "not available" at this time.  Problem
+     is, the target still has the register and so get saved_register()
+     may be returning a value saved on the stack.  */
+
+  if (register_cached (regnum) < 0)
+    return 0;			/* register value not available */
+
+  return !optim;
 }
 
-/* READ_RELATIVE_REGISTER_RAW_BYTES
 
-   Copy the bytes of register REGNUM, relative to the current stack
-   frame, into our memory at MYADDR, in target byte order.  
-   The number of bytes copied is REGISTER_RAW_SIZE (REGNUM).
-
-   Returns 1 if could not be read, 0 if could.  */
+/* Map between a frame register number and its name.  A frame register
+   space is a superset of the cooked register space --- it also
+   includes builtin registers.  */
 
 int
-read_relative_register_raw_bytes (int regnum, char *myaddr)
+frame_map_name_to_regnum (const char *name, int len)
 {
-  return read_relative_register_raw_bytes_for_frame (regnum, myaddr,
-						     selected_frame);
+  int i;
+
+  /* Search register name space. */
+  for (i = 0; i < NUM_REGS + NUM_PSEUDO_REGS; i++)
+    if (REGISTER_NAME (i) && len == strlen (REGISTER_NAME (i))
+	&& strncmp (name, REGISTER_NAME (i), len) == 0)
+      {
+	return i;
+      }
+
+  /* Try builtin registers.  */
+  i = builtin_reg_map_name_to_regnum (name, len);
+  if (i >= 0)
+    {
+      /* A builtin register doesn't fall into the architecture's
+         register range.  */
+      gdb_assert (i >= NUM_REGS + NUM_PSEUDO_REGS);
+      return i;
+    }
+
+  return -1;
+}
+
+const char *
+frame_map_regnum_to_name (int regnum)
+{
+  if (regnum < 0)
+    return NULL;
+  if (regnum < NUM_REGS + NUM_PSEUDO_REGS)
+    return REGISTER_NAME (regnum);
+  return builtin_reg_map_regnum_to_name (regnum);
 }

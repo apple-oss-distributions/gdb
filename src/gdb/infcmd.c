@@ -41,6 +41,7 @@
 #include "event-top.h"
 #include "parser-defs.h"
 #include "top.h"
+#include "regcache.h"
 
 #ifndef PROCESS_COMPLETER
 #define PROCESS_COMPLETER noop_completer
@@ -48,17 +49,23 @@
 
 extern char **process_completer (char *, char *);
 
- /* Functions exported for general use: */
-
-void nofp_registers_info (char *, int);
+/* Functions exported for general use, in inferior.h: */
 
 void all_registers_info (char *, int);
 
 void registers_info (char *, int);
 
-/* Local functions: */
+void nexti_command (char *, int);
+
+void stepi_command (char *, int);
 
 void continue_command (char *, int);
+
+void interrupt_target_command (char *args, int from_tty);
+
+/* Local functions: */
+
+static void nofp_registers_info (char *, int);
 
 static void print_return_value (int struct_return, struct type *value_type);
 
@@ -78,8 +85,6 @@ static void float_info (char *, int);
 
 static void detach_command (char *, int);
 
-static void interrupt_target_command (char *args, int from_tty);
-
 static void unset_environment_command (char *, int);
 
 static void set_environment_command (char *, int);
@@ -96,10 +101,6 @@ static void jump_command (char *, int);
 
 static void step_1 (int, int, char *);
 static void step_1_continuation (struct continuation_arg *arg);
-
-void nexti_command (char *, int);
-
-void stepi_command (char *, int);
 
 static void next_command (char *, int);
 
@@ -844,14 +845,6 @@ jump_command (char *arg, int from_tty)
   if (event_loop_p && async_exec && !target_can_async_p ())
     error ("Asynchronous execution not supported on this target.");
 
-  /* If we are not asked to run in the bg, then prepare to run in the
-     foreground, synchronously. */
-  if (event_loop_p && !async_exec && target_can_async_p ())
-    {
-      /* Simulate synchronous execution */
-      async_disable_stdin ();
-    }
-
   if (!arg)
     error_no_arg ("starting address");
 
@@ -903,6 +896,14 @@ jump_command (char *arg, int from_tty)
       printf_filtered ("Continuing at ");
       print_address_numeric (addr, 1, gdb_stdout);
       printf_filtered (".\n");
+    }
+
+  /* If we are not asked to run in the bg, then prepare to run in the
+     foreground, synchronously. */
+  if (event_loop_p && !async_exec && target_can_async_p ())
+    {
+      /* Simulate synchronous execution */
+      async_disable_stdin ();
     }
 
   clear_proceed_status ();
@@ -1008,7 +1009,7 @@ breakpoint_auto_delete_contents (PTR arg)
    will eventually be popped when we do hit the dummy end breakpoint).  */
 
 int
-run_stack_dummy (CORE_ADDR addr, char *buffer)
+run_stack_dummy (CORE_ADDR addr, struct regcache *buffer)
 {
   struct cleanup *old_cleanups = make_cleanup (null_cleanup, 0);
   int saved_async = 0;
@@ -1081,8 +1082,7 @@ run_stack_dummy (CORE_ADDR addr, char *buffer)
     return 2;
 
   /* On normal return, the stack dummy has been popped already.  */
-
-  memcpy (buffer, stop_registers, REGISTER_BYTES);
+  regcache_cpy_no_passthrough (buffer, stop_registers);
   return 0;
 }
 
@@ -1328,7 +1328,8 @@ finish_command (char *arg, int from_tty)
   if (from_tty)
     {
       printf_filtered ("Run till exit from ");
-      print_stack_frame (selected_frame, selected_frame_level, 0);
+      print_stack_frame (selected_frame,
+			 frame_relative_level (selected_frame), 0);
     }
 
   /* If running asynchronously and the target support asynchronous
@@ -1587,32 +1588,48 @@ path_command (char *dirname, int from_tty)
 #ifdef REGISTER_NAMES
 char *gdb_register_names[] = REGISTER_NAMES;
 #endif
-/* Print out the machine register regnum. If regnum is -1,
-   print all registers (fpregs == 1) or all non-float registers
-   (fpregs == 0).
+/* Print out the machine register regnum. If regnum is -1, print all
+   registers (print_all == 1) or all non-float and non-vector
+   registers (print_all == 0).
 
    For most machines, having all_registers_info() print the
-   register(s) one per line is good enough. If a different format
-   is required, (eg, for MIPS or Pyramid 90x, which both have
-   lots of regs), or there is an existing convention for showing
-   all the registers, define the macro DO_REGISTERS_INFO(regnum, fp)
-   to provide that format.  */
+   register(s) one per line is good enough.  If a different format is
+   required, (eg, for MIPS or Pyramid 90x, which both have lots of
+   regs), or there is an existing convention for showing all the
+   registers, define the architecture method PRINT_REGISTERS_INFO to
+   provide that format.  */
 
 void
-do_registers_info (int regnum, int fpregs)
+default_print_registers_info (struct gdbarch *gdbarch,
+			      struct ui_file *file,
+			      struct frame_info *frame,
+			      int regnum, int print_all)
 {
-  register int i;
-  int numregs = NUM_REGS + NUM_PSEUDO_REGS;
-  char *raw_buffer = (char*) alloca (MAX_REGISTER_RAW_SIZE);
-  char *virtual_buffer = (char*) alloca (MAX_REGISTER_VIRTUAL_SIZE);
+  int i;
+  const int numregs = NUM_REGS + NUM_PSEUDO_REGS;
+  char *raw_buffer = alloca (MAX_REGISTER_RAW_SIZE);
+  char *virtual_buffer = alloca (MAX_REGISTER_VIRTUAL_SIZE);
+
+  /* FIXME: cagney/2002-03-08: This should be deprecated.  */
+  if (DO_REGISTERS_INFO_P ())
+    {
+      DO_REGISTERS_INFO (regnum, print_all);
+      return;
+    }
 
   for (i = 0; i < numregs; i++)
     {
-      /* Decide between printing all regs, nonfloat regs, or specific reg.  */
+      /* Decide between printing all regs, non-float / vector regs, or
+         specific reg.  */
       if (regnum == -1)
 	{
-	  if (TYPE_CODE (REGISTER_VIRTUAL_TYPE (i)) != TYPE_CODE_INT && !fpregs)
-	    continue;
+	  if (!print_all)
+	    {
+	      if (TYPE_CODE (REGISTER_VIRTUAL_TYPE (i)) == TYPE_CODE_FLT)
+		continue;
+	      if (TYPE_VECTOR (REGISTER_VIRTUAL_TYPE (i)))
+		continue;
+	    }
 	}
       else
 	{
@@ -1625,16 +1642,19 @@ do_registers_info (int regnum, int fpregs)
       if (REGISTER_NAME (i) == NULL || *(REGISTER_NAME (i)) == '\0')
 	continue;
 
-      fputs_filtered (REGISTER_NAME (i), gdb_stdout);
-      print_spaces_filtered (15 - strlen (REGISTER_NAME (i)), gdb_stdout);
+      fputs_filtered (REGISTER_NAME (i), file);
+      print_spaces_filtered (15 - strlen (REGISTER_NAME (i)), file);
 
       /* Get the data in raw format.  */
-      if (read_relative_register_raw_bytes (i, raw_buffer))
+      if (! frame_register_read (frame, i, raw_buffer))
 	{
-	  printf_filtered ("*value not available*\n");
+	  fprintf_filtered (file, "*value not available*\n");
 	  continue;
 	}
 
+      /* FIXME: cagney/2002-08-03: This code shouldn't be necessary.
+         The function frame_register_read() should have returned the
+         pre-cooked register so no conversion is necessary.  */
       /* Convert raw data to virtual format if necessary.  */
       if (REGISTER_CONVERTIBLE (i))
 	{
@@ -1647,32 +1667,40 @@ do_registers_info (int regnum, int fpregs)
 		  REGISTER_VIRTUAL_SIZE (i));
 	}
 
-      /* If virtual format is floating, print it that way, and in raw hex.  */
+      /* For floating and vector registers, print the value in natural
+	 format, followed by the contents of the register in hex.  For
+	 all other registers, pring the contents of the register in
+	 hex, followed by the natural (integer) value. */
 
-      if (TYPE_CODE (REGISTER_VIRTUAL_TYPE (i)) != TYPE_CODE_INT)
+      if ((TYPE_CODE (REGISTER_VIRTUAL_TYPE (i)) == TYPE_CODE_FLT)
+	  || TYPE_VECTOR (REGISTER_VIRTUAL_TYPE (i)))
 	{
-	  register int j;
+	  int j;
 
 	  val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
-		     gdb_stdout, 0, 1, 0, Val_pretty_default);
+		     file, 0, 1, 0, Val_pretty_default);
 
-	  printf_filtered ("\t(raw 0x");
+	  fprintf_filtered (file, "\t(raw 0x");
 	  for (j = 0; j < REGISTER_RAW_SIZE (i); j++)
 	    {
-	      register int idx = TARGET_BYTE_ORDER == BFD_ENDIAN_BIG ? j
-	      : REGISTER_RAW_SIZE (i) - 1 - j;
-	      printf_filtered ("%02x", (unsigned char) raw_buffer[idx]);
+	      int idx;
+	      if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
+		idx = j;
+	      else
+		idx = REGISTER_RAW_SIZE (i) - 1 - j;
+	      fprintf_filtered (file, "%02x", (unsigned char) raw_buffer[idx]);
 	    }
-	  printf_filtered (")");
+	  fprintf_filtered (file, ")");
 	}
-      /* Else print as integer in hex and in decimal.  */
       else
 	{
+          /* Print the register in hex.  */
 	  val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
-		     gdb_stdout, 'x', 1, 0, Val_pretty_default);
-	  printf_filtered ("\t");
+		     file, 'x', 1, 0, Val_pretty_default);
+          /* Also print it according to its natural format.  */
+	  fprintf_filtered (file, "\t");
 	  val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
-		     gdb_stdout, 0, 1, 0, Val_pretty_default);
+		     file, 0, 1, 0, Val_pretty_default);
 	}
 
       /* The SPARC wants to print even-numbered float regs as doubles
@@ -1681,7 +1709,7 @@ do_registers_info (int regnum, int fpregs)
       PRINT_REGISTER_HOOK (i);
 #endif
 
-      printf_filtered ("\n");
+      fprintf_filtered (file, "\n");
     }
 }
 
@@ -1698,7 +1726,8 @@ registers_info (char *addr_exp, int fpregs)
 
   if (!addr_exp)
     {
-      DO_REGISTERS_INFO (-1, fpregs);
+      gdbarch_print_registers_info (current_gdbarch, gdb_stdout,
+				    selected_frame, -1, fpregs);
       return;
     }
 
@@ -1711,7 +1740,7 @@ registers_info (char *addr_exp, int fpregs)
 	++end;
       numregs = NUM_REGS + NUM_PSEUDO_REGS;
 
-      regnum = target_map_name_to_register (addr_exp, end - addr_exp);
+      regnum = frame_map_name_to_regnum (addr_exp, end - addr_exp);
       if (regnum >= 0)
 	goto found;
 
@@ -1720,10 +1749,11 @@ registers_info (char *addr_exp, int fpregs)
       if (*addr_exp >= '0' && *addr_exp <= '9')
 	regnum = atoi (addr_exp);	/* Take a number */
       if (regnum >= numregs)	/* Bad name, or bad number */
-	error ("%.*s: invalid register", end - addr_exp, addr_exp);
+	error ("%.*s: invalid register", (int) (end - addr_exp), addr_exp);
 
     found:
-      DO_REGISTERS_INFO (regnum, fpregs);
+      gdbarch_print_registers_info (current_gdbarch, gdb_stdout,
+				    selected_frame, regnum, fpregs);
 
       addr_exp = end;
       while (*addr_exp == ' ' || *addr_exp == '\t')
@@ -1738,10 +1768,45 @@ all_registers_info (char *addr_exp, int from_tty)
   registers_info (addr_exp, 1);
 }
 
-void
+static void
 nofp_registers_info (char *addr_exp, int from_tty)
 {
   registers_info (addr_exp, 0);
+}
+
+static void
+print_vector_info (struct gdbarch *gdbarch, struct ui_file *file,
+		   struct frame_info *frame, const char *args)
+{
+  if (gdbarch_print_vector_info_p (gdbarch))
+    gdbarch_print_vector_info (gdbarch, file, frame, args);
+  else
+    {
+      int regnum;
+      int printed_something = 0;
+
+      if (!target_has_registers)
+	error ("The program has no registers now.");
+      if (selected_frame == NULL)
+	error ("No selected frame.");
+
+      for (regnum = 0; regnum < NUM_REGS + NUM_PSEUDO_REGS; regnum++)
+	{
+	  if (TYPE_VECTOR (REGISTER_VIRTUAL_TYPE (regnum)))
+	    {
+	      printed_something = 1;
+	      gdbarch_print_registers_info (gdbarch, file, frame, regnum, 1);
+	    }
+	}
+      if (!printed_something)
+	fprintf_filtered (file, "No vector information\n");
+    }
+}
+
+static void
+vector_info (char *args, int from_tty)
+{
+  print_vector_info (current_gdbarch, gdb_stdout, selected_frame, args);
 }
 
 
@@ -1864,14 +1929,7 @@ detach_command (char *args, int from_tty)
 
 /* Stop the execution of the target while running in async mode, in
    the backgound. */
-
 void
-interrupt_target_command_wrapper (char *args, int from_tty)
-{
-  interrupt_target_command (args, from_tty);
-}
-
-static void
 interrupt_target_command (char *args, int from_tty)
 {
   if (event_loop_p && target_can_async_p ())
@@ -1883,9 +1941,46 @@ interrupt_target_command (char *args, int from_tty)
 
 /* ARGSUSED */
 static void
-float_info (char *addr_exp, int from_tty)
+print_float_info (struct gdbarch *gdbarch, struct ui_file *file,
+		  struct frame_info *frame, const char *args)
 {
-  PRINT_FLOAT_INFO ();
+  if (gdbarch_print_float_info_p (gdbarch))
+    gdbarch_print_float_info (gdbarch, file, frame, args);
+  else
+    {
+#ifdef FLOAT_INFO
+#if GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL
+#error "FLOAT_INFO defined in multi-arch"
+#endif
+      FLOAT_INFO;
+#else
+      int regnum;
+      int printed_something = 0;
+
+      if (!target_has_registers)
+	error ("The program has no registers now.");
+      if (selected_frame == NULL)
+	error ("No selected frame.");
+
+      for (regnum = 0; regnum < NUM_REGS + NUM_PSEUDO_REGS; regnum++)
+	{
+	  if (TYPE_CODE (REGISTER_VIRTUAL_TYPE (regnum)) == TYPE_CODE_FLT)
+	    {
+	      printed_something = 1;
+	      gdbarch_print_registers_info (gdbarch, file, frame, regnum, 1);
+	    }
+	}
+      if (!printed_something)
+	fprintf_filtered (file, "\
+No floating-point info available for this processor.\n");
+#endif
+    }
+}
+
+static void
+float_info (char *args, int from_tty)
+{
+  print_float_info (current_gdbarch, gdb_stdout, selected_frame, args);
 }
 
 /* ARGSUSED */
@@ -2087,6 +2182,9 @@ Register name as argument means describe only that register.");
 
   add_info ("float", float_info,
 	    "Print the status of the floating point unit\n");
+
+  add_info ("vector", vector_info,
+	    "Print the status of the vector unit\n");
 
   inferior_environ = make_environ ();
   init_environ (inferior_environ);

@@ -1,4 +1,4 @@
-# Copyright 1999, 2000, 2001 Cygnus Solutions.
+# Copyright 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -34,6 +34,12 @@
 
 load_lib mi-support.exp
 set MIFLAGS "-i=mi"
+
+# APPLE LOCAL: For now, ignore all non-mi1 tests.
+if [istarget "*-apple-darwin*"] then {
+  gdb_suppress_entire_file "Not testing non-mi1 on Darwin at this time."
+  return
+}
 
 gdb_exit
 if [mi_gdb_start] {

@@ -23,6 +23,8 @@
 #if !defined (VALUE_H)
 #define VALUE_H 1
 
+struct regcache;
+
 #include "doublest.h"
 
 /*
@@ -240,8 +242,8 @@ do { COERCE_REF(arg);							\
   do { COERCE_ARRAY(arg);  COERCE_ENUM(arg); } while (0)
 
 #define COERCE_VARYING_ARRAY(arg, real_arg_type)	\
-{ if (chill_varying_type (real_arg_type))  \
-    arg = varying_to_slice (arg), real_arg_type = VALUE_TYPE (arg); }
+/* OBSOLETE { if (chill_varying_type (real_arg_type)) */  \
+/* OBSOLETE     arg = varying_to_slice (arg), real_arg_type = VALUE_TYPE (arg); } */ 
 
 /* If ARG is an enum, convert it to an integer.  */
 
@@ -375,7 +377,7 @@ extern struct value *value_struct_elt_for_reference (struct type *domain,
 extern struct value *value_static_field (struct type *type, int fieldno);
 
 extern struct fn_field *value_find_oload_method_list (struct value **, char *,
-						      int, int *, int *,
+						      int, int *,
 						      struct type **, int *);
 
 extern int find_overload_match (struct type **arg_types, int nargs,
@@ -405,11 +407,9 @@ extern struct value *value_repeat (struct value *arg1, int count);
 
 extern struct value *value_subscript (struct value *array, struct value *idx);
 
-extern struct value *value_from_vtable_info (struct value *arg,
-					     struct type *type);
-
 extern struct value *value_being_returned (struct type *valtype,
-					   char *retbuf, int struct_return);
+					   struct regcache *retbuf,
+					   int struct_return);
 
 extern struct value *value_in (struct value *element, struct value *set);
 
@@ -459,8 +459,6 @@ extern int value_less (struct value *arg1, struct value *arg2);
 extern int value_logical_not (struct value *arg1);
 
 /* C++ */
-
-extern struct value *value_of_local (char *name, int complain);
 
 extern struct value *value_x_binop (struct value *arg1, struct value *arg2,
 				    enum exp_opcode op,
@@ -568,7 +566,7 @@ extern void find_rt_vbase_offset (struct type *, struct type *, char *, int,
 
 extern CORE_ADDR find_function_addr (struct value *, struct type **);
 
-extern struct value *find_function_in_inferior (char *, struct type *);
+extern struct value *find_function_in_inferior (const char *, struct type *);
 
 extern struct value *value_allocate_space_in_inferior (int);
 
@@ -587,6 +585,8 @@ struct cached_value
 extern struct cached_value *create_cached_function (char *, struct type *);
 
 extern struct value *lookup_cached_function (struct cached_value *cval);
+
+extern struct value *value_of_local (const char *name, int complain);
 
 int set_unwind_on_signal (int new_val);
 

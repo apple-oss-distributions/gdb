@@ -32,6 +32,10 @@ set testfile "call-ar-st"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
 
+# APPLE LOCAL jmolenda
+# r. 3049138 inferior function calls with structs containing doubles bug
+set r3049138 "(r. 3049138)"
+
 # Test depends on printf, which the sparclet stub doesn't support.  
 if { [istarget "sparclet-*-*"] } {
     return 0;
@@ -125,7 +129,7 @@ if {![gdb_skip_float_test "print print_double_array(double_array)"] && \
 	"\[ \t\r\n\]+array_d :"
 	"\[ \t\r\n\]+========="
 	"\[ \t\r\n\]+0.000000"
-	"\[ \t\r\n\]+23.456700  46.913400  70.370100  93.826800  117.283500  140.740200  164.196900  187.653600"
+	"\[ \t\r\n\]+23.456\[0-9\]*  46.913\[0-9\]*  70.370\[0-9\]*  93.826\[0-9\]*  117.283\[0-9\]*  140.740\[0-9\]*  164.196\[0-9\]*  187.653\[0-9\]"
 	"\[ \t\r\n\]+"
   }
 }
@@ -194,7 +198,7 @@ if {![gdb_skip_float_test "continuing to breakpoint 1220"] && \
 	"\[ \t\r\n\]+array_d :"
 	"\[ \t\r\n\]+========="
 	"\[ \t\r\n\]+0.000000"
-	"\[ \t\r\n\]+23.456700  46.913400  70.370100  93.826800  117.283500  140.740200  164.196900  187.653600"
+	"\[ \t\r\n\]+23.456\[0-9\]*  46.913\[0-9\]*  70.370\[0-9\]*  93.826\[0-9\]*  117.283\[0-9\]*  140.740\[0-9\]*  164.196\[0-9\]*  187.653\[0-9\]*"
 	"\[ \t\r\n\]+"
 	".*array_f :"
 	".*student id :\[\t \]+.*YELLOW"
@@ -240,7 +244,7 @@ if {![gdb_skip_float_test "print print_double_array(array_d)"] && \
 	"array_d :"
 	"\[ \t\r\n\]+========="
 	"\[ \t\r\n\]+\[ \t\r\n\]+0.000000"
-	"\[ \t\r\n\]+23.456700  46.913400  70.370100  93.826800  117.283500  140.740200  164.196900  187.653600"
+	"\[ \t\r\n\]+23.456\[0-9\]*  46.913\[0-9\]*  70.370\[0-9\]*  93.826\[0-9\]*  117.283\[0-9\]*  140.740\[0-9\]*  164.196\[0-9\]*  187.653\[0-9\]*"
 	"\[ \t\r\n\]+"
     }
 }
@@ -259,7 +263,7 @@ if {![gdb_skip_float_test "continuing to 1236"] && \
 	"\[ \t\r\n\]+array_d :"
 	"\[ \t\r\n\]+========="
 	"\[ \t\r\n\]+0.000000"
-	"\[ \t\r\n\]+23.456700  46.913400  70.370100  93.826800  117.283500  140.740200  164.196900  187.653600"
+	"\[ \t\r\n\]+23.456\[0-9\]*  46.913\[0-9\]*  70.370\[0-9\]*  93.826\[0-9\]*  117.283\[0-9\]*  140.740\[0-9\]*  164.196\[0-9\]*  187.653\[0-9\]*"
 	"\[ \t\r\n\]+.*HELLO WORLD.*main \\(\\) at .*call-ar-st.c:1236.*printf\\(.BYE BYE FOR NOW.n.\\)."
     }
 } else {
@@ -378,7 +382,7 @@ if ![gdb_skip_stdio_test "continuing to 1281"] {
 if {![gdb_skip_float_test "print print_small_structs(...)"] && \
     ![gdb_skip_stdio_test "print print_small_structs(...)"] } {
     send_gdb "print print_small_structs(*struct1, *struct2, *struct3, *struct4, *flags, *flags_combo, *three_char, *five_char, *int_char_combo, *d1, *d2, *d3, *f1, *f2, *f3)\n"
-    gdb_expect_list "print print_small_structs" ".*$gdb_prompt $" {
+    gdb_expect_list "print print_small_structs $r3049138" ".*$gdb_prompt $" {
 	"\[\t\r\n \]+alpha"
 	"\[\t\r\n \]+gamma"
 	"\[\t\r\n \]+epsilon"
@@ -433,11 +437,11 @@ if {![gdb_skip_float_test "print print_ten_doubles(...)"] && \
     ![gdb_skip_stdio_test "print print_ten_doubles(...)"]} {
     send_gdb "print print_ten_doubles(123.456, 123.456, -0.12, -1.23, 343434.8, 89.098, 3.14, -5678.12345, -0.11111111, 216.97065)\n"
     gdb_expect_list "print print_ten_doubles" ".*$gdb_prompt $" {
-	"\[\t\r\n \]+Two Doubles : 123.456000.*123.456000"
-	"\[\t\r\n \]+Two Doubles : -0.120000.*-1.230000"
-	"\[\t\r\n \]+Two Doubles : 343434.800000.*89.098000"
-	"\[\t\r\n \]+Two Doubles : 3.140000.*-5678.123450"
-	"\[\t\r\n \]+Two Doubles : -0.111111.*216.970650"
+	"\[\t\r\n \]+Two Doubles : 123.45\[0-9\]*.*123.45\[0-9\]*"
+	"\[\t\r\n \]+Two Doubles : -0.1200\[0-9\]*.*-1.2300\[0-9\]*"
+	"\[\t\r\n \]+Two Doubles : 343434.\[0-9\]*.*89.09\[0-9\]*"
+	"\[\t\r\n \]+Two Doubles : 3.1400\[0-9\]*.*-5678.123\[0-9\]*"
+	"\[\t\r\n \]+Two Doubles : -0.1111\[0-9\]*.*216.97\[0-9\]*"
     }
 }
 
@@ -508,7 +512,7 @@ if {![gdb_skip_float_test "print_small_structs from print_long_arg_list"] && \
     # GDB bug, probably for all Sparc configs, but obscure. -sts 1999-08-17.
     setup_xfail "sparc*-*-solaris*"
     send_gdb "print print_small_structs(struct1, struct2, struct3, struct4, flags, flags_combo, three_char, five_char, int_char_combo, d1, d2, d3, f1, f2, f3)\n"
-    gdb_expect_list "print print_small_structs from print_long_arg_list" ".*$gdb_prompt $" {
+    gdb_expect_list "print print_small_structs from print_long_arg_list $r3049138" ".*$gdb_prompt $" {
 	"\[\t\r\n \]+alpha"
 	"\[\t\r\n \]+gamma"
 	"\[\t\r\n \]+epsilon"
@@ -604,7 +608,7 @@ if {$hp_aCC_compiler} {setup_xfail "hppa*-*-*" CLLbs16994}
 if {![gdb_skip_float_test "print print_long_arg_list"] && \
     ![gdb_skip_stdio_test "print print_long_arg_list"] } {
     send_gdb "print print_long_arg_list(a, b, c, d, e, f, *struct1, *struct2, *struct3, *struct4, *flags, *flags_combo, *three_char, *five_char, *int_char_combo, *d1, *d2, *d3, *f1, *f2, *f3)\n"
-    gdb_expect_list "print print_long_arg_list" ".*$gdb_prompt $" {
+    gdb_expect_list "print print_long_arg_list $r3049138" ".*$gdb_prompt $" {
 	"\[ \n\r\t\]+double : 22.250000"
 	"\[ \n\r\t\]+double : 33.375000"
 	"\[ \n\r\t\]+int : 0"

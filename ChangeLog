@@ -1,0 +1,8 @@
+2002-09-24  Klee Dienes  <kdienes@apple.com>
+
+	* Makefile: Update version number.
+	* Makefile: Add *-macosx-darwin to the list of recognized arch strings.
+	* Makefile: Strip trailing and leading spaces from CFLAGS.
+
+	* template.h: include machine/sys--sys/file, not sys--sys/file.
+

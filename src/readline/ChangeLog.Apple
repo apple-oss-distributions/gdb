@@ -1,0 +1,5 @@
+2002-10-17  Klee Dienes  <kdienes@platinum.local.>
+
+	* rltty.c (prepare_terminal_settings): Disable the terminal
+	setting for VDISABLE, as it prevents GDB from seeing 'C-o', which
+	it wants to bind to gdb_rl_operate_and_get_next.

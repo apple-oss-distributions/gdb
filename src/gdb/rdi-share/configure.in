@@ -31,6 +31,5 @@ AC_FUNC_VPRINTF
 AC_CHECK_FUNCS(gettimeofday select socket strtod strtoul memcpy memmove)
 
 AM_MAINTAINER_MODE
-AM_EXEEXT
 
 AC_OUTPUT(Makefile)

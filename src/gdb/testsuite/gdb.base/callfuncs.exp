@@ -367,7 +367,7 @@ if ![gdb_test "bt 2" \
 # Call function (causing a breakpoint hit in the call dummy) and do a return
 # with a value, make sure we are back at main with the same register contents.
 gdb_test "print add(4,5)" "The program being debugged stopped while.*" ""
-if ![gdb_test "return 7" \
+if ![gdb_test "return" \
 	      "#0  main.*" \
 	      "back at main after return from call dummy breakpoint" \
 	      "Make add return now. .y or n.*" \

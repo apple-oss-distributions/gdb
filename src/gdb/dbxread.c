@@ -54,11 +54,12 @@
 static boolean mmap_strtabflag = 0;
 #endif /* HAVE_MMAP */
 
-static boolean read_type_psym_p = 0;
+static boolean read_type_psym_p = 1;
 
 #include <assert.h>
 
-#include "obstack.h"
+#include "gdb_obstack.h"
+
 #include "gdb_stat.h"
 #include "symtab.h"
 #include "breakpoint.h"
@@ -94,14 +95,6 @@ static boolean read_type_psym_p = 0;
 
 struct symloc
   {
-    /* The start (inclusive) and end (exclusive) addresses for this
-       partial symtab's text.  STABS doesn't reliably give us nice
-       start and end addresses for each function.  Instead, we are
-       told the addresses of various boundary points, and we have to
-       gather those together to build ranges.  These are our running
-       best guess as to the range of text addresses for this psymtab.  */
-    CORE_ADDR textlow, texthigh;
-
     /* Offset within the file symbol table of first local symbol for this
        file.  */
 
@@ -132,8 +125,6 @@ struct symloc
 #define LDSYMOFF(p) (((struct symloc *)((p)->read_symtab_private))->ldsymoff)
 #define LDSYMLEN(p) (((struct symloc *)((p)->read_symtab_private))->ldsymlen)
 #define SYMLOC(p) ((struct symloc *)((p)->read_symtab_private))
-#define TEXTLOW(p) (SYMLOC(p)->textlow)
-#define TEXTHIGH(p) (SYMLOC(p)->texthigh)
 #define SYMBOL_SIZE(p) (SYMLOC(p)->symbol_size)
 #define SYMBOL_OFFSET(p) (SYMLOC(p)->symbol_offset)
 #define STRING_OFFSET(p) (SYMLOC(p)->string_offset)
@@ -234,6 +225,9 @@ struct complaint unclaimed_bincl_complaint =
 
 struct complaint fun_end_outside_fun_complaint =
 {"Found an end function stab with no corresponding begin", 0, 0};
+
+struct complaint discarding_local_symbols_complaint =
+{"misplaced N_LBRAC entry; discarding local symbols which have no enclosing block", 0, 0};
 
 /* find_text_range --- find start and end of loadable code sections
 
@@ -641,19 +635,6 @@ dbx_symfile_read (struct objfile *objfile, int mainline)
   /* Add the dynamic symbols.  */
 
   read_dbx_dynamic_symtab (objfile);
-
-  /* Take the text ranges the STABS partial symbol scanner computed
-     for each of the psymtabs and convert it into the canonical form
-     for psymtabs.  */
-  {
-    struct partial_symtab *p;
-
-    ALL_OBJFILE_PSYMTABS (objfile, p)
-      {
-        p->textlow = TEXTLOW (p);
-        p->texthigh = TEXTHIGH (p);
-      }
-  }
 
   /* Install any minimal symbols that have been collected as the current
      minimal symbols for this objfile. */
@@ -1343,6 +1324,55 @@ unparse_stabtype (int i)
   return "[UNKNOWN]";
 }
 
+#ifdef SOFUN_ADDRESS_MAYBE_MISSING
+CORE_ADDR
+find_stab_function_addr (char *namestring, char *filename,
+			 struct objfile *objfile)
+{
+  struct minimal_symbol *msym;
+  char *p;
+  int n;
+
+  p = strchr (namestring, ':');
+  if (p == NULL)
+    p = namestring;
+  n = p - namestring;
+  p = alloca (n + 2);
+  strncpy (p, namestring, n);
+  p[n] = 0;
+
+  msym = lookup_minimal_symbol (p, filename, objfile);
+  if (msym == NULL)
+    {
+      /* Sun Fortran appends an underscore to the minimal symbol name,
+         try again with an appended underscore if the minimal symbol
+         was not found.  */
+      p[n] = '_';
+      p[n + 1] = 0;
+      msym = lookup_minimal_symbol (p, filename, objfile);
+    }
+
+  if (msym == NULL && filename != NULL)
+    {
+      /* Try again without the filename. */
+      p[n] = 0;
+      msym = lookup_minimal_symbol (p, NULL, objfile);
+    }
+  if (msym == NULL && filename != NULL)
+    {
+      /* And try again for Sun Fortran, but without the filename. */
+      p[n] = '_';
+      p[n + 1] = 0;
+      msym = lookup_minimal_symbol (p, NULL, objfile);
+    }
+
+  return msym == NULL ? 0 : SYMBOL_VALUE_ADDRESS (msym);
+}
+#endif /* SOFUN_ADDRESS_MAYBE_MISSING */
+
+/* Setup partial_symtab's describing each source file for which
+   debugging information is available. */
+
 static void
 read_dbx_symtab (struct objfile *objfile)
 {
@@ -1507,12 +1537,12 @@ read_dbx_symtab (struct objfile *objfile)
 	    if (past_first_source_file && pst
 		/* The gould NP1 uses low values for .o and -l symbols
 		   which are not the address.  */
-		&& nlist.n_value >= TEXTLOW (pst))
+		&& nlist.n_value >= pst->textlow)
 	      {
 		end_psymtab (pst, psymtab_include_list, includes_used,
 			     symnum * symbol_size,
-			     nlist.n_value > TEXTHIGH (pst)
-			     ? nlist.n_value : TEXTHIGH (pst),
+			     nlist.n_value > pst->texthigh
+			     ? nlist.n_value : pst->texthigh,
 			     dependency_list, dependencies_used, textlow_not_set);
 		pst = (struct partial_symtab *) 0;
 		includes_used = 0;
@@ -1639,7 +1669,7 @@ read_dbx_symtab (struct objfile *objfile)
 		  {
 		    end_psymtab (pst, psymtab_include_list, includes_used,
 				 symnum * symbol_size,
-				 valu > TEXTHIGH (pst) ? valu : TEXTHIGH (pst),
+				 valu > pst->texthigh ? valu : pst->texthigh,
 				 dependency_list, dependencies_used,
 				 prev_textlow_not_set);
 		    pst = (struct partial_symtab *) 0;
@@ -1802,8 +1832,8 @@ read_dbx_symtab (struct objfile *objfile)
 	       function relative stabs, or the address of the function's
 	       end for old style stabs.  */
 	    valu = nlist.n_value + last_function_start;
-	    if (TEXTHIGH (pst) == 0 || valu > TEXTHIGH (pst))
-	      TEXTHIGH (pst) = valu;
+	    if (pst->texthigh == 0 || valu > pst->texthigh)
+	      pst->texthigh = valu;
 	    break;
 	  }
 
@@ -2011,7 +2041,7 @@ read_dbx_symtab (struct objfile *objfile)
 	      }
 	    if (pst && textlow_not_set)
 	      {
-		TEXTLOW (pst) = nlist.n_value;
+		pst->textlow = nlist.n_value;
 		textlow_not_set = 0;
 	      }
 #endif
@@ -2027,12 +2057,12 @@ read_dbx_symtab (struct objfile *objfile)
 	       the partial symbol table.  */
 	    if (pst
 		&& (textlow_not_set
-		    || (nlist.n_value < TEXTLOW (pst)
+		    || (nlist.n_value < pst->textlow
 			&& (nlist.n_value
 			    != ANOFFSET (objfile->section_offsets,
 					 SECT_OFF_TEXT (objfile))))))
 	      {
-		TEXTLOW (pst) = nlist.n_value;
+		pst->textlow = nlist.n_value;
 		textlow_not_set = 0;
 	      }
 	    add_psymbol_to_list (namestring, p - namestring,
@@ -2076,7 +2106,7 @@ read_dbx_symtab (struct objfile *objfile)
 	      }
 	    if (pst && textlow_not_set)
 	      {
-		TEXTLOW (pst) = nlist.n_value;
+		pst->textlow = nlist.n_value;
 		textlow_not_set = 0;
 	      }
 #endif
@@ -2092,12 +2122,12 @@ read_dbx_symtab (struct objfile *objfile)
 	       the partial symbol table.  */
 	    if (pst
 		&& (textlow_not_set
-		    || (nlist.n_value < TEXTLOW (pst)
+		    || (nlist.n_value < pst->textlow
 			&& (nlist.n_value
 			    != ANOFFSET (objfile->section_offsets,
 					 SECT_OFF_TEXT (objfile))))))
 	      {
-		TEXTLOW (pst) = nlist.n_value;
+		pst->textlow = nlist.n_value;
 		textlow_not_set = 0;
 	      }
 	    add_psymbol_to_list (namestring, p - namestring,
@@ -2209,7 +2239,7 @@ read_dbx_symtab (struct objfile *objfile)
 	    case N_ENDM:
 #ifdef SOFUN_ADDRESS_MAYBE_MISSING
 	  /* Solaris 2 end of module, finish current partial symbol table.
-	     end_psymtab will set TEXTHIGH (pst) to the proper value, which
+	     end_psymtab will set pst->texthigh to the proper value, which
 	     is necessary if a module compiled without debugging info
 	     follows this module.  */
 	  if (pst)
@@ -2296,7 +2326,7 @@ read_dbx_symtab (struct objfile *objfile)
 
       end_psymtab (pst, psymtab_include_list, includes_used,
 		   symnum * symbol_size,
-		   text_end > TEXTHIGH (pst) ? text_end : TEXTHIGH (pst),
+		   text_end > pst->texthigh ? text_end : pst->texthigh,
 		   dependency_list, dependencies_used, textlow_not_set);
     }
 
@@ -2338,8 +2368,6 @@ start_psymtab (struct objfile *objfile, char *filename, CORE_ADDR textlow,
 
   result->read_symtab_private = (char *)
     obstack_alloc (&objfile->psymbol_obstack, sizeof (struct symloc));
-  TEXTLOW (result) = result->textlow;
-  TEXTHIGH (result) = result->texthigh;
   LDSYMOFF (result) = ldsymoff;
   result->read_symtab = dbx_psymtab_to_symtab;
   SYMBOL_SIZE (result) = symbol_size;
@@ -2376,7 +2404,7 @@ end_psymtab (struct partial_symtab *pst, char **include_list, int num_includes,
 
   if (capping_symbol_offset != -1)
     LDSYMLEN (pst) = capping_symbol_offset - LDSYMOFF (pst);
-  TEXTHIGH (pst) = capping_text;
+  pst->texthigh = capping_text;
 
 #ifdef SOFUN_ADDRESS_MAYBE_MISSING
   /* Under Solaris, the N_SO symbols always have a value of 0,
@@ -2394,7 +2422,7 @@ end_psymtab (struct partial_symtab *pst, char **include_list, int num_includes,
      a reliable texthigh by taking the address plus size of the
      last function in the file.  */
 
-  if (TEXTHIGH (pst) == 0 && last_function_name)
+  if (pst->texthigh == 0 && last_function_name)
     {
       char *p;
       int n;
@@ -2420,14 +2448,14 @@ end_psymtab (struct partial_symtab *pst, char **include_list, int num_includes,
 	}
 
       if (minsym)
-	TEXTHIGH (pst) = SYMBOL_VALUE_ADDRESS (minsym) + MSYMBOL_SIZE (minsym);
+	pst->texthigh = SYMBOL_VALUE_ADDRESS (minsym) + MSYMBOL_SIZE (minsym);
 
       last_function_name = NULL;
     }
 
   /* this test will be true if the last .o file is only data */
   if (textlow_not_set)
-    TEXTLOW (pst) = TEXTHIGH (pst);
+    pst->textlow = pst->texthigh;
   else
     {
       struct partial_symtab *p1;
@@ -2440,12 +2468,12 @@ end_psymtab (struct partial_symtab *pst, char **include_list, int num_includes,
 
       ALL_OBJFILE_PSYMTABS (objfile, p1)
       {
-	if (TEXTHIGH (p1) == 0 && TEXTLOW (p1) != 0 && p1 != pst)
+	if (p1->texthigh == 0 && p1->textlow != 0 && p1 != pst)
 	  {
-	    TEXTHIGH (p1) = TEXTLOW (pst);
+	    p1->texthigh = pst->textlow;
 	    /* if this file has only data, then make textlow match texthigh */
-	    if (TEXTLOW (p1) == 0)
-	      TEXTLOW (p1) = TEXTHIGH (p1);
+	    if (p1->textlow == 0)
+	      p1->textlow = p1->texthigh;
 	  }
       }
     }
@@ -2482,8 +2510,8 @@ end_psymtab (struct partial_symtab *pst, char **include_list, int num_includes,
 				sizeof (struct symloc));
       LDSYMOFF (subpst) =
 	LDSYMLEN (subpst) =
-	TEXTLOW (subpst) =
-	TEXTHIGH (subpst) = 0;
+	subpst->textlow =
+	subpst->texthigh = 0;
 
       /* We could save slight bits of space by only making one of these,
          shared by the entire set of include files.  FIXME-someday.  */
@@ -2651,8 +2679,8 @@ read_ofile_symtab (struct partial_symtab *pst)
   objfile = pst->objfile;
   sym_offset = LDSYMOFF (pst);
   sym_size = LDSYMLEN (pst);
-  text_offset = TEXTLOW (pst);
-  text_size = TEXTHIGH (pst) - TEXTLOW (pst);
+  text_offset = pst->textlow;
+  text_size = pst->texthigh - pst->textlow;
   /* This cannot be simply objfile->section_offsets because of
      elfstab_offset_sections() which initializes the psymtab section
      offsets information in a special way, and that is different from
@@ -2792,13 +2820,13 @@ read_ofile_symtab (struct partial_symtab *pst)
 
   /* In a Solaris elf file, this variable, which comes from the
      value of the N_SO symbol, will still be 0.  Luckily, text_offset,
-     which comes from TEXTLOW (pst) is correct. */
+     which comes from pst->textlow is correct. */
   if (last_source_start_addr == 0)
     last_source_start_addr = text_offset;
 
   /* In reordered executables last_source_start_addr may not be the
      lower bound for this symtab, instead use text_offset which comes
-     from TEXTLOW (pst) which is correct.  */
+     from pst->textlow which is correct.  */
   if (last_source_start_addr > text_offset)
     last_source_start_addr = text_offset;
 
@@ -2915,6 +2943,11 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
 	      complain (&fun_end_outside_fun_complaint);
 	      break;
 	    }
+          if (context_stack_depth <= 0)
+            {
+              complain (&lbrac_mismatch_complaint, symnum);
+              break;
+            }
 	  
 	  saw_fun_start = 0;
 	  record_line (current_subfile, 0, last_function_start + valu);
@@ -2996,6 +3029,11 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
 	valu += last_source_start_addr;
 #endif
 
+      if (context_stack_depth <= 0)
+       {
+         complain (&lbrac_mismatch_complaint, symnum);
+         break;
+       }
       new = pop_context ();
       if (desc != new->depth)
 	complain (&lbrac_mismatch_complaint, symnum);
@@ -3012,7 +3050,21 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
       /* Can only use new->locals as local symbols here if we're in
          gcc or on a machine that puts them before the lbrack.  */
       if (!VARIABLES_INSIDE_BLOCK (desc, processing_gcc_compilation))
-	local_symbols = new->locals;
+	{
+	  if (local_symbols != NULL)
+	    {
+	      /* GCC development snapshots from March to December of
+		 2000 would output N_LSYM entries after N_LBRAC
+		 entries.  As a consequence, these symbols are simply
+		 discarded.  Complain if this is the case.  Note that
+		 there are some compilers which legitimately put local
+		 symbols within an LBRAC/RBRAC block; this complaint
+		 might also help sort out problems in which
+		 VARIABLES_INSIDE_BLOCK is incorrectly defined.  */
+	      complain (&discarding_local_symbols_complaint);
+	    }
+	  local_symbols = new->locals;
+	}
 
       if (context_stack_depth
 	  > !VARIABLES_INSIDE_BLOCK (desc, processing_gcc_compilation))

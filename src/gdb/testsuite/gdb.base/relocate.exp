@@ -65,8 +65,10 @@ gdb_exit
 gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
 
+# APPLE LOCAL: Our add-symbol-file doesn't support the ``a-s-f file addr''
+# syntax, so specify the text section explicitly.
 # Load the object file.
-gdb_test "add-symbol-file ${binfile} 0" \
+gdb_test "add-symbol-file ${binfile} -s text 0" \
 	"Reading symbols from .*${testfile}\\.o\\.\\.\\.done\\." \
 	"add-symbol-file ${testfile}.o 0" \
 	"add symbol table from file \".*${testfile}\\.o\" at\[ \t\r\n\]+\.text_addr = 0x0\[\r\n\]+\\(y or n\\) " \

@@ -27,11 +27,6 @@
 
 #define TEXT_SEGMENT_BASE	0x10000000
 
-/* AIX's assembler doesn't grok dollar signs in identifiers.
-   So we use dots instead.  This item must be coordinated with G++. */
-#undef CPLUS_MARKER
-#define CPLUS_MARKER '.'
-
 /* Return whether PC in function NAME is in code that should be skipped when
    single-stepping.  */
 
@@ -81,20 +76,12 @@ extern void aix_process_linenos (void);
 #define FP0_REGNUM 32		/* Floating point register 0 */
 #define FPLAST_REGNUM 63	/* Last floating point register */
 
-/* These #defines are used to parse core files and talk to ptrace, so they
-   must remain fixed.  */
-#define	FIRST_UISA_SP_REGNUM 64	/* first special register number */
-#define LAST_UISA_SP_REGNUM  70	/* last special register number */
-
 /* Define other aspects of the stack frame.  */
 
 #define INIT_FRAME_PC_FIRST(fromleaf, prev) \
   prev->pc = (fromleaf ? SAVED_PC_AFTER_CALL (prev->next) : \
 	      prev->next ? FRAME_SAVED_PC (prev->next) : read_pc ());
 #define INIT_FRAME_PC(fromleaf, prev)	/* nothing */
-
-/* Default offset from SP where the LR is stored */
-#define	DEFAULT_LR_SAVE 8
 
 /* Flag for machine-specific stuff in shared files.  FIXME */
 #define IBM6000_TARGET

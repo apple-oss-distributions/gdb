@@ -254,7 +254,7 @@ macho_symfile_offsets (objfile, addrs)
   }
 
   for (i = 0; i < MAX_SECTIONS; i++) {
-    objfile->section_offsets->offsets[i] = (long) addrs->other[0].addr;
+    objfile->section_offsets->offsets[i] = addrs->other[0].addr;
   }
 
   objfile->sect_index_text = 0;

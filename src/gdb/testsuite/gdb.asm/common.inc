@@ -10,7 +10,6 @@
 	comment "Declare a data variable"
 	.macro gdbasm_datavar name value
 	.data
-\name:
 	.word \value
 	.endm
 

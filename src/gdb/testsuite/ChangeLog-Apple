@@ -1,3 +1,556 @@
+2002-11-12  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/inf-call-interrupt.exp: Annotate fails with radar #'s.
+	* gdb.apple/ivars.exp: Ditto.
+
+2002-11-08  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/inf-call-interrupt.c: Add a couple new functions so
+	I can also test a signal handler in the backtrace when I have the time.
+
+2002-11-08  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/weak.exp: The output order of "reading shared libraries" 
+	and "reading file" got switched yesterday.
+
+	* gdb.apple/inf-call-interrupt.exp: New test file for getting
+	interrupted while calling inferior functions.
+	* gdb.apple/inf-call-interrupt.c: New file.
+
+2002-11-06  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/ivars.exp: Find libSystem's load addr at run time.
+	* gdb.apple/dynaload.exp: Ditto.
+	* gdb.apple/mi1-varobj.exp: Don't hardcode line numbers of objc-prog.m.
+
+2002-11-05  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/ivars.exp:  Rework to run cases with the shared library
+	named at link time (static) and at run-time (dynamic), with gdb
+	being forced to find addresses for both arrangements.
+	* gdb.apple/ivars-static.m: New file, very much akin to the old ivars.m.
+	* gdb.apple/ivars-dynamic.m: Dynamic version of above.
+	* gdb.apple/libivars.m (get_an_object): A C function to return an
+	object from the solib to make my dynamic case easier.
+	* gdb.apple/ivars.m: Removed.
+
+2002-11-05  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/slipnslide.c: Update foo() prototype.
+	* gdb.apple/dylib-loader.c: Ditto.
+
+	* gdb.apple/weak.exp: New tests for weak libraries.
+	* gdb.apple/libweak.c: dylib for the above test.
+	* gdb.apple/weak-prog.c: program for the above test.
+
+2002-11-05  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/dynaload.exp: New set of test cases to test future-break
+	on a shlib that is loaded dynamically at run-time (instead of linked
+	in by the static link editor aka ld).
+	* gdb.apple/dylib-loader.c: Sources for above.
+
+2002-11-04  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/ivars.exp: Add function to compile the shared library.
+	Check info sharedlibrary output to make sure it's recognized.
+	Use future-break to set the breakpoint, even though it's equivalent
+	to break here.  Check the lang setting too for fun.
+
+2002-11-01  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/objc-prog.m: Add a local class with some ivars
+	for future test cases in po.exp.
+	* gdb.apple/ivars.exp: A very quick hack to examine ivars in
+	an object from a dylib.
+	* gdb.apple/ivars.m, gdb.apple/libivars.h, gdb.apple/libivars.m: New
+	files.
+
+2002-11-01  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/libmylib.c: Add comment, make puts() call explicit.
+	* gdb.apple/slipnslide.c: Use NSModule calls to get foo() addr if present,
+	call it.
+	* gdb.apple/slipnslide.exp: See if symbol offsets remain constant during
+	a slide; try to hit a breakpoint in an inserted, slid library.
+
+2002-10-31  Klee Dienes  <kdienes@apple.com>
+
+        * gdb.apple/slipnslide.exp: Add timeout cases for the breakpoint
+        read commands.  Set default values for _slid_address if the
+        breakpoint reads fail.  Update the "did mylib slide" regex to not
+        specify the load address of mylib.
+
+2002-10-31  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/slipnslide.c, gdb.apple/slipnslide.exp, gdb.apple/libmylib.c:
+	New files for testing dylib sliding.
+
+2002-10-31  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.arch/altivec-abi.exp: Annotate with radar #'s.
+	* gdb.arch/altivec-regs.exp: Ditto.
+
+2002-10-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.mi/mi1-var-child.exp: Finish updates to support new 
+	dynamic_type fields.
+	* gdb.mi/mi1-var-cmd.exp: Ditto.
+	* gdb.mi/mi1-var-display.exp: Ditto.
+
+2002-10-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/cfm.sh: Rework srcdir handling to work correctly with
+	relative path builds.
+
+2002-10-29  Klee Dienes  <kdienes@apple.com>
+
+        * gdb.base/break.exp: Add multiple calls to the inferior in
+        the user-commands for 'break 79'.  Add a check for the calls
+        to the inferior in the check for the result.  Add new test, to
+        check that user-defined breakpoint commands are called for functions
+        called by the user (currently fails).
+
+2002-10-28  Klee Dienes  <kdienes@apple.com>
+
+        * gdb.apple/cfm.sh: Use uuencoded template libraries in
+        cfm-libs.  Strip the 'y' from the 'yes | cat -n' output.
+        * gdb.apple/cfm-libs/*.uu: Provide uuencoded CFM and Mach-O
+        template libraries.
+        * gdb.apple/cfm.exp: No longer bother with the remote_download
+        of the template files; the test won't work on a remote board anyway.
+
+2002-10-28  Klee Dienes  <kdienes@apple.com>
+
+        * gdb.apple/cfm.exp: Set timeout to 180.  Call 'cfm.sh' to set
+        up the CFM libraries for debugging, rather than iterate within
+        TCL ... the 'remote_exec build' code is rather slow.
+        * gdb.apple/cfm.sh: New file.  Sets up shared libraries for
+        CFM testing in /tmp/cfm, using files from $1.
+
+2002-10-29  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/template.cfm, gdb.apple/._template.cfm: Remove from
+	branch so buildit verification doesn't fail.
+	* gdb.apple/template.cfm.uu, gdb.apple/._template.cfm.uu: UUencoded
+	versions of the same.  The testsuite won't uudecode them at run-time
+	yet; this is just to get buildit working.
+
+2002-10-25  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/mi1-varobj.exp: Updates for tuple vs list cleanups.
+	* gdb.mi/mi1-stack.exp: Updates for tuple vs list cleanups.
+	* gdb.mi/mi1-var-block.exp: Updates for tuple vs list cleanups.
+	Remove setup_xfail's for several tests that fail with the FSF's
+	MI, but work with ours because of our IN_SCOPE field.
+	* gdb.mi/mi1-var-child.exp: Updates for tuple vs list cleanups. 
+	* gdb.mi/mi1-var-cmd.exp: Ditto.
+	* gdb.mi/mi1-var-display.exp: Ditto.
+
+2002-10-25  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.mi/mi1-pthreads.exp: Fix to testsuite - generic GDB probably
+	has the same problems on Linux.
+
+2002-10-24  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.mi/mi1-stack.exp: Update to handle Apple localized output.
+
+2002-10-23  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.mi/mi1-var-cmd.exp: Remove extra space from the "create
+	global variable" test name.
+
+2002-10-23  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.c++/misc.cc (main): Disable return of foo.*pmi on i386;
+	it was crashing the compiler (filed as #3082048).
+
+2002-10-23  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/cfm.exp: Disable tests on i386.
+
+2002-10-23  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/printcmds.exp: Use a1_0 instead of a1[0] in the
+	test-name to avoid having to argue constantly with TCL about the
+	brackets.
+
+2002-10-22  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/cfm.exp: Adjust for new output style.  Tighten up timeout.
+
+2002-10-21  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/mi1-varobj.exp: New file for testing some of our
+	local varobj additions.
+	* gdb.apple/objc-prog.m (blocky): New function for the
+	mi1-varobj tests.
+
+2002-10-21  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.mi/mi1-var-cmd.exp: Fix expected text so it doesn't assume
+	current buggy behavior.
+
+2002-10-21  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.mi/mi1-var-cmd.exp: Update to handle Apple localized output.
+        * gdb.mi/mi1-var-display.exp: Update to handle Apple localized output.
+
+2002-10-21  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.mi/gdb701.exp: Update to look for dynamic_type.  Standardize
+	APPLE LOCAL marker.
+	* gdb.mi/mi1-return.exp: Standardize APPLE LOCAL marker.
+	* gdb.mi/mi1-stack.exp: Standardize APPLE LOCAL marker.
+	* gdb.mi/mi1-watch.exp: Standardize APPLE LOCAL marker.
+
+2002-10-18  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/attach.exp: Set verbose to 'on' when checking for tests
+	that involve "Reading symbols from ..." output.  Match 'lib.*' and
+	not just 'libc.*' when checking for system library loads (Mac OS
+	X) doesn't use libc, but does use libsystem). 
+	* gdb.base/default.exp: Also allow "The program has no registers
+	now." as output from "info float".
+	* gdb.base/selftest.exp: Add recognizer init_mmalloc_default_pool
+	to the "step through main" tests.  When checking "step into
+	xmalloc call", allow xmalloc to be in either of utils.c or
+	xmalloc.c.
+	
+2002-10-18  Jason Molenda  (jmolenda@apple.com)
+
+        * gdb.mi/mi1-var-block.exp: Update to handle Apple localized output.
+        * gdb.mi/mi1-var-child.exp: Update to handle Apple localized output.
+
+2002-10-17  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/po.exp: Seven new test cases, as seen in r. 3053944.
+
+2002-10-17  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/objc-prog.m: Add a couple functions that return objects.
+
+2002-10-16  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/objc-prog.m:  New file.  The start of a program that
+	various tests can use.
+	* gdb.apple/po.exp: New file.  print-object tests.
+
+2002-10-16  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/opaque.exp: Remove patch to "ptype on opaque struct
+	pointer (statically)" (read-type-psyms is now set to '1' by default).
+
+2002-10-15  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/cfm.exp: Only generate the 64 CFM needed files.
+	Add comment.  Clean up /tmp/cfm when finished.
+
+2002-10-15  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple: New directory.
+	* gdb.apple/configure, gdb.apple/configure.in, gdb.apple/Makefile.in:
+	New files.
+	* gdb.apple/cfm.exp: New test - taken from Klee's 
+	DebuggerTests/CFMTester.
+	* gdb.apple/cfm.c, gdb.apple/._template.cfm, gdb.apple/template.cfm:
+	Support files for cfm.exp.
+
+	* configure.in: Add gdb.apple.
+	* configure: Regenerated.
+
+2002-10-11  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.mi/mi-var-display.exp: Fix Darwin exit.
+	* gdb.mi/mi1-stack.exp: Fix up stack-list-frames regexps for Apple 
+	local changes.
+	* lib/mi-support.exp (mi_check_current_frame): Fix regexp to
+	correctly allow either mi1 or mi0 brackets.
+
+2002-10-10  Jason Molenda  (jmolenda@apple.com)
+
+	* lib/gdb.exp (gdb_suppress_entire_file): Don't append \n on warning.
+	* lib/mi-support.exp (mi_check_current_frame): Allow for either
+	mi1 or mi0 brackets.
+
+	* gdb.mi/mi-basics.exp, gdb.mi/mi-break.exp, gdb.mi/mi-console.exp,
+	gdb.mi/mi-disassemble.exp, gdb.mi/mi-eval.exp, gdb.mi/mi-hack-cli.exp,
+        gdb.mi/mi-pthreads.exp, gdb.mi/mi-read-memory.exp, gdb.mi/mi-regs.exp,
+	gdb.mi/mi-return.exp, gdb.mi/mi-simplerun.exp, gdb.mi/mi-stack.exp,
+	gdb.mi/mi-stepi.exp, gdb.mi/mi-until.exp, gdb.mi/mi-var-block.exp,
+	gdb.mi/mi-var-child.exp, gdb.mi/mi-var-cmd.exp, 
+	gdb.mi/mi-var-display.exp, gdb.mi/mi-watch.exp:
+	Don't run these on MacOS X for now.  We'll leave them the pristine
+	FSF versions so merges aren't headache-inducing, but they won't match
+	our MI output so we'll just suppress them for now.
+
+2002-10-10  Jason Molenda  (jmolenda@apple.com)
+
+	* lib/mi-support.exp (mi_check_current_frame): New function to verify
+	that we're stopped where we're supposed to be.
+	(mi_get_stopped): New function to wait for a *stopped message and
+	verify that we stopped where we should have.
+	(mi_get_bp_stopped): Specialization of mi_get_stopped for breakpoints.
+	(mi_execute_to_helper): Customize to Apple's *stopped output.
+	(mi_finish_to): Ditto.
+	(mi_continue_to): Ditto.
+	(mi0_continue_to): Ditto.  (All mi0* funcs should probably be removed)
+
+	gdb.mi/mi1-console.exp: Use mi_get_bp_stopped.
+	gdb.mi/mi1-disassemble: Ditto.
+	gdb.mi/mi1-eval.exp: Use mi_get_bp_stopped and mi_get_stoped.
+	gdb.mi/mi1-read-memory.exp: Use mi_get_stopped.
+	gdb.mi/mi1-return.exp: Use mi_get_bp_stopped.  Adjust -exec-return
+	^done message to not expect FRAME.
+	gdb.mi/mi1-simplerun.exp: Use mi_get_bp_stopped.
+	gdb.mi/mi1-stack.exp: Use mi_get_bp_stopped and mi_get_stopped.
+	gdb.mi/mi1-stepi.exp: Ditto.
+	gdb.mi/mi1-until.exp: Ditto.
+	gdb.mi/mi1-var-block.exp: Ditto.
+	gdb.mi/mi1-var-cmd.exp: Use mi_get_bp_stopped.
+	gdb.mi/mi1-var-display.exp: Use mi_get_bp_stopped, mi_continue_to.
+	gdb.mi/mi1-watch.exp: Use mi_get_bp_stopped.  Change *stopped messages
+	for watchpoint hits to not include FRAME. Should add mi_get_wp_stopped?
+
+2002-10-07  Jason Molenda  (jmolenda@apple.com)
+
+	* lib/mi-support.exp (mi_runto): Expect COMMANDS field in
+	breakpoint 'stopped' message.  Don't expect FRAME field.
+	(mi_execute_to_helper): Don't expect FRAME field.
+	* gdb.mi/gdb701.exp: -var-create includes TYPECODE and IN_SCOPE fields.
+
+2002-10-06  Klee Dienes <kdienes@apple.com>
+
+	* gdb.arch/altivec-abi.c: Switch to VDECL4/8/16, rather than
+	complicated varargs magic, for the vector declaration routines.
+
+2002-10-06  Klee Dienes <kdienes@apple.com>
+
+	* gdb.arch/altivec-abi.c: Conditionalize inclusion of altivec.h.
+	New macro, VDECL, to handle differences in the OS X
+	initialization syntax (Mac OS X should support the {}-style
+	syntax, but doesn't in all cases due to a compiler issue).
+	Explicitly specify signed vs. unsiged for int, short, and
+	char, to placate the OS X compiler.  Explicitly set vrsave to
+	0xfffffff on OS X.
+
+	* gdb.arch/altivec-regs.c: Conditionalize inclusion of altivec.h.
+	Explicitly setvrsave to 0xfffffff on Mac OS X.	
+	
+	* gdb.arch/altivec-abi.exp: Add test for powerpc-apple-* when
+	detecting Altivec support.  Paramterize the compile flags
+	needed for Altivec support.
+
+	* gdb.arch/altivec-regs.exp: Add test for powerpc-apple-* when
+	detecting Altivec support.  Paramterize the compile flags
+	needed for Altivec support.  Paramterize the base of the
+	vector register names (Apple uses v<n>, not vr<n>).  Rename
+	vector_register to hex_register.  Expect results from 'info
+	reg' in decimal format; also add a test for 'print /x' to get the
+	registers in hex format.  Comment out the test for "info powerpc
+	altivec" (the function was removed recently).
+
+2002-10-03  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/annota1.exp: Mark fails due to two radars; edit expected
+	text slightly for Apple local output.
+
+2002-10-02  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.threads/pthreads.exp: Don't expect 'b main thread 2' to work
+	on MOSX.
+
+2002-10-01  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/constvars.exp: Don't xfail these tests on Mac OS X systems.
+
+2002-09-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/attach.exp: s#/tmp#/private/tmp# 'cause that's the actual
+	location and some tests want the named directory to match the actual
+	directory.  xfail one test that is invalid with our attach cmd;
+	tweak a pattern or two to match local output.
+
+2002-09-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.threads/gcore-thread.exp: Use gdb_compile_pthreads to build
+	test executable.
+	* gdb.threads/print-threads.exp: Same.
+	* gdb.threads/schedlock.exp: Same.
+
+	* gdb.threads/pthreads.exp: Change expected text messages to
+	match Apple GDB output.
+
+2002-09-26  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/corefile.exp: Mark fails with radar #'s.
+	* gdb.base/default.exp: Add test to detect proper setting/clearing
+	of $input_radix, $output_radix Apple local convenience variables.
+	* gdb.base/nodebug.exp: Mark fails as xfails with explanations about
+	why they're expected.
+	* gdb.base/return.exp: Mark fail with radar #.
+	* gdb.base/signals.exp: Mark fails with radar #'s.  One of these
+	("continue to func1") may be a generic gdb problem that I'll
+	have to xfail and close the radar - will investigate later.
+
+2002-09-26  Klee Dienes  <kdienes@apple.com>
+
+	* lib/gdb.exp (default_gdb_start): Separate the lower-level starter
+	functionality into another function to help work around probable
+	kernel/libc problem exposed by corefile.exp.
+	* gdb.base/corefile.exp: Detect Apple corefiles in /cores.
+	Call new default_gdb_run() function instead of spawn/close.
+	* gdb.base/coremaker.c: Print pid before dumping core.
+
+2002-09-26  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.mi/mi-stack.exp,mi-stepi.exp,mi-until.exp,mi-var-block.exp
+	mi-var-child.exp,mi-var-display.exp,mi0-stack.exp,mi0-stepi.exp
+	mi0-until.exp,mi0-var-block.exp,mi0-var-child.exp,mi0-var-display.exp:
+	Add -re ".*$mi_gdb_prompt$" {fail ""} to tests using gdb_expect
+	which fail on the Apple GDB, to prevent test-suite timeouts.
+	* gdb.mi/mi-stepi.exp, gdb.mi/mi0-stepi.exp: Fix the test result
+	messages from "next-instruction" to "exec-next-instruction".
+	* gdb.mi/mi-var-display.exp, gdb.mi/mi0-var-display.exp: Fail the
+	"create variable (7.81)" tests if 'fp' wasn't properly set by the
+	"record fp" part of the file.  We'll probably want to fix this
+	test another way, but in the meantime, the test file shouldn't be
+	crashing just because an earlier part of the file failed.
+	
+2002-09-26  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/default.exp: Remove the '\n's from the "Timeout now
+	..." messages: the 'verbose' command already appends a '\n'.
+
+2002-09-25  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/call-rt-st.exp: Annotate another failure; fix up radar
+	reporting method so it's correct.  Shoudl really modify 
+	print_struct_call to take an optional third argument of a test name 
+	string.
+	* gdb.base/opaque.exp: Note Apple local type psym behavior.  Should
+	probably XFAIL this or something.
+	* gdb.base/ptype.exp: Ditto.
+	* gdb.base/return2.exp: Mark failing testcase with radar #.
+
+2002-09-24  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/structs.exp (p L[3-11]): Annotate with existing radar about
+	inf func call w/ structs of chars.
+
+2002-09-24  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/default.exp (set, show): Extend timeout to allow for busy OS X 
+	systems, remove hardcoded failure results.
+
+2002-09-24  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/call-rt-st.exp: Patch for breakpoint misplacement fixed,
+	remove radar 3049666 annotations.
+	* gdb.base/funcargs.exp: Ditto.
+	* gdb.base/long_long.exp: Ditto.
+
+2002-09-24  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/relocate.exp (add-symbol-file): Adjust test case to use
+	Apple supported syntax.
+	* gdb.base/return2.exp (return values): Mark with radar #.
+	* gdb.base/shlib-call.exp (set bp in shared lib): Change to 
+	future-break to work with Apple's shlib behavior.
+	* gdb.base/signals.exp (backtrace in signals_tests_1): Note radar #.
+
+2002-09-19  Klee Dienes (kdienes@apple.com)
+
+	* gdb.base/default.exp (info set): Disable test for Darwin for
+	now; replace with a hard-coded FAIL.
+	* gdb.base/default.exp (show): Ditto.
+
+	* gdb.mi/mi-stack.exp (nexts in callee4): Add a fallback case
+	to avoid timeout.
+
+2002-09-19  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/printcmds.exp (p a1, p a2): Annotate with new radar #.
+	* gdb.base/nodebug.exp (p/c array_index): Annotate with new radar #.
+
+2002-09-19  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/nodebug.exp: Fix up function call to specify return
+	type as per Apple gdb style.
+
+2002-09-18  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/list.exp (nonexistant function): Adjust to accept Apple 
+          syntax.
+	* gdb.base/long_long.exp (get to known place): Adjust to Apple gdb's 
+          behavior.
+	* gdb.base/maint.exp (maint info sections .text): MachO wording.
+	(maint info sections {CODE,DATA}): Annotate with radar #.
+	(help maint): Match Apple gdb help msg.
+	(help maint demangle): Ditto.
+	(help maint): Ditto.
+
+2002-09-16  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/funcargs.exp: Declare scope of $r3049666 to pass it
+	around correctly.
+
+2002-09-16  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/default.exp (add-symbol-file): Fix test case to match
+	Apple gdb output.
+	* gdb.base/ending-run.exp: Annotate two failures with radar #'s.
+	XFAIL three others as expected behavior on our platform.
+	* gdb.base/funcargs.exp: Annotate three test fails with radar #'s.
+	* gdb.base/help.exp: Fix expected messages to match actual Apple
+	gdb help output for a dozen tests.
+
+2002-09-15  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/dump.exp: Annotate fails with radar #.
+
+2002-09-12  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/call-ar-st.exp: Annotate failures with radar numbers
+	tracking the problems.
+	* gdb.base/call-rt-st.exp: Ditto.
+
+2002-09-09  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.objc: New directory, tests from Adam Fedor's patch,
+	http://sources.redhat.com/ml/gdb/2002-09/msg00059.html
+	* configure.in: Configure gdb.objc.
+	* configure: Regenerated.
+
+2002-09-05  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/completion.exp: Recognize additional commands starting
+	with 't' in Apple gdb.
+
+2002-08-30  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.asm/asm-source.exp: Change test for Mac OS X to work for
+	Intel as well.
+
+2002-08-27  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.asm/asm-source.exp: Add test for Mac OS X; reset
+	asm-arch to "" if true.  Exit test entirely if asm-arch is ""
+	(rather	than generating 20 FAILs).
+
+	* gdb.base/call-rt-st.exp: Allow the breakpoint on loop_count to
+	be set on either line 106 or 107.
+
+	* gdb.base/callfuncs.exp: Don't return a value when checking to
+	see that register contents are restored after returning a call
+	dummy (the value might be returned in a register on some systems).
+
+	* gdb.base/maint.exp: Add fallback case when checking for "maint
+	info sections .text/CODE/DATA"; without it, the testsuite will
+	time out on systems that don't use the names .text and .data for
+	text and data sections.
+
 2001-09-04  Syd Polk  <spolk@apple.com>
 
 	* gdb.base/page.exp: Changed tests to call gdb_expect directly;

@@ -176,10 +176,14 @@ exec_close (int quitting)
 
   if (exec_ops.to_sections)
     {
-      xfree (exec_ops.to_sections);
-      exec_ops.to_sections = NULL;
-      exec_ops.to_sections_end = NULL;
+      target_resize_to_sections
+	(&exec_ops, exec_ops.to_sections_end - exec_ops.to_sections);
     }
+
+#ifdef NM_NEXTSTEP
+  if (! quitting)
+    macosx_init_dyld_symfile (symfile_objfile, exec_bfd);
+#endif
 }
 
 void
@@ -191,6 +195,19 @@ exec_file_clear (int from_tty)
   if (from_tty)
     printf_unfiltered ("No executable file now.\n");
 }
+
+#ifdef SOLIB_ADD
+/* Stub function for catch_errors around shared library hacking.  FROM_TTYP
+   is really an int * which points to from_tty.  */
+
+static int
+solib_add_stub (PTR from_ttyp)
+{
+  SOLIB_ADD (NULL, *(int *) from_ttyp, &current_target, auto_solib_add);
+  re_enable_breakpoints_in_shlibs (0);
+  return 0;
+}
+#endif /* SOLIB_ADD */
 
 /*  Process the first arg in ARGS as the new exec file.
 
@@ -360,6 +377,15 @@ exec_file_attach (char *filename, int from_tty)
 
       push_target (&exec_ops);
 
+#ifdef NM_NEXTSTEP
+      macosx_init_dyld_symfile (symfile_objfile, exec_bfd);
+#endif
+
+#ifdef SOLIB_ADD
+      catch_errors (solib_add_stub, &from_tty, (char *) 0,
+		    RETURN_MASK_ALL);
+#endif
+  
       /* Tell display code (if any) about the changed file name.  */
       if (exec_file_display_hook)
 	(*exec_file_display_hook) (filename);
@@ -571,26 +597,28 @@ xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
 	  strcmp (section->name, p->the_bfd_section->name) != 0)
 	continue;		/* not the section we need */
       if (memaddr >= p->addr)
-	if (memend <= p->endaddr)
-	  {
-	    /* Entire transfer is within this section.  */
-	    res = xfer_fn (p->bfd, p->the_bfd_section, myaddr,
-			   memaddr - p->addr, len);
-	    return (res != 0) ? len : 0;
-	  }
-	else if (memaddr >= p->endaddr)
-	  {
-	    /* This section ends before the transfer starts.  */
-	    continue;
-	  }
-	else
-	  {
-	    /* This section overlaps the transfer.  Just do half.  */
-	    len = p->endaddr - memaddr;
-	    res = xfer_fn (p->bfd, p->the_bfd_section, myaddr,
-			   memaddr - p->addr, len);
-	    return (res != 0) ? len : 0;
-	  }
+        {
+	  if (memend <= p->endaddr)
+	    {
+	      /* Entire transfer is within this section.  */
+	      res = xfer_fn (p->bfd, p->the_bfd_section, myaddr,
+	  		     memaddr - p->addr, len);
+	      return (res != 0) ? len : 0;
+	    }
+	  else if (memaddr >= p->endaddr)
+	    {
+	      /* This section ends before the transfer starts.  */
+	      continue;
+	    }
+	  else
+	    {
+	      /* This section overlaps the transfer.  Just do half.  */
+	      len = p->endaddr - memaddr;
+	      res = xfer_fn (p->bfd, p->the_bfd_section, myaddr,
+	  		     memaddr - p->addr, len);
+	      return (res != 0) ? len : 0;
+	    }
+        }
       else
 	nextsectaddr = min (nextsectaddr, p->addr);
     }

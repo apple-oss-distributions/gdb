@@ -1,5 +1,6 @@
 /* Target-dependent code for the Sanyo Xstormy16a (LC590000) processor.
-   Copyright 2001, Free Software Foundation, Inc.
+
+   Copyright 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -96,7 +97,7 @@ enum
 /* Function: xstormy16_register_name
    Returns the name of the standard Xstormy16 register N. */
 
-static char *
+static const char *
 xstormy16_register_name (int regnum)
 {
   static char *register_names[] = {
@@ -757,7 +758,8 @@ xstormy16_frame_saved_pc (struct frame_info *fi)
 
   if (PC_IN_CALL_DUMMY (fi->pc, fi->frame, fi->frame))
     {
-      saved_pc = generic_read_register_dummy (fi->pc, fi->frame, E_PC_REGNUM);
+      saved_pc = deprecated_read_register_dummy (fi->pc, fi->frame,
+						 E_PC_REGNUM);
     }
   else
     {
@@ -857,7 +859,7 @@ xstormy16_saved_pc_after_call (struct frame_info *ignore)
   return pc;
 }
 
-static unsigned char *
+const static unsigned char *
 xstormy16_breakpoint_from_pc (CORE_ADDR *pcptr, int *lenptr)
 {
   static unsigned char breakpoint[] = { 0x06, 0x0 };
@@ -1085,13 +1087,12 @@ xstormy16_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_use_generic_dummy_frames (gdbarch, 1);
   set_gdbarch_push_dummy_frame (gdbarch, generic_push_dummy_frame);
   set_gdbarch_push_return_address (gdbarch, xstormy16_push_return_address);
-  set_gdbarch_extract_return_value (gdbarch, xstormy16_extract_return_value);
+  set_gdbarch_deprecated_extract_return_value (gdbarch, xstormy16_extract_return_value);
   set_gdbarch_push_arguments (gdbarch, xstormy16_push_arguments);
   set_gdbarch_pop_frame (gdbarch, xstormy16_pop_frame);
   set_gdbarch_store_struct_return (gdbarch, xstormy16_store_struct_return);
-  set_gdbarch_store_return_value (gdbarch, xstormy16_store_return_value);
-  set_gdbarch_extract_struct_value_address (gdbarch,
-					    xstormy16_extract_struct_value_address);
+  set_gdbarch_deprecated_store_return_value (gdbarch, xstormy16_store_return_value);
+  set_gdbarch_deprecated_extract_struct_value_address (gdbarch, xstormy16_extract_struct_value_address);
   set_gdbarch_use_struct_convention (gdbarch,
 				     xstormy16_use_struct_convention);
   set_gdbarch_call_dummy_location (gdbarch, AT_ENTRY_POINT);

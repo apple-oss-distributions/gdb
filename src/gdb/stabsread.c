@@ -26,12 +26,14 @@
    COFF or ELF where the stabs data is placed in a special section.
    Avoid placing any object file format specific code in this file. */
 
+static int os9k_stabs = 0;
+
 #include <limits.h>
 
 #include "defs.h"
 #include "gdb_string.h"
 #include "bfd.h"
-#include "obstack.h"
+#include "gdb_obstack.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "expression.h"
@@ -46,6 +48,8 @@
 #include "demangle.h"
 #include "language.h"
 #include "doublest.h"
+#include "cp-abi.h"
+#include "cp-support.h"
 
 #include <ctype.h>
 
@@ -166,12 +170,13 @@ static int
 attach_fields_to_type (struct field_info *, struct type *, struct objfile *);
 
 static struct type *read_struct_type (char **, struct type *,
+                                      enum type_code,
 				      struct objfile *);
 
 static struct type *read_array_type (char **, struct type *,
 				     struct objfile *);
 
-static struct type **read_args (char **, int, struct objfile *);
+static struct field *read_args (char **, int, struct objfile *, int *, int *);
 
 static int
 read_cpp_abbrev (struct field_info *, char **, struct type *,
@@ -212,10 +217,8 @@ resolve_symbol_reference (struct objfile *, struct symbol *, char *);
 
 void stabsread_clear_cache (void);
 
-static const char vptr_name[] =
-{'_', 'v', 'p', 't', 'r', CPLUS_MARKER, '\0'};
-static const char vb_name[] =
-{'_', 'v', 'b', CPLUS_MARKER, '\0'};
+static const char vptr_name[] = "_vptr$";
+static const char vb_name[] = "_vb$";
 
 /* Define this as 1 if a pcc declaration of a char or short argument
    gives the correct address.  Otherwise assume pcc gives the
@@ -271,6 +274,9 @@ static struct complaint stabs_general_complaint =
 static struct complaint lrs_general_complaint =
 {"%s", 0, 0};
 
+static struct complaint bad_physname_complaint =
+{"Couldn't demangle mangled name '%s'", 0, 0};
+
 /* Make a list of forward references which haven't been defined.  */
 
 static struct type **undef_types;
@@ -285,34 +291,36 @@ static struct symbol *current_symbol = NULL;
       *(pp) = next_symbol_text (objfile);	\
   } while (0)
 
-/* FIXME: These probably should be our own types (like rs6000_builtin_type
-   has its own types) rather than builtin_type_*.  */
-static struct type **os9k_type_vector[] =
-{
-  0,
-  &builtin_type_int,
-  &builtin_type_char,
-  &builtin_type_long,
-  &builtin_type_short,
-  &builtin_type_unsigned_char,
-  &builtin_type_unsigned_short,
-  &builtin_type_unsigned_long,
-  &builtin_type_unsigned_int,
-  &builtin_type_float,
-  &builtin_type_double,
-  &builtin_type_void,
-  &builtin_type_long_double
-};
-
-static void os9k_init_type_vector (struct type **);
-
-static void
-os9k_init_type_vector (struct type **tv)
-{
-  unsigned int i;
-  for (i = 0; i < sizeof (os9k_type_vector) / sizeof (struct type **); i++)
-    tv[i] = (os9k_type_vector[i] == 0 ? 0 : *(os9k_type_vector[i]));
-}
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE /* FIXME: These probably should be our own types (like rs6000_builtin_type
+// OBSOLETE    has its own types) rather than builtin_type_*.  */
+// OBSOLETE static struct type **os9k_type_vector[] =
+// OBSOLETE {
+// OBSOLETE   0,
+// OBSOLETE   &builtin_type_int,
+// OBSOLETE   &builtin_type_char,
+// OBSOLETE   &builtin_type_long,
+// OBSOLETE   &builtin_type_short,
+// OBSOLETE   &builtin_type_unsigned_char,
+// OBSOLETE   &builtin_type_unsigned_short,
+// OBSOLETE   &builtin_type_unsigned_long,
+// OBSOLETE   &builtin_type_unsigned_int,
+// OBSOLETE   &builtin_type_float,
+// OBSOLETE   &builtin_type_double,
+// OBSOLETE   &builtin_type_void,
+// OBSOLETE   &builtin_type_long_double
+// OBSOLETE };
+// OBSOLETE
+// OBSOLETE static void os9k_init_type_vector (struct type **);
+// OBSOLETE 
+// OBSOLETE static void
+// OBSOLETE os9k_init_type_vector (struct type **tv)
+// OBSOLETE {
+// OBSOLETE   unsigned int i;
+// OBSOLETE   for (i = 0; i < sizeof (os9k_type_vector) / sizeof (struct type **); i++)
+// OBSOLETE     tv[i] = (os9k_type_vector[i] == 0 ? 0 : *(os9k_type_vector[i]));
+// OBSOLETE }
+#endif /* OBSOLETE OS9K */
 
 /* Look up a dbx type-number pair.  Return the address of the slot
    where the type for that number-pair is stored.
@@ -380,9 +388,11 @@ Invalid symbol data: type number (%d,%d) out of range at symtab pos %d.",
 	  memset (&type_vector[old_len], 0,
 		  (type_vector_length - old_len) * sizeof (struct type *));
 
-	  if (os9k_stabs)
-	    /* Deal with OS9000 fundamental types.  */
-	    os9k_init_type_vector (type_vector);
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE 	  if (os9k_stabs)
+// OBSOLETE 	    /* Deal with OS9000 fundamental types.  */
+// OBSOLETE 	    os9k_init_type_vector (type_vector);
+#endif /* OBSOLETE OS9K */
 	}
       return (&type_vector[index]);
     }
@@ -1937,6 +1947,7 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
       break;
 
     case 't':
+      /* Typedef */
       SYMBOL_TYPE (sym) = read_type (&p, objfile);
 
       /* For a nameless type, we don't want a create a symbol, thus we
@@ -2086,9 +2097,11 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
 	}
 #endif
       SYMBOL_NAMESPACE (sym) = VAR_NAMESPACE;
-      if (os9k_stabs)
-	add_symbol_to_list (sym, &global_symbols);
-      else
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE       if (os9k_stabs)
+// OBSOLETE 	add_symbol_to_list (sym, &global_symbols);
+// OBSOLETE       else
+#endif /* OBSOLETE OS9K */
 	add_symbol_to_list (sym, &local_symbols);
       break;
 
@@ -2394,6 +2407,9 @@ read_type (register char **pp, struct objfile *objfile)
   /* Used to distinguish string and bitstring from char-array and set. */
   int is_string = 0;
 
+  /* Used to distinguish vector from array. */
+  int is_vector = 0;
+
   /* Read type number if present.  The type number may be omitted.
      for instance in a two-dimensional array declared with type
      "ar1;1;10;ar1;1;10;4".  */
@@ -2408,8 +2424,20 @@ read_type (register char **pp, struct objfile *objfile)
          or this is a forward reference to it.  dbx_alloc_type handles
          both cases.  */
       if (**pp != '=')
-	return dbx_alloc_type (typenums, objfile);
-
+	{
+	  if (typenums[0] == 0 && typenums[1] < 0) 
+	    {
+	      /* For built-in types, we haven't consumed the trailing
+		 semi-colon yet.  If we don't do that, then cases where
+		 the built-in type is defined recursively will fall
+		 over. */
+	      if (**pp == ';')
+		(*pp)++;
+	    }
+	  
+	  return dbx_alloc_type (typenums, objfile);
+	}
+      
       /* Type is being defined here.  */
       /* Skip the '='.
          Also skip the type descriptor - we get it below with (*pp)[-1].  */
@@ -2572,7 +2600,24 @@ again:
 	       the related problems with unnecessarily stubbed types;
 	       someone motivated should attempt to clean up the issue
 	       here as well.  Once a type pointed to has been created it
-	       should not be modified.  */
+	       should not be modified.
+
+               Well, it's not *absolutely* wrong.  Constructing recursive
+               types (trees, linked lists) necessarily entails modifying
+               types after creating them.  Constructing any loop structure
+               entails side effects.  The Dwarf 2 reader does handle this
+               more gracefully (it never constructs more than once
+               instance of a type object, so it doesn't have to copy type
+               objects wholesale), but it still mutates type objects after
+               other folks have references to them.
+
+               Keep in mind that this circularity/mutation issue shows up
+               at the source language level, too: C's "incomplete types",
+               for example.  So the proper cleanup, I think, would be to
+               limit GDB's type smashing to match exactly those required
+               by the source language.  So GDB could have a
+               "complete_this_type" function, but never create unnecessary
+               copies of a type otherwise.  */
 	    replace_type (type, xtype);
 	    TYPE_NAME (type) = NULL;
 	    TYPE_TAG_NAME (type) = NULL;
@@ -2592,7 +2637,7 @@ again:
          forward-referenced), and we must change it to a pointer, function,
          reference, or whatever, *in-place*.  */
 
-    case '*':
+    case '*':			/* Pointer to another type */
       type1 = read_type (pp, objfile);
       type = make_pointer_type (type1, dbx_lookup_type (typenums));
       break;
@@ -2603,21 +2648,24 @@ again:
       break;
 
     case 'f':			/* Function returning another type */
-      if (os9k_stabs && **pp == '(')
-	{
-	  /* Function prototype; parse it.
-	     We must conditionalize this on os9k_stabs because otherwise
-	     it could be confused with a Sun-style (1,3) typenumber
-	     (I think).  */
-	  struct type *t;
-	  ++*pp;
-	  while (**pp != ')')
-	    {
-	      t = read_type (pp, objfile);
-	      if (**pp == ',')
-		++ * pp;
-	    }
-	}
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE       if (os9k_stabs && **pp == '(')
+// OBSOLETE 	{
+// OBSOLETE 	  /* Function prototype; parse it.
+// OBSOLETE 	     We must conditionalize this on os9k_stabs because otherwise
+// OBSOLETE 	     it could be confused with a Sun-style (1,3) typenumber
+// OBSOLETE 	     (I think).  */
+// OBSOLETE 	  struct type *t;
+// OBSOLETE 	  ++*pp;
+// OBSOLETE 	  while (**pp != ')')
+// OBSOLETE 	    {
+// OBSOLETE 	      t = read_type (pp, objfile);
+// OBSOLETE 	      if (**pp == ',')
+// OBSOLETE 		++ * pp;
+// OBSOLETE 	    }
+// OBSOLETE 	}
+#endif /* OBSOLETE OS9K */
+
       type1 = read_type (pp, objfile);
       type = make_function_type (type1, dbx_lookup_type (typenums));
       break;
@@ -2698,22 +2746,36 @@ again:
       }
 
     case 'k':			/* Const qualifier on some type (Sun) */
-    case 'c':			/* Const qualifier on some type (OS9000) */
-      /* Because 'c' means other things to AIX and 'k' is perfectly good,
-         only accept 'c' in the os9k_stabs case.  */
-      if (type_descriptor == 'c' && !os9k_stabs)
-	return error_type (pp, objfile);
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE       /* ezannoni 2002-07-16: This can be safely deleted, because 'c'
+// OBSOLETE 	 means complex type in AIX stabs, while it means const qualifier
+// OBSOLETE 	 in os9k stabs.  Obviously we were supporting only the os9k meaning.
+// OBSOLETE 	 We were erroring out if we were reading AIX stabs.  Right now the
+// OBSOLETE 	 erroring out will happen in the default clause of the switch.  */
+// OBSOLETE     case 'c':			/* Const qualifier on some type (OS9000) */
+// OBSOLETE       /* Because 'c' means other things to AIX and 'k' is perfectly good,
+// OBSOLETE          only accept 'c' in the os9k_stabs case.  */
+// OBSOLETE       if (type_descriptor == 'c' && !os9k_stabs)
+// OBSOLETE 	return error_type (pp, objfile);
+#endif /* OBSOLETE OS9K */
       type = read_type (pp, objfile);
       type = make_cv_type (1, TYPE_VOLATILE (type), type,
 			   dbx_lookup_type (typenums));
       break;
 
     case 'B':			/* Volatile qual on some type (Sun) */
-    case 'i':			/* Volatile qual on some type (OS9000) */
-      /* Because 'i' means other things to AIX and 'B' is perfectly good,
-         only accept 'i' in the os9k_stabs case.  */
-      if (type_descriptor == 'i' && !os9k_stabs)
-	return error_type (pp, objfile);
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE       /* ezannoni 2002-07-16: This can be safely deleted, because 'i'
+// OBSOLETE 	 means imported type in AIX stabs, while it means volatile qualifier
+// OBSOLETE 	 in os9k stabs.  Obviously we were supporting only the os9k meaning.
+// OBSOLETE 	 We were erroring out if we were reading AIX stabs.  Right now the
+// OBSOLETE 	 erroring out will happen in the default clause of the switch.  */
+// OBSOLETE     case 'i':			/* Volatile qual on some type (OS9000) */
+// OBSOLETE       /* Because 'i' means other things to AIX and 'B' is perfectly good,
+// OBSOLETE          only accept 'i' in the os9k_stabs case.  */
+// OBSOLETE       if (type_descriptor == 'i' && !os9k_stabs)
+// OBSOLETE 	return error_type (pp, objfile);
+#endif /* OBSOLETE OS9K */
       type = read_type (pp, objfile);
       type = make_cv_type (TYPE_CONST (type), 1, type,
 			   dbx_lookup_type (typenums));
@@ -2750,14 +2812,20 @@ again:
 
 	  switch (*attr)
 	    {
-	    case 's':
+	    case 's':		/* Size attribute */
 	      type_size = atoi (attr + 1);
 	      if (type_size <= 0)
 		type_size = -1;
 	      break;
 
-	    case 'S':
+	    case 'S':		/* String attribute */
+	      /* FIXME: check to see if following type is array? */
 	      is_string = 1;
+	      break;
+
+	    case 'V':		/* Vector attribute */
+	      /* FIXME: check to see if following type is array? */
+	      is_vector = 1;
 	      break;
 
 	    default:
@@ -2788,7 +2856,8 @@ again:
 	{
 	  struct type *domain = read_type (pp, objfile);
 	  struct type *return_type;
-	  struct type **args;
+	  struct field *args;
+	  int nargs, varargs;
 
 	  if (**pp != ',')
 	    /* Invalid member type data format.  */
@@ -2805,9 +2874,10 @@ again:
 	    {
 	      ++(*pp);
 	    }
-	  args = read_args (pp, ';', objfile);
+	  args = read_args (pp, ';', objfile, &nargs, &varargs);
 	  type = dbx_alloc_type (typenums, objfile);
-	  smash_to_method_type (type, domain, return_type, args);
+	  smash_to_method_type (type, domain, return_type, args,
+				nargs, varargs);
 	}
       break;
 
@@ -2818,10 +2888,12 @@ again:
       break;
 
     case 'b':
-      if (os9k_stabs)
-	/* Const and volatile qualified type.  */
-	type = read_type (pp, objfile);
-      else
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE       if (os9k_stabs)
+// OBSOLETE 	/* Const and volatile qualified type.  */
+// OBSOLETE 	type = read_type (pp, objfile);
+// OBSOLETE       else
+#endif /* OBSOLETE OS9K */
 	{
 	  /* Sun ACC builtin int type */
 	  type = read_sun_builtin_type (pp, typenums, objfile);
@@ -2845,18 +2917,21 @@ again:
 
     case 's':			/* Struct type */
     case 'u':			/* Union type */
-      type = dbx_alloc_type (typenums, objfile);
-      switch (type_descriptor)
-	{
-	case 's':
-	  TYPE_CODE (type) = TYPE_CODE_STRUCT;
-	  break;
-	case 'u':
-	  TYPE_CODE (type) = TYPE_CODE_UNION;
-	  break;
-	}
-      type = read_struct_type (pp, type, objfile);
-      break;
+      {
+        enum type_code type_code = TYPE_CODE_UNDEF;
+        type = dbx_alloc_type (typenums, objfile);
+        switch (type_descriptor)
+          {
+          case 's':
+            type_code = TYPE_CODE_STRUCT;
+            break;
+          case 'u':
+            type_code = TYPE_CODE_UNION;
+            break;
+          }
+        type = read_struct_type (pp, type, type_code, objfile);
+        break;
+      }
 
     case 'a':			/* Array type */
       if (**pp != 'r')
@@ -2867,9 +2942,11 @@ again:
       type = read_array_type (pp, type, objfile);
       if (is_string)
 	TYPE_CODE (type) = TYPE_CODE_STRING;
+      if (is_vector)
+	TYPE_FLAGS (type) |= TYPE_FLAG_VECTOR;
       break;
 
-    case 'S':
+    case 'S':			/* Set or bitstring  type */
       type1 = read_type (pp, objfile);
       type = create_set_type ((struct type *) NULL, type1);
       if (is_string)
@@ -3064,6 +3141,30 @@ rs6000_builtin_type (int typenum)
 
 /* This page contains subroutines of read_type.  */
 
+/* Replace *OLD_NAME with the method name portion of PHYSNAME.  */
+
+static void
+update_method_name_from_physname (char **old_name, char *physname)
+{
+  char *method_name;
+
+  method_name = method_name_from_physname (physname);
+
+  if (method_name == NULL)
+    {
+      complain (&bad_physname_complaint, physname);
+      return;
+    }
+
+  if (strcmp (*old_name, method_name) != 0)
+    {
+      xfree (*old_name);
+      *old_name = method_name;
+    }
+  else
+    xfree (method_name);
+}
+
 /* Read member function stabs info for C++ classes.  The form of each member
    function data is:
 
@@ -3140,8 +3241,7 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
 	  /* This lets the user type "break operator+".
 	     We could just put in "+" as the name, but that wouldn't
 	     work for "*".  */
-	  static char opname[32] =
-	  {'o', 'p', CPLUS_MARKER};
+	  static char opname[32] = "op$";
 	  char *o = opname + 3;
 
 	  /* Skip past '::'.  */
@@ -3681,8 +3781,10 @@ read_struct_fields (struct field_info *fip, char **pp, struct type *type,
 
   while (**pp != ';' && **pp != '\0')
     {
-      if (os9k_stabs && **pp == ',')
-	break;
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE       if (os9k_stabs && **pp == ',')
+// OBSOLETE 	break;
+#endif /* OBSOLETE OS9K */
       STABS_CONTINUE (pp, objfile);
       /* Get space to record the next field's data.  */
       new = (struct nextfield *) xmalloc (sizeof (struct nextfield));
@@ -3727,8 +3829,9 @@ read_struct_fields (struct field_info *fip, char **pp, struct type *type,
     }
   if (p[0] == ':' && p[1] == ':')
     {
-      /* chill the list of fields: the last entry (at the head) is a
-         partially constructed entry which we now scrub. */
+      /* (OBSOLETE) chill (OBSOLETE) the list of fields: the last
+         entry (at the head) is a partially constructed entry which we
+         now scrub. */
       fip->list = fip->list->next;
     }
   return 1;
@@ -3944,8 +4047,9 @@ read_tilde_fields (struct field_info *fip, char **pp, struct type *type,
 		   i >= TYPE_N_BASECLASSES (t);
 		   --i)
 		{
-		  if (!strncmp (TYPE_FIELD_NAME (t, i), vptr_name,
-				sizeof (vptr_name) - 1))
+		  char *name = TYPE_FIELD_NAME (t, i);
+		  if (!strncmp (name, vptr_name, sizeof (vptr_name) - 2)
+		      && is_cplus_marker (name[sizeof (vptr_name) - 2]))
 		    {
 		      TYPE_VPTR_FIELDNO (type) = i;
 		      goto gotit;
@@ -4206,6 +4310,45 @@ attach_fields_to_type (struct field_info *fip, register struct type *type,
   return 1;
 }
 
+
+static struct complaint multiply_defined_struct =
+{"struct/union type gets multiply defined: %s%s", 0, 0};
+
+
+/* Complain that the compiler has emitted more than one definition for the
+   structure type TYPE.  */
+static void 
+complain_about_struct_wipeout (struct type *type)
+{
+  char *name = "";
+  char *kind = "";
+
+  if (TYPE_TAG_NAME (type))
+    {
+      name = TYPE_TAG_NAME (type);
+      switch (TYPE_CODE (type))
+        {
+        case TYPE_CODE_STRUCT: kind = "struct "; break;
+        case TYPE_CODE_UNION:  kind = "union ";  break;
+        case TYPE_CODE_ENUM:   kind = "enum ";   break;
+        default: kind = "";
+        }
+    }
+  else if (TYPE_NAME (type))
+    {
+      name = TYPE_NAME (type);
+      kind = "";
+    }
+  else
+    {
+      name = "<unknown>";
+      kind = "";
+    }
+
+  complain (&multiply_defined_struct, kind, name);
+}
+
+
 /* Read the description of a structure (or union type) and return an object
    describing the type.
 
@@ -4221,7 +4364,8 @@ attach_fields_to_type (struct field_info *fip, register struct type *type,
  */
 
 static struct type *
-read_struct_type (char **pp, struct type *type, struct objfile *objfile)
+read_struct_type (char **pp, struct type *type, enum type_code type_code,
+                  struct objfile *objfile)
 {
   struct cleanup *back_to;
   struct field_info fi;
@@ -4229,9 +4373,30 @@ read_struct_type (char **pp, struct type *type, struct objfile *objfile)
   fi.list = NULL;
   fi.fnlist = NULL;
 
+  /* When describing struct/union/class types in stabs, G++ always drops
+     all qualifications from the name.  So if you've got:
+       struct A { ... struct B { ... }; ... };
+     then G++ will emit stabs for `struct A::B' that call it simply
+     `struct B'.  Obviously, if you've got a real top-level definition for
+     `struct B', or other nested definitions, this is going to cause
+     problems.
+
+     Obviously, GDB can't fix this by itself, but it can at least avoid
+     scribbling on existing structure type objects when new definitions
+     appear.  */
+  if (! (TYPE_CODE (type) == TYPE_CODE_UNDEF
+         || TYPE_STUB (type)))
+    {
+      complain_about_struct_wipeout (type);
+
+      /* It's probably best to return the type unchanged.  */
+      return type;
+    }
+
   back_to = make_cleanup (null_cleanup, 0);
 
   INIT_CPLUS_SPECIFIC (type);
+  TYPE_CODE (type) = type_code;
   TYPE_FLAGS (type) &= ~TYPE_FLAG_STUB;
 
   /* First comes the total size in bytes.  */
@@ -4258,8 +4423,6 @@ read_struct_type (char **pp, struct type *type, struct objfile *objfile)
       type = error_type (pp, objfile);
     }
 
-  /* Fix up any cv-qualified versions of this type.  */
-  finish_cv_type (type);
   do_cleanups (back_to);
   return (type);
 }
@@ -4285,9 +4448,11 @@ read_array_type (register char **pp, register struct type *type,
      Fortran adjustable arrays use Adigits or Tdigits for lower or upper;
      for these, produce a type like float[][].  */
 
-  if (os9k_stabs)
-    index_type = builtin_type_int;
-  else
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE   if (os9k_stabs)
+// OBSOLETE     index_type = builtin_type_int;
+// OBSOLETE   else
+#endif /* OBSOLETE OS9K */
     {
       index_type = read_type (pp, objfile);
       if (**pp != ';')
@@ -4301,7 +4466,12 @@ read_array_type (register char **pp, register struct type *type,
       (*pp)++;
       adjustable = 1;
     }
-  lower = read_huge_number (pp, os9k_stabs ? ',' : ';', &nbits);
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE   lower = read_huge_number (pp, os9k_stabs ? ',' : ';', &nbits);
+#else /* OBSOLETE OS9K */
+  lower = read_huge_number (pp, ';', &nbits);
+#endif /* OBSOLETE OS9K */
+
   if (nbits != 0)
     return error_type (pp, objfile);
 
@@ -4364,15 +4534,17 @@ read_enum_type (register char **pp, register struct type *type,
   osyms = *symlist;
   o_nsyms = osyms ? osyms->nsyms : 0;
 
-  if (os9k_stabs)
-    {
-      /* Size.  Perhaps this does not have to be conditionalized on
-         os9k_stabs (assuming the name of an enum constant can't start
-         with a digit).  */
-      read_huge_number (pp, 0, &nbits);
-      if (nbits != 0)
-	return error_type (pp, objfile);
-    }
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE   if (os9k_stabs)
+// OBSOLETE     {
+// OBSOLETE       /* Size.  Perhaps this does not have to be conditionalized on
+// OBSOLETE          os9k_stabs (assuming the name of an enum constant can't start
+// OBSOLETE          with a digit).  */
+// OBSOLETE       read_huge_number (pp, 0, &nbits);
+// OBSOLETE       if (nbits != 0)
+// OBSOLETE 	return error_type (pp, objfile);
+// OBSOLETE     }
+#endif /* OBSOLETE OS9K */
 
   /* The aix4 compiler emits an extra field before the enum members;
      my guess is it's a type of some sort.  Just ignore it.  */
@@ -4627,6 +4799,12 @@ read_huge_number_raw (char **pp, int end,
       p++;
     }
 
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE   if (os9k_stabs)
+// OBSOLETE     upper_limit = ULONG_MAX / radix;
+// OBSOLETE   else
+#endif /* OBSOLETE OS9K */
+
   while ((c = *p++) >= '0' && c < ('0' + radix))
     {
       if (n > (ULONG_MAX / radix))
@@ -4856,9 +5034,11 @@ read_range_type (char **pp, int typenums[2], struct objfile *objfile)
   else if (self_subrange && n2 == 0 && n3 == 127)
     return init_type (TYPE_CODE_INT, 1, 0, NULL, objfile);
 
-  else if (current_symbol && SYMBOL_LANGUAGE (current_symbol) == language_chill
-	   && !self_subrange)
-    goto handle_true_range;
+#if 0
+  /* OBSOLETE else if (current_symbol && SYMBOL_LANGUAGE (current_symbol) == language_chill */
+  /* OBSOLETE          && !self_subrange) */
+  /* OBSOLETE   goto handle_true_range; */
+#endif
 
   /* We used to do this only for subrange of self or subrange of int.  */
   else if (n2 == 0)
@@ -4936,18 +5116,20 @@ handle_true_range:
    and terminated with END.  Return the list of types read in, or (struct type
    **)-1 if there is an error.  */
 
-static struct type **
-read_args (char **pp, int end, struct objfile *objfile)
+static struct field *
+read_args (char **pp, int end, struct objfile *objfile, int *nargsp,
+	   int *varargsp)
 {
   /* FIXME!  Remove this arbitrary limit!  */
-  struct type *types[1024], **rval;	/* allow for fns of 1023 parameters */
-  int n = 0;
+  struct type *types[1024];	/* allow for fns of 1023 parameters */
+  int n = 0, i;
+  struct field *rval;
 
   while (**pp != end)
     {
       if (**pp != ',')
 	/* Invalid argument list: no ','.  */
-	return (struct type **) -1;
+	return (struct field *) -1;
       (*pp)++;
       STABS_CONTINUE (pp, objfile);
       types[n++] = read_type (pp, objfile);
@@ -4956,22 +5138,28 @@ read_args (char **pp, int end, struct objfile *objfile)
 
   if (n == 0) 
     {
+      *varargsp = 0;
       return (struct type **) -1;
     }
   if (n == 1)
     {
-      rval = (struct type **) xmalloc (2 * sizeof (struct type *));
+      *varargsp = 0;
     }
   else if (TYPE_CODE (types[n - 1]) != TYPE_CODE_VOID)
     {
-      rval = (struct type **) xmalloc ((n + 1) * sizeof (struct type *));
-      memset (rval + n, 0, sizeof (struct type *));
+      *varargsp = 1;
     }
   else
     {
-      rval = (struct type **) xmalloc (n * sizeof (struct type *));
+      n--;
+      *varargsp = 0;
     }
-  memcpy (rval, types, n * sizeof (struct type *));
+
+  rval = (struct field *) xmalloc (n * sizeof (struct field));
+  memset (rval, 0, n * sizeof (struct field));
+  for (i = 0; i < n; i++)
+    rval[i].type = types[i];
+  *nargsp = n;
   return rval;
 }
 
@@ -5160,10 +5348,7 @@ cleanup_undefined_types (void)
 			    && (TYPE_CODE (SYMBOL_TYPE (sym)) ==
 				TYPE_CODE (*type))
 			    && STREQ (SYMBOL_NAME (sym), typename))
-			  {
-			    memcpy (*type, SYMBOL_TYPE (sym),
-				    sizeof (struct type));
-			  }
+                          replace_type (*type, SYMBOL_TYPE (sym));
 		      }
 		  }
 	      }
@@ -5377,7 +5562,9 @@ start_stabs (void)
   /* FIXME: If common_block_name is not already NULL, we should complain().  */
   common_block_name = NULL;
 
-  os9k_stabs = 0;
+#if 0 /* OBSOLETE OS9K */
+// OBSOLETE   os9k_stabs = 0;
+#endif /* OBSOLETE OS9K */
 }
 
 /* Call after end_symtab() */

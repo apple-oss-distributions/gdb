@@ -28,6 +28,7 @@
 #include "varobj.h"
 #include "value.h"
 #include <ctype.h>
+#include "gdb_string.h"
 
 extern int varobjdebug;		/* defined in varobj.c */
 
@@ -117,6 +118,7 @@ mi_report_var_creation (struct ui_out *uiout, struct varobj *var)
       ui_out_field_skip (uiout, "name");
       ui_out_field_skip (uiout, "numchild");
       ui_out_field_skip (uiout, "type");
+      ui_out_field_skip (uiout, "dynamic_type");
       ui_out_field_skip (uiout, "typecode");
       ui_out_field_skip (uiout, "in_scope");
       return;
@@ -137,6 +139,17 @@ mi_report_var_creation (struct ui_out *uiout, struct varobj *var)
       ui_out_field_string (uiout, "type", type);
       typecode = typecode_as_string (var);
       ui_out_field_string (uiout, "typecode", typecode);
+      xfree (type);
+    }
+
+  type = varobj_get_dynamic_type (var);
+  if (type == NULL)
+    {
+      ui_out_field_string (uiout, "dynamic_type", "");
+    }
+  else
+    {
+      ui_out_field_string (uiout, "dynamic_type", type);
       xfree (type);
     }
 
@@ -392,8 +405,9 @@ mi_cmd_var_list_children (char *command, char **argv, int argc)
   int numchild;
   int print_value = 0;
   char *type;
+  struct cleanup *cleanup_children = NULL;
 
-  if (argc > 2)
+  if (argc == 0 || argc > 2)
     error ("mi_cmd_var_list_children: Usage: NAME [SHOW_VALUE].");
 
   if (argc == 2)
@@ -412,11 +426,13 @@ mi_cmd_var_list_children (char *command, char **argv, int argc)
   if (numchild <= 0)
     return MI_CMD_DONE;
 
-  ui_out_tuple_begin (uiout, "children");
+  /* APPLE LOCAL: CHILDREN is a list, not a tuple. */
+  cleanup_children = make_cleanup_ui_out_list_begin_end (uiout, "children");
   cc = childlist;
   while (*cc != NULL)
     {
-      ui_out_tuple_begin (uiout, "child");
+      struct cleanup *cleanup_child;
+      cleanup_child = make_cleanup_ui_out_tuple_begin_end (uiout, "child");
       ui_out_field_string (uiout, "name", varobj_get_objname (*cc));
       ui_out_field_string (uiout, "exp", varobj_get_expression (*cc));
       ui_out_field_int (uiout, "numchild", varobj_get_num_children (*cc));
@@ -425,17 +441,33 @@ mi_cmd_var_list_children (char *command, char **argv, int argc)
       if (type)
 	{
 	  char *typecode;
-	  ui_out_field_string (uiout, "type", varobj_get_type (*cc));
+	  ui_out_field_string (uiout, "type", type);
+	  xfree (type);
+
 	  typecode = typecode_as_string (*cc);
 	  ui_out_field_string (uiout, "typecode", typecode);
 
+	  type = varobj_get_dynamic_type (*cc);
+	  if (type)
+	    {
+	      ui_out_field_string (uiout, "dynamic_type", type);
+	      xfree (type);
+	    }
+	  else
+	    ui_out_field_skip (uiout, "dynamic_type");
 	}
+      else
+	{
+	  ui_out_field_skip (uiout, "type");
+	  ui_out_field_skip (uiout, "dynamic_type");
+	}
+
       if (print_value)
 	ui_out_field_string (uiout, "value", varobj_get_value (*cc));
-      ui_out_tuple_end (uiout);
+      do_cleanups (cleanup_child);
       cc++;
     }
-  ui_out_tuple_end (uiout);
+  do_cleanups (cleanup_children);
   xfree (childlist);
   return MI_CMD_DONE;
 }
@@ -444,6 +476,7 @@ enum mi_cmd_result
 mi_cmd_var_info_type (char *command, char **argv, int argc)
 {
   struct varobj *var;
+  char *type;
 
   if (argc != 1)
     error ("mi_cmd_var_info_type: Usage: NAME.");
@@ -453,7 +486,15 @@ mi_cmd_var_info_type (char *command, char **argv, int argc)
   if (var == NULL)
     error ("mi_cmd_var_info_type: Variable object not found");
 
-  ui_out_field_string (uiout, "type", varobj_get_type (var));
+  type = varobj_get_type (var);
+  if (type)
+    {
+      ui_out_field_string (uiout, "type", type);
+      xfree (type);
+    }
+  else
+    ui_out_field_skip (uiout, type);
+
   return MI_CMD_DONE;
 }
 
@@ -646,7 +687,7 @@ mi_cmd_var_update (char *command, char **argv, int argc)
   struct varobj *var;
   struct varobj **rootlist;
   struct varobj **cr;
-  char *name;
+  struct cleanup *cleanup;
   int nv;
 
   if (argc == 0)
@@ -658,10 +699,11 @@ mi_cmd_var_update (char *command, char **argv, int argc)
   if ((argc == 1) && (*argv[0] == '*') && (*(argv[0] + 1) == '\0'))
     {
       nv = varobj_list (&rootlist);
-      ui_out_tuple_begin (uiout, "changelist");
+/* APPLE LOCAL: changelist is a list, not a tuple, in our mi1 */
+      cleanup = make_cleanup_ui_out_list_begin_end (uiout, "changelist");
       if (nv <= 0)
 	{
-	  ui_out_tuple_end (uiout);
+	  do_cleanups (cleanup);
 	  return MI_CMD_DONE;
 	}
       cr = rootlist;
@@ -671,14 +713,13 @@ mi_cmd_var_update (char *command, char **argv, int argc)
 	  cr++;
 	}
       xfree (rootlist);
-      ui_out_tuple_end (uiout);
+      do_cleanups (cleanup);
     }
   else
     {
+/* APPLE LOCAL: -var-update accepts multiple varobj names, not just one. */
       int i;
-      struct cleanup *list_chain;
-
-      list_chain = make_cleanup_ui_out_tuple_begin_end (uiout, "changelist");
+      cleanup = make_cleanup_ui_out_list_begin_end (uiout, "changelist");
 
       for (i = 0; i < argc; i++)
 	{
@@ -690,8 +731,7 @@ mi_cmd_var_update (char *command, char **argv, int argc)
 	  
 	  varobj_update_one (var);
 	}
-      
-      do_cleanups (list_chain);
+      do_cleanups (cleanup);
     }
     return MI_CMD_DONE;
 }
@@ -703,8 +743,8 @@ mi_cmd_var_update (char *command, char **argv, int argc)
 static int
 varobj_update_one (struct varobj *var)
 {
-  struct varobj **changelist;
-  struct varobj **cc;
+  struct varobj_changelist *changelist;
+  struct cleanup *cleanup;
   int nc;
 
   nc = varobj_update (&var, &changelist);
@@ -718,41 +758,75 @@ varobj_update_one (struct varobj *var)
     return 1;
   else if (nc == -1 || nc == -3)
     {
-      ui_out_list_begin (uiout, "varobj");
+      /* APPLE LOCAL: each varobj tuple is named with VAROBJ; not anonymous */
+      cleanup = make_cleanup_ui_out_tuple_begin_end (uiout, "varobj");
       ui_out_field_string (uiout, "name", varobj_get_objname(var));
       ui_out_field_string (uiout, "in_scope", "false");
-      ui_out_list_end (uiout);
+      do_cleanups (cleanup);
       return -1;
     }
   else if (nc == -2)
     {
       char *typecode;
+      char *type;
 
-      ui_out_list_begin (uiout, "varobj");
+      /* APPLE LOCAL: each varobj tuple is named with VAROBJ; not anonymous */
+      cleanup = make_cleanup_ui_out_tuple_begin_end (uiout, "varobj");
       ui_out_field_string (uiout, "name", varobj_get_objname (var));
       ui_out_field_string (uiout, "in_scope", "true");
       ui_out_field_string (uiout, "type_changed", "true");
-      ui_out_field_string (uiout, "new_type", varobj_get_type(var));
+      type = varobj_get_type (var);
+      if (type)
+	{
+	  ui_out_field_string (uiout, "new_type", type);
+	  xfree (type);
+	}
+      else
+	ui_out_field_skip (uiout, "new_type");
+
+      type = varobj_get_dynamic_type (var);
+      if (type)
+	{
+	  ui_out_field_string (uiout, "new_dynamic_type", type);
+	  xfree (type);
+	}
+      else
+	ui_out_field_skip (uiout, "new_dynamic_type");
+
       typecode = typecode_as_string (var);
       ui_out_field_string (uiout, "new_typecode", typecode);
       ui_out_field_int (uiout, "new_num_children", 
 			   varobj_get_num_children(var));
-      ui_out_list_end (uiout);
+      do_cleanups (cleanup);
     }
   else
     {
       
-      cc = changelist;
-      while (*cc != NULL)
+      struct varobj *var;
+      enum varobj_type_change type_changed;
+      var = varobj_changelist_pop (changelist, &type_changed);
+
+      while (var != NULL)
 	{
-	  ui_out_list_begin (uiout, "varobj");
-	  ui_out_field_string (uiout, "name", varobj_get_objname (*cc));
+        /* APPLE LOCAL: each varobj tuple is named with VAROBJ; not anonymous */
+	  cleanup = make_cleanup_ui_out_tuple_begin_end (uiout, "varobj");
+	  ui_out_field_string (uiout, "name", varobj_get_objname (var));
 	  ui_out_field_string (uiout, "in_scope", "true");
-	  ui_out_field_string (uiout, "type_changed", "false");
-	  ui_out_list_end (uiout);
-	  cc++;
+	  if (type_changed == VAROBJ_TYPE_UNCHANGED)
+	    ui_out_field_string (uiout, "type_changed", "false");
+	  else
+	    {
+	      ui_out_field_string (uiout, "type_changed", "true");
+	      ui_out_field_string (uiout, "new_dynamic_type", 
+				   varobj_get_dynamic_type (var));
+	      ui_out_field_int (uiout, "new_num_children", 
+				varobj_get_num_children(var));
+	    }
+	    
+	  do_cleanups (cleanup);
+	  var = varobj_changelist_pop (changelist, &type_changed);
 	}
-      xfree (changelist);
+
       return 1;
     }
   return 1;

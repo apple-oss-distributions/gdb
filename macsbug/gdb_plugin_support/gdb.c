@@ -36,7 +36,6 @@
 #include "inferior.h"	// stop_bpstat
 #include "symtab.h"	// struct symtab_and_line, find_pc_line
 #include "frame.h"   	// selected_frame
-#include "parser-defs.h"// target_map_name_to_register
 #include "gdbarch.h"	// gdbarch_register_raw_size
 #include "gdbcore.h"	// memory_error
 
@@ -1510,7 +1509,7 @@ char *gdb_set_register(char *theRegister, void *value, int size)
 	++start;
     end = start + strlen(start);
     
-    regnum = target_map_name_to_register(start, end - start);
+    regnum = frame_map_name_to_regnum(start, end - start);
     if (regnum < 0)
     	return ("bad register");
     
@@ -1574,13 +1573,13 @@ void *gdb_get_register(char *theRegister, void *value, int *size)
 	++theRegister;
     end = theRegister + strlen(theRegister);
     
-    regnum = target_map_name_to_register(theRegister, end - theRegister);
+    regnum = frame_map_name_to_regnum(theRegister, end - theRegister);
     if (regnum < 0) {
 	strcpy((char *)value, "bad register");
 	return (NULL);
     }
-            
-    if (read_relative_register_raw_bytes(regnum, (char *)value)) {
+
+    if (frame_register_read (selected_frame, regnum, (char *)value)) {
     	strcpy((char *)value, "value not available");
 	return (NULL);
     }

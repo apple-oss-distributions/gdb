@@ -131,15 +131,21 @@ static void macosx_symbol_types_init ()
   }
 }
 
-static unsigned char macosx_symbol_type (macho_type, macho_other)
+static unsigned char macosx_symbol_type (macho_type, macho_other, abfd)
      unsigned char macho_type;
      unsigned char macho_other;
+     bfd *abfd;
 {
   unsigned char ntype = macosx_symbol_types[macho_type];
 
   if ((macho_type & BFD_MACH_O_N_TYPE) == BFD_MACH_O_N_SECT) {
     
     if (macho_other == 1) {
+      ntype |= N_TEXT;
+    } else if (macho_other <= abfd->tdata.mach_o_data->nsects
+	       && abfd->tdata.mach_o_data->sections[macho_other - 1]->segname != NULL
+	       && strcmp("__TEXT", 
+			 abfd->tdata.mach_o_data->sections[macho_other - 1]->segname) == 0) {
       ntype |= N_TEXT;
     } else {
       /* complain (&unknown_macho_section_complaint, local_hex_string (macho_other)); */
@@ -167,7 +173,7 @@ void macosx_internalize_symbol (in, ext, abfd)
     error ("unable to internalize symbol (unknown endianness)");
   }
 
-  in->n_type = macosx_symbol_type (ext->e_type[0], ext->e_other[0]);
+  in->n_type = macosx_symbol_type (ext->e_type[0], ext->e_other[0], abfd);
   in->n_other = 0;
 }
 

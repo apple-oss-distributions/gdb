@@ -13,12 +13,13 @@ AC_CONFIG_AUX_DIR(`cd $srcdir;pwd`/../..)
 AC_CANONICAL_SYSTEM
 
 # Directories to use in all configurations.
-configdirs="gdb.asm \
+configdirs="gdb.arch \
+            gdb.asm \
             gdb.base \
             gdb.c++ \
             gdb.java \
+            gdb.objc \
             gdb.disasm \
-            gdb.chill \
             gdb.mi \
             gdb.threads \
             gdb.trace"
@@ -42,6 +43,10 @@ case "${target}" in
 	*)		if test "x${with_stabs}" = x"yes" ; then
 			  configdirs="${configdirs} ${stabsdirs}"
 			fi ;;
+esac
+
+case "${target}" in
+    powerpc-*-darwin*) configdirs="${configdirs} gdb.apple" ;;
 esac
 
 # Directory with HP specific tests. They will run only with HP's compilers. 

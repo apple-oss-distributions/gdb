@@ -296,7 +296,10 @@ dis_asm_print_address (bfd_vma addr, struct disassemble_info *info)
   print_address (addr, info->stream);
 }
 
-/* Read an integer from debugged memory, given address and number of bytes.  */
+/* Argument / return result struct for use with
+   do_captured_read_memory_integer().  MEMADDR and LEN are filled in
+   by gdb_read_memory_integer().  RESULT is the contents that were
+   successfully read from MEMADDR of length LEN.  */
 
 struct captured_read_memory_integer_arguments
 {
@@ -304,6 +307,13 @@ struct captured_read_memory_integer_arguments
   int len;
   LONGEST result;
 };
+
+/* Helper function for gdb_read_memory_integer().  DATA must be a
+   pointer to a captured_read_memory_integer_arguments struct. 
+   Return 1 if successful.  Note that the catch_errors() interface
+   will return 0 if an error occurred while reading memory.  This
+   choice of return code is so that we can distinguish between
+   success and failure.  */
 
 static int
 do_captured_read_memory_integer (void *data)
@@ -314,8 +324,12 @@ do_captured_read_memory_integer (void *data)
 
   args->result = read_memory_integer (memaddr, len);
 
-  return 0;
+  return 1;
 }
+
+/* Read memory at MEMADDR of length LEN and put the contents in
+   RETURN_VALUE.  Return 0 if MEMADDR couldn't be read and non-zero
+   if successful.  */
 
 int
 safe_read_memory_integer (CORE_ADDR memaddr, int len, LONGEST *return_value)
@@ -327,7 +341,7 @@ safe_read_memory_integer (CORE_ADDR memaddr, int len, LONGEST *return_value)
 
   status = catch_errors (do_captured_read_memory_integer, &args,
                         "", RETURN_MASK_ALL);
-  if (!status)
+  if (status)
     *return_value = args.result;
 
   return status;
@@ -376,6 +390,14 @@ read_memory_string (CORE_ADDR memaddr, char *buffer, int max_len)
       if (i < cnt && !*cp)
 	break;
     }
+}
+
+CORE_ADDR
+read_memory_typed_address (CORE_ADDR addr, struct type *type)
+{
+  char *buf = alloca (TYPE_LENGTH (type));
+  read_memory (addr, buf, TYPE_LENGTH (type));
+  return extract_typed_address (buf, type);
 }
 
 /* Same as target_write_memory, but report an error if can't write.  */

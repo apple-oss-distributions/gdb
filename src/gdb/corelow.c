@@ -202,9 +202,8 @@ core_close (int quitting)
       core_bfd = NULL;
       if (core_ops.to_sections)
 	{
-	  xfree (core_ops.to_sections);
-	  core_ops.to_sections = NULL;
-	  core_ops.to_sections_end = NULL;
+	  target_resize_to_sections
+	    (&core_ops, core_ops.to_sections_end - core_ops.to_sections);
 	}
     }
   core_vec = NULL;
@@ -321,7 +320,12 @@ core_open (char *filename, int from_tty)
     error ("\"%s\": Can't find sections: %s",
 	   bfd_get_filename (core_bfd), bfd_errmsg (bfd_get_error ()));
 
-  set_gdbarch_from_file (core_bfd);
+  /* If we have no exec file, try to set the architecture from the
+     core file.  We don't do this unconditionally since an exec file
+     typically contains more information that helps us determine the
+     architecture than a core file.  */
+  if (!exec_bfd)
+    set_gdbarch_from_file (core_bfd);
 
   ontop = !push_target (&core_ops);
   discard_cleanups (old_chain);
@@ -358,8 +362,9 @@ core_open (char *filename, int from_tty)
 
       /* Now, set up the frame cache, and print the top of stack.  */
       flush_cached_frames ();
-      select_frame (get_current_frame (), 0);
-      print_stack_frame (selected_frame, selected_frame_level, 1);
+      select_frame (get_current_frame ());
+      print_stack_frame (selected_frame,
+			 frame_relative_level (selected_frame), 1);
     }
   else
     {

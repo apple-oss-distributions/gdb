@@ -171,13 +171,13 @@ all				: 	$(OFILE_DIR)  			\
 installsrc			:
 	mkdir -p  $(SRCROOT)
 	chmod 755 $(SRCROOT)
-	gnutar cf - $(INSTALLSRC_FILES) | (cd $(SRCROOT); gnutar xf -)
+	gnutar cf - $(INSTALLSRC_FILES) | (cd $(SRCROOT) && gnutar xf -)
 	chmod 444 $(SRCROOT)/*
 	$(MAKE) -C gdb_plugin_support SRCROOT=$(SRCROOT)/gdb_plugin_support installsrc
 
 clean				:
 	rm -rf $(OFILE_DIR) $(PLUGIN) $(gdb_plugin_support.o)
-	cd $(PLUGIN_SUPPORT); make clean SRCROOT=$(PLUGIN_SUPPORT); cd ..
+	cd $(PLUGIN_SUPPORT) && make clean SRCROOT=$(PLUGIN_SUPPORT)
 
 installhdrs			:	
 
@@ -211,7 +211,7 @@ $(OFILE_DIR) $(SYMROOT) $(DSTDIR):
 	mkdir -p $@
 
 gdb_plugin_support.o 		: 	force
-	cd $(PLUGIN_SUPPORT); make SRCROOT=$(PLUGIN_SUPPORT); cd ..
+	cd $(PLUGIN_SUPPORT) && make SRCROOT=$(PLUGIN_SUPPORT)
 
 force				:
 

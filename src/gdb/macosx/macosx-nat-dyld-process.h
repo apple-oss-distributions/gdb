@@ -34,6 +34,12 @@ PARAMS ((struct dyld_objfile_info *old,
 	 struct dyld_objfile_info *new,
 	 struct dyld_objfile_info *result));
 
+void dyld_merge_shlibs
+PARAMS ((const struct macosx_dyld_thread_status *s,
+	 struct dyld_path_info *d,
+	 struct dyld_objfile_info *old, 
+	 struct dyld_objfile_info *new)); 
+
 void dyld_remove_objfiles
 PARAMS ((const struct dyld_path_info *d, struct dyld_objfile_info *result));
 
@@ -49,13 +55,20 @@ PARAMS ((struct dyld_objfile_info *info));
 void dyld_update_shlibs
 PARAMS ((const struct macosx_dyld_thread_status *s,
 	 struct dyld_path_info *d,
-	 struct dyld_objfile_info *old,
-	 struct dyld_objfile_info *new,
 	 struct dyld_objfile_info *result));
 
-unsigned int dyld_parse_load_level (const char *s);
+void dyld_merge_shlib
+PARAMS ((const struct macosx_dyld_thread_status *s,
+	 struct dyld_path_info *d,
+	 struct dyld_objfile_info *old, 
+	 struct dyld_objfile_entry *n));
 
-int dyld_minimal_load_flag (const struct dyld_path_info *d, 
-			    struct dyld_objfile_entry *e);
+int dyld_objfile_allocated PARAMS ((struct objfile *o));
+
+unsigned int dyld_parse_load_level PARAMS ((const char *s));
+
+int dyld_minimal_load_flag
+PARAMS ((const struct dyld_path_info *d,
+	 struct dyld_objfile_entry *e));
 
 #endif /* __GDB_MACOSX_NAT_DYLD_PROCESS_H__ */

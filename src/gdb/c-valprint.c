@@ -21,6 +21,7 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
+#include "gdb_string.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "expression.h"
@@ -453,7 +454,7 @@ c_val_print (struct type *type, char *valaddr, int embedded_offset,
       break;
 
     case TYPE_CODE_ERROR:
-      fprintf_filtered (stream, "<error type>");
+      fprintf_filtered (stream, "<unknown type>");
       break;
 
     case TYPE_CODE_UNDEF:

@@ -1910,6 +1910,7 @@ init_child_ops (void)
   child_ops.to_terminal_inferior = terminal_inferior;
   child_ops.to_terminal_ours_for_output = terminal_ours_for_output;
   child_ops.to_terminal_ours = terminal_ours;
+  child_ops.to_terminal_save_ours = terminal_save_ours;
   child_ops.to_terminal_info = child_terminal_info;
   child_ops.to_kill = child_kill_inferior;
   child_ops.to_load = child_load;
@@ -1965,7 +1966,7 @@ set_upload_type (char *ignore, int from_tty)
 }
 
 void
-_initialize_inftarg (void)
+_initialize_wince (void)
 {
   struct cmd_list_element *set;
   init_child_ops ();

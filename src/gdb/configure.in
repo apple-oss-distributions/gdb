@@ -35,9 +35,10 @@ AM_PROG_CC_STDC
 AC_CONFIG_AUX_DIR(`cd $srcdir;pwd`/..)
 AC_CANONICAL_SYSTEM
 
-dnl gdb doesn't use gettext, but bfd does.  We call this to ensure we
-dnl link with the correct libraries.
+dnl Set up for gettext.  PACKAGE is used when we call bindtextdomain.
 ALL_LINGUAS=
+CY_GNU_GETTEXT
+AC_DEFINE(PACKAGE, "gdb", [Name of this package. ])
 
 dnl List of object files added by configure.
 
@@ -52,6 +53,7 @@ CONFIG_CLEAN=
 CONFIG_INSTALL=
 CONFIG_UNINSTALL=
 
+SUBDIRS="doc testsuite nlm"
 configdirs="doc testsuite"
 
 AC_ARG_ENABLE(multi-ice,
@@ -73,6 +75,7 @@ changequote(,)dnl
 . ${srcdir}/configure.host
 
 . ${srcdir}/configure.tgt
+
 
 dnl
 changequote([,])dnl
@@ -120,7 +123,7 @@ esac; esac
 
 AC_CHECK_HEADERS(ctype.h nlist.h link.h thread_db.h proc_service.h \
 	memory.h objlist.h ptrace.h sgtty.h stddef.h stdlib.h \
-	string.h sys/procfs.h sys/ptrace.h sys/reg.h stdint.h \
+	string.h sys/procfs.h sys/proc.h sys/ptrace.h sys/reg.h stdint.h \
 	term.h termio.h termios.h unistd.h wait.h sys/wait.h \
 	wchar.h wctype.h asm/debugreg.h sys/debugreg.h sys/select.h \
 	time.h sys/file.h sys/ioctl.h sys/user.h sys/fault.h sys/syscall.h \
@@ -432,6 +435,7 @@ if test ${host} = ${target} ; then
   AC_MSG_RESULT($gdb_cv_have_struct_link_map32)
   if test $gdb_cv_have_struct_link_map32 = yes; then
     AC_DEFINE(HAVE_STRUCT_LINK_MAP32)
+    AC_DEFINE(_SYSCALL32)
   fi
 fi
 
@@ -479,18 +483,24 @@ if test $gdb_cv_printf_has_long_long = yes; then
 fi
 AC_MSG_RESULT($gdb_cv_printf_has_long_long)
 
-dnl See if compiler supports "long double" type.  Can't use AC_C_LONG_DOUBLE
-dnl because autoconf complains about cross-compilation issues.  However, this
-dnl code uses the same variables as the macro for compatibility.
+# APPLE LOCAL: Hard code long double to 'no' because gcc likes to complain
+# when it is used on our platform.
 
-AC_MSG_CHECKING(for long double support in compiler)
-AC_CACHE_VAL(ac_cv_c_long_double,
-[AC_TRY_COMPILE(, [long double foo;],
-ac_cv_c_long_double=yes, ac_cv_c_long_double=no)])
-AC_MSG_RESULT($ac_cv_c_long_double)
-if test $ac_cv_c_long_double = yes; then
-  AC_DEFINE(HAVE_LONG_DOUBLE)
-fi
+ac_cv_c_long_double=no
+
+#dnl See if compiler supports "long double" type.  Can't use AC_C_LONG_DOUBLE
+#dnl because autoconf complains about cross-compilation issues.  However, this
+#dnl code uses the same variables as the macro for compatibility.
+#
+#AC_MSG_CHECKING(for long double support in compiler)
+#AC_CACHE_VAL(ac_cv_c_long_double,
+#[AC_TRY_COMPILE(, [long double foo;],
+#ac_cv_c_long_double=yes, ac_cv_c_long_double=no)])
+#ac_cv_c_long_double=no
+#AC_MSG_RESULT($ac_cv_c_long_double)
+#if test $ac_cv_c_long_double = yes; then
+#  AC_DEFINE(HAVE_LONG_DOUBLE)
+#fi
 
 dnl See if the compiler and runtime support printing long doubles
 
@@ -506,6 +516,7 @@ int main () {
 gdb_cv_printf_has_long_double=yes,
 gdb_cv_printf_has_long_double=no,
 gdb_cv_printf_has_long_double=no)])
+gdb_cv_printf_has_long_double=no
 if test $gdb_cv_printf_has_long_double = yes; then
   AC_DEFINE(PRINTF_HAS_LONG_DOUBLE)
 fi
@@ -525,6 +536,7 @@ int main () {
 gdb_cv_scanf_has_long_double=yes,
 gdb_cv_scanf_has_long_double=no,
 gdb_cv_scanf_has_long_double=no)])
+gdb_cv_scanf_has_long_double=no
 if test $gdb_cv_scanf_has_long_double = yes; then
   AC_DEFINE(SCANF_HAS_LONG_DOUBLE)
 fi
@@ -815,13 +827,20 @@ MMALLOC=
 AC_SUBST(MMALLOC_CFLAGS)
 AC_SUBST(MMALLOC)
 
+case "$host" in
+  *-apple-darwin* | *-apple-macos*)
+    mmalloc_default_value="true" ;;
+  *)
+    mmalloc_default_value="false" ;;
+esac
+    
 AC_ARG_WITH(mmalloc,
 [  --with-mmalloc          Use memory mapped malloc package],
 [case "${withval}" in
   yes)  want_mmalloc=true ;;
   no)   want_mmalloc=false;;
   *)    AC_MSG_ERROR(bad value ${withval} for GDB with-mmalloc option) ;;
-esac],[want_mmalloc=false])dnl
+esac],[want_mmalloc=${mmalloc_default_value}])dnl
 
 if test x$want_mmalloc = xtrue; then
    AC_DEFINE(USE_MMALLOC)
@@ -882,8 +901,6 @@ AC_SUBST(SER_HARDWIRE)
 dnl Figure out which term library to use.
 case "$gdb_host" in 
 "go32") TERM_LIB= ;;
-"rhapsody") TERM_LIB= ;;
-"macosx") TERM_LIB= ;;
 *)
   if test x$gdb_cv_os_cygwin = xyes; then
     TERM_LIB='`if test -r ../libtermcap/libtermcap.a; then echo ../libtermcap/libtermcap.a; else echo -ltermcap; fi`'
@@ -902,6 +919,17 @@ case "$gdb_host" in
   ;;
 esac
 AC_SUBST(TERM_LIB)
+
+case "$host" in
+*-apple-darwin* | *-apple-macos*)
+  MACOSX_NAT_DEPFILES="cached-symfile.o machoread.o symread.o pefread.o"
+  AC_DEFINE(ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE, 1, [When on a MacOS X host, enable some really nasty hacks to the generic gdb code.])
+;;
+*)
+  MACOSX_NAT_DEPFILES=
+;;
+esac
+AC_SUBST(MACOSX_NAT_DEPFILES)
 
 # libreadline needs libuser32.a in a cygwin environment
 WIN32LIBS=
@@ -974,9 +1002,9 @@ AC_ARG_ENABLE(gdbtk,
 	AC_MSG_ERROR(bad value ${enableval} given for gdbtk option) ;;
 esac],
 [
-# Default is on for everything but go32 and Cygwin
+# Default is on for everything but go32 and Cygwin and Mac OS X
 case "$host" in
-    *go32* | *windows*)
+    *go32* | *windows* | *darwin* | *macos10*)
 	;;
     *)
  	if test -d "${srcdir}/gdbtk" ; then
@@ -1108,6 +1136,9 @@ if test "${enable_gdbtk}" = "yes"; then
 	   fi
 	fi
     fi
+
+    SUBDIRS="${SUBDIRS} gdbtk"
+    configdirs="${configdirs} gdbtk"
 fi
 
 AC_SUBST(X_CFLAGS)
@@ -1338,7 +1369,6 @@ case "${GDB_MULTI_ARCH}" in
     *)  AC_MSG_ERROR("GDB: Unknown GDB_MULTI_ARCH value ${GDB_MULTI_ARCH}");;
 esac
 
-SUBDIRS="doc testsuite nlm"
 if test "${enable_multi_ice}" = "yes"; then
   SUBDIRS="${SUBDIRS} multi-ice"
 fi
@@ -1404,6 +1434,18 @@ AC_LINK_FILES($files, $links)
 dnl Check for exe extension set on certain hosts (e.g. Win32)
 AC_EXEEXT
 
+dnl  Detect the character set used by this host.
+
+dnl  At the moment, we just assume it's ISO-8859-1 (which is a
+dnl  superset of ASCII containing the characters needed for French,
+dnl  German, Spanish, Italian, and possibly others), but if were
+dnl  *were* to support any host character sets other than ISO-8859-1,
+dnl  here's where we'd detect it.
+AC_DEFINE(GDB_DEFAULT_HOST_CHARSET, "ISO-8859-1",
+          [Define to be a string naming the default host character set.])
+
+AM_ICONV
+
 AC_CONFIG_SUBDIRS($configdirs)
 AC_OUTPUT(Makefile .gdbinit:gdbinit.in,
 [
@@ -1412,7 +1454,8 @@ dnl provided by makefile fragments.
 dnl
 if test "${nativefile}" = ""; then
         < Makefile \
-        sed -e '/^NATDEPFILES[[ 	]]*=[[ 	]]*/s//# NATDEPFILES=/' \
+        sed -e '/^NATDEPFILES[[ 	]]*=.*\\$/,/[[^\\]]$/s/^/# /' \
+            -e '/^NATDEPFILES[[ 	]]*=/s/^/# /' \
         | sed -e '/^\(NATDEPFILES[[ 	]]*[[+]]=[[ 	]]*\)/s//# \1/' \
 	> Makefile.tem
 mv -f Makefile.tem Makefile

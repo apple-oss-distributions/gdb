@@ -151,8 +151,7 @@ static void
 unwrite_protect_page (int pid, CORE_ADDR page_start, int original_permissions)
 {
   kern_return_t kret;
-
-    kret = vm_protect (macosx_status->task, page_start, 4096, 0, original_permissions);
+  kret = vm_protect (macosx_status->task, page_start, 4096, 0, original_permissions);
 }
 
 

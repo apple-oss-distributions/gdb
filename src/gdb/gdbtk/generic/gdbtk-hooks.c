@@ -168,6 +168,7 @@ gdbtk_add_hooks (void)
   error_begin_hook = gdbtk_error_begin;
 
   annotate_signal_hook = gdbtk_annotate_signal;
+  annotate_signalled_hook = gdbtk_annotate_signal;
 }
 
 /* These control where to put the gdb output which is created by
@@ -525,13 +526,13 @@ gdbtk_call_command (struct cmd_list_element *cmdblk,
       running_now = 1;
       if (!No_Update)
 	Tcl_Eval (gdbtk_interp, "gdbtk_tcl_busy");
-      (*cmdblk->function.cfunc) (arg, from_tty);
+      cmd_func (cmdblk, arg, from_tty);
       running_now = 0;
       if (!No_Update)
 	Tcl_Eval (gdbtk_interp, "gdbtk_tcl_idle");
     }
   else
-    (*cmdblk->function.cfunc) (arg, from_tty);
+    cmd_func (cmdblk, arg, from_tty);
 }
 
 /* Called after a `set' command succeeds.  Runs the Tcl hook
@@ -736,7 +737,15 @@ gdbtk_trace_start_stop (int start, int from_tty)
 static void
 gdbtk_selected_frame_changed (int level)
 {
-  Tcl_UpdateLinkedVar (gdbtk_interp, "gdb_selected_frame_level");
+#if TCL_MAJOR_VERSION == 8 && TCL_MINOR_VERSION < 1
+  char *a;
+  xasprintf (&a, "%d", level);
+  Tcl_SetVar (gdbtk_interp, "gdb_selected_frame_level", a, TCL_GLOBAL_ONLY);
+  xfree (a);
+#else
+  Tcl_SetVar2Ex (gdbtk_interp, "gdb_selected_frame_level", NULL,
+		 Tcl_NewIntObj (level), TCL_GLOBAL_ONLY);
+#endif
 }
 
 /* Called when the current thread changes. */

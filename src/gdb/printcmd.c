@@ -40,6 +40,7 @@
 #include "objfiles.h"		/* ditto */
 #include "completer.h"		/* for completion functions */
 #include "ui-out.h"
+#include "gdb_assert.h"
 
 extern int asm_demangle;	/* Whether to demangle syms in asm printouts */
 extern int addressprint;	/* Whether to print hex addresses in HLL " */
@@ -390,10 +391,10 @@ print_scalar_formatted (char *valaddr, struct type *type, int format, int size,
     val_long = unpack_long (type, valaddr);
 
   /* If the value is a pointer, and pointers and addresses are not the
-     same, then at this point, the value's length is TARGET_ADDR_BIT, not
-     TYPE_LENGTH (type).  */
+     same, then at this point, the value's length (in target bytes) is
+     TARGET_ADDR_BIT/TARGET_CHAR_BIT, not TYPE_LENGTH (type).  */
   if (TYPE_CODE (type) == TYPE_CODE_PTR)
-    len = TARGET_ADDR_BIT;
+    len = TARGET_ADDR_BIT / TARGET_CHAR_BIT;
 
   /* If we are printing it as unsigned, truncate it in case it is actually
      a negative signed value (e.g. "print/u (short)-1" should print 65535
@@ -923,25 +924,6 @@ print_command_1 (char *exp, int inspect, int voidprint)
       old_chain = make_cleanup (free_current_contents, &expr);
       cleanup = 1;
       val = evaluate_expression (expr);
-
-      /* C++: figure out what type we actually want to print it as.  */
-      type = VALUE_TYPE (val);
-
-      if (objectprint
-	  && (TYPE_CODE (type) == TYPE_CODE_PTR
-	      || TYPE_CODE (type) == TYPE_CODE_REF)
-	  && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_STRUCT
-	      || TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_UNION))
-	{
-	  struct value *v;
-
-	  v = value_from_vtable_info (val, TYPE_TARGET_TYPE (type));
-	  if (v != 0)
-	    {
-	      val = v;
-	      type = VALUE_TYPE (val);
-	    }
-	}
     }
   else
     val = access_value_history (0);
@@ -1809,6 +1791,10 @@ print_frame_args (struct symbol *func, struct frame_info *fi, int num,
   if (func)
     {
       b = SYMBOL_BLOCK_VALUE (func);
+      /* Function blocks are order sensitive, and thus should not be
+	 hashed.  */
+      gdb_assert (BLOCK_HASHTABLE (b) == 0);
+
       ALL_BLOCK_SYMBOLS (b, i, sym)
         {
 	  QUIT;

@@ -606,6 +606,10 @@ prepare_terminal_settings (meta_flag, otio, tiop)
   tiop->c_cc[VDSUSP] = _POSIX_VDISABLE;
 #endif
 
+#if defined (VDISCARD)
+  tiop->c_cc[VDISCARD] = _POSIX_VDISABLE;
+#endif
+
 #endif /* TERMIOS_TTY_DRIVER && _POSIX_VDISABLE */
 }
 #endif  /* NEW_TTY_DRIVER */

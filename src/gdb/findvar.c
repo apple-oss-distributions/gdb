@@ -33,6 +33,7 @@
 #include "floatformat.h"
 #include "symfile.h"		/* for overlay functions */
 #include "regcache.h"
+#include "builtin-regs.h"
 
 /* Basic byte-swapping routines.  GDB has needed these for a long time...
    All extract a target-format integer at ADDR which is LEN bytes long.  */
@@ -46,17 +47,17 @@ you lose
 #endif
 
 LONGEST
-extract_signed_integer (void *addr, int len)
+extract_signed_integer (const void *addr, int len)
 {
   LONGEST retval;
-  unsigned char *p;
-  unsigned char *startaddr = (unsigned char *) addr;
-  unsigned char *endaddr = startaddr + len;
+  const unsigned char *p;
+  const unsigned char *startaddr = addr;
+  const unsigned char *endaddr = startaddr + len;
 
   if (len > (int) sizeof (LONGEST))
     error ("\
 That operation is not available on integers of more than %d bytes.",
-	   sizeof (LONGEST));
+	   (int) sizeof (LONGEST));
 
   /* Start at the most significant end of the integer, and work towards
      the least significant.  */
@@ -80,17 +81,17 @@ That operation is not available on integers of more than %d bytes.",
 }
 
 ULONGEST
-extract_unsigned_integer (void *addr, int len)
+extract_unsigned_integer (const void *addr, int len)
 {
   ULONGEST retval;
-  unsigned char *p;
-  unsigned char *startaddr = (unsigned char *) addr;
-  unsigned char *endaddr = startaddr + len;
+  const unsigned char *p;
+  const unsigned char *startaddr = addr;
+  const unsigned char *endaddr = startaddr + len;
 
   if (len > (int) sizeof (ULONGEST))
     error ("\
 That operation is not available on integers of more than %d bytes.",
-	   sizeof (ULONGEST));
+	   (int) sizeof (ULONGEST));
 
   /* Start at the most significant end of the integer, and work towards
      the least significant.  */
@@ -299,8 +300,20 @@ value_of_register (int regnum, struct frame_info *frame)
   char *raw_buffer = (char*) alloca (MAX_REGISTER_RAW_SIZE);
   enum lval_type lval;
 
+  /* Builtin registers lie completly outside of the range of normal
+     registers.  Catch them early so that the target never sees them.  */
+  if (regnum >= NUM_REGS + NUM_PSEUDO_REGS)
+    return value_of_builtin_reg (regnum, selected_frame);
+
   get_saved_register (raw_buffer, &optim, &addr,
 		      frame, regnum, &lval);
+
+  /* FIXME: cagney/2002-05-15: This test is just bogus.
+
+     It indicates that the target failed to supply a value for a
+     register because it was "not available" at this time.  Problem
+     is, the target still has the register and so get saved_register()
+     may be returning a value saved on the stack.  */
 
   if (register_cached (regnum) < 0)
     return NULL;		/* register value not available */
@@ -807,12 +820,12 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
   VALUE_LVAL (v) = lval;
   VALUE_ADDRESS (v) = addr;
 
-  /* Convert raw data to virtual format if necessary.  */
+  /* Convert the raw register to the corresponding data value's memory
+     format, if necessary.  */
 
-  if (REGISTER_CONVERTIBLE (regnum))
+  if (CONVERT_REGISTER_P (regnum))
     {
-      REGISTER_CONVERT_TO_VIRTUAL (regnum, type,
-				   raw_buffer, VALUE_CONTENTS_RAW (v));
+      REGISTER_TO_VALUE (regnum, type, raw_buffer, VALUE_CONTENTS_RAW (v));
     }
   else
     {
