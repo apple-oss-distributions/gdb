@@ -1414,6 +1414,8 @@ hand_function_call (value_ptr function, struct type *expect_type,
            "To call this function anyway, you can cast the return type explicitly (e.g. 'print (float) fabs (3.0)')",
            (unsigned long) funaddr);
 
+  CHECK_TYPEDEF (value_type);
+
   {
     struct block *b = block_for_pc (funaddr);
     /* If compiled without -g, assume GCC 2.  */

@@ -358,9 +358,9 @@ ppc_parse_instructions (start, end, props)
     else if ((op & 0xfc1fffff) == 0x7c0802a6) /* mflr Rx */
       {
 	int target_reg = (op & 0x03e00000) >> 21;
-	if ((target_reg == 31) && saw_pic_base_setup)
+	if (saw_pic_base_setup)
 	  {
-	    props->pic_base_reg = 31;
+	    props->pic_base_reg = target_reg;
 	  }
 	else
 	  {

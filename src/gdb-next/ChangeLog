@@ -1,3 +1,51 @@
+2001-11-01  James Ingham  <jingham@inghji.apple.com>
+
+	* ppc-tdep.c (ppc_fast_show_stack_helper): Move most of the
+	functionality into this function, and set it as the
+	FAST_COUNT_STACK_DEPTH function, which is used in
+	mi_cmd_info_stack_depth.
+	* tm-ppc.h: Add define for FAST_COUNT_STACK_DEPTH
+	
+2001-10-31  James Ingham  <jingham@inghji.apple.com>
+
+	* ppc-tdep.c (ppc_fast_show_stack): New function.  Run up the
+	stack and return pc & fp for each frame, and a frame count.  Since
+	this doesn't build up the frame cache, it is much faster.
+	(ppc_frame_find_pc): We were looking in the wrong place for the
+	frame stored PC for signal frames.
+
+2001-10-23  James Ingham  <jingham@inghji.apple.com>
+
+	* nextstep-nat-dyld.c (next_dyld_update): If you have turned off
+	cfm with the inferior-auto-start-cfm variable, then don't call
+	update-cfm when you update the libraries.
+
+2001-10-17  James Ingham  <jingham@inghji.apple.com>
+
+	* ppc-tdep.c (ppc_frame_find_pc): Actually return the signal frame
+	value. Dopey bug...
+	(ppc_frame_saved_pc_after_call): remove spurious warning.  This is
+	always supposed to return the link register, and looking for the
+	frame saved value is not relevant.
+	(ppc_frame_chain_valid): Guard the call that reads the stack from
+	errors.  Callers don't expect ppc_frame_chain_valid to error out,
+	but it can if the stack is mauled so that the fp is an unreadable
+	address.
+
+	* ppc-frameinfo.h: define safe_read_memory_unsigned_integer, so
+	that ppc-tdep can use is.  
+	
+	* ppc-frameinfo.c (ppc_parse_instructions): Don't assume that the
+	pic base will use register 31.  The dyld stub code uses 11, for
+	instance.
+
+2001-10-02  Jim Ingham (jingham@apple.com) and Jason Molenda (jmolenda@apple.com)
+
+	* nextstep-nat-inferior.c (next_fetch_event):  Accept a third
+	type of timeout:  Check for an event to read, but don't block if
+	there's nothing there.
+	(next_process_events, next_child_resume):  Update callers.
+
 2001-08-06  James Ingham  <jingham@inghji.apple.com>
 
 	* ppc-frameinfo.c (safe_read_memory_unsigned_integer): The wrapped

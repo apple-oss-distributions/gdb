@@ -3359,11 +3359,17 @@ print_one_breakpoint (struct breakpoint *b,
 	  ui_out_text (uiout, ":");
 	  ui_out_field_int (uiout, "line", b->line_number);
 	}
+      else if (b->address != 0)
+        {
+          print_address_symbolic (b->address, stb->stream, demangle, "");
+          ui_out_field_stream (uiout, "at", stb);
+        }
       else
 	{
-	  print_address_symbolic (b->address, stb->stream, demangle, "");
-	  ui_out_field_stream (uiout, "at", stb);
+	  /* This prints the user's string from "future break" */
+	  ui_out_field_string (uiout, "future-address", b->addr_string);
 	}
+
 #else
       if (addressprint)
 	{

@@ -41,11 +41,15 @@ static unsigned long mread (CORE_ADDR addr, unsigned long len, unsigned long mas
 }
 
 extern int metrowerks_stepping;
+extern CORE_ADDR metrowerks_step_func_start;
+extern CORE_ADDR metrowerks_step_func_end;
 
 static void
 metrowerks_stepping_cleanup (void *unusued)
 {
-  metrowerks_stepping = 0;;
+  metrowerks_stepping = 0;
+  metrowerks_step_func_start = 0;
+  metrowerks_step_func_end = 0;
 }
 
 static void
@@ -102,6 +106,7 @@ metrowerks_step_command (char *args, int from_tty)
   CORE_ADDR range_start = 0;
   CORE_ADDR range_stop = 0;
   int step_into = 0;
+  int num_args = 0;
   char **argv = NULL;
 
   if (args != NULL)
@@ -119,14 +124,34 @@ metrowerks_step_command (char *args, int from_tty)
 
   argv = buildargv (args);
   
-  if ((argv == NULL) 
-      || (argv[0] == NULL) || (argv[1] == NULL) || (argv[2] == NULL) 
-      || (argv[3] != NULL))
-    error ("Usage: metrowerks-step <start> <stop> <step-into>");
+  if (argv == NULL)
+    {
+      num_args = 0;
+    } 
+  else
+    {
+      num_args = 0;
+      while (argv[num_args] != NULL)
+	num_args++;
+    }
+
+  if (num_args != 3 && num_args != 5)
+    error ("Usage: metrowerks-step <start> <stop> <step-into> ?<func_start> <func_end>?");
 
   range_start = strtoul (argv[0], NULL, 16);
   range_stop = strtoul (argv[1], NULL, 16);
   step_into = strtoul (argv[2], NULL, 16);
+
+  if (num_args == 5)
+    {
+      metrowerks_step_func_start = strtoul (argv[3], NULL, 16);
+      metrowerks_step_func_end = strtoul (argv[4], NULL, 16);
+    }
+  else
+    {
+      metrowerks_step_func_start = 0;
+      metrowerks_step_func_end = 0;
+    }
 
   if (!target_has_execution)
     error ("The program is not being run.");

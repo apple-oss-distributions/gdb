@@ -1906,7 +1906,7 @@ char *gdb_completer_filename_word_break_characters =
    break characters any characters that are commonly used in file
    names, such as '-', '+', '~', etc.  Otherwise, readline displays
    incorrect completion candidates.  */
-char *gdb_completer_file_name_break_characters = " \t\n*|\"';:?/><";
+char *gdb_completer_file_name_break_characters = " \t\n*|\"';:?><";
 
 /* Characters that can be used to quote completion strings.  Note that we
    can't include '"' because the gdb C parser treats such quoted sequences

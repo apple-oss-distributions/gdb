@@ -506,7 +506,6 @@ varobj_create (char *objname,
 	{
 	  /* no error */
           var->root->in_scope = 1;
-	  release_value (var->value);
 	  if (VALUE_LAZY (var->value))
 	    gdb_value_fetch_lazy (var->value);
  	}
@@ -515,6 +514,8 @@ varobj_create (char *objname,
 	  var->value = evaluate_type (var->root->exp);
           var->root->in_scope = 0;
         }
+      /* Since both branches of the if assign a value, we should remove it from the Values auto-free list */
+      release_value (var->value);
 
       var->type = VALUE_TYPE (var->value);
 

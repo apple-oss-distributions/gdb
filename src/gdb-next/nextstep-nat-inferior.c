@@ -235,8 +235,18 @@ static void next_add_to_port_set
   }
 }
 
-static unsigned int next_fetch_event 
-(struct next_inferior_status *inferior, unsigned char *buf, size_t len, unsigned int flags, int timeout)
+/* TIMEOUT is either -1, 0, or greater than 0.
+   For 0, check if there is anything to read, but don't block.
+   For -1, block until there is something to read.
+   For >0, block at least the specified number of microseconds, or until there
+   is something to read.  
+   The kernel doesn't give better than ~1HZ (0.01 sec) resolution, so 
+   don't use this as a high accuracy timer. */
+
+static unsigned int 
+next_fetch_event (struct next_inferior_status *inferior, 
+		  unsigned char *buf, size_t len, 
+		  unsigned int flags, int timeout)
 {
   fd_set fds;
   int fd, ret;
@@ -244,13 +254,14 @@ static unsigned int next_fetch_event
   
   CHECK_FATAL (len >= sizeof (next_exception_thread_message));
   CHECK_FATAL (len >= sizeof (next_signal_thread_message));
+
   tv.tv_sec = 0;
   tv.tv_usec = timeout;
 
   next_add_to_port_set (inferior, &fds, flags);
   
   for (;;) {
-    if (timeout == 0) {
+    if (timeout == -1) {
       ret = select (FD_SETSIZE, &fds, NULL, NULL, NULL); 
     } else { 
       ret = select (FD_SETSIZE, &fds, NULL, NULL, &tv); 
@@ -297,6 +308,14 @@ static void next_process_events
       return;
     }
 
+    /* FIXME: we want to poll in next_fetch_event because otherwise we
+       arbitrarily wait however long the wait quanta for select is
+       (seemingly ~.01 sec).  However, if we do this we aren't giving
+       the mach exception thread a chance to run, and see if there are
+       any more exceptions available.  Normally this is okay, because
+       there really IS only one message, but to be correct we need to
+       use some thread synchronization. */
+
     if (source == NEXT_SOURCE_EXCEPTION) {
 
       for (;;) {
@@ -305,7 +324,7 @@ static void next_process_events
 	CHECK_FATAL (inferior_bind_exception_port_flag);
 	next_handle_exception ((next_exception_thread_message *) buf, status);
   
-	source = next_fetch_event (inferior, buf, sizeof (buf), NEXT_SOURCE_EXCEPTION, 1);
+	source = next_fetch_event (inferior, buf, sizeof (buf), NEXT_SOURCE_EXCEPTION, 0);
 	if (source == 0) { 
 	  break;
 	}
@@ -327,7 +346,7 @@ static void next_process_events
 	if (! inferior_handle_all_events_flag) {
 	  break;
 	}
-	source = next_fetch_event (inferior, buf, sizeof (buf), NEXT_SOURCE_SIGNAL, 1);
+	source = next_fetch_event (inferior, buf, sizeof (buf), NEXT_SOURCE_SIGNAL, 0);
 	if (source == 0) {
 	  break;
 	}
@@ -411,7 +430,7 @@ static void next_child_resume (int tpid, int step, enum target_signal signal)
 
   inferior_debug (2, "next_child_resume: checking for pending events\n");
   status.kind = TARGET_WAITKIND_SPURIOUS;
-  next_process_events (next_status, &status, 1);
+  next_process_events (next_status, &status, 0);
   CHECK_FATAL (status.kind == TARGET_WAITKIND_SPURIOUS);
   
   inferior_debug (1, "next_child_resume: %s process with signal %d\n", 
@@ -464,7 +483,7 @@ int next_wait (struct next_inferior_status *ns, struct target_waitstatus *status
   set_sigio_trap ();
 
   status->kind = TARGET_WAITKIND_SPURIOUS;
-  next_process_events (ns, status, 0);
+  next_process_events (ns, status, -1);
   CHECK_FATAL (status->kind != TARGET_WAITKIND_SPURIOUS);
   
   clear_sigio_trap ();

@@ -49,7 +49,7 @@ SYMTOP = $(shell (test -d $(SYMROOT) || $(INSTALL) -c -d $(SYMROOT)) && cd $(SYM
 DSTTOP = $(shell (test -d $(DSTROOT) || $(INSTALL) -c -d $(DSTROOT)) && cd $(DSTROOT) && pwd)
 
 GDB_VERSION = 5.0-20001113
-APPLE_VERSION = 200
+APPLE_VERSION = 203
 
 GDB_VERSION_STRING = $(GDB_VERSION) (Apple version gdb-$(APPLE_VERSION))
 

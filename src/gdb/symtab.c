@@ -46,6 +46,11 @@
 #include "gdb_stat.h"
 #include <ctype.h>
 
+/* These are defined in infrun.c */
+extern int metrowerks_stepping;
+extern int metrowerks_step_func_start;
+extern int metrowerks_step_func_end;
+
 int metrowerks_ignore_breakpoint_errors_flag = 0;
 int allow_objc_selectors_flag = 1;
 
@@ -1220,26 +1225,6 @@ struct symbol *
 lookup_block_symbol (register const struct block *block, const char *name,
                      const namespace_enum namespace)
 {
-  char *s = name;
-  int demangle = 0;
-
-  while (*s != '\0') 
-    {
-      if ((! isalnum (*s)) && (*s != '_'))
-	{
-	  demangle = 1;
-	  break;
-	}
-      s++;
-    }
-
-  return lookup_block_symbol_helper (block, name, namespace, demangle);
-}
-
-struct symbol *
-lookup_block_symbol_helper (register const struct block *block, const char *name,
-                            const namespace_enum namespace, int demangle)
-{
   register int bot, top, inc;
   register struct symbol *sym;
   register struct symbol *sym_found = NULL;
@@ -1269,14 +1254,9 @@ lookup_block_symbol_helper (register const struct block *block, const char *name
 	    }
 	  inc = (inc >> 1) + bot;
 	  sym = BLOCK_SYM (block, inc);
-	  if (!do_linear_search
-	      && (SYMBOL_LANGUAGE (sym) == language_cplus
-		  || SYMBOL_LANGUAGE (sym) == language_objc
-		  || SYMBOL_LANGUAGE (sym) == language_java
-	      ))
+	  if (!do_linear_search && SYMBOL_LANGUAGE (sym) == language_java)
 	    {
-	      if (demangle)
-		do_linear_search = 1;
+	      do_linear_search = 1;
 	    }
 	  if (SYMBOL_SOURCE_NAME (sym)[0] < name[0])
 	    {
@@ -1306,12 +1286,19 @@ lookup_block_symbol_helper (register const struct block *block, const char *name
 
       top = BLOCK_NSYMS (block);
       while (bot < top)
-	{
-	  sym = BLOCK_SYM (block, bot);
-	  if (SYMBOL_MATCHES_NAME (sym, name))
-	    return sym;
-	  bot++;
-	}
+        {
+          sym = BLOCK_SYM (block, bot);
+          if (SYMBOL_NAMESPACE (sym) == namespace &&
+              SYMBOL_MATCHES_NAME (sym, name)) 
+            {
+              return sym;
+            } 
+          if (SYMBOL_SOURCE_NAME (sym)[0] > name[0])
+            { 
+              break;
+            }
+          bot++;
+        }
     }
 
   /* Here if block isn't sorted, or we fail to find a match during the
@@ -3268,6 +3255,9 @@ make_symbol_completion_list (char *text, char *word)
    between the first instruction of a function, and the first executable line.
    Returns 1 if PC *might* be in prologue, 0 if definately *not* in prologue.
 
+   However, if we are doing metrowerks_stepping and were not given a step function
+   range, then we only return 1 if we actually recognize the prologue.
+
    If non-zero, func_start is where we think the prologue starts, possibly
    by previous examination of symbol table information.
  */
@@ -3299,15 +3289,21 @@ in_prologue (CORE_ADDR pc, CORE_ADDR func_start)
   if (! find_pc_partial_function (pc, NULL, &func_addr, &func_end))
     {
       CORE_ADDR prologue_end;
+      CORE_ADDR scan_from;
       
       /* We don't even have minsym information, so fall back to using
          func_start, if given.  */
-      if (! func_start)
-        return 1;               /* We *might* be in a prologue.  */
+
+      if (!func_start)
+	{
+	  return 1;  /* We *might* be in a prologue.  */
+	}
+      else
+	scan_from = func_start;
       
-      prologue_end = SKIP_PROLOGUE (func_start);
+      prologue_end = SKIP_PROLOGUE (scan_from);
       
-      return func_start <= pc && pc < prologue_end;
+      return scan_from <= pc && pc < prologue_end;
     }
   
   /* If we have line number information for the function, that's

@@ -514,6 +514,7 @@ ALL_MODULES = \
 	all-dejagnu \
 	all-diff \
 	all-dosutils \
+	all-electric-fence \
 	all-etc \
 	all-fileutils \
 	all-findutils \
@@ -664,6 +665,7 @@ INSTALL_MODULES = \
 	install-dejagnu \
 	install-diff \
 	install-dosutils \
+	install-electric-fence \
 	install-etc \
 	install-fileutils \
 	install-findutils \
@@ -866,6 +868,7 @@ CLEAN_MODULES = \
 	clean-dejagnu \
 	clean-diff \
 	clean-dosutils \
+	clean-electric-fence \
 	clean-etc \
 	clean-fileutils \
 	clean-findutils \
@@ -1694,7 +1697,7 @@ ALL_GCC = all-gcc
 all-gcc: all-bison all-byacc all-binutils all-gas all-ld
 all-bootstrap: all-libiberty all-texinfo all-bison all-byacc all-binutils all-gas all-ld all-zlib
 GDB_TK = all-tk all-tcl all-itcl all-tix all-libgui
-all-gdb: all-libiberty all-opcodes all-bfd all-mmalloc all-readline all-bison all-byacc all-sim $(gdbnlmrequirements) $(GDB_TK)
+all-gdb: all-libiberty all-opcodes all-bfd all-mmalloc all-readline all-bison all-byacc all-sim all-electric-fence $(gdbnlmrequirements) $(GDB_TK)
 all-gettext:
 all-gnuserv:
 configure-target-gperf: $(ALL_GCC)
@@ -1743,6 +1746,7 @@ all-target-libobjc: configure-target-libobjc all-gas all-ld all-gcc all-target-l
 all-m4: all-libiberty
 all-make: all-libiberty
 all-mmalloc:
+all-electric-fence:
 configure-target-newlib: $(ALL_GCC)
 configure-target-libtermcap: $(ALL_GCC)
 all-target-newlib: configure-target-newlib all-binutils all-gas all-gcc
@@ -2006,7 +2010,7 @@ gnats.tar.bz2: $(DIST_SUPPORT) $(GNATS_SUPPORT_DIRS) gnats
 		SUPPORT_FILES="$(GNATS_SUPPORT_DIRS)"
 
 .PHONY: gdb.tar.bz2
-GDB_SUPPORT_DIRS= bfd include libiberty mmalloc opcodes readline sim utils intl
+GDB_SUPPORT_DIRS= bfd include libiberty mmalloc opcodes readline sim utils intl electric-fence
 GDBTK_SUPPORT_DIRS= `if [ -d tcl -a -d tk ] ; then echo tcl tk itcl tix libgui; fi`
 gdb.tar.bz2: $(DIST_SUPPORT) $(GDB_SUPPORT_DIRS) gdb
 	$(MAKE) -f Makefile.in gdb-taz TOOL=gdb \

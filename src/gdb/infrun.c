@@ -39,6 +39,8 @@
 #include "event-top.h"
 
 int metrowerks_stepping = 0;
+CORE_ADDR metrowerks_step_func_start = 0;
+CORE_ADDR metrowerks_step_func_end = 0;
 
 /* Prototypes for local functions */
 
@@ -1376,7 +1378,11 @@ fetch_inferior_event (void *client_data)
 	 event never gets run. */
 
       if (metrowerks_stepping)
-	metrowerks_stepping = 0;
+	{
+	  metrowerks_stepping = 0;
+	  metrowerks_step_func_start = 0;
+	  metrowerks_step_func_end = 0;
+	}
 
       normal_stop ();
       if (step_multi && stop_step)
@@ -2099,10 +2105,12 @@ handle_inferior_event (struct execution_control_state *ecs)
     ecs->stop_func_start = 0;
     ecs->stop_func_end = 0;
     ecs->stop_func_name = 0;
+
     /* Don't care about return value; stop_func_start and stop_func_name
        will both be 0 if it doesn't work.  */
     find_pc_partial_function (stop_pc, &ecs->stop_func_name,
 			      &ecs->stop_func_start, &ecs->stop_func_end);
+
     ecs->stop_func_start += FUNCTION_START_OFFSET;
     ecs->another_trap = 0;
     bpstat_clear (&stop_bpstat);
@@ -2551,6 +2559,8 @@ handle_inferior_event (struct execution_control_state *ecs)
 	       dynamically loaded objects (among other things).  */
 	    if (stop_on_solib_events && solib_changed)
 	      {
+		char addr_string[80];
+
 		stop_stepping (ecs);
 		if (step_resume_breakpoint != NULL)
 		  {
@@ -2565,6 +2575,11 @@ handle_inferior_event (struct execution_control_state *ecs)
 		    solib_step_bp = set_breakpoint_sal (fsr_sal);
 		    solib_step_bp->disposition = del;
 		    solib_step_bp->frame = step_resume_breakpoint->frame;
+		    /* We have to set addr_string or breakpoint_re_set
+		       will delete the breakpoint. */
+		    sprintf (addr_string, "*0x%s", paddr (solib_step_bp->address));
+		    solib_step_bp->addr_string = strsave (addr_string);
+
 		    if (breakpoints_inserted)
 		      insert_breakpoints ();
 		  }
@@ -2872,27 +2887,40 @@ handle_inferior_event (struct execution_control_state *ecs)
 	return;
       }
 
-    /* We have reached the end of the stepping range.  It would be
-       great if we could let the rest of the following code handle
-       this right now, but it fails if we have no symbols available.  
-       Then we end up in the "stepped into a function" code 'cause
-       ecs->stop_func_name is NULL.  But step_over_function is never
-       the right thing to do here... */
-
-    if (metrowerks_stepping && stop_pc == step_range_end)
+    /* We have reached the end of the stepping range.  The code following
+       will do the right thing if the region we are stepping in has symbols,
+       but the in_prologue part of the test assumes that we have just stepped
+       into a subroutine if we find ourselves in code for which we have NO symbols.  
+       We can't really change that behavior, but we can trap some common cases
+       where we KNOW that we haven't just stepped into a function. */
+              
+    /* The case we handle here is branching within current function.  
+       To detect this case, we use the step_func ranges that were passed to 
+       us from Metrowerks.  */
+ 
+    if (metrowerks_stepping)
       {
-	stop_step = 1;
-	print_stop_reason (END_STEPPING_RANGE, 0);
-	stop_stepping (ecs);
-	return;
-      
+	if (stop_pc == step_range_end 
+	    || ((metrowerks_step_func_start != 0)
+		&& (metrowerks_step_func_start < stop_pc 
+		    && stop_pc <= metrowerks_step_func_end)))
+	  {
+	    stop_step = 1;
+	    print_stop_reason (END_STEPPING_RANGE, 0);
+	    stop_stepping (ecs);
+	    return;
+	    
+	  }
       }
 
     if (stop_pc == ecs->stop_func_start		/* Quick test */
-	|| (in_prologue (stop_pc, ecs->stop_func_start) &&
+	|| ((stop_pc != ADDR_BITS_REMOVE (SAVED_PC_AFTER_CALL (get_current_frame ())))
+           /* The previous test is for the branch that takes us back to 
+              the caller. */   
+	    && (((in_prologue (stop_pc, ecs->stop_func_start) &&
 	    !IN_SOLIB_RETURN_TRAMPOLINE (stop_pc, ecs->stop_func_name))
 	|| IN_SOLIB_CALL_TRAMPOLINE (stop_pc, ecs->stop_func_name)
-	|| ecs->stop_func_name == 0)
+		 || (!metrowerks_stepping && ecs->stop_func_name == 0)))))
       {
 	/* It's a subroutine call.  */
 
@@ -2910,7 +2938,7 @@ handle_inferior_event (struct execution_control_state *ecs)
 
 	if (step_over_calls == STEP_OVER_ALL || IGNORE_HELPER_CALL (stop_pc))
 	  {
-	    /* We're doing a "next".  */
+	    /* We're doing a "next", or a nexti. */
 
 	    if (IN_SIGTRAMP (stop_pc, ecs->stop_func_name)
 		&& INNER_THAN (step_frame_address, read_sp()))
@@ -2925,6 +2953,21 @@ handle_inferior_event (struct execution_control_state *ecs)
                  end of the program.  */
 	      step_frame_address = 0;
 
+            /* Check here to see if it is a "nexti".  If it is,
+               and we were able to find the stop_func_start,
+               then only continue if we are at the FIRST instruction
+               of the prologue.  Otherwise nexti won't work in the
+               body of a function prologue (which people do expect!) */
+            if (step_range_start == 1 
+                && ecs->stop_func_start != 0
+                && stop_pc > ecs->stop_func_start)
+              {
+                stop_step = 1;
+                print_stop_reason (END_STEPPING_RANGE, 0);
+                stop_stepping (ecs);
+                return;
+              }
+              
 	    step_over_function (ecs);
 	    keep_going (ecs);
 	    return;
@@ -3781,7 +3824,6 @@ and/or watchpoints.\n");
 		  }
 		}
 	    }
-
 #endif /* SOLIB_ADD */
 	  if (!solib_step_bpstat_p)
 	    {

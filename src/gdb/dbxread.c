@@ -219,6 +219,9 @@ struct complaint repeated_header_complaint =
 
 struct complaint unclaimed_bincl_complaint =
 {"N_BINCL %s not in entries for any file, at symtab pos %d", 0, 0};
+
+struct complaint fun_end_outside_fun_complaint =
+{"Found an end function stab with no corresponding begin", 0, 0};
 
 /* find_text_range --- find start and end of loadable code sections
 
@@ -1994,6 +1997,15 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
      N_STSYM or N_GSYM for SunOS4 acc; N_FUN for other compilers.  */
   static int function_stab_type = 0;
 
+  /* Track that we have matched N_FUN pairs bracketing functions.  Some
+     linkers leave the N_FUN end symbol sitting around in the code when
+     they coalesce C++ templates, and we have to ignore this or we will
+     crash trying to close blocks that aren't open.
+     It would be great if we could use within_function for this, but
+     that is actually set to 0 when we hit the closing RBRAC of the 
+     function, not when we see the closing FUN stab.  */
+  static int saw_fun_start = 0;
+
   if (!block_address_function_relative)
     /* N_LBRAC, N_RBRAC and N_SLINE entries are not relative to the
        function start address, so just use the text offset.  */
@@ -2020,6 +2032,18 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
 	{
 	  /* This N_FUN marks the end of a function.  This closes off the
 	     current block.  */
+
+	  /* WORKAROUND ALERT: some linkers leave FUN end stabs lying
+	     around with no corresponding START stabswhen they
+	     coalesce symbols.  Just ignore them. */
+
+	  if (!saw_fun_start) 
+	    {
+	      complain (&fun_end_outside_fun_complaint);
+	      break;
+	    }
+
+	  saw_fun_start = 0;
 	  within_function = 0;
 	  new = pop_context ();
 
@@ -2143,6 +2167,7 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
 	     need to do anything; leave the symbols that preceded it
 	     to be attached to the function's own block.  We need to
 	     indicate that we just moved outside of the function.  */
+
 	  within_function = 0;
 	}
 
@@ -2447,6 +2472,7 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
 		function_start_offset = valu;
 
 	      within_function = 1;
+	      saw_fun_start = 1;
 
 	      if (context_stack_depth > 1)
 		{

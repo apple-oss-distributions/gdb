@@ -1,3 +1,93 @@
+2001-11-01  James Ingham  <jingham@inghji.apple.com>
+
+	* utils.c (make_my_cleanup): Add a guard for a null cleanup function.  I have
+	one bug report that this had happened, but I can't get it to repeat.  This will
+	hopefully help catch the bug...
+
+	* ui-file.c (fputs_unfiltered): Don't pass null buffers to the
+	lower layers of the ui_file code.
+
+2001-10-31  Jason Molenda  (jmolenda@apple.com)
+
+	* top.c (gdb_completer_file_name_break_characters):  Update list
+	of seperator chars as per FSF sources.
+
+2001-10-24  Rab Hagy  <rhagy@inghji.apple.com>
+
+	* utils.c (vfprintf_maybe_filtered): No need to copy the buffer,
+	and then leave the memory for it stranded...
+
+2001-10-24  James Ingham & Rab Hagy <jingham@inghji.apple.com>
+
+	* varobj.c (varobj_create): Remember to release the "type" value
+	from the value chain if we make a varobj that we can't resolve
+	immediately.  Otherwise we will get a double free.
+
+2001-10-22  James Ingham  <jingham@inghji.apple.com>
+
+	* symtab.c (in_prologue): The check for metrowerks_stepping and NO
+	metrowerks function range caused unnecessary stops.  Remove it.
+
+	* breakpoint.c (print_one_breakpoint): Print the address string of
+	an unset future breakpoint.  This was coming up empty before the
+	change.
+
+	* infrun.c (handle_inferior_event): Handle nexti when in a
+	function prologue by ONLY continuing if we are at the beginning
+	the prologue.
+
+2001-10-18  Jason Molenda  (jmolenda@apple.com)
+
+        * symtab.c (lookup_block_symbol): Remove this wrapper function.
+        (lookup_block_symbol_helper):  Rename to lookup_block_symbol() as
+        it was originally; remove special handling for ObjC which assumes
+        that lookup_block_symbol doesn't work correctly for unmangled
+        identifiers (i.e. identifiers with spaces in them).
+
+2001-10-09  James Ingham  <jingham@inghji.apple.com>
+
+	* infrun.c (normal_stop): Add a missing SOLIB_ADD guard.
+
+	* dbxread.c (process_one_symbol): Use complain, not warn, so
+	we don't spam users too much.
+
+2001-10-05  James Ingham  <jingham@inghji.apple.com>
+
+        * dbxread.c (process_one_symbol): Ignore function end stabs when
+        we are not currently in a function.  Some linkers neglect to clean
+        up properly when coalescing functions.
+
+2001-10-05  Jason Molenda  (jmolenda@apple.com)
+        Migrate Klee's patch:
+
+	* eval.c (evaluate_subexp_standard):
+	* stabsread.c (define_symbol):  
+	* valops.c (hand_function_call):
+	    fixes for "print (NSRect) [object frame]"; fix objc
+	    breakpoint-reinsertion bug; fix missing stream in
+	    fprintf
+
+2001-09-07  Jason Molenda  (jmolenda@apple.com)
+
+        * symtab.c (lookup_block_symbol):  Break out of linear search
+        if we're past the range of possible matches.
+
+2001-08-31  Jason Molenda  (jmolenda@apple.com)
+
+        * c-valprint.c (c_val_print):  Second call to check_typedef ()
+        is no longer necessary.
+
+2001-09-26  Jason Molenda  (jmolenda@apple.com)
+
+        * gdb/infrun.c, gdb/symtab.c, gdb-next/macosx-metrowerks.c:
+
+          Commit jingham's changes between gdb-200 and metrowerks-1
+          to the puma-branch.  The original cvs commit msg for this
+          change:
+
+	     Add support for metrowerks step_func_start & step_func_end
+	     so we can more easily run under MW with no symbols.
+
 2001-08-06  James Ingham  <jingham@inghji.apple.com>
 
 	* symtab.c (in_prologue): If the function start address doesn't

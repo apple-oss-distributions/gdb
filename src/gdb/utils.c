@@ -262,9 +262,13 @@ make_my_cleanup (pmy_chain, function, arg)
      void (*function) PARAMS ((PTR));
      PTR arg;
 {
-  register struct cleanup *new
-  = (struct cleanup *) xmalloc (sizeof (struct cleanup));
+  register struct cleanup *new;
   register struct cleanup *old_chain = *pmy_chain;
+
+  if (!function)
+    internal_error ("Someone tried to put a null function on the cleanup chain!");
+
+  new = (struct cleanup *) xmalloc (sizeof (struct cleanup));
 
   new->next = *pmy_chain;
   new->function = function;
@@ -1965,18 +1969,15 @@ static void
 vfprintf_maybe_filtered (struct ui_file *stream, const char *format,
                          va_list args, int filter)
 {
-  char *temp; 
   char *linebuffer; 
   struct cleanup *old_cleanups; 
  
-  vasprintf (&temp, format, args); 
-  if (temp == NULL) 
+  vasprintf (&linebuffer, format, args); 
+  if (linebuffer == NULL) 
     { 
       fputs_unfiltered ("\ngdb: virtual memory exhausted.\n", gdb_stderr); 
       exit (1); 
     } 
-  linebuffer = xstrdup (temp); 
-  /* free (temp); */ 
   old_cleanups = make_cleanup (free, linebuffer); 
   fputs_maybe_filtered (linebuffer, stream, filter); 
   do_cleanups (old_cleanups); 
@@ -1992,18 +1993,15 @@ vfprintf_filtered (struct ui_file *stream, const char *format, va_list args)
 void
 vfprintf_unfiltered (struct ui_file *stream, const char *format, va_list args)
 {
-  char *temp; 
   char *linebuffer; 
   struct cleanup *old_cleanups; 
  
-  vasprintf (&temp, format, args); 
-  if (temp == NULL) 
+  vasprintf (&linebuffer, format, args); 
+  if (linebuffer == NULL) 
     { 
       fputs_unfiltered ("\ngdb: virtual memory exhausted.\n", gdb_stderr); 
       exit (1); 
     } 
-  linebuffer = xstrdup (temp); 
-  /* free (temp); */ 
   old_cleanups = make_cleanup (free, linebuffer); 
   fputs_unfiltered (linebuffer, stream); 
   do_cleanups (old_cleanups); 

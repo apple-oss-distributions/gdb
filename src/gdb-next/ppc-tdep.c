@@ -213,8 +213,10 @@ ppc_frame_find_pc (frame)
     /* psp is the top of the signal handler data pushed by the kernel */
     /* 0x220 is offset to SIGCONTEXT; 0x10 is offset to $pc */
     ppc_debug ("ppc_frame_saved_pc: determing previous pc from signal context\n");
-    retval = read_memory_unsigned_integer (psp + 0x220 + 0x10, 4);
+
+    retval = read_memory_unsigned_integer (psp + 0x70, 4);
     ppc_debug ("Signal frame at: 0x%lx, saved pc at: 0x%lx.\n", psp, retval);
+    return retval;
   }
 
   prev = ppc_frame_chain (frame);
@@ -336,9 +338,6 @@ ppc_frame_saved_pc_after_call (frame)
      struct frame_info *frame;
 {
   CHECK_FATAL (frame != NULL);
-  if (ppc_frame_saved_pc (frame) != read_register (LR_REGNUM)) {
-    warning ("return address computed by ppc_frame_saved_pc() does not match the value of $lr; using $lr");
-  }
   return read_register (LR_REGNUM);
 }
 
@@ -370,12 +369,19 @@ ppc_frame_chain_valid (chain, frame)
      CORE_ADDR chain;
      struct frame_info *frame;
 {
+  unsigned long retval;
+
   if (chain == 0) { return 0; }
 
-#if 1
   /* reached end of stack? */
-  if (read_memory_unsigned_integer (chain, 4) == 0) { return 0; }
-#endif
+  if (!safe_read_memory_unsigned_integer (chain, 4, &retval))
+    {
+        ppc_debug ("ppc_frame_chain_valid: Got an error reading at 0x%lx",
+                   chain);
+        return 0;
+    }
+  else
+    if (retval == 0) { return 0; }
 
 #if 0
   if (inside_entry_func (frame->pc)) { return 0; }
@@ -948,6 +954,201 @@ ppc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 }
 
 void
+ppc_print_count_info (int frame, CORE_ADDR fp, CORE_ADDR pc, int get_names)
+{
+  char num_buf[8];
+  char *name;
+
+  sprintf (num_buf, "%d", frame);
+  ui_out_text (uiout, "Frame ");
+  ui_out_text(uiout, num_buf);
+  ui_out_text(uiout, ": ");
+  ui_out_list_begin (uiout, num_buf);
+  ui_out_field_core_addr (uiout, "pc", pc);
+
+  if (get_names)
+    {
+      ui_out_text (uiout, " func: ");
+
+      find_pc_partial_function (pc, &name, NULL, NULL);
+      if (name != NULL)
+	ui_out_field_string (uiout, "func", name);
+      else
+	ui_out_field_skip (uiout, "func");
+    }
+
+  ui_out_text (uiout, " fp: ");
+  ui_out_field_core_addr (uiout, "fp", fp);
+  ui_out_text (uiout, "\n");
+  ui_out_list_end (uiout);
+
+}
+
+/*
+ * implementation for ppc-fast-show-stack command
+ * prints the stack depth, a valid bit, and list
+ * of the frames showing the pc & fp for each frame
+ */
+
+void
+ppc_fast_show_stack (char *args, int from_tty)
+{
+  int get_names = 0;
+  int show_frames = 1;
+  char *argptr;
+  int valid, count;
+
+  if (args != NULL)
+    {
+      if (strstr (args, "noframe") != 0)
+	show_frames = 0;
+      else if (strstr (args, "frame") != 0)
+	show_frames = 1;
+      else
+	show_frames = 1;
+
+      if (show_frames)
+	{
+	  if (strstr (args, "noname") != 0)
+	    get_names = 0;
+	  else if (strstr (args, "name") != 0)
+	    get_names = 1;
+	  else
+	    get_names = 0;
+
+	}
+    }
+
+  valid = ppc_fast_show_stack_helper (show_frames, get_names, &count);
+
+  ui_out_text (uiout, "Valid: ");
+  ui_out_field_int (uiout, "valid", valid);
+  ui_out_text (uiout, "\nCount: ");
+  ui_out_field_int (uiout, "count", count);
+  ui_out_text (uiout, "\n");
+}
+
+/* 
+ * This is the helper function for ppc_fast_show_stack, but it is
+ * also set to the FAST_COUNT_STACK macro for ppc.  The return value
+ * is 1 if no errors were encountered traversing the stack, and 0 otherwise.
+ * it sets count to the stack depth.  If SHOW_FRAMES is 1, then it also
+ * emits a list of frame info bits, with the pc & fp for each frame to 
+ * the current UI_OUT.  If GET_NAMES is 1, it also emits the names for
+ * each frame (though this slows the function a good bit.)
+ */
+
+int
+ppc_fast_show_stack_helper (int show_frames, int get_names, int *count)
+{
+  CORE_ADDR fp;
+  static CORE_ADDR sigtramp_start = 0;
+  static CORE_ADDR sigtramp_end = 0;
+  struct frame_info *fi;
+  int i = 0, valid = 0;
+  unsigned long cur_fp, next_fp, pc;
+
+  /* Get the first two frames.  If anything funky is going on, it will
+     be here.  The second frame helps us get above frameless functions
+     called from signal handlers...
+     Above these frames we have to deal with sigtramps
+     and alloca frames, that is about all. */  
+
+  if (sigtramp_start == 0) 
+    {
+      char *name;
+      pc = parse_and_eval_address ("_sigtramp");
+      if (find_pc_partial_function (pc, &name, 
+				    &sigtramp_start, &sigtramp_end) == 0)
+	{
+	  error ("Couldn't find _sigtramp symbol - backtraces will be unreliable");
+	}
+    }
+
+  if (show_frames)
+    ui_out_list_begin (uiout, "frames");
+  
+  fi = get_current_frame();
+
+  if (fi == NULL) 
+    {
+      i = -1;
+      goto ppc_count_finish;
+    }
+
+  if (show_frames)
+    ppc_print_count_info (0, fi->frame, fi->pc, get_names);
+
+  fi = get_prev_frame(fi);
+  if (fi == NULL)
+    {
+      valid = 1;
+      i = 0;
+      goto ppc_count_finish;
+    }
+
+  pc = fi->pc;
+  fp = fi->frame;
+  i = 1;
+
+  if (show_frames)
+    ppc_print_count_info (i, fp, pc, get_names);
+
+  i = 2;
+  
+  if (safe_read_memory_unsigned_integer (fp, 4, &next_fp))
+    {
+      while (1) {
+        if ((sigtramp_start<= pc) && (pc <= sigtramp_end))
+	  {
+	    fp = next_fp + 0x70 + 0xc;
+	    if (!safe_read_memory_unsigned_integer (fp, 
+						    4, &next_fp)) 
+	      goto ppc_count_finish;
+
+	    if (!safe_read_memory_unsigned_integer (fp - 0xc, 4, &pc))
+	      goto ppc_count_finish;
+
+	    fp = next_fp;
+	    if (!safe_read_memory_unsigned_integer (fp, 4, &next_fp))
+	      goto ppc_count_finish;
+	  }
+	else
+	  {
+	    fp = next_fp;
+	    
+	    if (!safe_read_memory_unsigned_integer (fp, 4, &next_fp))
+	      goto ppc_count_finish;
+	    
+	    if (next_fp == 0)
+	      {
+		valid = 1;
+		goto ppc_count_finish;
+	      }
+	    	    
+	    if (i > 10000) 
+	      goto ppc_count_finish;
+	    
+	    if (!safe_read_memory_unsigned_integer (fp + DEFAULT_LR_SAVE, 4, &pc))
+	      goto ppc_count_finish;
+	  }	
+
+	if (show_frames)
+	  ppc_print_count_info (i, fp, pc, get_names);
+	i++;
+	
+      }
+    }
+
+ ppc_count_finish:
+  if (show_frames)
+    ui_out_list_end (uiout);
+
+  *count = i;
+  return valid;
+}
+
+void
 _initialize_ppc_tdep ()
 {
   struct cmd_list_element *cmd = NULL;
@@ -961,4 +1162,8 @@ _initialize_ppc_tdep ()
 		     "Set if printing PPC stack analysis debugging statements.",
 		     &setlist),
   add_show_from_set (cmd, &showlist);		
+
+  add_com ("ppc-fast-show-stack", class_obscure, ppc_fast_show_stack,
+	   "List stack pc & frame pointers without building the stack info.\n\
+If you pass the \"-name\" argument, it will also return function names.");
 }

@@ -167,13 +167,17 @@ mi_cmd_stack_info_depth (char *command, char **argv, int argc)
        the stack. */
     frame_high = -1;
 
-  for (i = 0, fi = get_current_frame ();
-       fi && (i < frame_high || frame_high == -1);
-       i++, fi = get_prev_frame (fi))
-    QUIT;
-
+#ifdef FAST_COUNT_STACK_DEPTH
+  if (!FAST_COUNT_STACK_DEPTH (&i))
+#endif
+    {
+      for (i = 0, fi = get_current_frame ();
+	   fi && (i < frame_high || frame_high == -1);
+	   i++, fi = get_prev_frame (fi))
+	QUIT;
+    }
   ui_out_field_int (uiout, "depth", i);
-
+  
   return MI_CMD_DONE;
 }
 

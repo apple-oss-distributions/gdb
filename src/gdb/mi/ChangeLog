@@ -1,3 +1,9 @@
+2001-11-01  James Ingham  <jingham@inghji.apple.com>
+
+	* mi-cmd-stack.c (mi_cmd_stack_info_depth): if the architecture
+	has a FAST_COUNT_STACK_DEPTH macro defined, use it.  This counts
+	the stack without building up the frame caches.
+
 2001-08-14  James Ingham  <jingham@inghji.apple.com>
 
 	* mi-main.c (mi_exec_async_cli_cmd_continuation): Need to call

@@ -27,6 +27,7 @@
 
 FILE *dyld_stderr = NULL;
 int dyld_debug_flag = 0;
+extern int inferior_auto_start_cfm_flag;
 
 void dyld_debug (const char *fmt, ...)
 {
@@ -481,7 +482,8 @@ next_dyld_update (int dyldonly)
   dyld_objfile_info_init (&next_status->dyld_status.current_info);
 
   dyld_info_read_raw (&next_status->dyld_status, &next_status->dyld_status.current_info, dyldonly);
-  ret = cfm_update (next_status->task, &next_status->dyld_status.current_info);
+  if (inferior_auto_start_cfm_flag)
+    ret = cfm_update (next_status->task, &next_status->dyld_status.current_info);
   dyld_update_shlibs (&next_status->dyld_status, &next_status->dyld_status.path_info,
                       &previous_info, &next_status->dyld_status.current_info, &new_info);
 

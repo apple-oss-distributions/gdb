@@ -1323,6 +1323,10 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
     {
       p += 2;
       p = strchr (p, ':');
+      if (p == NULL) {
+	STABS_CONTINUE (&p, objfile);
+	p = strchr (p, ':');
+      }
     }
 
   /* If a nameless stab entry, all we need is the type, not the symbol.

@@ -19,4 +19,9 @@ void ppc_stack_alloc PARAMS ((CORE_ADDR *sp, CORE_ADDR *start, size_t argsize, s
 CORE_ADDR ppc_convert_from_func_ptr_addr PARAMS ((CORE_ADDR addr));
 #define CONVERT_FROM_FUNC_PTR_ADDR(ADDR) ppc_convert_from_func_ptr_addr (ADDR)
 
+int ppc_fast_show_stack_helper (int show_frames, int show_names, int *count);
+#define FAST_COUNT_STACK_DEPTH(count) \
+    (ppc_fast_show_stack_helper(0, 0, count))
+
 #endif /* __TM_PPC_H__ */
+

@@ -184,13 +184,19 @@ ui_file_write (struct ui_file *file,
 		const char *buf,
 		long length_buf)
 {
-  file->to_write (file, buf, length_buf);
+  if (buf)
+    file->to_write (file, buf, length_buf);
 }
 
 void
 fputs_unfiltered (const char *buf, struct ui_file *file)
 {
-  file->to_fputs (buf, file);
+  /* Not all the ui_file's handle null buffers correctly (e.g.
+     stdio_file_fputs just passes it to fputs, which crashes...
+     Better to handle it here at the throttle point. */
+
+  if (buf)
+    file->to_fputs (buf, file);
 }
 
 void
