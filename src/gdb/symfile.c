@@ -2026,9 +2026,12 @@ add_symbol_file_command (char *args, int from_tty)
   /* APPLE LOCAL:  Don't print ``at\n'' (which should be followed by
      a list of sections and addresses) if there are no sections and
      addresses supplied (i.e. "add-symbol-file a.out")  */
-  printf_filtered ("add symbol table from file \"%s\"? ", filename);
+  printf_filtered ("add symbol table from file \"%s\"", filename);
   if (section_index > 0)
-    printf_filtered ("at\n");
+    printf_filtered (" at\n");
+  else 
+    printf_filtered ("? ");
+
   for (i = 0; i < section_index; i++)
     {
       CORE_ADDR addr;
@@ -2135,11 +2138,16 @@ reread_symbols (void)
 	      make_cleanup (clear_symtab_users_cleanup, 0 /*ignore*/);
 
 
-	      /* Before we clean up any state, tell the breakpoint system
-		 that this objfile has changed so it can clear the set state
-		 on any breakpoints in this objfile. */
+	      /* APPLE LOCAL: Before we clean up any state, tell the
+		 breakpoint system that this objfile has changed so it
+		 can clear the set state on any breakpoints in this
+		 objfile. */
 
 	      tell_breakpoints_objfile_changed (objfile);
+
+	      /* APPLE LOCAL: Remove it's obj_sections from the 
+		 ordered_section list.  */
+	      objfile_delete_from_ordered_sections (objfile);
 
 	      /* Clean up any state BFD has sitting around.  We don't need
 	         to close the descriptor but BFD lacks a way of closing the
@@ -2261,10 +2269,24 @@ reread_symbols (void)
 
 	      /* We use the same section offsets as from last time.  I'm not
 	         sure whether that is always correct for shared libraries.  */
+	      /* APPLE LOCAL: instead of just stuffing the section offsets
+		 back into the objfile structure, set the new objfile offsets to
+		 0 and then relocate the objfile with the original offsets.  If the
+		 original offsets were 0, this is a low-cost operation, because
+		 relocate_objfile checks for no change.  
+		 We have to do this because, at least on Mac OS X, the way
+		 we would have gotten non-zero section offsets to begin with is 
+		 that the objfile got relocated by the dyld layer when the library
+		 was actually loaded.  However the dyld layer now thinks this 
+		 objfile is correctly slid (it has its own copy of this information, 
+		 and doesn't look at anything in the objfile to figure this out.
+		 So IT won't apply the slide again and we have to do it here.  */
+
 	      objfile->section_offsets = (struct section_offsets *)
 		obstack_alloc (&objfile->psymbol_obstack, SIZEOF_SECTION_OFFSETS);
-	      memcpy (objfile->section_offsets, offsets, SIZEOF_SECTION_OFFSETS);
+	      memset (objfile->section_offsets, 0, SIZEOF_SECTION_OFFSETS);
 	      objfile->num_sections = num_offsets;
+	      objfile_relocate (objfile, offsets);
 
 	      /* What the hell is sym_new_init for, anyway?  The concept of
 	         distinguishing between the main file and additional files

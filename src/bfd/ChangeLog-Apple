@@ -1,3 +1,15 @@
+2003-08-06  Klee Dienes  <kdienes@apple.com>
+
+	* bfdio.c (bfd_get_mtime): When BFD_IN_MEMORY is set, don't try to
+	provide a valid mtime (since none exists).
+
+2003-07-22  Klee Dienes  <kdienes@apple.com>
+
+	* mach-o.c (bfd_mach_o_scan_read_symtab_symbol): Don't subtract 1
+	from section, when looking it up in the section array, since we
+	already subtracted 1 when reading in the number in the first
+	place.
+
 2003-05-11  Klee Dienes  <kdienes@apple.com>
 
 	* archures.c (bfd_mach_ppc_970): New value.

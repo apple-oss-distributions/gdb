@@ -68,8 +68,8 @@ extern int backtrace_below_main;
    0x0e0     redzone
 */
 
-const unsigned int PPC_SIGCONTEXT_PC_OFFSET = 0x98;
-const unsigned int PPC_SIGCONTEXT_SP_OFFSET = 0xa4;
+const unsigned int PPC_SIGCONTEXT_PC_OFFSET = 0x90;
+const unsigned int PPC_SIGCONTEXT_SP_OFFSET = 0x9c;
  
 static int ppc_debugflag = 0;
 static unsigned int ppc_max_frame_size = UINT_MAX;
@@ -265,6 +265,22 @@ ppc_frame_find_pc (frame)
 	{
 	  ppc_function_properties lprops;
 	  CORE_ADDR body_start;
+	  if (frame->pc % 4 != 0)
+	    {
+	      /* My we did get lost...  Can't call ppc_parse_instructions,
+		 it will just error out.  So let's just guess.  If our frame
+		 is the next from the top, try the link register, otherwise 
+		 the stack is probably the safest place to look at this point...  */
+	      if (frame->level == 1)
+		{
+		  ULONGEST val;
+		  frame_read_unsigned_register (frame, LR_REGNUM, &val);
+		  return val;
+		}
+	      else
+		return read_memory_unsigned_integer (prev + DEFAULT_LR_SAVE, 4);
+	    }
+
 	  body_start = ppc_parse_instructions (frame->pc, INVALID_ADDRESS, 
 					       &lprops);
           
@@ -599,12 +615,30 @@ ppc_frameless_function_invocation (struct frame_info *frame)
     }
 
   if (ppc_frame_cache_properties (frame, NULL) != 0) {
-    ppc_debug ("frameless_function_invocation: unable to find properties of " 
-		 "function containing 0x%lx; assuming not frameless\n", 
-	       frame->pc);
-    return 0;
+    /* Distinguish two cases here.  In general, it is safer to assume that the
+       function is not frameless if we don't know any better.  But if the pc is not
+       readable, then we probably crashed chasing a bad function pointer, in which
+       case it is for all practical purposes frameless.  
+       FIXME: We should actually go through and get ppc_frame_cache_properties to
+       return error codes that we can use to distinguish these two cases.  */
+    
+    unsigned long op;
+    if (frame->pc % 4 != 0 || !safe_read_memory_unsigned_integer (frame->pc, 4, &op))
+      {
+	ppc_debug ("frameless_function_invocation: unable to find properties of " 
+		   "function containing %s which is not readable; assuming frameless\n", 
+		   paddr_nz (frame->pc));
+	return 1;
+      }
+    else
+      {
+	ppc_debug ("frameless_function_invocation: unable to find properties of " 
+		   "function containing %s; assuming not frameless\n", 
+		   paddr_nz (frame->pc));
+	return 0;
+      }
   }
-
+  
   return frame->extra_info->props->frameless;
 }
 

@@ -267,10 +267,16 @@ do_setshow_command (char *arg, int from_tty, struct cmd_list_element *c)
 	(c->pre_show_hook) (c);
 
       /* Print doc minus "show" at start.  */
-      print_doc_line (gdb_stdout, c->doc + 5);
+      /* APPLE LOCAL - don't do this for MI interpreter, however
+	 it doesn't want to see the doc string.  */
+      if (!ui_out_is_mi_like_p (uiout)) 
+	{
+	  print_doc_line (gdb_stdout, c->doc + 5);
+	  
+	  ui_out_text (uiout, " is ");
+	  ui_out_wrap_hint (uiout, "    ");
+	}
 
-      ui_out_text (uiout, " is ");
-      ui_out_wrap_hint (uiout, "    ");
       quote = 0;
       switch (c->var_type)
 	{

@@ -1,3 +1,18 @@
+2003-07-02  Igor Likhatchev (igor@apple.com)
+        * baseboards/macosx.exp: added setup_site_fail for Radars 3313204,3313491; removed 3223691.
+
+2003-07-01  Igor Likhatchev (igor@apple.com)
+	* baseboards/macosx.exp: added setup_site_fail for Radars 3310715,3311730
+
+2003-06-16  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp: Remove site_xfail for test that was now
+	invalid.
+
+2003-06-13  Igor Likhatchev  (igor@apple.com)
+
+	* baseboards/macosx.exp: Test updates.
+
 2003-04-09  Jason Molenda  (jmolenda@apple.com)
 
 	* baseboards/macosx.exp: Test updates.

@@ -403,11 +403,13 @@ lookup_minimal_symbol_by_pc_section_from_objfile
   struct minimal_symbol *msymbol;
   struct minimal_symbol *best_symbol = NULL;
 
-  /* pc has to be in a known section. This ensures that anything beyond
-     the end of the last segment doesn't appear to be part of the last
-     function in the last segment.  */
-  if (find_pc_section (pc) == NULL)
-    return NULL;
+  /* APPLE LOCAL: We used to start this function by calling find_pc_section (pc)
+     just to make sure that the pc was not after the last section.  Since
+     this function often gets called in a loop, or with the ordered_sections
+     lookup after we had already determined that the pc WAS in some section,
+     I removed that call, and now require the caller to do that check.  See
+     for instance the use in lookup_minimal_symbol_by_pc_section (which is in
+     fact at present this functions only use.)  JCI 07/22/2003  */
 
   /* If this objfile has a minimal symbol table, go search it using
      a binary search.  Note that a minimal symbol table always consists
@@ -519,7 +521,31 @@ lookup_minimal_symbol_by_pc_section (pc, section)
 {
   register struct objfile *objfile;
   register struct minimal_symbol *best_symbol = NULL, *msymbol;
+  struct obj_section *s;
 
+  /* APPLE LOCAL: Although the objfiles can have discontiguous address
+     ranges, two objfiles can't have overlapping sections (or if they 
+     do, either the section will sort out which is the right one, or
+     the pc->symbol translation will be ambiguous anyway so we are
+     going to fail here.)  So find the obj_section that contains the
+     pc, and then use the objfile from that.  This is much faster.
+  */
+
+  s = find_pc_sect_in_ordered_sections (pc, section);
+  if (s)
+    best_symbol = lookup_minimal_symbol_by_pc_section_from_objfile
+      (pc, section, s->objfile);
+  
+  if (best_symbol != NULL)
+    return best_symbol;
+
+  /* pc has to be in a known section. This ensures that anything beyond
+     the end of the last segment doesn't appear to be part of the last
+     function in the last segment.  */
+  
+  if (find_pc_section (pc) == NULL)
+    return NULL;
+  
   for (objfile = object_files;
        objfile != NULL;
        objfile = objfile->next)

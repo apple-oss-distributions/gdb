@@ -54,12 +54,6 @@ stage7:
 	gcc $(FIX_CFLAGS) -DVERSION=7 -o b.o -c b.c
 	gcc $(MAKE_A_BUNDLE_FLAGS) -o b-bundlized.o7 b.o
 
-# Seventh rebuild of b.o
-stage8:
-	cp b-invalid-4.c b.c
-	gcc $(FIX_CFLAGS) -DVERSION=8 -o b.o -c b.c
-	gcc $(MAKE_A_BUNDLE_FLAGS) -o b-bundlized.o8 b.o
-
 # Eighth rebuild of b.o
 stage9:
 	cp b-valid-1.c b.c
@@ -107,6 +101,18 @@ stage16:
 	cp b-invalid-11.c b.c
 	gcc $(FIX_CFLAGS) -DVERSION=16 -o b.o -c b.c
 	gcc $(MAKE_A_BUNDLE_FLAGS) -o b-bundlized.o16 b.o
+
+# rebuild of b.o #16
+stage17:
+	cp b-invalid-12.c b.c
+	gcc $(FIX_CFLAGS) -DVERSION=17 -o b.o -c b.c
+	gcc $(MAKE_A_BUNDLE_FLAGS) -o b-bundlized.o17 b.o
+
+# rebuild of b.o #17
+stage18:
+	cp b-generic.c b.c
+	gcc $(FIX_CFLAGS) -DVERSION=18 -o b.o -c b.c
+	gcc $(MAKE_A_BUNDLE_FLAGS) -o b-bundlized.o18 b.o
 
 clean:
 	rm -f a.out a.o b.o b-v1.o b-v2.o b-v3.o b.o.[0-9]* b.c

@@ -57,6 +57,8 @@ static int wrap_parse_exp_1 (char *);
 
 static int wrap_evaluate_expression (char *);
 
+static int wrap_print_expression (char *a);
+
 static int wrap_evaluate_type (char *);
 
 static int wrap_value_fetch_lazy (char *);
@@ -147,6 +149,39 @@ wrap_evaluate_expression (char *a)
 
   (args)->result.pointer =
     (char *) evaluate_expression ((struct expression *) args->args[0].pointer);
+  return 1;
+}
+
+
+int
+gdb_print_expression (struct expression *exp, struct ui_file *stb)
+{
+  struct gdb_wrapper_arguments args;
+
+  args.args[0].pointer = exp;
+  args.args[1].pointer = stb;
+
+  if (!catch_errors ((catch_errors_ftype *) wrap_print_expression, &args,
+		     "", RETURN_MASK_ERROR))
+    {
+      /* An error occurred */
+      return 0;
+    }
+
+  return 1;
+}
+
+static int
+wrap_print_expression (char *a)
+{
+  struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) a;
+  struct expression *exp;
+  struct ui_file *stb;
+
+  exp = (struct expression *) (args)->args[0].pointer;
+  stb = (struct ui_file *) (args)->args[1].pointer;
+
+  print_expression (exp, stb);
   return 1;
 }
 

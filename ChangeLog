@@ -1,3 +1,8 @@
+2003-07-24  Klee Dienes <kdienes@apple.com>
+
+	* cache-symfiles.sh: Use the proper prefix for dyld; no longer
+	remove the dyld.syms from the cached symfile directory.
+
 2003-05-04  Klee Dienes <kdienes@apple.com>
 
 	* Makefile: Use GDB_RC_VERSION instead of APPLE_VERSION in the

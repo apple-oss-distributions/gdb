@@ -939,6 +939,16 @@ backtrace_command_1 (char *count_exp, int show_locals, int from_tty)
   register struct frame_info *trailing;
   register int trailing_level;
 
+  /* APPLE LOCAL: Save/restore current source line around the frame printing.
+     If this isn't done, "backtrace" changes the current-source-line setting,
+     so a subseqent "list" cmd will show you the last frame displayed.
+     This is due to this change:
+	http://sources.redhat.com/ml/gdb-patches/2002-08/msg00358.html
+	http://sources.redhat.com/ml/gdb-patches/2002-08/msg00982.html
+	http://sources.redhat.com/ml/gdb-patches/2002-08/msg00989.html
+  */
+  struct symtab_and_line original_sal;
+
   if (!target_has_stack)
     error ("No stack.");
 
@@ -947,6 +957,9 @@ backtrace_command_1 (char *count_exp, int show_locals, int from_tty)
      printing.  Second, it must set the variable count to the number
      of frames which we should print, or -1 if all of them.  */
   trailing = get_current_frame ();
+
+  /* APPLE LOCAL: Save/restore current source line around the frame printing */
+  original_sal = get_current_source_symtab_and_line ();
 
   /* The target can be in a state where there is no valid frames
      (e.g., just connected). */
@@ -1025,6 +1038,9 @@ backtrace_command_1 (char *count_exp, int show_locals, int from_tty)
   /* If we've stopped before the end, mention that.  */
   if (fi && from_tty)
     printf_filtered ("(More stack frames follow...)\n");
+
+  /* APPLE LOCAL: Save/restore current source line around the frame printing */
+  set_current_source_symtab_and_line (&original_sal);
 }
 
 static void

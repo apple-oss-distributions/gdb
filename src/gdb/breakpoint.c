@@ -1142,7 +1142,15 @@ You may have requested too many hardware breakpoints/watchpoints.\n");
 			    "The same program may be running in another process.");
 #endif
       target_terminal_ours_for_output ();
-      error_stream (tmp_error_stream);
+      /* APPLE LOCAL: The code in the FSF version was (I think errantly) changed to throw
+	 an error here. Pretty much none of the code that calls insert_breakpoints is
+	 prepared to handle the errors, however.  I am reverting to the old behavior
+	 of just dumping the error, and then returning the error code upstream.
+	 This seems to work much better.
+	 The cast here is stupid, but no more stupid than the "do_write" function that
+	 error_stream uses in utils.c...
+      */
+      ui_file_put (tmp_error_stream, (ui_file_put_method_ftype *) ui_file_write, gdb_stderr);
     }
 
   return return_val;
@@ -1975,7 +1983,9 @@ void
 bpstat_do_actions (bpstat *bsp)
 {
   bpstat bs;
+  bpstat bs_copy;
   struct cleanup *old_chain;
+  struct cleanup *bpstat_cleanup_chain;
   struct command_line *cmd;
   int first_command = 0;
 
@@ -1997,15 +2007,33 @@ top:
      proceed, that global (and hence, *bsp) will change.
 
      We must be careful to not touch *bsp unless the inferior
-     has not proceeded. */
+     has not proceeded. 
+     
+     This whole thing gives me the willies, we are just asking
+     for trouble, since there are lots of places where stop_bpstat
+     gets cleared, and if we miss one we are in trouble.  I have a
+     couple of (unfortunately not repeatable) crashes where it looks
+     like just this has happened.  To be extra careful, I am going
+     to copy the whole bpstat, and then just use that copy instead
+     of the one visible to the whole world.  THAT I know can't be
+     yanked out from under me.
+  */
 
-  /* This pointer will iterate over the list of bpstat's. */
-  bs = *bsp;
+  if (bsp == NULL)
+    {
+      do_cleanups (old_chain);
+      return;
+    }
+
+  bs_copy = bpstat_copy (*bsp);
+  bpstat_cleanup_chain = make_cleanup (bpstat_clear, &bs_copy);
+  bpstat_clear_actions (*bsp);
 
   breakpoint_proceeded = 0;
-  for (; bs != NULL; bs = bs->next)
+  for (bs = bs_copy; bs != NULL; bs = bs->next)
     {
       cmd = bs->commands;
+
       while (cmd != NULL)
 	{
           first_command++;
@@ -2017,6 +2045,7 @@ top:
 	  else
 	    cmd = cmd->next;
 	}
+
       if (breakpoint_proceeded)
 	/* The inferior is proceeded by the command; bomb out now.
 	   The bpstat chain has been blown away by wait_for_inferior.
@@ -2045,10 +2074,14 @@ top:
 	      break;
 	    }
 	  else
-	    goto top;
+	    {
+	      /* We are going back to the top, and making a copy of
+		 the new stop_bpstat, so we have to clear our old copy
+		 first.  */
+	      do_cleanups (bpstat_cleanup_chain);
+	      goto top;
+	    }
 	}
-      else
-	free_command_lines (&bs->commands);
     }
 
   if (!breakpoint_proceeded && first_command && ui_out_is_mi_like_p (uiout))
@@ -2057,7 +2090,6 @@ top:
       ui_out_notify_end (uiout);
     }
 
-  executing_breakpoint_commands = 0;
   do_cleanups (old_chain);
 }
 
@@ -3487,7 +3519,7 @@ print_one_breakpoint (struct breakpoint *b,
       if (addressprint)
 	ui_out_field_skip (uiout, "addr");
       annotate_field (5);
-      print_expression (b->exp, stb->stream);
+      gdb_print_expression (b->exp, stb->stream);
       ui_out_field_stream (uiout, "what", stb);
       break;
       
@@ -3637,11 +3669,28 @@ print_one_breakpoint (struct breakpoint *b,
   
   if (b->cond)
     {
+      struct ui_file *prev_stderr = gdb_stderr;
       annotate_field (7);
       ui_out_text (uiout, "\tstop only if ");
-      print_expression (b->cond, stb->stream);
-      ui_out_field_stream (uiout, "cond", stb);
+      /* There might be an error printing the expression.  Not sure
+	 what the best thing to do is here.  The expression was
+	 parseable, so this is clearly a bug in the printer.  Should
+	 we tell the user the expression printer is lame, or should 
+	 we just return what they input?  For now do the latter, if
+	 a cond_string is available.  Note, we have to redirect stderr
+         or the error will go to the console and mess up the output.  */
+      gdb_stderr = gdb_null;
+      if (gdb_print_expression (b->cond, stb->stream))
+	ui_out_field_stream (uiout, "cond", stb);
+      else 
+	{
+	  if (b->cond_string)
+	    ui_out_field_string (uiout, "cond", b->cond_string);
+	  else
+	    ui_out_field_string (uiout, "cond", "Error printing condition string");
+	}
       ui_out_text (uiout, "\n");
+      gdb_stderr = prev_stderr;
     }
   
   if (b->thread != -1)
@@ -3756,6 +3805,7 @@ breakpoint_1 (int bnum, int allflag)
   register struct breakpoint *b;
   CORE_ADDR last_addr = (CORE_ADDR) -1;
   int nr_printable_breakpoints;
+  struct cleanup *table_cleanup;
   
   /* Compute the number of rows in the table. */
   nr_printable_breakpoints = 0;
@@ -3768,9 +3818,9 @@ breakpoint_1 (int bnum, int allflag)
       }
 
   if (addressprint)
-    ui_out_table_begin (uiout, 6, nr_printable_breakpoints, "BreakpointTable");
+    table_cleanup = make_cleanup_ui_out_table_begin_end (uiout, 6, nr_printable_breakpoints, "BreakpointTable");
   else
-    ui_out_table_begin (uiout, 5, nr_printable_breakpoints, "BreakpointTable");
+    table_cleanup = make_cleanup_ui_out_table_begin_end (uiout, 5, nr_printable_breakpoints, "BreakpointTable");
 
   if (nr_printable_breakpoints > 0)
     annotate_breakpoints_headers ();
@@ -3812,7 +3862,7 @@ breakpoint_1 (int bnum, int allflag)
 	  print_one_breakpoint (b, &last_addr);
       }
   
-  ui_out_table_end (uiout);
+  do_cleanups (table_cleanup);
 
   if (nr_printable_breakpoints == 0)
     {
@@ -4654,7 +4704,7 @@ mention (struct breakpoint *b)
       ui_out_tuple_begin (uiout, "wpt");
       ui_out_field_int (uiout, "number", b->number);
       ui_out_text (uiout, ": ");
-      print_expression (b->exp, stb->stream);
+      gdb_print_expression (b->exp, stb->stream);
       ui_out_field_stream (uiout, "exp", stb);
       ui_out_tuple_end (uiout);
       break;
@@ -4663,7 +4713,7 @@ mention (struct breakpoint *b)
       ui_out_tuple_begin (uiout, "wpt");
       ui_out_field_int (uiout, "number", b->number);
       ui_out_text (uiout, ": ");
-      print_expression (b->exp, stb->stream);
+      gdb_print_expression (b->exp, stb->stream);
       ui_out_field_stream (uiout, "exp", stb);
       ui_out_tuple_end (uiout);
       break;
@@ -4672,7 +4722,7 @@ mention (struct breakpoint *b)
       ui_out_tuple_begin (uiout, "hw-rwpt");
       ui_out_field_int (uiout, "number", b->number);
       ui_out_text (uiout, ": ");
-      print_expression (b->exp, stb->stream);
+      gdb_print_expression (b->exp, stb->stream);
       ui_out_field_stream (uiout, "exp", stb);
       ui_out_tuple_end (uiout);
       break;
@@ -4681,7 +4731,7 @@ mention (struct breakpoint *b)
       ui_out_tuple_begin (uiout, "hw-awpt");
       ui_out_field_int (uiout, "number", b->number);
       ui_out_text (uiout, ": ");
-      print_expression (b->exp, stb->stream);
+      gdb_print_expression (b->exp, stb->stream);
       ui_out_field_stream (uiout, "exp", stb);
       ui_out_tuple_end (uiout);
       break;

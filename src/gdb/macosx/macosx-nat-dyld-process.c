@@ -541,6 +541,7 @@ void dyld_load_libraries (const struct dyld_path_info *d, struct dyld_objfile_in
 void dyld_symfile_loaded_hook (struct objfile *o)
 {
 #if WITH_CFM
+
   if (strstr (o->name, "CarbonCore") == NULL)
     return;
 
@@ -691,7 +692,46 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
     if (info_verbose)
       printf_filtered ("done\n");
   } else {
+
+    /* If we are loading the library for the first time, check to see
+       if it has a __DATA.__commpage section, and if so, process the
+       contents of that section as if it were a separate objfile.
+       This objfile will not get relocated along with the parent
+       library, which is appropriate since the commpage never moves in
+       memory. */
+
+    const char *segname = "LC_SEGMENT.__DATA.__commpage";
+    asection *commsec;
+
     e->objfile = symbol_file_add_bfd_safe (e->abfd, 0, &addrs, 0, 0, e->load_flag, 0, e->prefix);
+
+    commsec = bfd_get_section_by_name (e->abfd, segname);
+    if (commsec != NULL)
+      {
+	char *buf;
+	bfd_size_type len;
+	char *bfdname;
+
+	len = bfd_section_size (e->abfd, commsec);
+	buf = xmalloc (len * sizeof (char));
+	bfdname = xmalloc (strlen (e->abfd->filename) + 128);
+	  
+	sprintf (bfdname, "%s[%s]", e->abfd->filename, segname);
+
+	if (bfd_get_section_contents (e->abfd, commsec, buf, 0, len) != TRUE)
+	  warning ("unable to read commpage data");
+	  
+	e->commpage_bfd = bfd_memopenr (bfdname, NULL, buf, len);
+
+	if (! bfd_check_format (e->commpage_bfd, bfd_object))
+	  {
+	    bfd_close (e->commpage_bfd);
+	    e->commpage_bfd = NULL;
+	  }
+
+	if (e->commpage_bfd != NULL)
+	  e->commpage_objfile = symbol_file_add_bfd_safe (e->commpage_bfd, 0, 0, 0, 0, e->load_flag, 0, e->prefix);
+      }
   }
 
   xfree (name);
@@ -760,6 +800,21 @@ void dyld_load_symfiles (struct dyld_objfile_info *result)
   }
 }
 
+/* Look up the objfile for a given shared library entry.  If no
+   objfile is currently allocated, or if the objfile has been removed
+   by a lower level of GDB, return NULL. */
+
+struct objfile *dyld_lookup_objfile_safe (struct dyld_objfile_entry *e)
+{
+  struct objfile *o, *temp;
+  
+  ALL_OBJFILES_SAFE (o, temp)
+    if (e->objfile == o)
+      return o;
+
+  return NULL;
+}
+
 int dyld_objfile_allocated (struct objfile *o)
 {
   struct objfile *objfile, *temp;
@@ -770,6 +825,53 @@ int dyld_objfile_allocated (struct objfile *o)
     }
   }
   return 0;
+}
+
+void dyld_purge_objfiles (struct dyld_objfile_info *info)
+{
+  struct dyld_objfile_entry *e;
+  unsigned int i;
+
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (info, e, i)
+    if (e->objfile != NULL)
+      if (dyld_lookup_objfile_safe (e) == NULL)
+	dyld_remove_objfile (e);
+}
+
+/* Return the dyld_objfile_entry for a given objfile.  If no
+   dyld_objfile_entry claims the specified objfile, return NULL. */
+
+struct dyld_objfile_entry *dyld_lookup_objfile_entry
+  (struct dyld_objfile_info *info, struct objfile *o)
+{
+  unsigned int i;
+  struct dyld_objfile_entry *e;
+
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (info, e, i)
+    if (e->objfile == o)
+      return e;
+
+  return NULL;
+}
+
+/* Called when an objfile is to be freed.
+   If a corresponding dyld_objfile_entry exists, we must free that
+   as well so the dyld-level structures and the high-level objfile
+   structures stay in sync.  
+
+   It would be nice if we got a notification from dyld about a dylib/bundle
+   being unloaded and handled that correctly.  But as of today, we're not,
+   so Fix and Continue is reduced to doing it by hand.  */
+
+void remove_objfile_from_dyld_records (struct objfile *obj)
+{
+  struct dyld_objfile_info *info = &macosx_status->dyld_status.current_info;
+  struct dyld_objfile_entry *e;
+  int i;
+
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (info, e, i)
+    if (e->objfile == obj)
+      dyld_remove_objfile (e);
 }
 
 void dyld_remove_objfile (struct dyld_objfile_entry *e)
@@ -797,6 +899,15 @@ void dyld_remove_objfile (struct dyld_objfile_entry *e)
   free_objfile (e->objfile);
   e->objfile = NULL;
   e->abfd = NULL;
+  if (e->commpage_objfile != NULL) {
+    /* The commpage objfile is read when symbols for the main library
+       are ready for the first time; it needs to be freed along with
+       the main objfile. */
+
+    free_objfile (e->commpage_objfile);
+    e->commpage_objfile = NULL;
+    e->commpage_bfd = NULL;
+  }
   e->loaded_name = NULL;
   e->loaded_memaddr = 0;
   gdb_flush (gdb_stdout);
@@ -941,8 +1052,11 @@ static int dyld_libraries_compatible
 void dyld_objfile_move_load_data
 (struct dyld_objfile_entry *f, struct dyld_objfile_entry *l)
 {
-  l->objfile = f->objfile;
   l->abfd = f->abfd;
+  l->objfile = f->objfile;
+
+  l->commpage_bfd = f->commpage_bfd;
+  l->commpage_objfile = f->commpage_objfile;
   
   if (l->load_flag < 0) {
     l->load_flag = f->load_flag; 
@@ -959,6 +1073,9 @@ void dyld_objfile_move_load_data
 
   f->objfile = NULL;
   f->abfd = NULL;
+
+  f->commpage_bfd = NULL;
+  f->commpage_objfile = NULL;
   
   f->load_flag = -1;
 

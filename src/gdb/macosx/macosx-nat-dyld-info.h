@@ -57,10 +57,10 @@ struct dyld_objfile_entry {
   int text_name_valid;
 
   struct _bfd *abfd;
-  struct _bfd *sym_bfd;
-
-  struct objfile *sym_objfile;
   struct objfile *objfile;
+
+  struct _bfd *commpage_bfd; /* The BFD corresponding to the commpage symbol information */
+  struct objfile *commpage_objfile; /* The corresponding objfile */
 
   const char *loaded_name;
   CORE_ADDR loaded_memaddr;
@@ -136,7 +136,9 @@ void dyld_convert_entry PARAMS ((struct objfile *o, struct dyld_objfile_entry *e
 
 void 
 dyld_entry_info PARAMS ((struct dyld_objfile_entry *e, int print_basenames, 
-			 char **in_name, char **in_objname, char **in_symname, char **addr, char **slide, char **prefix));
+			 char **in_name, char **in_objname, char **in_symname,
+			 char **in_commobjname, char **in_commsymname,
+			 char **addr, char **slide, char **prefix));
 
 void dyld_print_entry_info
 PARAMS ((struct dyld_objfile_entry *j, unsigned int shlibnum,

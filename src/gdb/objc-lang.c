@@ -41,6 +41,7 @@
 #include "frame.h"
 #include "gdb_regex.h"
 #include "regcache.h"
+#include "inferior.h"
 
 #include <ctype.h>
 
@@ -142,7 +143,7 @@ lookup_objc_class (char *classname)
 }
 
 int
-lookup_child_selector (char *selname)
+lookup_child_selector_nocache (char *selname)
 {
   static struct cached_value *function = NULL;
   struct value *selstring;
@@ -175,6 +176,82 @@ lookup_child_selector (char *selname)
   retval = call_function_by_hand (lookup_cached_function (function),
 				  1, &selstring);
   return value_as_long (retval);
+}
+
+/* Maps selector names to cached id values. */
+
+struct selector_entry {
+  char *name;
+  int val;
+  struct selector_entry *next;
+};
+
+#define SELECTOR_HASH_SIZE 127
+static struct selector_entry *selector_hash[SELECTOR_HASH_SIZE] = { 0 };
+
+/* Stores the process-id for which the cached selector-ids are valid. */
+
+static int selector_hash_generation = -1;
+
+/* Reset the selector cache, deallocating all entries. */
+
+static void
+reset_child_selector_cache (void)
+{
+  int i;
+  
+  for (i = 0; i < SELECTOR_HASH_SIZE; i++)
+    {
+      struct selector_entry *entry, *temp;
+
+      entry = selector_hash[i];
+      while (entry != NULL)
+	{
+	  temp = entry;
+	  entry = entry->next;
+	  xfree (temp->name);
+	  xfree (temp);
+	}
+
+      selector_hash[i] = NULL;
+    }
+}
+
+/* Look up the id for the specified selector.  If the process-id of
+   the inferior has changed, reset the selector cache; otherwise, use
+   any cached value that might be present. */
+
+int
+lookup_child_selector (char *selname)
+{
+  struct selector_entry *entry;
+  int hash;
+  int current_generation;
+
+  current_generation = ptid_get_pid (inferior_ptid);
+  if (current_generation != selector_hash_generation)
+    {
+      reset_child_selector_cache ();
+      selector_hash_generation = current_generation;
+    }
+  
+  hash = msymbol_hash (selname) % SELECTOR_HASH_SIZE;
+
+  for (entry = selector_hash[hash]; entry != NULL; entry = entry->next)
+    if ((entry != NULL) && (strcmp (entry->name, selname) == 0))
+      break;
+
+  if (entry != NULL)
+    return entry->val;
+
+  entry = (struct selector_entry *) xmalloc (sizeof (struct selector_entry));
+  entry->name = xstrdup (selname);
+  entry->val = lookup_child_selector_nocache (selname);
+  entry->next = selector_hash[hash];
+
+  selector_hash[hash] = entry;
+
+  return entry->val;
 }
 
 struct value * 

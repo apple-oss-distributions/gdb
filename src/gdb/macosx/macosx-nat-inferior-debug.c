@@ -184,11 +184,11 @@ void macosx_debug_regions (task_t task, vm_address_t address, int max)
 	  printf_filtered ("from 0x%lx to 0x%lx (%s, max %s; %s, %s, %s)",
 			   (unsigned long) prev_address, 
 			   (unsigned long) prev_address + prev_size,
-			   unparse_protection (info.protection),
-			   unparse_protection (info.max_protection),
-			   unparse_inheritance (info.inheritance),
-			   info.shared ? "shared" : "private",
-			   info.reserved ? "reserved" : "not-reserved");
+			   unparse_protection (prev_info.protection),
+			   unparse_protection (prev_info.max_protection),
+			   unparse_inheritance (prev_info.inheritance),
+			   prev_info.shared ? "shared" : "private",
+			   prev_info.reserved ? "reserved" : "not-reserved");
 
 	  if (nsubregions > 1)
 	    printf_filtered (" (%d sub-regions)", nsubregions);

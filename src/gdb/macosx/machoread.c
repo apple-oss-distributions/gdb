@@ -86,7 +86,6 @@ macho_symfile_read (objfile, mainline)
 
   struct bfd_mach_o_symtab_command *symtab = NULL;
   struct bfd_mach_o_dysymtab_command *dysymtab = NULL;
-  struct bfd_mach_o_section *section = NULL;
 
   int ret;
 
@@ -101,7 +100,7 @@ macho_symfile_read (objfile, mainline)
 			   "LC_SYMTAB.stabs", "LC_SYMTAB.stabstr",
 			   "LC_SEGMENT.__TEXT.__text",
 			   "LC_SEGMENT.__DATA.__data",
-			   NULL);
+			   "LC_SEGMENT.__DATA.__bss");
 
   if (mach_o_process_exports_flag) {
 
@@ -237,16 +236,33 @@ macho_symfile_offsets (objfile, addrs)
      struct section_addr_info *addrs;
 {
   unsigned int i;
+  unsigned int num_sections;
 
   objfile->num_sections = SECT_OFF_MAX;
   objfile->section_offsets = (struct section_offsets *)
     obstack_alloc (&objfile->psymbol_obstack, SIZEOF_SECTION_OFFSETS);
   memset (objfile->section_offsets, 0, SIZEOF_SECTION_OFFSETS);
 
-  for (i = 0; i < objfile->sections_end - objfile->sections; i++) {
-    objfile->sections[i].addr += addrs->other[0].addr;
-    objfile->sections[i].endaddr += addrs->other[0].addr;
-  }
+  /* I am not quite clear on why we are relocating the objfile
+     sections here rather than using relocate_objfile.  Anyway,
+     if we do move the sections, we need to shift the objfiles in
+     the ordered_sections array as well.  But if the offset is
+     zero, don't bother...  */
+
+  if (addrs->other[0].addr != 0)
+    {
+      objfile_delete_from_ordered_sections (objfile);
+      
+      num_sections = objfile->sections_end - objfile->sections;
+      for (i = 0; i < num_sections; i++) {
+	objfile->sections[i].addr += addrs->other[0].addr;
+	
+	objfile->sections[i].endaddr += addrs->other[0].addr;
+      }
+      
+      
+      objfile_add_to_ordered_sections (objfile);
+    }
 
   for (i = 0; i < SECT_OFF_MAX; i++) {
     objfile->section_offsets->offsets[i] = addrs->other[0].addr;

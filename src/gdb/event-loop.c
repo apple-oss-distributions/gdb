@@ -136,7 +136,10 @@ event_queue;
 #define USE_POLL 0
 #endif /* HAVE_POLL */
 
-static unsigned char use_poll = USE_POLL;
+/* APPLE LOCAL:  Don't use poll() until we've had time to vet all the
+   poll() code paths and ensured no new bugs or performance problems are
+   introduced by using it instead of select().  */
+static unsigned char use_poll = 0;
 
 static struct
   {

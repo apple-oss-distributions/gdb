@@ -647,8 +647,48 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
     else 
       {
 	insn_recognized = 0;
+
+	/* We have exceeded our maximum scan length.  So we are going to
+	   exit the parse.  However, there may be cases where what we have
+	   learned so far leads us to believe that there are interesting 
+	   bits of information that we should find in the instruction stream.
+	   We can make the scan more accurate even when we couldn't completely
+	   ingest the prologue by looking in a focused way for these bits.  */
+
 	if (insn_count > max_insn)
-	  break;
+	  {
+	    int cleanup_length = 6;
+
+	    if (!props->lr_saved 
+		&& props->lr_reg != -1
+		&& props->lr_invalid != 0 
+		&& props->lr_valid_again == INVALID_ADDRESS)
+	      {
+		/* We saw the link register made invalid, but we
+		   also didn't see it saved.  Let's try scanning forward
+		   to see when it gets saved or moved back to the lr, 
+		   otherwise we will think the return address is always stored 
+		   in some register, and end up adding a garbage address to 
+		   the stack.  */
+
+		for (; cleanup_length > 0; 
+		     pc += 4, cleanup_length--) 
+		  {
+		    unsigned long op;
+		    
+		    if (!safe_read_memory_unsigned_integer (pc, 4, &op))
+		      break;
+		    
+		    if ((op & 0xfc1fffff) == 0x7c0803a6) /* mtlr Rx */
+		      {
+			props->lr_valid_again = pc;
+			last_recognized_insn = pc;
+			break;
+		      }
+		  }
+	      }
+	    break;
+	  }
       }
   processed_insn:
     if (insn_recognized)
@@ -761,7 +801,7 @@ ppc_find_function_boundaries (ppc_function_boundaries_request *request,
       
   reply->body_start = ppc_parse_instructions
     (reply->prologue_start, lim_pc, &props);
-
+  
   return 0;
 }
 

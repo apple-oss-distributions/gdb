@@ -423,6 +423,7 @@ int
 cli_interpreter_resume (void *data)
 {
   sync_execution = 1;
+  print_frame_more_info_hook = 0;
   gdb_setup_readline ();
   return 1;
 }
@@ -434,6 +435,7 @@ cli_quoted_interpreter_resume (void *data)
   static struct ui_file *quoted_stderr = NULL;
 
   sync_execution = 1;
+  print_frame_more_info_hook = 0;
   gdb_setup_readline ();
   if (quoted_stdout == NULL)
     {

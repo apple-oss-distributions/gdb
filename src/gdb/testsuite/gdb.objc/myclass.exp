@@ -160,3 +160,40 @@ gdb_test continue \
      "continue until category method"
 
 
+runto_main
+
+gdb_test "print @selector(a)" "(0x\[^0\]\[0-9a-fA-F\]+)"
+gdb_test "print @selector(b)" "(0x\[^0\]\[0-9a-fA-F\]+)"
+gdb_test "print @selector(c)" "(0x\[^0\]\[0-9a-fA-F\]+)"
+send_gdb "print @selector(WiwKeeOrqwKxqIFjeqwJ)\n"
+
+gdb_expect {
+  -re ".* (0x\[^0\]\[0-9a-fA-F\]+).*$gdb_prompt $" {
+    set selector_addr $expect_out(1,string)
+    pass "fetch selector"
+  }
+  -re "$gdb_prompt $" { fail "fetch selector" }
+  timeout { fail "fetch selector" }
+}
+
+runto_main
+
+gdb_test "print @selector(aaaaaaaa)" "(0x\[^0\]\[0-9a-fA-F\]+)"
+gdb_test "print @selector(bbbbbbbb)" "(0x\[^0\]\[0-9a-fA-F\]+)"
+gdb_test "print @selector(cccccccc)" "(0x\[^0\]\[0-9a-fA-F\]+)"
+send_gdb "print @selector(WiwKeeOrqwKxqIFjeqwJ)\n"
+
+gdb_expect {
+  -re ".* (0x\[^0\]\[0-9a-fA-F\]+).*$gdb_prompt $" {
+    set selector_addr_2 $expect_out(1,string)
+    pass "fetch selector after run"
+  }
+  -re "$gdb_prompt $" { fail "fetch selector after run" }
+  timeout { fail "fetch selector after run" }
+}
+
+if {$selector_addr != $selector_addr_2} {
+  pass "selector address changed when re-running"
+} else {
+  fail "selector address changed when re-running"
+} 

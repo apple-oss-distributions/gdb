@@ -25,7 +25,10 @@ for i in \
     ; do
     name=`basename $i .framework`
     if [ -f $i/$name ]; then
-	libs="$libs $i/$name"
+        if nm "$i/$name" >/dev/null 2>&1
+        then
+	  libs="$libs $i/$name"
+        fi
     fi
 done 
 
@@ -35,13 +38,20 @@ for i in \
     ; do
     name=`basename $i .dylib`
     name=`echo $name | sed -e 's/\.[ABC]$//' -e 's/^lib//'`
-    libs="$libs $i"
+    if nm "$i" >/dev/null 2>&1
+    then
+      libs="$libs $i"
+    fi
 done 
 
 echo "done"
 
 for i in $libs; do
-    echo "sharedlibrary cache-symfile $i $dir" >> /tmp/syms_$$.gdb
+    if [ `basename $i` = "dyld" ]; then
+       echo "sharedlibrary cache-symfile $i $dir __dyld_" >> /tmp/syms_$$.gdb
+    else
+       echo "sharedlibrary cache-symfile $i $dir" >> /tmp/syms_$$.gdb
+    fi
 done
 
 echo -n "Processing libraries ... "
@@ -49,4 +59,3 @@ $gdb -nx --batch --command=/tmp/syms_$$.gdb
 echo "done"
 
 rm "/tmp/syms_$$.gdb"
-rm "${dir}/dyld.syms"

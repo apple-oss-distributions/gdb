@@ -870,12 +870,12 @@ evaluate_subexp_standard (struct type *expect_type,
 	    CORE_ADDR funaddr;
 	    struct type *value_type;
 
+	    funaddr = find_function_addr (method, &value_type);
 	    b = block_for_pc (funaddr);
 
 	    /* If compiled without -g, assume GCC 2.  */
 	    using_gcc = (b == NULL ? 2 : BLOCK_GCC_COMPILED (b));
 
-	    funaddr = find_function_addr (method, &value_type);
 	    CHECK_TYPEDEF (value_type);
 	  
 	    if ((value_type == NULL) || (TYPE_CODE (value_type) == TYPE_CODE_ERROR))

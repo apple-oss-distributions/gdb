@@ -49,13 +49,19 @@ void _initialize_blockframe (void);
    doing so is that some machines have no way of detecting bottom
    of stack. 
 
-   A PC of zero is always considered to be the bottom of the stack. */
+   A PC of zero is always considered to be the bottom of the stack. 
+   
+  APPLE LOCAL: Don't treat a PC of zero as the bottom of the stack.  If
+  you do, then you won't give a backtrace if somebody calls a NULL 
+  function pointer.  */
 
 int
 inside_entry_file (CORE_ADDR addr)
 {
+#if 0
   if (addr == 0)
     return 1;
+#endif
   if (symfile_objfile == 0)
     return 0;
   if (CALL_DUMMY_LOCATION == AT_ENTRY_POINT)
@@ -76,13 +82,20 @@ inside_entry_file (CORE_ADDR addr)
 
    Typically called from FRAME_CHAIN_VALID.
 
-   A PC of zero is always considered to be the bottom of the stack. */
+   A PC of zero is always considered to be the bottom of the stack.
+
+  APPLE LOCAL: Don't treat a PC of zero as the bottom of the stack.  If
+  you do, then you won't give a backtrace if somebody calls a NULL 
+  function pointer.  */
 
 int
 inside_main_func (CORE_ADDR pc)
 {
+
+#if 0
   if (pc == 0)
     return 1;
+#endif
   if (symfile_objfile == 0)
     return 0;
 
@@ -114,13 +127,19 @@ inside_main_func (CORE_ADDR pc)
 
    Typically called from FRAME_CHAIN_VALID.
 
-   A PC of zero is always considered to be the bottom of the stack. */
+   A PC of zero is always considered to be the bottom of the stack.
+
+  APPLE LOCAL: Don't treat a PC of zero as the bottom of the stack.  If
+  you do, then you won't give a backtrace if somebody calls a NULL 
+  function pointer.  */
 
 int
 inside_entry_func (CORE_ADDR pc)
 {
+#if 0
   if (pc == 0)
     return 1;
+#endif
   if (symfile_objfile == 0)
     return 0;
   if (CALL_DUMMY_LOCATION == AT_ENTRY_POINT)

@@ -1308,10 +1308,23 @@ get_prev_frame (struct frame_info *next_frame)
      using NEXT_FRAME's frame ID.  */
 
   prev_frame->pc = frame_pc_unwind (next_frame);
-  if (prev_frame->pc == 0)
+
+  /* APPLE LOCAL - Using 0 as an error return from frame_pc_unwind is
+     not good - as hinted above - since it means that if you indirect
+     through a NULL function pointer & crash (a not uncommon error),
+     we won't be able to make a backtrace.
+
+     For now, I am going to accept the 0 return - but only for
+     the bottom-most frame, since you won't have been able to call
+     through 0 and get anywhere...  
+
+     FIXME: We really need a better error return, however!  */
+
+  if (prev_frame->pc == 0 && prev_frame->level > 0)
     /* The allocated PREV_FRAME will be reclaimed when the frame
        obstack is next purged.  */
     return NULL;
+
   prev_frame->type = frame_type_from_pc (prev_frame->pc);
 
   /* Set the unwind functions based on that identified PC.  */

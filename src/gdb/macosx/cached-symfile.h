@@ -28,11 +28,11 @@ struct objfile *create_objfile (bfd *abfd);
 
 extern int build_objfile_section_table (struct objfile *);
 
-extern struct objfile *open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *filename);
+extern struct objfile *open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *filename, const char *prefix);
 
 extern struct objfile *create_objfile_from_mmalloc_pool (bfd *abfd, PTR md, int fd, CORE_ADDR mapaddr);
 
-extern struct objfile *open_mapped_objfile (const char *filename, bfd *abfd, time_t mtime, CORE_ADDR mapaddr);
+extern struct objfile *open_mapped_objfile (const char *filename, bfd *abfd, time_t mtime, CORE_ADDR mapaddr, const char *prefix);
 
 struct objfile *objfile_reposition (struct objfile *o, struct relocation_context *r);
 

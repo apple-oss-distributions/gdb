@@ -1,3 +1,126 @@
+2003-09-02  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-inferior-debug.c (macosx_debug_regions): Use
+	prev_info for the fields to output; we've already advanced info to
+	the next region.
+
+2003-08-27  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_frameless_function_invocation): If the pc is
+	not readable, we should treat the function as frameless (it means we
+	crashed following a bad function pointer, and so surely didn't set
+	up a frame.)
+
+2003-08-21  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-frameinfo.c (ppc_parse_instructions): If we have 
+	passed max_insn, but still haven't seen the stored pc moved back
+	from r0, look a little forward to see if it get put back into lr.
+
+	* ppc-macosx-tdep.c (ppc_frame_find_pc): Check for pc % 4 before
+	passing it ot ppc_parse_instructions.  If it doesn't pass the
+	test, then look in the link register in bottom-most frame, or
+	the stack otherwise.
+	
+2003-08-06  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_objfile_entry_clear): Rename
+	sym_bfd to commpage_bfd, sym_objfile to commpage_objfile.
+	(dyld_objfile_entry_compare): Ditto.
+	(dyld_entry_string): Update to use new dyld_entry_info.
+	(dyld_entry_out): Update to use new dyld_entry_info.
+	(dyld_entry_info): Add two new parameters, to fetch the objfile
+	and symfile name for the commpage symbol data.  Allow the caller
+	to specify NULL to mean "don't bother telling me this string".
+	(dyld_resolve_shlib_num): Rename sym_objfile to commpage_objfile.
+	(dyld_shlib_info_basename_length): Ditto.
+	(dyld_print_entry_info): Rename sym_objfile to commpage_objfile.
+	Output the objfile and symfile name for the commpage symbol data,
+	if they are present.
+	* macosx-nat-dyld-info.h (dyld_objfile_entry): Rename sym_bfd to
+	commpage_bfd, sym_objfile to commpage_objfile.
+	(dyld_entry_info): Update prototype.
+	* macosx-nat-dyld-process.c (dyld_load_symfile): Check for a
+	__DATA.__commpage section, and load it into commpage_objfile, if
+	found.
+	(dyld_remove_objfile): Free the commpage_objfile and commpage_bfd,
+	if present.
+	(dyld_objfile_move_load_data): Move the commpage objfile and bfd
+	to the new entry.
+	
+2003-08-06  Klee Dienes  <kdienes@apple.com>
+
+	* cached-symfile.c (_initialize_cached_symfile): Fix the entry for
+	cached-symfile-dir to refer to the correct GDB variable.
+
+2003-07-31  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-tdep.c: Change the PPC_SIGCONTEXT_PC_OFFSET and
+	PPC_SIGCONTEXT_SP_OFFSET numbers for Panther B25 and above.
+	
+2003-07-31  Klee Dienes  <kdienes@apple.com>
+
+	* machoread.c (macho_symfile_read): Pass in "__DATA.__bss" as the
+	name for the bss section.
+	* macosx-tdep.c (macosx_symbol_type): Properly set the symbol
+	flags for symbols in the bss section.
+	
+2003-07-31  Jim Ingham  <jingham@apple.com>
+
+	* cached-symfile.c (cache_bfd): Cache the prefix string in the
+	mmalloc pool, and set the objfile->prefix pointing at that, rather
+	than caching the pointer value in the current running gdb.
+	
+2003-07-25  Klee Dienes  <kdienes@apple.com>
+
+	* cached-symfile.c (open_objfile_from_mmalloc_pool): Check the
+	prefix fo 'orig_objfile', not 'objfile'.
+
+2003-07-25  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.c (cache_symfile_helper): Don't re-link the
+	objfile, it's already linked by cache_bfd.
+	(dyld_cache_symfile_command): Ditto.
+	* cached-symfile.c (cache_bfd): Document.
+
+2003-07-25  Klee Dienes  (kdienes@apple.com)
+
+	* cached-symfile.c (open_objfile_from_mmalloc_pool): Correctly set
+	the 'md' field.
+
+2003-07-25  Klee Dienes  (kdienes@apple.com)
+
+	* cached-symfile.c (open_objfile_from_mmalloc_pool): Add 'prefix'
+	field; check against the prefix of the cached-symfile.
+	(open_mapped_objfile): Add 'prefix' field.
+	* cached-symfile.h: Update prototypes.
+	
+2003-07-24  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-process.c (remove_objfile_from_dyld_records): New
+	function.  With a comment and everything.
+	* macosx-nat-dyld-process.h:  Add prototypes for
+	remove_objfile_from_dyld_records and dyld_remove_objfile.
+
+2003-07-24  Jim Ingham  <jingham@apple.com>
+
+	This is the macosx native side of the ordered_sections patch.
+
+	* cached-symfile.c (build_objfile_section_table): This is the
+	cached symfile version of this function.  Add the sections for 
+	the new objfile to the ordered_sections table.
+	* machoread.c (macho-symfile-offsets): We don't use relocate_objfile,
+	so we need to handle relocating the ordered_sections entries here,
+	where we do the ofsetting for mach-o files.
+	* pefread.c (pef_symfile_offsets): and ditto for pef.
+	* symread.c (sym_symfile_offsets): and ditto for sym.
+	
+2003-07-16  Klee Dienes  <kdienes@apple.com>
+
+        * macosx-nat-dyld-process.c (dyld_lookup_objfile_safe): New function.
+        (dyld_lookup_objfile_entry): New function.
+        * macosx-nat-dyld-process.h: Add prototypes.
+
 2003-06-10  Klee Dienes <klee@apple.com>
 
 	cached-symfile.c (cache_bfd): Create the cached symfile with

@@ -189,22 +189,6 @@ gdb_expect {
   }
 }
 
-# Build invalid b.c #4
-
-gdb_test "shell make -C $objdir/$subdir stage8" ".*-o b-bundlized.o8 b.o" "make version 8 of b.c"
-send_gdb "fix $objdir/$subdir/b-bundlized.o8 $objdir/$subdir/b.c\n"
-gdb_expect {
-  -re "Static variable 'a' cannot be added with a fix.\[\r\n\]+$gdb_prompt $" {
-    pass "Reject addition of new static variable."
-  }
-  -re ".*$gdb_prompt $" {
-    fail "Reject addition of new static variable."
-  }
-  timeout {
-    fail "Reject addition of new static variable. (timeout)"
-  }
-}
-
 # Build valid b.c #1
 
 gdb_test "shell make -C $objdir/$subdir stage9" ".*-o b-bundlized.o9 b.o" "make version 9 of b.c"
@@ -248,6 +232,7 @@ gdb_expect {
     fail "Reject adding local variable to function on the stack. (timeout)"
   }
 }
+gdb_test "finish" "Value returned is.*" "Finish back to main"
 
 # Build invalid b.c #6
 
@@ -313,6 +298,45 @@ gdb_expect {
   }
 }
 
+# Build invalid b.c #10
+
+gdb_test "shell make -C $objdir/$subdir stage17" ".*-o b-bundlized.o17 b.o" "make version 17 of b.c"
+send_gdb "fix $objdir/$subdir/b-bundlized.o17 $objdir/$subdir/b.c\n"
+gdb_expect {
+  -re "NSLinkModule was not able to correctly load the Fix bundle, most likely due to unresolved external references.*\[\r\n\]+$gdb_prompt $" {
+    pass "Reject reference to undefined external function."
+  }
+  -re ".*$gdb_prompt $" {
+    fail "Reject reference to undefined external function."
+  }
+  timeout {
+    fail "Reject reference to undefined external function. (timeout)"
+  }
+}
+
+# Build valid b.c #4
+
+gdb_test "shell make -C $objdir/$subdir stage18" ".*-o b-bundlized.o18 b.o" "make version 18 of b.c"
+gdb_test "fix $objdir/$subdir/b-bundlized.o18 $objdir/$subdir/b.c" ".*Fix succeeded." "fix in b-bundlized version 18"
+gdb_test "next" ".*I am in bar in b.c version 18.*I am in fred.*"  "step over bar() version 18"
+send_gdb "p foo\n"
+gdb_expect {
+  -re ".*$decimal = \{int \\(void\\)\} ($hex) <foo>\[\r\n\]+$gdb_prompt $" {
+    set stage18_foo_addr $expect_out(1,string)
+    pass "get addr of foo() at stage18"
+  }
+  -re ".*$gdb_prompt $" {
+    fail "get addr of foo() at stage18"
+  }
+  timeout {
+    fail "get addr of foo() at stage18 (timeout)"
+  }
+}
+if { $stage4_foo_addr != $stage18_foo_addr } then {
+  pass "stage4 foo() and stage18 foo() are different."
+} else {
+  fail "stage4 foo() and stage18 foo() are different."
+}
 
 
 

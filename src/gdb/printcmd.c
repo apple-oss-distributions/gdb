@@ -1838,7 +1838,18 @@ print_frame_args (struct symbol *func, struct frame_info *fi, int num,
 	      nsym = lookup_symbol
 		(SYMBOL_NAME (sym),
 		 b, VAR_NAMESPACE, (int *) NULL, (struct symtab **) NULL);
-	      if (SYMBOL_CLASS (nsym) == LOC_REGISTER)
+	      if (nsym == NULL)
+                /* We didn't find another copy of the symbol.  I have seen this
+		   happen when we were using f2c'ed Fortran code, where the fortran
+		   code was mixed case.  Then the variable names in the C code are mixed
+		   case, but it puts in #file markers which make gdb think it's fortran.
+		   We really should change SYMBOL_MATCHES_NAME to be a case insensitive
+		   match when case_sensitive is false.  Just forcing names to lower case
+		   in lookup_symbol is bogus.  Anyway, regardless of how this might fail
+		   crashing in the next line is unacceptable.  Just reuse the symbol we
+		   got... */
+		;
+	      else if (SYMBOL_CLASS (nsym) == LOC_REGISTER)
 		{
 		  /* There is a LOC_ARG/LOC_REGISTER pair.  This means that
 		     it was passed on the stack and loaded into a register,

@@ -404,7 +404,7 @@ bfd_get_mtime (abfd)
   while (abfd->my_archive)
     abfd = abfd->my_archive;
 
-  if (abfd->flags & BFD_IO_FUNCS)
+  if (abfd->flags & (BFD_IO_FUNCS | BFD_IN_MEMORY))
     {
       return 0;
     }

@@ -31,6 +31,8 @@ extern int gdb_parse_exp_1 (char **, struct block *,
 
 extern int gdb_evaluate_expression (struct expression *, struct value **);
 
+extern int gdb_print_expression (struct expression *, struct ui_file *);
+
 extern int gdb_evaluate_type (struct expression *exp, struct value **value);
 
 extern int gdb_value_fetch_lazy (struct value *);

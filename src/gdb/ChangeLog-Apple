@@ -1,3 +1,298 @@
+2003-08-22  Jim Ingham <jingham@apple.com>
+
+	* blockframe.c (inside_entry_file, inside_entry_func, inside_main_func): 
+	Don't treat a pc of 0 as the bottom of the stack.  Otherwise you won't
+	be able to backtrace past a call through a NULL function pointer.
+	* frame.c (get_prev_frame): Don't treat a pc value of 0 in the bottom-most
+	frame as an error.  It is much more likely the user has called through a
+	NULL pointer.
+
+2003-08-22  Jason Molenda  (jmolenda@apple.com)
+
+	* stack.c (backtrace_command_1): Save and restore current source
+	line value around the backtrace cmd.
+
+2003-08-08  Jason Molenda  (jmolenda@apple.com)
+
+        * event-loop.c (use_poll): Don't use poll() just because the
+        poll() wrapper is present in the system library--stick with select()
+        for now.
+
+2003-08-06  Jim Ingham  <jingham@apple.com>
+
+	* symfile.c (reread_symbols): Call objfile_relocate on the new
+	objfile.  Since you are keeping the old offsets you have to reapply
+	them, or the new objfile won't get properly slid.  In the longer term,
+	we probably ought to let the solib layer handle symbol rereading, since
+	it knows where things land.
+
+	* cli-setshow.c (do_setshow_command): Don't print the doc string if the
+	interpreter is mi_like.  The mi uses the cli show command to report gdb
+	variable values, and is not expecting the doc string.
+
+2003-08-06  Klee Dienes  <kdienes@apple.com>
+
+	* objfiles.c (_initialize_objfiles): Add aliases for
+	generate-cached-symfiles and use-cached-symfiles.
+
+2003-08-05  Jim Ingham  (jingham@apple.com)
+
+	* inflow.c (terminal_inferior, terminal_ours_2, child_terminal_info): 
+	check that inferior_ttystate is not null before passing it on to 
+	functions that will crash if it is null.
+
+	* objc-lang.c (find_methods): Use find_pc_function_sect instead of 
+	find_pc_function.  Since we know the section here, this will find the 
+	correct sym if we are looking up a pc before we run, and have a shared
+	libraries that overlap each other.
+
+	* cli-decode.c (print_doc_line): Use the stream we have been passed in
+	rather than calling ui_out_text to print the doc line.
+
+2003-08-04  Jason Molenda  (jmolenda@apple.com)
+
+	* objfiles.c (sanity_check_symtab_obsoleted_flag): Update comment.	
+	(sanity_check_psymtab_obsoleted_flag): Ditto.
+
+2003-08-04  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (check_restriction_cxx_zerolink): New function
+	to see if the file being fixed is C++, and if so, whether the inferior
+	is using ZeroLink.
+	(do_pre_load_checks): Run this new check.
+
+2003-07-31  Jim Ingham  <jingham@apple.com>
+
+        * breakpoint.c (bpstat_do_actions): Copy the bpstat passed in and
+	use that in the loop that actually does the actions.  This way we
+	don't have to worry that somebody might have freed the bpstat
+	(always stop_bpstat) our from under us.
+
+2003-07-31  Klee Dienes  (kdienes@apple.com)
+
+	* objc-lang.c (lookup_child_selector): Rename to
+	lookup_child_selector_nocache.
+	(selector_entry): New struct.
+	(SELECTOR_HASH_SIZE): New define.
+	(selector_hash_generation): New variable.
+	(reset_child_selector_cache): New function.
+	(lookup_child_selector): New function; uses the selector cache.
+
+2003-07-31  Jim Ingham  (jingham@apple.com)
+
+	* symfile.c (add_symbol_file_command): Fix a misplaced "?" in the
+	prompt string.  This was causing suprious testsuite failures in
+	relocate.exp.
+
+2003-07-31  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (struct fixinfo): Store the name of the
+	original executable/dylib as well as the name of the original
+	source file, instead of pointers to the objfile/psymtab.
+	(fix_command_helper): Find original object file at this level.
+	(mark_previous_fixes_obsolete): Update to use accessor functions
+	to get original symtab/psymtab.
+	(free_half_finished_fixinfo): Free new xstrdup'ed memory of original
+	executable's filename.
+	(find_orig_static_symbols): Use accessor function to find
+	original objfile/symtab.
+	(redirect_statics): Properly cast NULLs to avoid warnings with 
+	64-bit CORE_ADDR.
+	(build_list_of_objfiles_to_update): Use accessor function to get
+	original objfile.
+	do_final_fix_fixups_static_syms): Ditto.
+	(pre_load_and_check_file): Properly cat NULL to avoid warnings
+	with 64-bit CORE_ADDR.
+	(pre_load_and_check_file): Hoist original objfile from here
+	to fix_command_helper().
+	(do_pre_load_checks): Sanity check the new names.
+	(check_restrictions_globals): Use accessor functions to get
+	original objfile.
+	(check_restrictions_statics): Ditto.
+	(find_original_objfile): This function removed, but really transformed
+	into ...
+	(find_original_object_file_name): This function added.  Much similarity
+	to the old find_original_objfile().
+	(find_original_object_file): Accessor function to get the original
+	object file.
+	(find_original_symtab): Similar.
+	(find_original_psymtab): Similar.
+
+2003-07-29  Jim Ingham  (jingham@apple.com)
+
+	* breakpoint.c (print_one_breakpoint): replace calls to
+	print_expression with gdb_print_expression, which is the safe
+	version.  Also, when printing the breakpoint condition, if 
+	print_expression fails, just print the cond_string.
+	* (breakpoint_1): replace call to ui_out_table_begin with
+	make_cleanup_ui_out_table_begin_end, and do_cleanups to close
+	the table.  Also replace a few more print_expression calls
+	with the safe version.
+	* ui-out.c (do_cleanup_table_end): New function.
+	(make_cleanup_ui_out_table_begin_end): New function
+	* ui-out.h: declare make_cleanup_ui_out_table_begin_end.
+	* wrapper.c (wrap_print_expression): New function.
+	(gdb_print_expression): New function.
+	* wrapper.h: declare gdb_print_expression.
+
+	* varobj.c (varobj_create): use get_selected_frame, not get_current_frame
+	to get the saved frame id.  The latter returns the currently executing
+	frame, not the currently selected frame, which is not what we want here.
+	Also if we aren't using varobj_runs_all_threads, make a null_cleanup for the
+	schedlock_chain cleanup.
+	
+2003-07-25  Jim Ingham  (jingham@apple.com)
+
+	* objfiles.c (objfile_delete_from_ordered_sections): Don't add
+	1 to the section begin to find the to-be-deleted section index.
+	This will fail for sections that are only one byte long.
+
+2003-07-24  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (get_fixed_file): Only call 
+	remove_objfile_from_dyld_records in a native gdb.
+
+2003-07-24  Klee Dienes  <kdienes@apple.com>
+
+	* objfiles.c (link_objfile): Check to see that the objfile hasn't
+	already been linked, before linking.
+
+2003-07-24  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (load_fixed_objfile): Return a result
+	code if NSLinkModule fails.
+	(get_fixed_file): When load_fixed_objfile fails, find objfile for
+	aborted file and remove it from gdb's global linked list structures.
+	* objfiles.c (free_objfile): Add two APPLE LOCAL markers.
+	* Makefile.in (fix-and-continue.o): Add dependency on 
+	macosx-nat-dyld-process.h.
+
+2003-07-24  Jim Ingham (jingham@apple.com)
+
+	This patch adds an "ordered_sections" lookup table to objfiles.c
+	so that the pc->obj_section lookup can be done with a binary search
+	rather than a linear search.
+
+	* minsyms.c (lookup_minimal_symbol_by_pc_section_from_objfile): Delete 
+	the call to find_pc_section just to check that the pc is actually in
+	a known section.  Since this routine often gets called in a loop with
+	the same pc it is more efficient for the callers to do this check.
+	(lookup_minimal_symbol_by_pc_section): Use the ordered_sections lookup
+	to find the minsym.  If it fails we still fall back on the old search.
+	
+	* objfiles.c (backward_section_compare): New function.
+	(forward_int_compare): New function
+	(objfile_delete_from_ordered_sections ): New function.
+	(get_insert_index_in_ordered_sections): New function.
+	(objfile_add_to_ordered_sections): New function.
+	(find_in_ordered_sections_index): New function.
+	(find_pc_sect_in_ordered_sections): New function.
+	(build_objfile_section_table): Add the new sections to the 
+	ordered_sections table.
+	(free_objfile): remove the sections from the ordered_sections table.
+	(objfile_relocate): remove the obj_sections from their old locations
+	in the ordered_sections table, and move them to their relocated
+	locations.
+	(find_pc_sect_section): Use the ordered_sections table.  If this fails
+	fall back on the original ALL_OBJSECTIONS search.
+	* objfiles.h: Add declarations to the new exported functions.
+	* symfile.c (reread_symbols): Clear the old objfile's obj_sections from
+	the ordered_sections array.
+
+	* eval.c (evaluate_subexp_standard): Fix little goof, funaddr was used
+	before being set.
+	
+	* symtab.h: Cast the -1 error return to CORE_ADDR.  This removes a
+	bunch of warnings from objfiles.c.
+
+2003-07-09  Jim Ingham (jingham@apple.com)
+
+	* breakpoint.c (insert_breakpoints): Revert the change that called
+	error_stream if there was an error in setting a breakpoint.  The
+	upstream code actually can handle the return value, but was not 
+	expecting an actual error (i.e. longjmp).
+
+	* printcmd.c (print_frame_args): Work around a problem with f2c'ed C code
+	where the debug info says it is a .f file, but it is actually C so the
+	variable names are case sensitive.  gdb would assume a lookup_symbol 
+	never fails, and crash when it did.
+
+2003-07-08  Jason Molenda  (jmolenda@apple.com)
+
+	* cli-out.c (cli_interpreter_resume): Clear print_frame_more_info_hook
+	when returning to a console interpreter.
+	(cli_quoted_interpreter_resume): Ditto.
+
+2003-06-30  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (load_fixed_objfile): Clarify 
+	NSCreateObjectFileImageFromFile failure error message (tell user
+	to retry fix).
+
+2003-06-20  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (create_current_active_funcs_list): Make
+	struct symbol copy deeper.
+	(free_active_threads_struct): Free deeper struct symbol copy.
+
+2003-06-19  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (load_fixed_objfile): Wrap error message prettily.
+	(create_current_active_funcs_list): Copy the symbol we find, instead
+	of saving a pointer to it.  They can sneakily move around, it seems.
+	(free_active_threads_struct): Free the copied symbol.
+
+2003-06-19  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (fix_command_helper): Mark previous fixes,
+	and the original source file, obsolete only after the new bundle
+	has successfully been loaded.
+	(mark_previous_fixes_obsolete): Don't mark the newest bundle
+	as obsolete.
+
+2003-06-19  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (find_objfile_by_name): If we fail to find
+	an objfile by a given name, search the objfile's bfd structures;
+	when cached-symfiles are being used, the objfile->name member is
+	the cached-symfile name.
+
+2003-06-18  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (load_fixed_objfile): Expand on error message
+	a bit.
+	(create_current_threads_list): Don't issue warning message when
+	we can't change to a thread.  Will revisit this later.
+	(check_restrictions_statics): Don't include EOL at end of warning()
+	text.
+
+2003-06-17  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (load_fixed_objfile): Include return value
+	from NSCreateObjectFileImageFromFile in error message.
+	(find_orig_static_symbols): Add a debug warning for set debug
+	fix-and-continue.
+
+2003-06-17  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (create_current_threads_list): If we are unable
+	to switch to a thread, skip that thread instead of aborting fix.
+	A call to prune_threads() before I step through the list, but I
+	think that function is intended to be static to thread.c, so we'll
+	go with this for now.
+
+2003-06-17  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (check_restrictions_statics): If gdb has an
+	incomplete type for a static, either the old or the new, skip the
+	checks.  They won't be meaningful, and we'll probably abort the
+	fix needlessly.
+
+2003-06-13  Jim Ingham (jingham@apple.com)
+
+	* utils.c (make_cleanup_set_restore_scheduler_locking_mode): Change
+	function to actually set up a locking mode restore cleanup.
+
 2003-06-11  Jason Molenda  (jmolenda@apple.com)
 
 	* fix-and-continue.c (redirect_statics): Don't redirect static

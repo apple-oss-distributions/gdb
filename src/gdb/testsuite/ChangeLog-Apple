@@ -1,3 +1,27 @@
+2003-07-31  Klee Dienes <kdienes@apple.com>
+
+	* gdb.objc/myclass.exp: Test the selector cache; make sure it
+	gets properly cleared between runs.
+
+2003-07-24  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/b-invalid-12.c: New file which
+	adds a call to an undefined external function.
+	* .../small-c/Makefile.in: Build it.
+	* .../small-c/fix-small-c.exp: Add test case.
+
+2003-07-02  Igor Likhatchev  (igor@apple.com)
+	* gdb.base/help.exp    
+	Modified expected text for command  "help breakpoints", since Apple gdb
+	now provides help for set/show regexp against thrown/caught objects.
+
+2003-06-16  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/b-invalid-4.c: Remove.
+	This is now valid.
+	.../small-c/Makefile: Remove refs.
+	.../small-c/fix-small-c.exp: Remove test.
+
 2003-06-01  Jason Molenda  (jmolenda@apple.com)
 
 	* gdb.apple/fix-and-continue/small-objc/class-v3.m (sayHello):  Add

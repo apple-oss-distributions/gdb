@@ -305,6 +305,22 @@ previous table_end.");
   uo_table_begin (uiout, nbrofcols, nr_rows, uiout->table.id);
 }
 
+static void
+do_cleanup_table_end (void *data)
+{
+  struct ui_out *uiout = (struct ui_out *) data;
+  ui_out_table_end (uiout);
+}
+
+struct cleanup *
+make_cleanup_ui_out_table_begin_end (struct ui_out *uiout, int nbrofcols,
+				     int nr_rows,
+				     const char *tblid)
+{
+  ui_out_table_begin (uiout, nbrofcols, nr_rows, tblid);
+  return make_cleanup (do_cleanup_table_end, uiout);
+}
+
 void
 ui_out_table_body (struct ui_out *uiout)
 {

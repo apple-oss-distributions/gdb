@@ -1543,8 +1543,6 @@ cache_symfiles_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, s
       
   if (old != NULL)
     unlink_objfile (old);
-
-  link_objfile (new);
 }
 
 #endif /* MAPPED_SYMFILES */
@@ -1587,7 +1585,6 @@ dyld_cache_symfile_command (char *args, int from_tty)
   if (abfd == NULL)
     error ("unable to open BFD for \"%s\"", filename);
   objfile = cache_bfd (abfd, prefix, OBJF_SYM_ALL, 0, 0, dest);
-  link_objfile (objfile);
   free_objfile (objfile);
 #else /* ! MAPPED_SYMFILES */
   error ("Cached symfiles not supported on this configuration of GDB.");

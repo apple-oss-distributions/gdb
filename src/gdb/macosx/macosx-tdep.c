@@ -140,20 +140,34 @@ static unsigned char macosx_symbol_type (macho_type, macho_other, abfd)
 {
   unsigned char ntype = macosx_symbol_types[macho_type];
 
-  if ((macho_type & BFD_MACH_O_N_TYPE) == BFD_MACH_O_N_SECT) {
-    
-    if (macho_other == 1) {
-      ntype |= N_TEXT;
-    } else if (macho_other <= abfd->tdata.mach_o_data->nsects
-	       && abfd->tdata.mach_o_data->sections[macho_other - 1]->segname != NULL
-	       && strcmp("__TEXT", 
-			 abfd->tdata.mach_o_data->sections[macho_other - 1]->segname) == 0) {
-      ntype |= N_TEXT;
-    } else {
-      /* complain (&unknown_macho_section_complaint, local_hex_string (macho_other)); */
-      ntype |= N_DATA;
+  if ((macho_type & BFD_MACH_O_N_TYPE) == BFD_MACH_O_N_SECT)
+    {
+      if (macho_other == 1)
+	{
+	  ntype |= N_TEXT;
+	}
+      else if (macho_other <= abfd->tdata.mach_o_data->nsects)
+	{
+	  const char *segname = abfd->tdata.mach_o_data->sections[macho_other - 1]->segname;
+	  const char *sectname = abfd->tdata.mach_o_data->sections[macho_other - 1]->sectname;
+	
+	  if ((segname != NULL) && (strcmp (segname, "__DATA") == 0))
+	    {
+	      if ((sectname != NULL) && (strcmp (sectname, "__bss") == 0))
+		ntype |= N_BSS;
+	      else
+		ntype |= N_DATA;
+	    }
+
+	  if ((segname != NULL) && (strcmp (segname, "__TEXT") == 0))
+	    ntype |= N_TEXT;
+	}
+      else
+	{
+	  /* complain (&unknown_macho_section_complaint, local_hex_string (macho_other)); */
+	  ntype |= N_DATA;
+	}
     }
-  }
   
   return ntype;
 }

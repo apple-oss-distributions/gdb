@@ -1,4 +1,10 @@
-2006-06-10  Jim Ingham (jingham@apple.com)
+2003-08-08  Jim Ingham (jingham@apple.com)
+
+	* mi-main.c (mi_execute_async_cli_command): Use 
+	safe_execute_command not execute_command so we can discard
+	the async callbacks if we get an error.
+
+2003-06-10  Jim Ingham (jingham@apple.com)
 
 	* mi-main.c (mi_cmd_thread_set_pc): Check both old_fun and
 	new_fun to make sure they aren't null before testing to see

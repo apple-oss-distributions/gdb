@@ -48,6 +48,7 @@
 #include "regcache.h"
 #include "gdb.h"
 #include "frame.h"
+#include "wrapper.h"
 
 enum
   {
@@ -1759,6 +1760,8 @@ mi_execute_async_cli_command (char *mi, char *args, int from_tty)
     {
       struct mi_continuation_arg *arg = NULL; 
       struct cleanup *old_cleanups = NULL;
+      int retval;
+
       async_args = (char *) xmalloc (strlen (args) + 2);
       old_cleanups = make_exec_cleanup (free, async_args);
       strcpy (async_args, args);
@@ -1777,7 +1780,7 @@ mi_execute_async_cli_command (char *mi, char *args, int from_tty)
       add_continuation (mi_exec_async_cli_cmd_continuation, 
 			(struct continuation_arg *) arg);
 
-      execute_command ( /*ui */ run, 0 /*from_tty */ );
+      retval = safe_execute_command ( /*ui */ run, 0 /*from_tty */ );
 
       if (target_executing)
 	{
@@ -1792,6 +1795,7 @@ mi_execute_async_cli_command (char *mi, char *args, int from_tty)
 	     most likely an error... */
 	  discard_all_continuations ();
 	  free_continuation_arg (arg);
+	  mi_error_message = error_last_message ();
 	  return MI_CMD_ERROR;
 	}
 

@@ -791,8 +791,8 @@ bfd_mach_o_scan_read_symtab_symbol (abfd, sym, s, i)
 	case BFD_MACH_O_N_SECT:
 	  if ((section > 0) && (section <= mdata->nsects))
 	    {
-	      s->section = mdata->sections[section - 1]->bfdsection;
-	      s->value = s->value - mdata->sections[section - 1]->addr;
+	      s->section = mdata->sections[section]->bfdsection;
+	      s->value = s->value - mdata->sections[section]->addr;
 	    }
 	  else
 	    {

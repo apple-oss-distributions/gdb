@@ -587,6 +587,13 @@ void objfile_restrict_search (int);
 void objfile_add_to_restrict_list (struct objfile *objfile);
 void objfile_clear_restrict_list ();
 
+/* APPLE LOCAL: These manage & look up obj_sections in the ordered_sections
+   array.  */
+void objfile_add_to_ordered_sections (struct objfile *objfile);
+void objfile_delete_from_ordered_sections (struct objfile *objfile);
+struct obj_section *find_pc_sect_in_ordered_sections (CORE_ADDR addr, 
+					      struct sec *bfd_section);
+
 /* APPLE LOCAL begin fix-and-continue */
 struct symtab *symtab_get_first (struct objfile *, int );
 struct symtab *symtab_get_next (struct symtab *, int );

@@ -670,6 +670,8 @@ varobj_create (char *objname,
   
   if (!varobj_runs_all_threads)
     schedlock_chain = make_cleanup_set_restore_scheduler_locking_mode (scheduler_locking_on);
+  else
+    schedlock_chain = make_cleanup (null_cleanup, NULL);
 
   if (expression != NULL)
     {
@@ -754,7 +756,7 @@ varobj_create (char *objname,
 	      fi = frame_find_by_id (var_frame_id);
 
 	      var->root->frame = var_frame_id;
-	      old_frame_id = get_frame_id (get_current_frame ());
+	      old_frame_id = get_frame_id (get_selected_frame ());
 	      select_frame (fi);
 	    }
 

@@ -114,6 +114,8 @@ build_objfile_section_table (struct objfile *objfile)
       objfile->sections[i++] = section;
       objfile->sections_end = objfile->sections + i;
     }
+
+  objfile_add_to_ordered_sections (objfile);
   
   return 0;
 }
@@ -140,7 +142,7 @@ allocate_objfile (bfd *abfd, int flags, int symflags, CORE_ADDR mapaddr, const c
 #if MAPPED_SYMFILES
 
   if (use_mapped_symbol_files)
-    objfile = open_mapped_objfile (bfd_get_filename (abfd), abfd, bfd_get_mtime (abfd), mapaddr);
+    objfile = open_mapped_objfile (bfd_get_filename (abfd), abfd, bfd_get_mtime (abfd), mapaddr, prefix);
 
   if ((objfile == NULL) && (flags & OBJF_MAPPED))
     {
@@ -193,7 +195,7 @@ void mmalloc_protect (PTR md, int flags)
 }
 
 struct objfile *
-open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *filename)
+open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *filename, const char *prefix)
 {
   struct symtab *s;
   struct partial_symtab *p;
@@ -254,14 +256,26 @@ open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *f
       orig_objfile = objfile_reposition (orig_objfile, &r);
     }
 
+  if (strcmp ((orig_objfile->prefix == NULL) ? "" : orig_objfile->prefix,
+             (prefix == NULL) ? "" : prefix) != 0)
+    {
+      warning ("Mapped symbol file \"%s\" uses a different prefix (\"%s\") than the one requested (\"%s\"); ignoring",
+              filename,
+              (orig_objfile->prefix == NULL) ? "" : orig_objfile->prefix,
+              (prefix == NULL) ? "" : prefix);
+      return NULL;
+    }
+
   objfile = (struct objfile *) xmalloc (sizeof (struct objfile));
   *objfile = *orig_objfile;
   
   for (ms = objfile->msymbols; (ms->ginfo.name != NULL); ms++)
     ms->ginfo.bfd_section = NULL;
 
-  /* Forget things specific to a particular gdb, may have changed. */
-  objfile->md = NULL;
+  /* Update stale pointers from the old symfile, to point to the
+     values in the current GDB address space. */
+
+  objfile->md = md;
   objfile->mmfd = fd;
   objfile->sf = NULL;
   objfile->obfd = abfd;
@@ -304,10 +318,11 @@ open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *f
 }
 
 struct objfile *
-open_mapped_objfile (const char *filename, bfd *abfd, time_t mtime, CORE_ADDR mapaddr)
+open_mapped_objfile (const char *filename, bfd *abfd, time_t mtime, CORE_ADDR mapaddr, const char *prefix)
 {
   const char *symsfilename = NULL;
   const char *resolved = NULL;
+  struct objfile *objfile;
   struct stat sbuf;
   int fd = -1;
 
@@ -346,7 +361,12 @@ open_mapped_objfile (const char *filename, bfd *abfd, time_t mtime, CORE_ADDR ma
       return NULL;
     }
 
-  return open_objfile_from_mmalloc_pool (md, abfd, fd, mtime, resolved);
+  objfile = open_objfile_from_mmalloc_pool (md, abfd, fd, mtime, resolved, prefix);
+
+  if (objfile == NULL)
+      mmalloc_detach (md);
+
+  return objfile;
 }
 
 struct objfile *
@@ -384,6 +404,13 @@ create_objfile_from_mmalloc_pool (bfd *abfd, PTR md, int fd, CORE_ADDR mapaddr)
 
   return objfile;
 }
+
+/* Cache the specified bfd into the file, or directory, specified by
+   'dest'.  Uses 'addr' as the base address for the symbols of the
+   bfd, and 'mapaddr' for the location of the resulting objfile in
+   GDB's memory.  If 'mapaddr' is specified as 0, GDB will pick an
+   available address.  The resulting objfile is linked onto the GDB
+   objfile chain, just as any other objfile would be. */
 
 struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
 			   size_t addr, size_t mapaddr, const char *dest)
@@ -467,7 +494,10 @@ struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
   objfile->obfd = abfd;
   objfile->name = mstrsave (objfile->md, filename);
   objfile->mtime = bfd_get_mtime (abfd);
-  objfile->prefix = prefix;
+  if (prefix == NULL)
+    objfile->prefix = NULL;
+  else
+    objfile->prefix = mstrsave (objfile->md, prefix);
 	
   if (build_objfile_section_table (objfile))
     error ("Unable to find the file sections in `%s': %s",
@@ -510,7 +540,7 @@ struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
     return NULL;
   }
 
-  objfile = open_mapped_objfile (filename, abfd, mtime, 0);
+  objfile = open_mapped_objfile (filename, abfd, mtime, 0, prefix);
   if (objfile == NULL) {
     warning ("unable to read mapped objfile");
     return NULL;
@@ -997,7 +1027,7 @@ _initialize_cached_symfile ()
 
   add_show_from_set
     (add_set_cmd ("cached-symfile-dir", class_support, var_string,
-		  (char *) &cached_symfile_path,
+		  (char *) &cached_symfile_dir,
 		  "Set directory in which to generate cached symbol files.",
 		  &setlist),
      &showlist);
