@@ -1,7 +1,7 @@
 /* Multi-process/thread control for GDB, the GNU debugger.
 
    Copyright 1986, 1987, 1988, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+   1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    Contributed by Lynx Real-Time Systems, Inc.  Los Gatos, CA.
 
@@ -59,7 +59,7 @@ static void thread_apply_all_command (char *, int);
 static int thread_alive (struct thread_info *);
 static void info_threads_command (char *, int);
 static void thread_apply_command (char *, int);
-static void restore_current_thread (ptid_t);
+static void restore_current_thread (ptid_t, int);
 static void switch_to_thread (ptid_t ptid);
 static void prune_threads (void);
 
@@ -301,7 +301,7 @@ load_infrun_state (ptid_t ptid,
 		   struct breakpoint **through_sigtramp_breakpoint,
 		   CORE_ADDR *step_range_start, 
 		   CORE_ADDR *step_range_end,
-		   CORE_ADDR *step_frame_address, 
+		   struct frame_id *step_frame_id, 
 		   int *handling_longjmp,
 		   int *another_trap, 
 		   int *stepping_through_solib_after_catch,
@@ -327,7 +327,7 @@ load_infrun_state (ptid_t ptid,
   *through_sigtramp_breakpoint = tp->through_sigtramp_breakpoint;
   *step_range_start = tp->step_range_start;
   *step_range_end = tp->step_range_end;
-  *step_frame_address = tp->step_frame_address;
+  *step_frame_id = tp->step_frame_id;
   *handling_longjmp = tp->handling_longjmp;
   *another_trap = tp->another_trap;
   *stepping_through_solib_after_catch = tp->stepping_through_solib_after_catch;
@@ -350,7 +350,7 @@ save_infrun_state (ptid_t ptid,
 		   struct breakpoint *through_sigtramp_breakpoint,
 		   CORE_ADDR step_range_start, 
 		   CORE_ADDR step_range_end,
-		   CORE_ADDR step_frame_address, 
+		   const struct frame_id *step_frame_id, 
 		   int handling_longjmp,
 		   int another_trap, 
 		   int stepping_through_solib_after_catch,
@@ -376,7 +376,7 @@ save_infrun_state (ptid_t ptid,
   tp->through_sigtramp_breakpoint = through_sigtramp_breakpoint;
   tp->step_range_start = step_range_start;
   tp->step_range_end = step_range_end;
-  tp->step_frame_address = step_frame_address;
+  tp->step_frame_id = (*step_frame_id);
   tp->handling_longjmp = handling_longjmp;
   tp->another_trap = another_trap;
   tp->stepping_through_solib_after_catch = stepping_through_solib_after_catch;
@@ -426,12 +426,12 @@ info_threads_command (char *arg, int from_tty)
   struct thread_info *tp;
   ptid_t current_ptid;
   struct frame_info *cur_frame;
-  int saved_frame_level = frame_relative_level (selected_frame);
+  int saved_frame_level = frame_relative_level (deprecated_selected_frame);
   int counter;
   char *extra_info;
 
   /* Avoid coredumps which would happen if we tried to access a NULL
-     selected_frame.  */
+     deprecated_selected_frame.  */
   if (!target_has_stack)
     error ("No stack.");
 
@@ -457,8 +457,8 @@ info_threads_command (char *arg, int from_tty)
       puts_filtered ("  ");
 
       switch_to_thread (tp->ptid);
-      if (selected_frame)
-	print_only_stack_frame (selected_frame, -1, 0);
+      if (deprecated_selected_frame)
+	print_stack_frame (deprecated_selected_frame, -1, 0);
       else
 	printf_filtered ("[No stack.]\n");
     }
@@ -472,12 +472,12 @@ info_threads_command (char *arg, int from_tty)
    * of the stack (leaf frame).
    */
   counter = saved_frame_level;
-  cur_frame = find_relative_frame (selected_frame, &counter);
+  cur_frame = find_relative_frame (deprecated_selected_frame, &counter);
   if (counter != 0)
     {
       /* Ooops, can't restore, tell user where we are. */
       warning ("Couldn't restore frame in current thread, at frame 0");
-      print_stack_frame (selected_frame, -1, 0);
+      print_stack_frame (deprecated_selected_frame, -1, 0);
     }
   else
     {
@@ -504,34 +504,38 @@ switch_to_thread (ptid_t ptid)
 }
 
 static void
-restore_current_thread (ptid_t ptid)
+restore_current_thread (ptid_t ptid, int print)
 {
   if (! ptid_equal (ptid, inferior_ptid))
     {
       switch_to_thread (ptid);
-      print_stack_frame (get_current_frame (), 0, -1);
+      if (print)
+	print_stack_frame (get_current_frame (), 0, -1);
     }
 }
 
 struct current_thread_cleanup
 {
   ptid_t inferior_ptid;
+  int print;
 };
 
 static void
 do_restore_current_thread_cleanup (void *arg)
 {
   struct current_thread_cleanup *old = arg;
-  restore_current_thread (old->inferior_ptid);
+  restore_current_thread (old->inferior_ptid, old->print);
   xfree (old);
 }
 
-static struct cleanup *
-make_cleanup_restore_current_thread (ptid_t inferior_ptid)
+struct cleanup *
+make_cleanup_restore_current_thread (ptid_t inferior_ptid, int print)
 {
   struct current_thread_cleanup *old
     = xmalloc (sizeof (struct current_thread_cleanup));
   old->inferior_ptid = inferior_ptid;
+  old->print = print;
+
   return make_cleanup (do_restore_current_thread_cleanup, old);
 }
 
@@ -555,7 +559,7 @@ thread_apply_all_command (char *cmd, int from_tty)
   if (cmd == NULL || *cmd == '\000')
     error ("Please specify a command following the thread ID list");
 
-  old_chain = make_cleanup_restore_current_thread (inferior_ptid);
+  old_chain = make_cleanup_restore_current_thread (inferior_ptid, 1);
 
   /* It is safe to update the thread list now, before
      traversing it for "thread apply all".  MVS */
@@ -602,7 +606,7 @@ thread_apply_command (char *tidlist, int from_tty)
   if (*cmd == '\000')
     error ("Please specify a command following the thread ID list");
 
-  old_chain = make_cleanup_restore_current_thread (inferior_ptid);
+  old_chain = make_cleanup_restore_current_thread (inferior_ptid, 1);
 
   /* Save a copy of the command in case it is clobbered by
      execute_command */
@@ -663,6 +667,12 @@ thread_apply_command (char *tidlist, int from_tty)
   do_cleanups (old_chain);
 }
 
+struct select_thread_args
+{
+  char *tidstr;
+  int print;
+};
+
 /* Switch to the specified thread.  Will dispatch off to thread_apply_command
    if prefix of arg is `apply'.  */
 
@@ -686,17 +696,21 @@ thread_command (char *tidstr, int from_tty)
       return;
     }
 
-  gdb_thread_select (uiout, tidstr);
+  gdb_thread_select (uiout, tidstr, 1);
 }
+
+extern int scheduler_lock_on ();
+extern struct ptid scheduler_lock_ptid;
 
 static int
 do_captured_thread_select (struct ui_out *uiout,
-			   void *tidstr)
+			   void *in_args)
 {
   int num;
   struct thread_info *tp;
+  struct select_thread_args *args = (struct select_thread_args *) in_args;
 
-  num = value_as_long (parse_and_eval (tidstr));
+  num = value_as_long (parse_and_eval (args->tidstr));
 
   tp = find_thread_id (num);
 
@@ -708,40 +722,48 @@ do_captured_thread_select (struct ui_out *uiout,
 
   switch_to_thread (tp->ptid);
 
-  ui_out_text (uiout, "[Switching to thread ");
-  ui_out_field_int (uiout, "new-thread-id", pid_to_thread_id (inferior_ptid));
-  ui_out_text (uiout, " (");
-#if defined(HPUXHPPA)
-  ui_out_text (uiout, target_tid_to_str (inferior_ptid));
-#else
-  ui_out_text (uiout, target_pid_to_str (inferior_ptid));
-#endif
-  ui_out_text (uiout, ")]\n");
+  if (args->print)
+    {
 
+      ui_out_text (uiout, "[Switching to thread ");
+      ui_out_field_int (uiout, "new-thread-id", pid_to_thread_id (inferior_ptid));
+      ui_out_text (uiout, " (");
+#if defined(HPUXHPPA)
+      ui_out_text (uiout, target_tid_to_str (inferior_ptid));
+#else
+      ui_out_text (uiout, target_pid_to_str (inferior_ptid));
+#endif
+      ui_out_text (uiout, ")]\n");
+      
+      print_stack_frame (deprecated_selected_frame,
+			 frame_relative_level (deprecated_selected_frame), 1);
+
+    }
   /* Remember to run the context hook here - since this changes
      thread context */
-
+  
   if (context_hook)
-    context_hook (ptid_get_tid (inferior_ptid));
+    context_hook (pid_to_thread_id (inferior_ptid));
+  
+  /* Finally, if the scheduler-locking is on, then we should reset the thread
+     we are trying to run. */
+  if (scheduler_lock_on_p ())
+    scheduler_run_this_ptid (inferior_ptid);
 
-  print_stack_frame (selected_frame, frame_relative_level (selected_frame), 1);
   return GDB_RC_OK;
 }
 
 enum gdb_rc
 gdb_thread_select (struct ui_out *uiout,
-		   char *tidstr)
+		   char *tidstr, int print)
 {
- /* APPLE LOCAL: convert RETURN_ERROR to GDB_RC_FAIL because down in
-    mi/mi-main.c, it only expects to see a GDB_RC_* ret val from this func.
-    Should take this change to the FSF, or modify the caller in mi-main.c */
+  struct select_thread_args args;
 
-  int retval = catch_exceptions (uiout, do_captured_thread_select, tidstr,
-			         NULL, RETURN_MASK_ALL);
-  if (retval == RETURN_ERROR)
-    return GDB_RC_FAIL;
-  else
-    return retval;
+  args.tidstr = tidstr;
+  args.print = print;
+
+  return catch_exceptions (uiout, do_captured_thread_select, (void *) &args,
+			   NULL, RETURN_MASK_ALL);
 }
 
 /* Commands with a prefix of `thread'.  */

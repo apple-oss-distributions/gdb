@@ -76,6 +76,7 @@ mi_cmd_stack_list_frames (char *command, char **argv, int argc)
   int frame_low;
   int frame_high;
   int i;
+  struct cleanup *cleanup_stack;
   struct frame_info *fi;
 
   if (!target_has_stack)
@@ -107,7 +108,7 @@ mi_cmd_stack_list_frames (char *command, char **argv, int argc)
   if (fi == NULL)
     error ("mi_cmd_stack_list_frames: Not enough frames in stack.");
 
-  ui_out_list_begin (uiout, "stack");
+  cleanup_stack = make_cleanup_ui_out_list_begin_end (uiout, "stack");
 
   /* Now let;s print the frames up to frame_high, or until there are
      frames in the stack. */
@@ -126,7 +127,7 @@ mi_cmd_stack_list_frames (char *command, char **argv, int argc)
 			0 /* args */ );
     }
 
-  ui_out_list_end (uiout);
+  do_cleanups (cleanup_stack);
   if (i < frame_high)
     error ("mi_cmd_stack_list_frames: Not enough frames in stack.");
 
@@ -162,31 +163,35 @@ mi_print_frame_info_lite (struct ui_out *uiout,
 enum mi_cmd_result
 mi_cmd_stack_list_frames_lite (char *command, char **argv, int argc)
 {
-    int i;
     int limit = 0;
     int valid;
     int count = 0;
+#ifndef FAST_COUNT_STACK_DEPTH
+    int i;
     struct frame_info *fi;
+#endif
 
     if (!target_has_stack)
         error ("mi_cmd_stack_list_frames_lite: No stack.");
 
-    if (argc == 2)
-      {
-        if (strcmp (argv[0], "-limit") == 0)
-          {
-            limit = atoi (argv[1]);
-          }
-        else
-          {
-            limit = -1;
-          }
-      }
-      else if ((argc > 2) || (argc == 1))
+    if ((argc > 2) || (argc == 1))
         error ("mi_cmd_stack_list_frames_lite: Usage: [-limit max_frame_number]");
 
+    if (argc == 2)
+      {
+	if (strcmp (argv[0], "-limit") != 0)
+	  error ("mi_cmd_stack_list_frames_lite: Invalid option.");
+	
+	if (! isnumber (argv[1][0]))
+	  error ("mi_cmd_stack_list_frames_lite: Invalid argument to -limit.");
+
+	limit = atoi (argv[1]);
+      }
+    else
+      limit = -1;
+	
 #ifdef FAST_COUNT_STACK_DEPTH
-    valid = FAST_COUNT_STACK_DEPTH (1/*show_frames*/, 0 /*get_names*/, limit, &count, mi_print_frame_info_lite);
+    valid = FAST_COUNT_STACK_DEPTH (1, 0, -1, limit, &count, mi_print_frame_info_lite);
 #else
     /* Start at the inner most frame */
     for (fi = get_current_frame (); fi ; fi = get_next_frame(fi))
@@ -205,7 +210,7 @@ mi_cmd_stack_list_frames_lite (char *command, char **argv, int argc)
 
         if ((limit == 0) || (i < limit))
           {
-	    mi_print_frame_info_lite (uiout, i, fi->pc, FRAME_FP(fi));
+	    mi_print_frame_info_lite (uiout, i, fi->pc, get_frame_base(fi));
           }
       }
 
@@ -258,8 +263,7 @@ mi_cmd_stack_info_depth (char *command, char **argv, int argc)
     frame_high = -1;
 
 #ifdef FAST_COUNT_STACK_DEPTH
-  if (!FAST_COUNT_STACK_DEPTH (0, 0, (frame_high == -1 ? 0 : frame_high), 
-                               &i, NULL))
+  if (! FAST_COUNT_STACK_DEPTH (0, 0, frame_high, frame_high, &i, NULL))
 #endif
     {
       for (i = 0, fi = get_current_frame ();
@@ -293,7 +297,7 @@ mi_cmd_stack_list_locals (char *command, char **argv, int argc)
   else
     all_blocks = 0;
 
-  list_args_or_locals (1, values, selected_frame, 
+  list_args_or_locals (1, values, deprecated_selected_frame,
 		       all_blocks, create_varobj);
   return MI_CMD_DONE;
 }
@@ -311,6 +315,7 @@ mi_cmd_stack_list_args (char *command, char **argv, int argc)
   int values;
   int create_varobj;
   struct frame_info *fi;
+  struct cleanup *cleanup_stack_args;
 
   if (argc < 1 || argc > 3 || argc == 2)
     error ("mi_cmd_stack_list_args: Usage: PRINT_VALUES [FRAME_LOW FRAME_HIGH]");
@@ -341,7 +346,7 @@ mi_cmd_stack_list_args (char *command, char **argv, int argc)
   if (fi == NULL)
     error ("mi_cmd_stack_list_args: Not enough frames in stack.");
 
-  ui_out_list_begin (uiout, "stack-args");
+  cleanup_stack_args = make_cleanup_ui_out_list_begin_end (uiout, "stack-args");
 
   /* Now let's print the frames up to frame_high, or until there are
      frames in the stack. */
@@ -349,14 +354,15 @@ mi_cmd_stack_list_args (char *command, char **argv, int argc)
        fi && (i <= frame_high || frame_high == -1);
        i++, fi = get_prev_frame (fi))
     {
+      struct cleanup *cleanup_frame;
       QUIT;
-      ui_out_tuple_begin (uiout, "frame");
+      cleanup_frame = make_cleanup_ui_out_tuple_begin_end (uiout, "frame");
       ui_out_field_int (uiout, "level", i); 
       list_args_or_locals (0, values, fi, 0, create_varobj);
-      ui_out_tuple_end (uiout);
+      do_cleanups (cleanup_frame);
     }
 
-  ui_out_list_end (uiout);
+  do_cleanups (cleanup_stack_args);
   if (i < frame_high)
     error ("mi_cmd_stack_list_args: Not enough frames in stack.");
 
@@ -374,12 +380,12 @@ list_args_or_locals (int locals, int values, struct frame_info *fi,
 		     int all_blocks, int create_varobj)
 {
   struct block *block = NULL;
-  int i, nsyms;
+  struct cleanup *cleanup_list;
   static struct ui_stream *stb = NULL;
 
   stb = ui_out_stream_new (uiout);
   
-  ui_out_list_begin (uiout, locals ? "locals" : "args");
+  cleanup_list = make_cleanup_ui_out_list_begin_end (uiout, locals ? "locals" : "args");
 
   if (all_blocks)
     {
@@ -438,7 +444,7 @@ list_args_or_locals (int locals, int values, struct frame_info *fi,
 	}
     }
 
-  ui_out_list_end (uiout);
+  do_cleanups (cleanup_list);
   ui_out_stream_delete (stb);
 }
 
@@ -605,9 +611,8 @@ void
 mi_interp_stack_changed_hook (void)
 {
   struct ui_out *saved_ui_out = uiout;
-  struct mi_out *tmp_mi_out;
 
-  uiout = mi_interp->interpreter_out;
+  uiout = gdb_interpreter_ui_out (mi_interp);
 
   ui_out_list_begin (uiout, "MI_HOOK_RESULT");
   ui_out_field_string (uiout, "HOOK_TYPE", "stack_changed");
@@ -619,9 +624,8 @@ void
 mi_interp_frame_changed_hook (int new_frame_number)
 {
   struct ui_out *saved_ui_out = uiout;
-  struct mi_out *tmp_mi_out;
 
-  uiout = mi_interp->interpreter_out;
+  uiout = gdb_interpreter_ui_out (mi_interp);
 
   ui_out_list_begin (uiout, "MI_HOOK_RESULT");
   ui_out_field_string (uiout, "HOOK_TYPE", "frame_changed");
@@ -635,9 +639,8 @@ void
 mi_interp_context_hook (int thread_id)
 {
   struct ui_out *saved_ui_out = uiout;
-  struct mi_out *tmp_mi_out;
 
-  uiout = mi_interp->interpreter_out;
+  uiout = gdb_interpreter_ui_out (mi_interp);
 
   ui_out_list_begin (uiout, "MI_HOOK_RESULT");
   ui_out_field_string (uiout, "HOOK_TYPE", "thread_changed");

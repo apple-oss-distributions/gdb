@@ -35,12 +35,15 @@
 #include "objfiles.h"
 #include "command.h"
 
-#define	DEFAULT_LR_SAVE 8
-
 /* Limit the number of skipped non-prologue instructions, as the
-   examining of the prologue is expensive.  */
+   examining of the prologue is expensive.  The current use that
+   refine_prologue_limit makes of this is to look for cases where
+   the scheduler moves a body instruction before the FIRST instruction
+   of the prologue.  For now, let's just lose then, since doing
+   a whole bunch of pc_line calls just for this eventuality is 
+   not a win.  */
 
-static int max_skip_non_prologue_insns = 10;
+static int max_skip_non_prologue_insns = 2;
 
 /* utility functions */
 
@@ -239,6 +242,25 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
       {
 	props->lr_invalid = pc;
         saw_pic_base_setup = 1;
+        props->pic_base_address = pc + 4;
+	goto processed_insn;
+      }
+    /* This mr r31,r12 is part of an ObjC selector prologue like this:
+          mflr    r0
+          stmw    r30,-8(r1)
+          mr      r31,r12     (the PIC base was in r12, put it in r31)
+       But don't get tricked into using this expression if we've already
+       seen a normal pic base mflr insn.
+       Note:  By convention, the address of the start of the function is placed
+       in R12 when calling an ObjC selector, so we stuff the START address we
+       were given in to pic_base_address on the hope that START was actually
+       the start of the function.
+    */
+    if (!saw_pic_base_setup && (op == 0x7d9f6378 || op == 0x7d9e6378))
+      {
+        saw_pic_base_setup = 1;
+        props->pic_base_reg = (op & 0x1f0000) >> 16;
+        props->pic_base_address = start;
 	goto processed_insn;
       }
     /* Look at other branch instructions.  There are a couple of MacOS
@@ -476,6 +498,14 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 	goto processed_insn;
 	
       } 
+    /* APPLE LOCAL fix-and-continue begin */
+    else if (op == 0x60000000)
+      {
+        /* ori 0,0,0 aka NOP */
+        /* Used in fix and continue padded prologues */
+        goto processed_insn;
+      }
+    /* APPLE LOCAL fix-and-continue end */
     else if ((op & 0xffff0000) == 0x60000000) 
       { 
 	/* ori 0,0,NUM, 2nd half of >= 32k frames */
@@ -495,6 +525,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
       {
 	props->frameptr_used = 1;
 	props->frameptr_reg = 30;
+	props->frameptr_pc = pc;
 	goto processed_insn;
 	
       } 
@@ -580,6 +611,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
       {
 	props->frameptr_used = 1;
 	props->frameptr_reg = 31;
+	props->frameptr_pc = pc;
 	goto processed_insn;
 	
       } 
@@ -598,6 +630,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
       {
 	props->frameptr_used = 1;
 	props->frameptr_reg = 30;
+	props->frameptr_pc = pc;
 	goto processed_insn;
 	
       } 
@@ -606,6 +639,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
       {
 	props->frameptr_used = 1;
 	props->frameptr_reg = (op & ~0x38010000) >> 21;
+	props->frameptr_pc = pc;
 	goto processed_insn;
 	
       } 
@@ -624,7 +658,15 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 
   if (props->offset != -1) { props->offset = -props->offset; }
   
-  return last_recognized_insn;
+  /* We are to return the first instruction of the body, so up the
+     last_recognized_insn by one.  However, if we are still at start
+     we didn't actually recognize any instructions, so don't increment
+     in that case.  */
+
+  if (last_recognized_insn == start)
+    return start;
+  else
+    return last_recognized_insn + 4;
 }
 
 void
@@ -662,6 +704,7 @@ ppc_clear_function_properties (ppc_function_properties *properties)
 
   properties->frameptr_reg = -1;
   properties->frameptr_used = 0;
+  properties->frameptr_pc = INVALID_ADDRESS;
 
   properties->frameless = 1;
 
@@ -676,6 +719,7 @@ ppc_clear_function_properties (ppc_function_properties *properties)
 
   properties->minimal_toc_loaded = 0;
   properties->pic_base_reg = 0;
+  properties->pic_base_address = INVALID_ADDRESS;
 }
 
 int
@@ -710,11 +754,14 @@ ppc_find_function_boundaries (ppc_function_boundaries_request *request,
   lim_pc = refine_prologue_limit
     (reply->prologue_start, 0, max_skip_non_prologue_insns);
 
-  if (lim_pc == 0)
-    lim_pc = INVALID_ADDRESS;
-  
+  if (lim_pc != 0)
+    reply->body_start = lim_pc;
+  else
+      lim_pc = INVALID_ADDRESS;
+      
   reply->body_start = ppc_parse_instructions
     (reply->prologue_start, lim_pc, &props);
+
   return 0;
 }
 
@@ -727,9 +774,11 @@ ppc_frame_cache_boundaries (struct frame_info *frame,
     if (ppc_is_dummy_frame (frame)) {
 
       frame->extra_info->bounds = (struct ppc_function_boundaries *)
-	frame_obstack_alloc (sizeof (ppc_function_boundaries));
+	frame_obstack_zalloc (sizeof (ppc_function_boundaries));
       CHECK_FATAL (frame->extra_info->bounds != NULL);
-      
+
+      ppc_clear_function_boundaries (frame->extra_info->bounds);
+
       frame->extra_info->bounds->prologue_start = INVALID_ADDRESS;
       frame->extra_info->bounds->body_start = INVALID_ADDRESS;
       frame->extra_info->bounds->epilogue_start = INVALID_ADDRESS;
@@ -745,12 +794,18 @@ ppc_frame_cache_boundaries (struct frame_info *frame,
       ppc_clear_function_boundaries_request (&request);
 
       request.contains_pc = frame_address_in_block (frame);
+
+      if (request.contains_pc == INVALID_ADDRESS)
+	return -1;
+
       ret = ppc_find_function_boundaries (&request, &lbounds);
-      if (ret != 0) { return ret; }
+      if (ret != 0)
+	return ret;
     
       frame->extra_info->bounds = (struct ppc_function_boundaries *)
-	frame_obstack_alloc (sizeof (ppc_function_boundaries));
+	frame_obstack_zalloc (sizeof (ppc_function_boundaries));
       CHECK_FATAL (frame->extra_info->bounds != NULL);
+
       memcpy (frame->extra_info->bounds, &lbounds,
 	      sizeof (ppc_function_boundaries));
     }
@@ -793,7 +848,7 @@ ppc_frame_cache_properties (struct frame_info *frame,
 	  ppc_function_properties *props;
 	  
 	  frame->extra_info->props = (struct ppc_function_properties *)
-	    frame_obstack_alloc (sizeof (ppc_function_properties));
+	    frame_obstack_zalloc (sizeof (ppc_function_properties));
 	  CHECK_FATAL (frame->extra_info->props != NULL);
 	  props = frame->extra_info->props;
 
@@ -807,6 +862,7 @@ ppc_frame_cache_properties (struct frame_info *frame,
 	  props->frameless = 0;
 	  props->frameptr_used = 0;
 	  props->frameptr_reg = -1;
+	  props->frameptr_pc = INVALID_ADDRESS;
 	  props->lr_saved = 1;
 	  props->lr_offset = DEFAULT_LR_SAVE;
 	  props->cr_saved = 0;
@@ -829,7 +885,7 @@ ppc_frame_cache_properties (struct frame_info *frame,
 	    return -1;
 
 	  frame->extra_info->props = (struct ppc_function_properties *)
-	    frame_obstack_alloc (sizeof (ppc_function_properties));
+	    frame_obstack_zalloc (sizeof (ppc_function_properties));
 	  CHECK_FATAL (frame->extra_info->props != NULL);
 	  props = frame->extra_info->props;
 	  ppc_clear_function_properties (props);
@@ -840,13 +896,13 @@ ppc_frame_cache_properties (struct frame_info *frame,
 	     to limit the search. */
 
 	  ppc_parse_instructions (bounds->prologue_start, 
-				  bounds->function_end, props);
+				  bounds->body_start, props);
 	  
 	  /* ppc_parse_instructions sometimes gets the stored pc location
 	     wrong.  However, we know that for all frames but frame 0
 	     the pc is on the stack.  So force that here. */
 	  
-	  if (frame->next != NULL)
+	  if (get_next_frame (frame) != NULL)
 	    {
 	      props->lr_offset = 8;
 	      /* This is a bogus value, but we need to tell it some value
@@ -861,7 +917,7 @@ ppc_frame_cache_properties (struct frame_info *frame,
 	    }
 	}
     } 
-  else if (frame->next != NULL)
+  else if (get_next_frame (frame) != NULL)
     {
       /* We tried to correct this error from ppc_parse_instructions above,
 	 but the frame hadn't been fully set yet.  So we will do it again

@@ -38,6 +38,28 @@
 
 /* End of stolen code from gdb.obj/myclass.m, written by Adam Fedor */
 
+@interface MyChild: MyClass
+{
+  int some_val;
+}
++ newWithArg: arg andInt: (int) val;
+- setValue: (int) val;
+@end
+
+@implementation MyChild
++ newWithArg: arg andInt: (int) val
+{
+  MyChild *me = [self new];
+  [me takeArg: arg];
+  [me setValue: val];
+  return (id) me;
+}
+
+- setValue: (int) val
+{
+  some_val = val;
+}
+@end
 
 void stringmaker (void);
 int blocky (void);
@@ -48,7 +70,14 @@ NSNumber *return_nsnumber_from_char (char);
 
 int main (int argc, const char * argv[]) {
     NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
-    id object = [MyClass newWithArg:@"hi there"];
+    id object = [MyClass newWithArg:@"hi there"];    
+
+    [object randomFunc];
+
+    [object release];
+
+    object = [MyChild newWithArg:@"Hi again" andInt: 5];
+
     [object randomFunc];
     
     stringmaker ();

@@ -175,16 +175,6 @@ EOF
       $CC $output_objdir/$soname-exp '$lt_cv_cc_dll_switch' -Wl,-e,'$dll_entry' -o $output_objdir/$soname '$ltdll_obj'$libobjs $deplibs $compiler_flags'
     ;;
 
-  darwin* | rhapsody*)
-    allow_undefined_flag='-undefined suppress'
-    archive_cmds='$CC `test .$module = .yes && echo -bundle || echo -dynamiclib` $allow_undefined_flag -o $lib $libobjs $deplibs $linkopts -install_name $rpath/$soname `test -n "$verstring" -a x$verstring != x0.0 && echo $verstring`'
-    # We need to add '_' to the symbols in $export_symbols first
-    #archive_expsym_cmds="$archive_cmds"' && strip -s $export_symbols'
-    hardcode_direct=yes
-    hardcode_shlibpath_var=no
-    whole_archive_flag_spec='-all_load $convenience'
-    ;;
-
   netbsd*)
     if echo __ELF__ | $CC -E - | grep __ELF__ >/dev/null; then
       archive_cmds='$LD -Bshareable $libobjs $deplibs $linker_flags -o $lib'
@@ -456,6 +446,16 @@ else
     link_all_deplibs=yes
     ;;
 
+  darwin* | rhapsody* | macos10*)
+    allow_undefined_flag='-undefined error'
+    archive_cmds='$CC `test .$module = .yes && echo -bundle || echo -dynamiclib` $allow_undefined_flag -o $lib $libobjs $deplibs $linkopts -install_name $rpath/$soname `test -n "$verstring" -a x"$verstring" != x0.0 && echo "$verstring"`'
+    # We need to add '_' to the symbols in $export_symbols first
+    #archive_expsym_cmds="$archive_cmds"' && strip -s $export_symbols'
+    hardcode_direct=yes
+    hardcode_shlibpath_var=no
+    whole_archive_flag_spec='-all_load $convenience'
+    ;;
+
   netbsd*)
     if echo __ELF__ | $CC -E - | grep __ELF__ >/dev/null; then
       archive_cmds='$LD -Bshareable -o $lib $libobjs $deplibs $linker_flags'  # a.out
@@ -667,10 +667,10 @@ else
       # built for inclusion in a dll (and should export symbols for example).
       ac_cv_prog_cc_pic='-DDLL_EXPORT'
       ;;
-    darwin* | rhapsody*)
+    darwin* | rhapsody* | macos10*)
       # PIC is the default on this platform
       # Common symbols not allowed in MH_DYLIB files
-      lt_cv_prog_cc_pic='-fno-common'
+      ac_cv_prog_cc_pic='-fno-common'
       ;;
     *djgpp*)
       # DJGPP does not support shared libraries at all
@@ -710,6 +710,12 @@ else
       # This hack is so that the source file can tell whether it is being
       # built for inclusion in a dll (and should export symbols for example).
       ac_cv_prog_cc_pic='-DDLL_EXPORT'
+      ;;
+
+    darwin* | rhapsody* | macos10*)
+      # PIC is the default on this platform
+      # Common symbols not allowed in MH_DYLIB files
+      ac_cv_prog_cc_pic='-fno-common'
       ;;
 
     newsos6)

@@ -55,7 +55,7 @@ mi_runto do_children_tests
 # Desc: create variable "struct_declarations"
 # APPLE LOCAL: [var-create] result includes TYPECODE, DYNAMIC_TYPE, and IN_SCOPE.
 mi_gdb_test "-var-create struct_declarations * struct_declarations" \
-	"\\^done,name=\"struct_declarations\",numchild=\"11\",type=\"struct _struct_decl\",typecode=\"STRUCT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"struct_declarations\",numchild=\"11\",type=\"struct _struct_decl\",typecode=\"STRUCT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable struct_declarations"
 
 # Test: c_variable-4.3
@@ -577,7 +577,7 @@ mi_step_to do_children_tests {} {.*var-cmd.c} $line "step to line $line"
 # Desc: create local variable "weird"
 # APPLE LOCAL: [var-create] result includes TYPECODE, DYNAMIC_TYPE, and IN_SCOPE.
 mi_gdb_test "-var-create weird * weird" \
-	"\\^done,name=\"weird\",numchild=\"11\",type=\"weird_struct \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"weird\",numchild=\"11\",type=\"weird_struct \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable weird"
 
 # Test: c_variable-4.82
@@ -646,7 +646,7 @@ mi_gdb_test "-var-info-num-children weird.int_ptr_ptr.*int_ptr_ptr" \
 # Desc: create weird->int_ptr_ptr
 # APPLE LOCAL: [var-create] result includes TYPECODE, DYNAMIC_TYPE, and IN_SCOPE.
 mi_gdb_test "-var-create weird->int_ptr_ptr * weird->int_ptr_ptr" \
-	"\\^done,name=\"weird->int_ptr_ptr\",numchild=\"1\",type=\"int \\*\\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"weird->int_ptr_ptr\",numchild=\"1\",type=\"int \\*\\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable weird->int_ptr_ptr"
 
 # Test: c_variable-4.91
@@ -896,7 +896,7 @@ mi_execute_to "exec-step 43" "end-stepping-range" do_children_tests {} {.*var-cm
 # Desc: create psnp->char_ptr
 # APPLE LOCAL: [var-create] result includes TYPECODE, DYNAMIC_TYPE, and IN_SCOPE.
 mi_gdb_test "-var-create  psnp->char_ptr *  psnp->char_ptr" \
-	"\\^done,name=\"psnp->char_ptr\",numchild=\"1\",type=\"char \\*\\*\\*\\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"psnp->char_ptr\",numchild=\"1\",type=\"char \\*\\*\\*\\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable  psnp->char_ptr"
 
 # Test: c_variable-5.11
@@ -975,7 +975,7 @@ mi_gdb_test "-var-info-num-children psnp->char_ptr.*psnp->char_ptr.**psnp->char_
 # Desc: create psnp->long_ptr
 # APPLE LOCAL: [var-create] result includes TYPECODE, DYNAMIC_TYPE, and IN_SCOPE.
 mi_gdb_test "-var-create  psnp->long_ptr *  psnp->long_ptr" \
-	"\\^done,name=\"psnp->long_ptr\",numchild=\"1\",type=\"long int \\*\\*\\*\\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"psnp->long_ptr\",numchild=\"1\",type=\"long int \\*\\*\\*\\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable  psnp->long_ptr"
 
 # Test: c_variable-5.20
@@ -1047,7 +1047,7 @@ mi_gdb_test "-var-info-num-children psnp->long_ptr.*psnp->long_ptr.**psnp->long_
 # Desc: create psnp->ptrs
 # APPLE LOCAL: [var-create] result includes TYPECODE, DYNAMIC_TYPE, and IN_SCOPE.
 mi_gdb_test "-var-create  psnp->ptrs *  psnp->ptrs" \
-	"\\^done,name=\"psnp->ptrs\",numchild=\"3\",type=\"struct _struct_n_pointer \\*\\\[3\\\]\",typecode=\"ARRAY\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"psnp->ptrs\",numchild=\"3\",type=\"struct _struct_n_pointer \\*\\\[3\\\]\",typecode=\"ARRAY\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable  psnp->ptrs"
 
 # Test: c_variable-5.31

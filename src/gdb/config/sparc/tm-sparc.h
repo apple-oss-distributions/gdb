@@ -1,7 +1,7 @@
 /* Target machine sub-parameters for SPARC, for GDB, the GNU debugger.
    This is included by other tm-*.h files to define SPARC cpu-related info.
    Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000
+   1998, 1999, 2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
    Contributed by Michael Tiemann (tiemann@mcc.com)
 
@@ -280,14 +280,6 @@ extern void sparc_store_return_value (struct type *, char *);
 
 extern CORE_ADDR sparc_extract_struct_value_address (char *);
 
-/* If the current gcc for for this target does not produce correct
-   debugging information for float parameters, both prototyped and
-   unprototyped, then define this macro.  This forces gdb to always
-   assume that floats are passed as doubles and then converted in the
-   callee. */
-
-#define COERCE_FLOAT_TO_DOUBLE(FORMAL, ACTUAL) (1)
-
 /* Stack must be aligned on 64-bit boundaries when synthesizing
    function calls (128-bit for sparc64).  */
 
@@ -496,9 +488,9 @@ extern CORE_ADDR sparc_frame_chain (struct frame_info *);
 extern CORE_ADDR sparc_frame_saved_pc (struct frame_info *);
 
 /* If the argument is on the stack, it will be here.  */
-#define FRAME_ARGS_ADDRESS(FI) ((FI)->frame)
+#define FRAME_ARGS_ADDRESS(FI) (get_frame_base (FI))
 
-#define FRAME_LOCALS_ADDRESS(FI) ((FI)->frame)
+#define FRAME_LOCALS_ADDRESS(FI) (get_frame_base (FI))
 
 /* Set VAL to the number of args passed to frame described by FI.
    Can set VAL to -1, meaning no way to tell.  */
@@ -519,10 +511,10 @@ extern void sparc_print_extra_frame_info (struct frame_info *);
 
 /* INIT_EXTRA_FRAME_INFO needs the PC to detect flat frames.  */
 
-#define	INIT_FRAME_PC(FROMLEAF, PREV)	/* nothing */
-#define INIT_FRAME_PC_FIRST(FROMLEAF, PREV) \
-  (PREV)->pc = ((FROMLEAF) ? SAVED_PC_AFTER_CALL ((PREV)->next) : \
-	      (PREV)->next ? FRAME_SAVED_PC ((PREV)->next) : read_pc ());
+#define	DEPRECATED_INIT_FRAME_PC(FROMLEAF, PREV)	(init_frame_pc_noop (FROMLEAF, PREV))
+#define DEPRECATED_INIT_FRAME_PC_FIRST(FROMLEAF, PREV) \
+  ((FROMLEAF) ? SAVED_PC_AFTER_CALL ((PREV)->next) : \
+	      (PREV)->next ? FRAME_SAVED_PC ((PREV)->next) : read_pc ())
 
 /* Define other aspects of the stack frame.  */
 
@@ -534,7 +526,7 @@ extern void sparc_print_extra_frame_info (struct frame_info *);
 #define	FRAME_SAVED_L0	0
 #define	FRAME_SAVED_I0	(8 * REGISTER_RAW_SIZE (L0_REGNUM))
 
-#define FRAME_STRUCT_ARGS_ADDRESS(FI) ((FI)->frame)
+#define FRAME_STRUCT_ARGS_ADDRESS(FI) (get_frame_base (FI))
 
 /* Things needed for making the inferior call functions.  */
 /*
@@ -660,8 +652,8 @@ extern void sparc_print_extra_frame_info (struct frame_info *);
 
 /* Method for detecting dummy frames.  */
 
-#define PC_IN_CALL_DUMMY(PC, SP, FRAME_ADDRESS) \
-     pc_in_call_dummy_on_stack (PC, SP, FRAME_ADDRESS)
+#define DEPRECATED_PC_IN_CALL_DUMMY(PC, SP, FRAME_ADDRESS) \
+     deprecated_pc_in_call_dummy_on_stack (PC, SP, FRAME_ADDRESS)
 
 #endif /* GDB_MULTI_ARCH */
 
@@ -694,8 +686,8 @@ void sparc_pop_frame (void);
 #define PUSH_ARGUMENTS(NARGS, ARGS, SP, STRUCT_RETURN, STRUCT_ADDR) \
      sparc32_push_arguments (NARGS, ARGS, SP, STRUCT_RETURN, STRUCT_ADDR)
 
-extern CORE_ADDR
-sparc32_push_arguments (int, struct value **, CORE_ADDR, int, CORE_ADDR);
+extern CORE_ADDR sparc32_push_arguments (int, struct value **, CORE_ADDR, int,
+					 CORE_ADDR);
 
 /* Store the address of the place in which to copy the structure the
    subroutine will return.  This is called from call_function_by_hand. 
@@ -736,14 +728,9 @@ extern void sparc_software_single_step (enum target_signal, int);
 #define SETUP_ARBITRARY_FRAME(argc, argv) setup_arbitrary_frame (argc, argv)
 extern struct frame_info *setup_arbitrary_frame (int, CORE_ADDR *);
 
-/* To print every pair of float registers as a double, we use this hook.
-   We also print the condition code registers in a readable format
-   (FIXME: can expand this to all control regs).  */
-
-#undef 	PRINT_REGISTER_HOOK
-#define	PRINT_REGISTER_HOOK(regno)	\
-  sparc_print_register_hook (regno)
-extern void sparc_print_register_hook (int regno);
+extern void sparc_do_registers_info (int regnum, int all);
+#undef DEPRECATED_DO_REGISTERS_INFO
+#define DEPRECATED_DO_REGISTERS_INFO(REGNUM,ALL) sparc_do_registers_info (REGNUM, ALL)
 
 /* Optimization for storing registers to the inferior.  The hook
    DO_DEFERRED_STORES

@@ -1,5 +1,5 @@
 /* Target-dependent code for Solaris x86.
-   Copyright 2002 Free Software Foundation, Inc.
+   Copyright 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,6 +20,7 @@
 
 #include "defs.h"
 #include "value.h"
+#include "osabi.h"
 
 #include "i386-tdep.h"
 
@@ -47,10 +48,6 @@ i386_sol2_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   tdep->sigcontext_addr = i386bsd_sigcontext_addr;
   tdep->sc_pc_offset = 36 + 14 * 4;
   tdep->sc_sp_offset = 36 + 17 * 4;
-
-  /* Assume that the prototype flag can be trusted.  */
-  set_gdbarch_coerce_float_to_double (gdbarch,
-				      standard_coerce_float_to_double);
 }
 
 
@@ -75,6 +72,6 @@ _initialize_i386_sol2_tdep (void)
   gdbarch_register_osabi_sniffer (bfd_arch_i386, bfd_target_elf_flavour,
 				  i386_sol2_osabi_sniffer);
 
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_SOLARIS,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_SOLARIS,
 			  i386_sol2_init_abi);
 }

@@ -48,6 +48,7 @@ struct macosx_dyld_thread_status {
 
   struct breakpoint *dyld_breakpoint;
   struct breakpoint *dyld_event_breakpoint;
+  unsigned int dyld_event_counter;
 };
 typedef struct macosx_dyld_thread_status macosx_dyld_thread_status;
 

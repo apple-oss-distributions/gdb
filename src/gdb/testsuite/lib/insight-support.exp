@@ -23,6 +23,11 @@ proc gdbtk_initialize_display {} {
     set _using_windows [expr {![catch {exec cygpath --help}]}]
   }
 
+  if [istarget "*-apple-darwin*"] {
+    untested "Insight not supported on Mac OS X."
+    return 0;
+  }
+
   if {![_gdbtk_xvfb_init]} {
     if {$_using_windows} {
       untested "No GDB_DISPLAY -- skipping tests"

@@ -101,6 +101,8 @@ extern int varobj_get_num_children (struct varobj *var);
 extern int varobj_list_children (struct varobj *var,
 				 struct varobj ***childlist);
 
+extern int varobj_is_fake_child (struct varobj *var);
+
 extern char *varobj_get_type (struct varobj *var);
 
 extern char *varobj_get_dynamic_type (struct varobj *var);

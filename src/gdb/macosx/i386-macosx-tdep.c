@@ -199,7 +199,7 @@ i386_mach_o_osabi_sniffer (bfd *abfd)
   if (strcmp (bfd_get_target (abfd), "mach-o-be") == 0
       || strcmp (bfd_get_target (abfd), "mach-o-le") == 0
       || strcmp (bfd_get_target (abfd), "mach-o-fat") == 0)
-    return GDB_OSABI_MACOSX;
+    return GDB_OSABI_DARWIN;
 
   return GDB_OSABI_UNKNOWN;
 }
@@ -210,6 +210,6 @@ _initialize_i386_macosx_tdep (void)
   gdbarch_register_osabi_sniffer (bfd_arch_i386, bfd_target_mach_o_flavour,
 				  i386_mach_o_osabi_sniffer);
 
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_MACOSX,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_DARWIN,
 			  i386_macosx_init_abi);
 }

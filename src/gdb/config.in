@@ -1,6 +1,8 @@
 /* config.in.  Generated automatically from configure.in by autoheader.  */
-/* Define if compiling on Solaris 7. */
-#undef _MSE_INT_H
+/* Enable GNU extensions on systems that have them.  */
+#ifndef _GNU_SOURCE
+# undef _GNU_SOURCE
+#endif
 
 /* Define if your struct reg has r_fs.  */
 #undef HAVE_STRUCT_REG_R_FS
@@ -132,10 +134,6 @@
    size_t, and assorted other type changes. */
 #undef PROC_SERVICE_IS_OLD
 
-/* If you want to specify a default CPU variant, define this to be its
-   name, as a C string.  */
-#undef TARGET_CPU_DEFAULT
-
 /* Define if the simulator is being linked in.  */
 #undef WITH_SIM
 
@@ -156,15 +154,6 @@
 
 /* Define if <sys/ptrace.h> defines the PT_GETXMMREGS request.  */
 #undef HAVE_PT_GETXMMREGS
-
-/* Define if gnu-regex.c included with GDB should be used. */
-#undef USE_INCLUDED_REGEX
-
-/* BFD's default architecture. */
-#undef DEFAULT_BFD_ARCH
-
-/* BFD's default target vector. */
-#undef DEFAULT_BFD_VEC
 
 /* Multi-arch enabled. */
 #undef GDB_MULTI_ARCH
@@ -188,15 +177,23 @@
 /* Define if using `alloca.c'. */
 #undef C_ALLOCA
 
-/* When on a MacOS X host, enable some really nasty hacks to the generic gdb
-   code. */
-#undef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
+/* Global directory for separate debug files. */
+#undef DEBUGDIR
+
+/* Define to BFD's default architecture. */
+#undef DEFAULT_BFD_ARCH
+
+/* Define to BFD's default target vector. */
+#undef DEFAULT_BFD_VEC
 
 /* Define to 1 if NLS is requested */
 #undef ENABLE_NLS
 
 /* Define to be a string naming the default host character set. */
 #undef GDB_DEFAULT_HOST_CHARSET
+
+/* Define to the default OS ABI for this configuration. */
+#undef GDB_OSABI_DEFAULT
 
 /* Define if you have `alloca', as a function or macro. */
 #undef HAVE_ALLOCA
@@ -206,18 +203,6 @@
 
 /* Define if you have the <argz.h> header file. */
 #undef HAVE_ARGZ_H
-
-/* Define if you have the <asm/debugreg.h> header file. */
-#undef HAVE_ASM_DEBUGREG_H
-
-/* Define if you have the `bcopy' function. */
-#undef HAVE_BCOPY
-
-/* Define if you have the `btowc' function. */
-#undef HAVE_BTOWC
-
-/* Define if you have the `bzero' function. */
-#undef HAVE_BZERO
 
 /* Define if you have the `canonicalize_file_name' function. */
 #undef HAVE_CANONICALIZE_FILE_NAME
@@ -231,8 +216,11 @@
 /* Define if you have the `dcgettext' function. */
 #undef HAVE_DCGETTEXT
 
-/* Define if you have the <dirent.h> header file. */
+/* Define if you have the <dirent.h> header file, and it defines `DIR'. */
 #undef HAVE_DIRENT_H
+
+/* Define if you have the <dlfcn.h> header file. */
+#undef HAVE_DLFCN_H
 
 /* Define if you have the `fork' function. */
 #undef HAVE_FORK
@@ -258,9 +246,6 @@
 /* Define if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
-/* Define if you have the `isascii' function. */
-#undef HAVE_ISASCII
-
 /* Define if your locale.h file contains LC_MESSAGES. */
 #undef HAVE_LC_MESSAGES
 
@@ -269,9 +254,6 @@
 
 /* Define if you have the `m' library (-lm). */
 #undef HAVE_LIBM
-
-/* Define if you have the `socket' library (-lsocket). */
-#undef HAVE_LIBSOCKET
 
 /* Define if you have the `w' library (-lw). */
 #undef HAVE_LIBW
@@ -297,13 +279,16 @@
 /* Define if you have a working `mmap' system call. */
 #undef HAVE_MMAP
 
+/* Define if you have the `monstartup' function. */
+#undef HAVE_MONSTARTUP
+
 /* Define if you have the `munmap' function. */
 #undef HAVE_MUNMAP
 
 /* Define if you have the <ncurses.h> header file. */
 #undef HAVE_NCURSES_H
 
-/* Define if you have the <ndir.h> header file. */
+/* Define if you have the <ndir.h> header file, and it defines `DIR'. */
 #undef HAVE_NDIR_H
 
 /* Define if you have the <nlist.h> header file. */
@@ -312,14 +297,14 @@
 /* Define if you have the <nl_types.h> header file. */
 #undef HAVE_NL_TYPES_H
 
-/* Define if you have the <objlist.h> header file. */
-#undef HAVE_OBJLIST_H
-
 /* Define if you have the `poll' function. */
 #undef HAVE_POLL
 
 /* Define if you have the <poll.h> header file. */
 #undef HAVE_POLL_H
+
+/* Define if you have the `pread64' function. */
+#undef HAVE_PREAD64
 
 /* Define if <sys/procfs.h> has prfpregset32_t. */
 #undef HAVE_PRFPREGSET32_T
@@ -426,7 +411,7 @@
 /* Define if you have the <sys/debugreg.h> header file. */
 #undef HAVE_SYS_DEBUGREG_H
 
-/* Define if you have the <sys/dir.h> header file. */
+/* Define if you have the <sys/dir.h> header file, and it defines `DIR'. */
 #undef HAVE_SYS_DIR_H
 
 /* Define if you have the <sys/fault.h> header file. */
@@ -441,7 +426,7 @@
 /* Define if you have the <sys/ioctl.h> header file. */
 #undef HAVE_SYS_IOCTL_H
 
-/* Define if you have the <sys/ndir.h> header file. */
+/* Define if you have the <sys/ndir.h> header file, and it defines `DIR'. */
 #undef HAVE_SYS_NDIR_H
 
 /* Define if you have the <sys/param.h> header file. */
@@ -510,17 +495,14 @@
 /* Define if you have the <wait.h> header file. */
 #undef HAVE_WAIT_H
 
-/* Define if you have the <wchar.h> header file. */
-#undef HAVE_WCHAR_H
-
-/* Define if you have the <wctype.h> header file. */
-#undef HAVE_WCTYPE_H
-
 /* Define if `fork' works. */
 #undef HAVE_WORKING_FORK
 
 /* Define if `vfork' works. */
 #undef HAVE_WORKING_VFORK
+
+/* Define if you have the `_mcleanup' function. */
+#undef HAVE__MCLEANUP
 
 /* Define if you have the `__argz_count' function. */
 #undef HAVE___ARGZ_COUNT
@@ -578,12 +560,23 @@
 /* Define if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
+/* Define if <thread_db.h> has the TD_NOTALLOC error code. */
+#undef THREAD_DB_HAS_TD_NOTALLOC
+
+/* Define to 1 if the regex included in libiberty should be used. */
+#undef USE_INCLUDED_REGEX
+
 /* Define if on AIX 3.
    System headers sometimes define this.
    We just want to avoid a redefinition error message.  */
 #ifndef _ALL_SOURCE
 # undef _ALL_SOURCE
 #endif
+
+/* 
+   [Define], [to], [1], [to], [avoid], [a], [clash], [between], [<widec.h>], [and], [<wchar.h>], [on], [Solaris], [2.[78]], [when], [using], [GCC.], []
+   */
+#undef _MSE_INT_H
 
 /* Define if you need to in order for stat and other things to work. */
 #undef _POSIX_SOURCE

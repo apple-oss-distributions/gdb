@@ -237,6 +237,7 @@ static void macosx_exception_thread (void *arg)
     static_message = &msgsend;
     excthread_debug_re ("macosx_exception_thread: parsing exception\n");
     kret = exc_server (msgin_hdr, msgout_hdr);
+    excthread_debug_re ("macosx_exception_thread: recieved exception for thread 0x%x\n", msgsend.thread_port);
     static_message = NULL;
     
     write (s->transmit_from_fd, &msgsend, sizeof (msgsend));

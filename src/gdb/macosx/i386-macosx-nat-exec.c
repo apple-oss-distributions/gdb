@@ -46,10 +46,10 @@ static void validate_inferior_registers (int regno)
   int i;
   if (regno == -1) {
     for (i = 0; i < NUM_REGS; i++) {
-      if (!register_valid[i])
+      if (!deprecated_register_valid[i])
         fetch_inferior_registers(i);
     }
-  } else if (! register_valid[regno]) {
+  } else if (! deprecated_register_valid[regno]) {
     fetch_inferior_registers (regno);
   }
 }

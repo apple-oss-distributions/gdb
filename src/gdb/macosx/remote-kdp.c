@@ -625,7 +625,7 @@ kdp_fetch_registers_ppc (int regno)
     error ("kdp: unable to fetch registers (not connected)");
   }
 
-  if ((regno == -1) || IS_GP_REGNUM (regno)) {
+  if ((regno == -1) || IS_GP_REGNUM (regno) || IS_GSP_REGNUM (regno)) {
     kdp_return_t kdpret;
     gdb_ppc_thread_state_t gp_regs; 
 
@@ -647,7 +647,8 @@ kdp_fetch_registers_ppc (int regno)
     ppc_macosx_fetch_gp_registers (&gp_regs);
   }
 
-  if ((regno == -1) || IS_FP_REGNUM (regno)) {
+#if 0
+  if ((regno == -1) || IS_FP_REGNUM (regno) || IS_FSP_REGNUM (regno)) {
     kdp_return_t kdpret;
     gdb_ppc_thread_fpstate_t fp_regs;
 
@@ -668,15 +669,25 @@ kdp_fetch_registers_ppc (int regno)
     memcpy (&fp_regs, c.response->readregs_reply.data, (GDB_PPC_THREAD_FPSTATE_COUNT * 4));
     ppc_macosx_fetch_fp_registers (&fp_regs);
   }
+#else
+  if ((regno == -1) || IS_FP_REGNUM (regno) || IS_FSP_REGNUM (regno)) {
+      /* Accesses to the fp registers aren't currently supported in
+	 the kernel. */
+      for (i = FIRST_FP_REGNUM; i <= LAST_FP_REGNUM; i++)
+	deprecated_register_valid[i] = 1;
+      for (i = FIRST_FSP_REGNUM; i <= LAST_FSP_REGNUM; i++)
+	deprecated_register_valid[i] = 1;
+  }
+#endif
 
-  if ((regno == -1) || (regno >= FIRST_VP_REGNUM))
+  if ((regno == -1) || (regno >= FIRST_VP_REGNUM) || IS_VSP_REGNUM (regno))
     {
       /* Accesses to the vector, fpscr and vrsave registers aren't currently 
-	 supported in the kernel */
+	 supported in the kernel. */
       for (i = FIRST_VP_REGNUM; i <= LAST_VP_REGNUM; i++)
-	register_valid[i] = 1;
+	deprecated_register_valid[i] = 1;
       for (i = FIRST_VSP_REGNUM; i <= LAST_VSP_REGNUM; i++)
-	register_valid[i] = 1;
+	deprecated_register_valid[i] = 1;
     }
 }
 #endif /* KDP_TARGET_POWERPC */
@@ -710,7 +721,7 @@ kdp_store_registers_ppc (int regno)
     }
   }
 
-  if ((regno == -1) || IS_FP_REGNUM (regno)) {
+  if ((regno == -1) || IS_FP_REGNUM (regno) || IS_FSP_REGNUM (regno)) {
 
     gdb_ppc_thread_fpstate_t fp_regs;
     kdp_return_t kdpret;

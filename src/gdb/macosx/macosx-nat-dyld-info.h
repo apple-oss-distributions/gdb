@@ -7,24 +7,27 @@ struct _bfd;
 
 typedef enum dyld_objfile_reason { 
 
-  dyld_reason_deallocated = 0x1, 
+  dyld_reason_deallocated = 0x0000, 
 
-  dyld_reason_user = 0x02,
-  dyld_reason_cached_library = 0x04,
-  dyld_reason_cached_executable = 0x08,
+  dyld_reason_user = 0x0001,
+  dyld_reason_init = 0x0002,
+  dyld_reason_executable = 0x0004,
+  dyld_reason_dyld = 0x0008,
+  dyld_reason_cfm = 0x0010, 
+  
+  dyld_reason_executable_mask = 0x0004,
 
-  dyld_reason_init = 0x10,
-  dyld_reason_executable = 0x20,
+  dyld_reason_type_mask = 0x00ff,
+  dyld_reason_flags_mask = 0xff00,
 
-  dyld_reason_dyld = 0x40,
-  dyld_reason_cfm = 0x80, 
+  dyld_reason_image_mask = 0x0006,
 
-  dyld_reason_cached_mask = 0x0c,
-  dyld_reason_executable_mask = 0x28,
-  dyld_reason_image_mask = 0x30,
+  dyld_reason_cached_mask = 0x0100,
+  dyld_reason_weak_mask = 0x0200,
+  dyld_reason_cached_weak_mask = 0x0300,
 
-  dyld_reason_all_mask = 0xfc
-
+  dyld_reason_all_mask = 0xfffe
+  
 } dyld_objfile_reason;
 
 struct dyld_objfile_entry {
@@ -56,8 +59,8 @@ struct dyld_objfile_entry {
   struct _bfd *abfd;
   struct _bfd *sym_bfd;
 
-  struct objfile *objfile;
   struct objfile *sym_objfile;
+  struct objfile *objfile;
 
   const char *loaded_name;
   CORE_ADDR loaded_memaddr;
@@ -82,11 +85,12 @@ struct dyld_objfile_info {
   struct obj_section *sections_end;
 };
 
-const int dyld_entry_source_filename_is_absolute
-PARAMS ((struct dyld_objfile_entry *e));
+struct dyld_path_info;
 
-const char *dyld_entry_source_filename
-PARAMS ((struct dyld_objfile_entry *e));
+enum { DYLD_ENTRY_FILENAME_LOADED = 1 } dyld_entry_filename_type;
+
+const char *dyld_entry_filename
+PARAMS ((const struct dyld_objfile_entry *e, const struct dyld_path_info *d, int type));
 
 char *dyld_offset_string
 PARAMS ((unsigned long offset));
@@ -132,7 +136,7 @@ void dyld_convert_entry PARAMS ((struct objfile *o, struct dyld_objfile_entry *e
 
 void 
 dyld_entry_info PARAMS ((struct dyld_objfile_entry *e, int print_basenames, 
-			 char **in_name, char **addr, char **slide, char **prefix));
+			 char **in_name, char **in_objname, char **in_symname, char **addr, char **slide, char **prefix));
 
 void dyld_print_entry_info
 PARAMS ((struct dyld_objfile_entry *j, unsigned int shlibnum,

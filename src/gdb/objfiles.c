@@ -40,7 +40,7 @@
 #include <fcntl.h>
 #include "gdb_obstack.h"
 #include "gdb_string.h"
-
+#include "buildsym.h"
 #include "breakpoint.h"
 
 /* Prototypes for local functions */
@@ -53,11 +53,13 @@ static int open_existing_mapped_file (char *, long, int);
 
 static int open_mapped_file (char *filename, long mtime, int flags);
 
-static PTR map_to_file (int);
+static void *map_to_file (int);
 
 #endif /* defined(USE_MMALLOC) && defined(HAVE_MMAP) */
 
-static void add_to_objfile_sections (bfd *, sec_ptr, PTR);
+static void add_to_objfile_sections (bfd *, sec_ptr, void *);
+
+static void objfile_remove_from_restrict_list (struct objfile *);
 
 /* Externally visible variables that are owned by this module.
    See declarations in objfile.h for more info. */
@@ -78,7 +80,7 @@ struct objfile *rt_common_objfile;	/* For runtime common symbols */
 int mapped_symbol_files = 0;
 int use_mapped_symbol_files = 1;
 
-#ifndef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
+#ifdef FSF_OBJFILES
 /* Locate all mappable sections of a BFD file. 
    objfile_p_char is a char * to get it through
    bfd_map_over_sections; we cast it back to its proper type.  */
@@ -93,7 +95,7 @@ int use_mapped_symbol_files = 1;
    the end of the table (objfile->sections_end). */
 
 static void
-add_to_objfile_sections (bfd *abfd, sec_ptr asect, PTR objfile_p_char)
+add_to_objfile_sections (bfd *abfd, sec_ptr asect, void *objfile_p_char)
 {
   struct objfile *objfile = (struct objfile *) objfile_p_char;
   struct obj_section section;
@@ -164,7 +166,6 @@ struct objfile *
 allocate_objfile (bfd *abfd, int flags)
 {
   struct objfile *objfile = NULL;
-  struct objfile *last_one = NULL;
 
   if (mapped_symbol_files)
     flags |= OBJF_MAPPED;
@@ -189,7 +190,7 @@ allocate_objfile (bfd *abfd, int flags)
 			     flags);
       if (fd >= 0)
 	{
-	  PTR md;
+	  void *md;
 
 	  if ((md = map_to_file (fd)) == NULL)
 	    {
@@ -325,25 +326,39 @@ allocate_objfile (bfd *abfd, int flags)
     objfile->sect_index_bss = -1;
     objfile->sect_index_rodata = -1;
 
-  /* Add this file onto the tail of the linked list of other such files. */
-
-  objfile->next = NULL;
-  if (object_files == NULL)
-    object_files = objfile;
-  else
-    {
-      for (last_one = object_files;
-	   last_one->next;
-	   last_one = last_one->next);
-      last_one->next = objfile;
-    }
-
   /* Save passed in flag bits. */
   objfile->flags |= flags;
+  objfile->symflags = -1;
+
+  link_objfile (objfile);
 
   return (objfile);
 }
-#endif /* ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE */
+#endif /* FSF_OBJFILES */
+
+/* Put one object file before a specified on in the global list.
+   This can be used to make sure an object file is destroyed before
+   another when using ALL_OBJFILES_SAFE to free all objfiles. */
+void
+put_objfile_before (struct objfile *objfile, struct objfile *before_this)
+{
+  struct objfile **objp;
+
+  unlink_objfile (objfile);
+  
+  for (objp = &object_files; *objp != NULL; objp = &((*objp)->next))
+    {
+      if (*objp == before_this)
+	{
+	  objfile->next = *objp;
+	  *objp = objfile;
+	  return;
+	}
+    }
+  
+  internal_error (__FILE__, __LINE__,
+		  "put_objfile_before: before objfile not in list");
+}
 
 /* Put OBJFILE at the front of the list.  */
 
@@ -365,18 +380,35 @@ objfile_to_front (struct objfile *objfile)
     }
 }
 
-/* Unlink OBJFILE from the list of known objfiles, if it is found in the
-   list.
+/* Link OBJFILE into the list of known objfiles.  It is an error if
+   OBJFILE has a non-zero NEXT pointer before being inserted. */
 
-   It is not a bug, or error, to call this function if OBJFILE is not known
-   to be in the current list.  This is done in the case of mapped objfiles,
-   for example, just to ensure that the mapped objfile doesn't appear twice
-   in the list.  Since the list is threaded, linking in a mapped objfile
-   twice would create a circular list.
+void
+link_objfile (struct objfile *objfile)
+{
+  struct objfile *last_one = NULL;
 
-   If OBJFILE turns out to be in the list, we zap it's NEXT pointer after
-   unlinking it, just to ensure that we have completely severed any linkages
-   between the OBJFILE and the list. */
+  if (objfile->next != NULL)
+    internal_error (__FILE__, __LINE__,
+		    "unlink_objfile: objfile already linked");
+
+  /* Add this file onto the tail of the linked list of other such files. */
+
+  objfile->next = NULL;
+  if (object_files == NULL)
+    object_files = objfile;
+  else
+    {
+      for (last_one = object_files;
+	   last_one->next;
+	   last_one = last_one->next);
+      last_one->next = objfile;
+    }
+}
+
+/* Unlink OBJFILE from the list of known objfiles, clearing its NEXT
+   pointer.  It is an error if OBJFILE is not on the list of known
+   objfiles. */
 
 void
 unlink_objfile (struct objfile *objfile)
@@ -417,6 +449,18 @@ unlink_objfile (struct objfile *objfile)
 void
 free_objfile (struct objfile *objfile)
 {
+  if (objfile->separate_debug_objfile)
+    {
+      free_objfile (objfile->separate_debug_objfile);
+    }
+  
+  if (objfile->separate_debug_objfile_backlink)
+    {
+      /* We freed the separate debug file, make sure the base objfile
+	 doesn't reference it.  */
+      objfile->separate_debug_objfile_backlink->separate_debug_objfile = NULL;
+    }
+  
   /* First do any symbol file specific actions required when we are
      finished with a particular symbol file.  Note that if the objfile
      is using reusable symbol information (via mmalloc) then each of
@@ -443,6 +487,10 @@ free_objfile (struct objfile *objfile)
   /* Remove it from the chain of all objfiles. */
 
   unlink_objfile (objfile);
+
+  /* Remove it from the chain of restricted objfiles. */
+
+  objfile_remove_from_restrict_list (objfile);
 
   /* If we are going to free the runtime common objfile, mark it
      as unallocated.  */
@@ -568,10 +616,48 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
       l = LINETABLE (s);
       if (l)
 	{
+	  unsigned int num_discontinuities = 0;
+	  int discontinuity_index = -1;
+
 	  for (i = 0; i < l->nitems; ++i)
 	    l->item[i].pc += ANOFFSET (delta, s->block_line_section);
-	}
 
+	  /* Re-sort the line-table.  The table should have started
+	     off sorted, so we should be able to re-sort it by
+	     rotating the values in the buffer.  */
+
+	  for (i = 0; i < (l->nitems - 1); ++i)
+	    if (l->item[i].pc > l->item[i + 1].pc)
+	      {
+		num_discontinuities++;
+		discontinuity_index = i + 1;
+	      }
+	  
+	  if (num_discontinuities == 1)
+	    {
+	      struct linetable *new_linetable = NULL;
+	      size_t size = ((l->nitems - 1) * sizeof (struct linetable_entry))
+		+ sizeof (struct linetable);
+	      
+	      new_linetable = (struct linetable *) xmalloc (size);
+	      memcpy (new_linetable, l, sizeof (struct linetable));
+	      memcpy (new_linetable->item,
+		      l->item + discontinuity_index,
+		      (l->nitems - discontinuity_index) * sizeof (struct linetable_entry));
+	      memcpy (new_linetable->item + (l->nitems - discontinuity_index),
+		      l->item,
+		      discontinuity_index * sizeof (struct linetable_entry));
+	      memcpy (l->item, new_linetable->item, l->nitems * sizeof (struct linetable_entry));
+
+	      xfree (new_linetable);
+	    }
+	  else if (num_discontinuities > 0)
+	    {
+	      warning ("line table was not properly sorted; re-sorting");
+	      qsort (l->item, l->nitems, sizeof (struct linetable_entry), compare_line_numbers);
+	    }
+	}
+      
       /* Don't relocate a shared blockvector more than once.  */
       if (!s->primary)
 	continue;
@@ -712,7 +798,7 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
     }
 
   /* Relocate breakpoints as necessary, after things are relocated. */
-  breakpoint_re_set ();
+  breakpoint_re_set (objfile);
 }
 
 /* Many places in gdb want to test just to see if we have any partial
@@ -769,7 +855,7 @@ objfile_purge_solibs (void)
     /* We assume that the solib package has been purged already, or will
        be soon.
      */
-#ifndef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
+#ifdef NM_MACOSX
     /* not now --- the dyld code handles this better; and this will really make it upset */
     if (!(objf->flags & OBJF_USERLOADED) && (objf->flags & OBJF_SHARED))
       free_objfile (objf);
@@ -797,7 +883,7 @@ have_minimal_symbols (void)
   return 0;
 }
 
-#ifndef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
+#ifdef FSF_OBJFILES
 #if defined(USE_MMALLOC) && defined(HAVE_MMAP)
 
 /* Given the name of a mapped symbol file in SYMSFILENAME, and the timestamp
@@ -916,13 +1002,13 @@ open_mapped_file (char *filename, long mtime, int flags)
   return (fd);
 }
 
-static PTR
+static void *
 map_to_file (int fd)
 {
-  PTR md;
+  void *md;
   CORE_ADDR mapto;
 
-  md = mmalloc_attach (fd, (PTR) 0);
+  md = mmalloc_attach (fd, 0);
   if (md != NULL)
     {
       mapto = (CORE_ADDR) mmalloc_getkey (md, 1);
@@ -935,7 +1021,7 @@ map_to_file (int fd)
       else if (mapto != (CORE_ADDR) NULL)
 	{
 	  /* This mapping file needs to be remapped at "mapto" */
-	  md = mmalloc_attach (fd, (PTR) mapto);
+	  md = mmalloc_attach (fd, mapto);
 	}
       else
 	{
@@ -947,10 +1033,10 @@ map_to_file (int fd)
 	         address selected by mmap, we must truncate it before trying
 	         to do an attach at the address we want. */
 	      ftruncate (fd, 0);
-	      md = mmalloc_attach (fd, (PTR) mapto);
+	      md = mmalloc_attach (fd, mapto);
 	      if (md != NULL)
 		{
-		  mmalloc_setkey (md, 1, (PTR) mapto);
+		  mmalloc_setkey (md, 1, mapto);
 		}
 	    }
 	}
@@ -959,7 +1045,7 @@ map_to_file (int fd)
 }
 
 #endif /* defined(USE_MMALLOC) && defined(HAVE_MMAP) */
-#endif /* ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE */
+#endif /* FSF_OBJFILES */
 
 /* Returns a section whose range includes PC and SECTION, 
    or NULL if none found.  Note the distinction between the return type, 
@@ -1026,6 +1112,211 @@ is_in_import_list (char *name, struct objfile *objfile)
   return 0;
 }
 
+/* The _restrict_ functions are part of the mechanism to add
+   an iterator to ALL_OBJFILES that can be used to restrict the
+   search to newly added objfiles - in particular when breakpoints
+   are being reinserted.
+
+   These are non-nesting interators to be used in ALL_OBJFILES
+   only.  If you want something fancier, you need to pass in an
+   iterator token to get_first, and pass it back to get_next.  */
+
+static struct objfile_list *objfile_list_ptr;
+static int restrict_search = 0;
+struct objfile_list *objfile_list;
+
+/* Set the flag to tell ALL_OBJFILES whether to restrict the search or
+   not. */
+
+void 
+objfile_restrict_search (int on)
+{
+  restrict_search = on;
+}
+
+/* Add an objfile to the restricted search list.  */
+
+void
+objfile_add_to_restrict_list (struct objfile *objfile)
+{
+  struct objfile_list *new_objfile = (struct objfile_list *)
+    xmalloc (sizeof (struct objfile_list));
+  new_objfile->next = objfile_list;
+  new_objfile->objfile = objfile;
+  objfile_list = new_objfile;
+}
+
+/* Remove an objfile from the restricted search list.  */
+
+static void
+objfile_remove_from_restrict_list (struct objfile *objfile)
+{
+  struct objfile_list **objpp;
+  struct objfile_list *i;
+  
+  for (objpp = &objfile_list; *objpp != NULL; objpp = &((*objpp)->next))
+    {
+      if ((*objpp)->objfile == objfile)
+        {
+          i = *objpp;
+          *objpp = (*objpp)->next;
+          xfree (i);
+          return;
+        }
+    }
+}
+
+/* Clear the restricted objfile search list.  */
+
+void
+objfile_clear_restrict_list ()
+{
+  while (objfile_list != NULL)
+    {
+      struct objfile_list *list_ptr;
+      list_ptr = objfile_list;
+      objfile_list = list_ptr->next;
+      xfree (list_ptr);
+    }
+}
+
+/* Get the first objfile.  If the restrict_search flag is set,
+   this returns the first objfile in the restricted list, otherwise
+   it starts from the object_files. */
+
+struct objfile *
+objfile_get_first ()
+{
+  if (!restrict_search || objfile_list == NULL)
+    return object_files;
+  else
+    {
+      objfile_list_ptr = objfile_list->next;
+      return objfile_list->objfile;
+    }
+}
+
+/* Get the next objfile in the list.  
+   FIXME: Right now you can't nest calls to ALL_OBJFILES if 
+   restrict_search is on.  This isn't a problem in practice,
+   but is ugly.  */
+
+struct objfile *
+objfile_get_next (struct objfile *in_objfile)
+{
+  struct objfile *objfile;
+  
+  if (!restrict_search || objfile_list == NULL)
+    {
+      if (in_objfile)
+	return in_objfile->next;
+      else
+	return NULL;
+    }
+
+  if (objfile_list_ptr == NULL)
+    {
+      return NULL;
+    }
+  
+  objfile = objfile_list_ptr->objfile;
+  objfile_list_ptr = objfile_list_ptr->next;
+
+  return objfile;
+}
+
+/* APPLE LOCAL begin fix-and-continue */
+
+static void sanity_check_symtab_obsoleted_flag (struct symtab *s)
+{
+  /* FIXME FIXME FIXME DO NOT RELEASE jmolenda/2003-05-01 */
+  if (s != NULL && 
+      SYMTAB_OBSOLETED (s) != 51 &&
+      SYMTAB_OBSOLETED (s) != 50)
+    error ("Symtab with invalid OBSOLETED flag setting.  Value is %d, symtab name is %s", SYMTAB_OBSOLETED (s), s->filename);
+}
+
+static void sanity_check_psymtab_obsoleted_flag (struct partial_symtab *ps)
+{
+  /* FIXME FIXME FIXME DO NOT RELEASE jmolenda/2003-05-01 */
+  if (ps != NULL && 
+      PSYMTAB_OBSOLETED (ps) != 51 &&
+      PSYMTAB_OBSOLETED (ps) != 50)
+    error ("Psymtab with invalid OBSOLETED flag setting.  Value is %d, psymtab name is %s", PSYMTAB_OBSOLETED (ps), ps->filename);
+}
+
+/* Return the first objfile that isn't marked as 'obsolete' (i.e. has been
+   replaced by a newer version in a fix-and-continue operation.  */
+
+struct symtab *
+symtab_get_first (struct objfile *objfile, int skip_obsolete)
+{
+  struct symtab *s;
+
+  s = objfile->symtabs;
+  sanity_check_symtab_obsoleted_flag (s);
+
+  while (s != NULL && skip_obsolete && SYMTAB_OBSOLETED (s) == 51)
+    {
+      s = s->next;
+      sanity_check_symtab_obsoleted_flag (s);
+    }
+
+  return (s);
+}
+
+struct symtab *
+symtab_get_next (struct symtab *s, int skip_obsolete)
+{
+  if (s == NULL)
+    return NULL;
+
+  s = s->next;
+  sanity_check_symtab_obsoleted_flag (s);
+
+  while (s != NULL && skip_obsolete && SYMTAB_OBSOLETED (s) == 51)
+    {
+      s = s->next;
+      sanity_check_symtab_obsoleted_flag (s);
+    }
+
+  return s;
+}
+
+struct partial_symtab *
+psymtab_get_first (struct objfile *objfile, int skip_obsolete)
+{
+  struct partial_symtab *ps;
+
+  ps = objfile->psymtabs;
+  sanity_check_psymtab_obsoleted_flag (ps);
+  while (ps != NULL && skip_obsolete && PSYMTAB_OBSOLETED (ps) == 51)
+    {
+      sanity_check_psymtab_obsoleted_flag (ps);
+      ps = ps->next;
+    }
+
+  return (ps);
+}
+
+struct partial_symtab *
+psymtab_get_next (struct partial_symtab *ps, int skip_obsolete)
+{
+  if (ps == NULL)
+    return NULL;
+
+  ps = ps->next;
+  sanity_check_psymtab_obsoleted_flag (ps);
+
+  while (ps != NULL && skip_obsolete && PSYMTAB_OBSOLETED (ps) == 51)
+    {
+      ps = ps->next;
+      sanity_check_psymtab_obsoleted_flag (ps);
+    }
+
+  return ps;
+}
+/* APPLE LOCAL end fix-and-continue */
 
 void
 _initialize_objfiles (void)
@@ -1033,13 +1324,13 @@ _initialize_objfiles (void)
   struct cmd_list_element *c;
 
 #if HAVE_MMAP
-  c = add_set_cmd ("generate-persistent-symbol-tables", class_obscure, var_boolean,
+  c = add_set_cmd ("generate-precompiled-symfiles", class_obscure, var_boolean,
 		   (char *) &mapped_symbol_files,
 		   "Set if GDB should generate persistent symbol tables by default.",
 		   &setlist);
   add_show_from_set (c, &showlist);
 
-  c = add_set_cmd ("use-persistent-symbol-tables", class_obscure, var_boolean,
+  c = add_set_cmd ("use-precompiled-symfiles", class_obscure, var_boolean,
 		   (char *) &use_mapped_symbol_files,
 		   "Set if GDB should use persistent symbol tables by default.",
 		   &setlist);

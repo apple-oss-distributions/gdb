@@ -1,7 +1,330 @@
+2003-06-01  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-objc/class-v3.m (sayHello):  Add
+	a call to +[NSString stringWithCString], which is a previously
+	unreferenced class and selector.
+
+	* gdb.apple/fix-and-continue/small-c/invalid-10.c: Non-lazy
+	external reference that dyld cannot resolve.
+	* .../small-c/invalid-11.c: Lazy external reference that dyld cannot
+	resolve.
+	* .../Makefile:  Add compilation of invalid-10 and invalid-11.
+	Don't add these to fix-small-c.exp yet because they crash the
+	inferior process.
+
+2003-05-21  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/mi-fix-small-c.exp: Update
+	expected line numbers.
+
+2003-05-14  Jim Ingham  (jingham@apple.com)
+
+	* gdb.apple/mi1-varobj.exp: Added test for making a varobj that
+	starts out pointing to an uninitalized variable, then gets 
+	init'ed as one dynamic type, then re-inited as another.
+
+2003-05-12  Jim Ingham  (jingham@apple.com)
+
+	* gdb.apple/mi1-varobj.exp: Added tests for dynamic types in
+	ObjC.
+	* gdb.apple/objc-prog.m: Added a derived class to MyClass to
+	test the dynamic types.
+
+        * gdb.mi/mi1-var-block.exp: Add block_start_addr and block_end_addr
+        to the var-create match strings.
+        * gdb.mi/mi1-var-child.exp: ditto
+        * gdb.mi/mi1-var-cmd.exp: ditto
+        * gdb.mi/mi1-var-display.exp: ditto
+	* gdb.mi/gdb701.exp: ditto
+	* gdb.mi/gdb792.exp: ditto
+
+	*gdb.mi/mi-cmd-var-block.exp: Added a comment, the current test
+	"update foo2 should be out of scope" the second time is wrong,
+	it depends on gdb failing the first time it should have noted the
+	variable was out of scope.  If it gets that right, THIS test fails...
+
+2003-05-08  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/b-generic.c (slurry): Change
+	variable initialization to be testible.
+
+2003-05-07  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/Makefile: Enable -findirect-data.
+	.../small-objc/Makefile: Enable -findirect-data.
+	small-c/*: Rename "static_var" to "global_var".
+	small-c/b-generic.c: New variable, "static_var", which has static
+	linkage.
+	small-c/fix-small-c.exp: Updated to expect new variable names.
+
+2003-05-07  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/fix-small-c.exp: Fix test bug.
+
+2003-05-07  Jim Ingham (jingham@apple.com)
+
+	* gdb.apple/mi1-varobj.exp: Fix the stack-list-locals tests for the
+	new block_start_addr & block_end_addr keys.
+	* gdb.apple/slipnslide.exp: Set printf_address to "" so we don't get
+	a Tcl error if we don't succeed in setting it.
+
+2003-05-02  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/mi-fix-small-c.exp:  New test
+	file for a few tests of the F&C MI interface.
+	* .../a.c: Add an extra call to help mi-fix-small-c.exp.
+
+2003-04-21  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-objc/main.m: Add an additional
+	call for testing a breakpoint on an ObjC member func.
+	.../small-objc/fix-small-objc.exp: Put a breakpoint on a fixed objc
+	member func, call it.
+
+2003-04-17  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/Makefile: Three new invalid tests
+	for argument types and return type.
+	* .../small-c/b-invalid-[7-9].c: The tests.
+	* .../small-c/b-generic.c: Add some new things for the new tests.
+	* .../small-c/fix-small-c.exp: Run the tests.
+
+2003-04-15  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/Makefile: Two new invalid fixes.
+	* gdb.apple/fix-and-continue/small-c/fix-small-c.exp: Ditto.
+	* gdb.apple/fix-and-continue/small-c/b-invalid-[56].c: Ditto.
+	* gdb.apple/fix-and-continue/small-c/a.c: Typeo.
+
+2003-04-15  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/ivars.exp (test_run): Add default case for breakpoint
+	hitting.
+
+2003-04-10  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/b-invalid-4.c: New file.
+	* gdb.apple/fix-and-continue/small-c/b-valid-1.c: New file.
+	* gdb.apple/fix-and-continue/small-c/Makefile: Add two more stages.
+	* gdb.apple/fix-and-continue/small-c/fix-small-c.exp: Run two new
+	tests.
+	* gdb.apple/fix-and-continue/small-c/a.c: Add more bar() calls,
+	fix static_var printing in fred().
+	* gdb.apple/fix-and-continue/small-c/b-invalid-[1-3].c: Strip 
+	unnecessary things from these files.
+
+2003-04-08  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/b-v[1-4].c: Removed.
+	* gdb.apple/fix-and-continue/small-c/b-generic.c: Added.
+	* gdb.apple/fix-and-continue/small-c/b-invalid-[1-3].c: New file.
+	* gdb.apple/fix-and-continue/small-c/a.c: Refer to global variable
+	defined over in b.c.
+	* gdb.apple/fix-and-continue/small-c/Makefile: Update.
+	* gdb.apple/fix-and-continue/small-c/fix-small-c.exp: Update.
+
+2003-04-02  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-objc/Makefile: Add suffixes to
+	the various rebuilt fixed bundles.
+	* gdb.apple/fix-and-continue/small-objc/fix-small-objc.exp: Same.
+
+2003-04-02  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-objc/Makefile: Set 
+	DYLD_LIRARY_PATH to ZL framework to pick up modified ObjC runtime
+	on Jaguar systems.  Add a (currently unused) stage4.  Clean up
+	'make clean' targets.
+	* gdb.apple/fix-and-continue/small-c/Makefile: Create each fixed 
+	objfile with a unique name.  Clean up 'make clean' targets.
+	* gdb.apple/fix-and-continue/small-c/fix-small-c.exp: Expect that.
+	* gdb.apple/fix-and-continue/small-objc/class-v4.m: Add a fourth
+	version of this class (currently unused).
+
+2003-04-02  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/b-v4.c: Add a third version of b.c.
+	* gdb.apple/fix-and-continue/small-c/a.c: Typeo.
+	* gdb.apple/fix-and-continue/small-c/Makefile: Add a stage4.
+	* gdb.apple/fix-and-continue/small-c/fix-small-c.exp: Call the 4th
+	stage; check the address of the newly loaded module to ensure it is
+	a different value each time.
+
+2003-03-31  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/*/Makefile: Drop the -fzero-link
+	compiler argument - it won't be necessary with the modified ObjC
+	runtime.
+
+2003-03-26  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/Makefile: Update to use
+	-fzero-link.
+	* gdb.apple/fix-and-continue/small-objc/Makefile: Update to use
+	-fzero-link.
+
+2003-03-25  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-objc/*: New set of tests
+	where a small ObjC program is fix and continued.  Tests run as
+	fix-small-objc.exp.  There are currently four failing tests, but
+	three of those will be fixed by a new objc runtime and one I'll
+	fix in gdb shortly.
+
+2003-03-25  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/weak.exp: Correct the regexp.
+
+2003-03-25  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/slipnslide.exp: Loosen regexp for mi1 start-up - the order
+	that the result, prompt, and =shlib-updated messages are delivered
+	can change easily..
+
+2003-03-24  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/pc-verify.exp: A couple of quick tests to get the value
+	of $pc through a couple different mechanisms and verify that they're
+	consistent.  A lot more could be added to this to check pc and fp
+	at different levels, and maybe even through different types of
+	callers (sigtramps, dummy frames, whatever).
+	* gdb.apple/pc-verify.c: New file, derived from gdb.base/break.c.
+	* gdb.apple/fix-and-continue/small-c/Makefile: Fix gcc compiler opt.
+
+2003-03-20  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/Makefile: Use special dyld,
+	add -mfix-and-continue to CFLAGS.
+	* gdb.apple/fix-and-continue/small-c/fix-small-c.exp: Minor reformat.
+
+2003-03-20  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/set-up-objdir.sh: New script to set up
+	a directory in $OBJDIR for fix and continue tests.
+	* gdb.apple/fix-and-continue/small-c/*: First trivial fix and continue
+	test.
+
+2003-03-18  Jason Molenda  (jmolenda@apple.com)
+
+	* lib/mi-support.exp (mi_gdb_start): Turn off MI timings.
+
+2003-03-13  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/cfm.exp: Update to new 'info sharedlibrary' output format.
+	* gdb.apple/dynaload.exp: Ditto.
+	* gdb.apple/ivars.exp: Ditto.
+	* gdb.apple/slipnslide.exp: Ditto.
+	* gdb.apple/weak.exp: Ditto.
+
+2003-02-17  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/inf-call-interrupt.exp, gdb.apple/ivars.exp: Remove
+	old-style radar annotations from test case names.
+	* gdb/base/{call-ar-st.exp,call-rt-st.exp,corefile.exp,default.exp,
+	ending-run.exp,printcmds.exp,structs.exp}: Ditto.
+	* gdb.mi/gdb792.exp: Add new APPLE LOCAL typecode note.
+
+2003-02-16  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/maint.exp: Remove radar annotations; fix up regexps to
+	match Apple segment names correctly; update maint print statistics
+	expected text to match new output.
+
+2002-12-17  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/weak.exp: Update to new dyld shared library description
+	strings.
+
+2002-12-17  Klee Dienes  <kdienes@apple.com>
+	
+	* configure.in: Configure gdb.apple on i386 as well as powerpc.
+	* configure: Regenerate.
+
+2002-12-17  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/weak.exp: Allow for memory errors hile re-inserting
+	the breakpoints for libraries that are no longer loaded.
+
+2002-12-16  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/signals.exp: Revert to FSF sources.
+
+2002-12-12  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/dynaload.exp: Check for .*$binfile, not just $binfile.
+	* gdb.apple/annota1.exp: Remove radar numbers from bug strings.
+	Check for .*$binfile, not just $binfile.
+	* gdb.base/call-rt-st.exp: Remove radar numbers from bug strings.
+	* gdb.base/default.exp: Allow "no registers" return from info float.
+
+2002-12-06  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.arch/altivec-abi.c (vrsavex): Remove explicit setting of
+	VRSAVE.
+	* gdb.arch/altivec-abi.exp: Remove (r. #######) entries.
+	* gdb.arch/altivec-regs.c (vrsavex): Remove explicit setting of
+	VRSAVE.
+	* gdb.arch/altivec-regs.exp: Remove (r. #######) entries.
+
+2002-11-23  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/weak.exp: Update to match the relocated objfile
+	support.
+
+2002-11-21  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.mi/mi1-hooks.exp: New file.
+
+2002-11-20  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/po.exp: Add four tests to check a few ObjC class+method
+	names and apostrophy combinations.
+
+2002-11-19  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.arch/altivec-regs.exp: Remove radar #'s from two passing tests.
+	* gdb.base/corefile.exp: Remove radar # from one passing test.
+	* gdb.base/nodebug.exp: Revert to FSF sources; tests pass.
+	* gdb.base/return.exp: Ditto.
+	* gdb.base/return2.exp: Ditto.
+	* gdb.base/signals.exp: Remove radar # from one passing test.
+	* gdb.mi/mi1-var-cmd.exp: Remove radar # from three passing tests.
+
+2002-11-19  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.mi/mi1-var-cmd.exp: Re-add some Apple Local adjustments.
+
+2002-11-19  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/default.exp: Annotate show convenience fails with radar #.
+
+2002-11-19  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/dynaload.exp: Update test case to not expect "Switching
+	to process" output at inferior start-time.
+	* gdb.apple/ivars.exp: Allow either "Y" or "B" as the shared library
+	"current" value, even though I think the "B" value is less than
+	correct.
+	* gdb.apple/weak.exp: Annotate with new radar #.  Update test case
+	to not expect "Switching to process" output at inferior start-time.
+
 2002-11-12  Jason Molenda  (jmolenda@apple.com)
 
 	* gdb.apple/inf-call-interrupt.exp: Annotate fails with radar #'s.
 	* gdb.apple/ivars.exp: Ditto.
+
+2002-11-10  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.mi/gdb792.exp: Add Apple-local varobj fields to the
+	expected output.
+
+2002-11-10  Klee Dienes  <kdienes@apple.com>
+	
+	* lib/mi-support.exp: Don't insist on the mi prompt to be in a
+	certain format; our mi1 seems to provide the "new-format"
+	prompt, not the old format.  When we are able to re-enable
+	this test, it should probably be a FAIL, not an error and
+	remote_close.
 
 2002-11-08  Jason Molenda  (jmolenda@apple.com)
 
@@ -16,6 +339,25 @@
 	* gdb.apple/inf-call-interrupt.exp: New test file for getting
 	interrupted while calling inferior functions.
 	* gdb.apple/inf-call-interrupt.c: New file.
+
+2002-11-07  Klee Dienes  <kdienes@apple.com>
+	
+	* gdb.base/selftest.exp: Check for gdb.c, not main.c, as the
+	source file in the "backtrace through signal handler" test.
+
+2002-11-07  Klee Dienes  <kdienes@apple.com>
+
+	* configure.in: Use _AC_COMPILER_EXEEXT instead of AC_EXEEXT
+	(I have zero clue what is actually going on here, but it works when I
+	do this).
+	* configure: Regenerate.
+
+2002-11-07  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/annota1.exp: Update "run until main breakpoint" test to
+	handle "Reading symbols for shared libraries." earlier in the
+	startup process.
+
 
 2002-11-06  Jason Molenda  (jmolenda@apple.com)
 
@@ -57,6 +399,24 @@
 	Use future-break to set the breakpoint, even though it's equivalent
 	to break here.  Check the lang setting too for fun.
 
+2002-11-04  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.arch/altivec-regs.exp: Update architecture test to include
+	powerpc-* instead of just powerpc-*altivec.  Update decimal_vector
+	tests to allow \000 and not just \0 in the char string output.
+	Update 'info reg' expected output to include the 'raw' fields.
+	Update the output of 'info reg vrsave/vscr' to expect the integer
+	value after the hex value.  Un-ifdef the 'info vector' test.
+	Convert from 'info powerpc altivec' to 'info vector'.
+
+2002-11-04  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/watchpoint.c: Add assignment to buf[7] in the "test
+	basic watchpoints" section.
+	* gdb.base/watchpoint.exp: Add test for detecting modification
+	of an array element with 'watch buf', where 'buf' is the name of the
+	array.
+
 2002-11-01  Jason Molenda  (jmolenda@apple.com)
 
 	* gdb.apple/objc-prog.m: Add a local class with some ivars
@@ -69,72 +429,97 @@
 2002-11-01  Jason Molenda  (jmolenda@apple.com)
 
 	* gdb.apple/libmylib.c: Add comment, make puts() call explicit.
-	* gdb.apple/slipnslide.c: Use NSModule calls to get foo() addr if present,
-	call it.
+	* gdb.apple/slipnslide.c: Use NSModule calls to get foo() addr if 
+        present, call it.
 	* gdb.apple/slipnslide.exp: See if symbol offsets remain constant during
 	a slide; try to hit a breakpoint in an inserted, slid library.
 
+2002-11-01  Jason Molenda  (jmolenda@apple.com)
+
+        * gdb.apple/libmylib.c: Add comment, make puts() call explicit.
+        * gdb.apple/slipnslide.c: Use NSModule calls to get foo() addr if
+        present, call it.
+        * gdb.apple/slipnslide.exp: See if symbol offsets remain constant during
+        a slide; try to hit a breakpoint in an inserted, slid library.
+
 2002-10-31  Klee Dienes  <kdienes@apple.com>
 
-        * gdb.apple/slipnslide.exp: Add timeout cases for the breakpoint
-        read commands.  Set default values for _slid_address if the
-        breakpoint reads fail.  Update the "did mylib slide" regex to not
-        specify the load address of mylib.
+	* gdb.apple/slipnslide.exp: Add timeout cases for the breakpoint
+	read commands.  Set default values for _slid_address if the
+	breakpoint reads fail.  Update the "did mylib slide" regex to not
+	specify the load address of mylib.
 
 2002-10-31  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.apple/slipnslide.c, gdb.apple/slipnslide.exp, gdb.apple/libmylib.c:
+	* gdb.apple/slipnslide.c, gdb.apple/slipnslide.exp,
+	gdb.apple/libmylib.c:
 	New files for testing dylib sliding.
 
 2002-10-31  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.arch/altivec-abi.exp: Annotate with radar #'s.
-	* gdb.arch/altivec-regs.exp: Ditto.
+        * gdb.arch/altivec-abi.exp: Annotate with radar #'s.
+        * gdb.arch/altivec-regs.exp: Ditto.
 
 2002-10-30  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.mi/mi1-var-child.exp: Finish updates to support new 
-	dynamic_type fields.
-	* gdb.mi/mi1-var-cmd.exp: Ditto.
-	* gdb.mi/mi1-var-display.exp: Ditto.
+        * gdb.mi/mi1-var-child.exp: Finish updates to support new 
+        dynamic_type fields.
+        * gdb.mi/mi1-var-cmd.exp: Ditto.
+        * gdb.mi/mi1-var-display.exp: Ditto.
 
 2002-10-30  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.apple/cfm.sh: Rework srcdir handling to work correctly with
-	relative path builds.
+        * gdb.apple/cfm.sh: Rework srcdir handling to work correctly with
+        relative path builds.
 
 2002-10-29  Klee Dienes  <kdienes@apple.com>
 
-        * gdb.base/break.exp: Add multiple calls to the inferior in
-        the user-commands for 'break 79'.  Add a check for the calls
-        to the inferior in the check for the result.  Add new test, to
-        check that user-defined breakpoint commands are called for functions
-        called by the user (currently fails).
-
-2002-10-28  Klee Dienes  <kdienes@apple.com>
-
-        * gdb.apple/cfm.sh: Use uuencoded template libraries in
-        cfm-libs.  Strip the 'y' from the 'yes | cat -n' output.
-        * gdb.apple/cfm-libs/*.uu: Provide uuencoded CFM and Mach-O
-        template libraries.
-        * gdb.apple/cfm.exp: No longer bother with the remote_download
-        of the template files; the test won't work on a remote board anyway.
-
-2002-10-28  Klee Dienes  <kdienes@apple.com>
-
-        * gdb.apple/cfm.exp: Set timeout to 180.  Call 'cfm.sh' to set
-        up the CFM libraries for debugging, rather than iterate within
-        TCL ... the 'remote_exec build' code is rather slow.
-        * gdb.apple/cfm.sh: New file.  Sets up shared libraries for
-        CFM testing in /tmp/cfm, using files from $1.
+	* gdb.base/break.exp: Add multiple calls to the inferior in
+	the user-commands for 'break 79'.  Add a check for the calls
+	to the inferior in the check for the result.  Add new test, to
+	check that user-defined breakpoint commands are called for functions
+	called by the user (currently fails).
 
 2002-10-29  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.apple/template.cfm, gdb.apple/._template.cfm: Remove from
-	branch so buildit verification doesn't fail.
-	* gdb.apple/template.cfm.uu, gdb.apple/._template.cfm.uu: UUencoded
-	versions of the same.  The testsuite won't uudecode them at run-time
-	yet; this is just to get buildit working.
+	* gdb.apple/._template.cfm: Remove.
+
+2002-10-28  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/cfm.sh: Use uuencoded template libraries in
+	cfm-libs.  Strip the 'y' from the 'yes | cat -n' output.
+	* gdb.apple/cfm-libs/*.uu: Provide uuencoded CFM and Mach-O
+	template libraries.
+	* gdb.apple/cfm.exp: No longer bother with the remote_download
+	of the template files; the test won't work on a remote board anyway.
+
+2002-10-28  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/cfm.exp: Set timeout to 180.  Call 'cfm.sh' to set
+	up the CFM libraries for debugging, rather than iterate within
+	TCL ... the 'remote_exec build' code is rather slow.
+	* gdb.apple/cfm.sh: New file.  Sets up shared libraries for
+	CFM testing in /tmp/cfm, using files from $1.
+	
+2002-10-26  Klee Dienes  <kdienes@apple.com>
+
+	* configure, configure.in: Revert change of 10-26.
+	* lib/insight-support.exp (gdbtk_initialize_display): Explicitly
+	return 0 if we are running on Mac OS X.  The problem is that the
+	this function uses the presence of GDB_DISPLAY, or the existence
+	of Xvfb, to decide if it should run the gdbtk tests.  On Mac OS X
+	systems, we can have Xvfb, but we don't support the gdbtk tests.
+	Unfortunately, the tests for the presence of Insight in
+	gdbtk_start come *after* we try to build the binaries (which is a
+	bit of a waste), and worse, bomb out the entire test suite with an
+	'exit 1' if they can't find gdbtk.  A better fix would be to
+	re-organize the insight-support.exp code a bit to have a decent
+	check for insight support, and use that.
+
+2002-10-26  Klee Dienes  <kdienes@apple.com>
+
+	* configure, configure.in: Turn off gdbtk by default for
+	Mac OS X.
 
 2002-10-25  Jason Molenda  (jmolenda@apple.com)
 

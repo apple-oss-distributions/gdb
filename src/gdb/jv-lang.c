@@ -73,7 +73,7 @@ get_dynamics_objfile (void)
 {
   if (dynamics_objfile == NULL)
     {
-#ifdef ENABLE_INCREDIBLY_INAPPROPRIATE_MACOSX_SPECIFIC_HACKS_IN_GENERIC_CODE
+#ifndef FSF_OBJFILES
       dynamics_objfile = allocate_objfile (NULL, 0, 0, 0);
 #else
       dynamics_objfile = allocate_objfile (NULL, 0);

@@ -70,11 +70,6 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {deb
     gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
-# APPLE LOCAL jmolenda
-# r. 3054660: maint info sections CODE/DATA don't list the correct information
-set r3054660 "(r. 3054660)"
-
-
 gdb_exit
 gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
@@ -234,9 +229,9 @@ gdb_expect  {
         timeout         { fail "(timeout) maint print psymbols w/o args" }
         }
 
-send_gdb "maint print psymbols psymbols_output\n"
+send_gdb "maint print psymbols psymbols_output ${srcdir}/${subdir}/${srcfile}\n"
 gdb_expect  {
-        -re "^maint print psymbols psymbols_output\r\n$gdb_prompt $"\
+        -re "^maint print psymbols psymbols_output \[^\n\]*\r\n$gdb_prompt $"\
          {
           send_gdb "shell ls psymbols_output\n"
           gdb_expect {
@@ -276,9 +271,9 @@ gdb_expect  {
         timeout         { fail "(timeout) maint print msymbols w/o args" }
         }
 
-send_gdb "maint print msymbols msymbols_output\n"
+send_gdb "maint print msymbols msymbols_output ${binfile}\n"
 gdb_expect  {
-        -re "^maint print msymbols msymbols_output\r\n$gdb_prompt $"\
+        -re "^maint print msymbols msymbols_output \[^\n\]*\r\n$gdb_prompt $"\
          {
           send_gdb "shell ls msymbols_output\n"
           gdb_expect {
@@ -311,16 +306,13 @@ gdb_expect  {
         timeout         { fail "(timeout) maint print symbols w/o args" }
         }
 
-# This command can legitimately take many minutes to execute.  If the
-# executable is dynamically linked, then you get all the debugging
-# info for the entire library --- 89Mb on my system.  -jimb
+# Request symbols for one particular source file so that we don't try to
+# dump the symbol information for the entire C library - over 500MB nowadays
+# for GNU libc.
 
-set old_timeout $timeout
-set timeout 600
-
-send_gdb "maint print symbols symbols_output\n"
+send_gdb "maint print symbols symbols_output ${srcdir}/${subdir}/${srcfile}\n"
 gdb_expect  {
-        -re "^maint print symbols symbols_output\r\n$gdb_prompt $"\
+        -re "^maint print symbols symbols_output \[^\n\]*\r\n$gdb_prompt $"\
          {
           send_gdb "shell ls symbols_output\n"
           gdb_expect {
@@ -344,8 +336,6 @@ gdb_expect  {
         -re ".*$gdb_prompt $"       { fail "maint print symbols" }
         timeout         { fail "(timeout) maint print symbols" }
         }
-
-set timeout $old_timeout
 
 send_gdb "maint print type argc\n"
 gdb_expect  {
@@ -403,24 +393,26 @@ gdb_expect {
     timeout               { fail "(timeout) maint info sections .text" }
 }
 
+# APPLE LOCAL: Our text segment is "__TEXT"; our data segment is
+# "__DATA" for the next two tests.
+
 # Test for new option: CODE section flag
 # If your data section is tagged CODE, xfail this test.
 send_gdb "maint info sections CODE\n"
 gdb_expect {
-    -re ".* .data .*$gdb_prompt $" { fail "maint info sections CODE $r3054660" }
-    -re ".* .text .*$gdb_prompt $" { pass "maint info sections CODE $r3054660" }
-    -re ".*$gdb_prompt $"	   { fail "maint info sections CODE $r3054660" }
-    timeout              { fail "(timeout) maint info sections CODE $r3054660" }
+    -re ".* LC_SEGMENT.__DATA .*$gdb_prompt $" { fail "maint info sections CODE" }
+    -re ".* LC_SEGMENT.__TEXT .*$gdb_prompt $" { pass "maint info sections CODE" }
+    timeout              { fail "(timeout) maint info sections CODE" }
 }
 
 # Test for new option: DATA section flag
 # If your text section is tagged DATA, xfail this test.
 send_gdb "maint info sections DATA\n"
 gdb_expect {
-    -re ".* .text .*$gdb_prompt $" { fail "maint info sections DATA $r3054660" }
-    -re ".* .data .*$gdb_prompt $" { pass "maint info sections DATA $r3054660" }
-    -re ".*$gdb_prompt $"	   { fail "maint info sections DATA $r3054660" }
-    timeout              { fail "(timeout) maint info sections DATA $r3054660" }
+    -re ".* LC_SEGMENT.__TEXT .*$gdb_prompt $" { fail "maint info sections DATA" }
+    -re ".* LC_SEGMENT.__DATA .*$gdb_prompt $" { pass "maint info sections DATA" }
+    -re "Exec file:\[\r\n\]+ *`.*break', file type \[^.\]*.\[\r\n\]+$gdb_prompt $" { fail "maint info sections DATA" }
+    timeout              { fail "(timeout) maint info sections DATA" }
 }
 
 send_gdb "maint info breakpoints\n"
@@ -509,7 +501,7 @@ if [ishost *cygwin*] {
 }
 send_gdb "help maint dump-me\n"
 gdb_expect  {
-        -re "Get fatal error; make debugger dump its core\\.\r\nGDB sets it's handling of SIGQUIT back to SIG_DFL and then sends\r\nitself a SIGQUIT signal\\..*$gdb_prompt $"\
+        -re "Get fatal error; make debugger dump its core\\.\r\nGDB sets its handling of SIGQUIT back to SIG_DFL and then sends\r\nitself a SIGQUIT signal\\..*$gdb_prompt $"\
                         { pass "help maint dump-me" }
         -re ".*$gdb_prompt $"       { fail "help maint dump-me" }
         timeout         { fail "(timeout) help maint dump-me" }

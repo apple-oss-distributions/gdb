@@ -1,5 +1,5 @@
 /* Target-dependent code for NS32000 systems running NetBSD.
-   Copyright 2002 Free Software Foundation, Inc. 
+   Copyright 2002, 2003 Free Software Foundation, Inc. 
    Contributed by Wasabi Systems, Inc. 
  
    This file is part of GDB.
@@ -20,6 +20,7 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
+#include "osabi.h"
 
 #include "ns32k-tdep.h"
 #include "gdb_string.h"
@@ -66,6 +67,6 @@ _initialize_ns32knbsd_tdep (void)
   gdbarch_register_osabi_sniffer (bfd_arch_ns32k, bfd_target_aout_flavour,
 				  ns32knbsd_aout_osabi_sniffer);
 
-  gdbarch_register_osabi (bfd_arch_ns32k, GDB_OSABI_NETBSD_AOUT,
+  gdbarch_register_osabi (bfd_arch_ns32k, 0, GDB_OSABI_NETBSD_AOUT,
 			  ns32knbsd_init_abi_aout);
 }

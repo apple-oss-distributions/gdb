@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux x86-64.
 
-   Copyright 2001, 2002 Free Software Foundation, Inc.
+   Copyright 2001, 2002, 2003 Free Software Foundation, Inc.
 
    Contributed by Jiri Smid, SuSE Labs.
 
@@ -158,7 +158,7 @@ fill_gregset (elf_gregset_t * gregsetp, int regno)
 
   for (i = 0; i < x86_64_num_gregs; i++)
     if ((regno == -1 || regno == i))
-      read_register_gen (i, (char *) (regp + x86_64_regmap[i]));
+      deprecated_read_register_gen (i, (char *) (regp + x86_64_regmap[i]));
 }
 
 /* Fetch all general-purpose registers from process/thread TID and

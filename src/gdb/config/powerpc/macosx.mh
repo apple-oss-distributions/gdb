@@ -1,7 +1,5 @@
 # Host: PowerPC running Mac OS X
 
-TERMCAP = -lcurses
-
 SER_HARDWIRE = ser-unix.o ser-tcp.o
 
 XM_FILE = xm-ppc-macosx.h
@@ -27,6 +25,7 @@ MACOSX_FILES = \
 	macosx-nat-threads.o \
 	macosx-nat-infthread.o \
 	macosx-nat-info.o \
+	macosx-nat.o \
 	excServer.o \
 	excUser.o
 
@@ -55,8 +54,7 @@ CFM_CFLAGS = -DWITH_CFM=1
 
 CFM_LIBS = 
 
-MH_CFLAGS += -DUSE_PTHREADS=1 -Wall -Wimplicit -Wno-long-double \
-         -mdynamic-no-pic
+MH_CFLAGS += -DUSE_PTHREADS=1 -Wall -Wimplicit -Wno-long-double
 
 _all: all
 

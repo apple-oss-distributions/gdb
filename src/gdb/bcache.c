@@ -216,7 +216,7 @@ bcache (const void *addr, int length, struct bcache *bcache)
 
 void
 bcache_specify_allocation_with_arg
-(struct bcache *b, void * (* alloc) (void *, long),
+(struct bcache *b, void * (* alloc) (void *, size_t),
  void (* free) (void *, void *), void *arg)
 {
   obstack_specify_allocation_with_arg (&b->cache, 0, 0, alloc, free, arg);
@@ -224,8 +224,8 @@ bcache_specify_allocation_with_arg
 
 void
 bcache_specify_allocation
-(struct bcache *b, void * (* alloc) (void *, long),
- void (* free) (void *, void *))
+(struct bcache *b, void * (* alloc) (size_t),
+ void (* free) (void *))
 {
   obstack_specify_allocation (&b->cache, 0, 0, alloc, free);
 }

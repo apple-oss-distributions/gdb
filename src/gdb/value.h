@@ -1,6 +1,6 @@
 /* Definitions for values of C expressions, for GDB.
    Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
-   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
+   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -127,9 +127,7 @@ struct value
        list.  */
     struct value *next;
 
-    /* Register number if the value is from a register.  Is not kept
-       if you take a field of a structure that is stored in a
-       register.  Shouldn't it be?  */
+    /* Register number if the value is from a register.  */
     short regno;
     /* If zero, contents of this value are in the contents field.
        If nonzero, contents are in inferior memory at address
@@ -241,9 +239,9 @@ do { COERCE_REF(arg);							\
 #define COERCE_NUMBER(arg)  \
   do { COERCE_ARRAY(arg);  COERCE_ENUM(arg); } while (0)
 
-#define COERCE_VARYING_ARRAY(arg, real_arg_type)	\
-/* OBSOLETE { if (chill_varying_type (real_arg_type)) */  \
-/* OBSOLETE     arg = varying_to_slice (arg), real_arg_type = VALUE_TYPE (arg); } */ 
+/* NOTE: cagney/2002-12-17: This macro was handling a chill language
+   problem but that language has gone away.  */
+#define COERCE_VARYING_ARRAY(arg, real_arg_type)
 
 /* If ARG is an enum, convert it to an integer.  */
 
@@ -284,13 +282,14 @@ extern DOUBLEST value_as_double (struct value *val);
 
 extern CORE_ADDR value_as_address (struct value *val);
 
-extern LONGEST unpack_long (struct type *type, char *valaddr);
+extern LONGEST unpack_long (struct type *type, const char *valaddr);
 
-extern DOUBLEST unpack_double (struct type *type, char *valaddr, int *invp);
+extern DOUBLEST unpack_double (struct type *type, const char *valaddr,
+			       int *invp);
 
-extern CORE_ADDR unpack_pointer (struct type *type, char *valaddr);
+extern CORE_ADDR unpack_pointer (struct type *type, const char *valaddr);
 
-extern LONGEST unpack_field_as_long (struct type *type, char *valaddr,
+extern LONGEST unpack_field_as_long (struct type *type, const char *valaddr,
 				     int fieldno);
 
 extern struct value *value_from_longest (struct type *type, LONGEST num);
@@ -486,11 +485,13 @@ extern void release_value (struct value *val);
 
 extern int record_latest_value (struct value *val);
 
-extern void
-modify_field (char *addr, LONGEST fieldval, int bitpos, int bitsize);
+extern void modify_field (char *addr, LONGEST fieldval, int bitpos,
+			  int bitsize);
 
 extern void type_print (struct type * type, char *varstring,
 			struct ui_file * stream, int show);
+
+extern char *type_sprint (struct type *type, char *varstring, int show);
 
 extern char *baseclass_addr (struct type *type, int index, char *valaddr,
 			     struct value **valuep, int *errp);
@@ -553,10 +554,6 @@ extern struct value *
 call_function_by_hand_expecting_type (struct value *,
 				      struct type *, int,
 				      struct value **, int);
-
-extern int default_coerce_float_to_double (struct type *, struct type *);
-
-extern int standard_coerce_float_to_double (struct type *, struct type *);
 
 extern struct value *value_literal_complex (struct value *, struct value *,
 					    struct type *);

@@ -46,12 +46,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "parser-defs.h"
 #include "language.h"
 #include "c-lang.h"
-#include "objc-lang.h" /* For Obj-C language constructs. */
 #include "bfd.h" /* Required by objfiles.h.  */
 #include "symfile.h" /* Required by objfiles.h.  */
 #include "objfiles.h" /* For have_full_symbols and have_partial_symbols */
-#include "completer.h" /* For skip_quoted. */
 #include "charset.h"
+#include "completer.h"
+#include "objc-lang.h" /* For ObjC language constructs. */
 
 /* Flag indicating we're dealing with HP-compiled objects */ 
 extern int hp_som_som_object_present;
@@ -176,11 +176,11 @@ static int parse_number (char *, int, int, YYSTYPE *);
    nonterminal "name", which matches either NAME or TYPENAME.  */
 
 %token <sval> STRING
-%token <sval> NSSTRING		/* Obj-C Foundation "NSString" literal */ 
-%token <sval> SELECTOR		/* Obj-C "@selector" pseudo-operator   */ 
-%token <ssym> NAME		/* BLOCKNAME defined below to give it higher precedence. */
+%token <sval> OBJC_NSSTRING /* ObjC Foundation "NSString" literal */ 
+%token <sval> OBJC_SELECTOR /* ObjC "@selector" pseudo-operator   */ 
+%token <class> OBJC_CLASSNAME /* ObjC Class name */ 
+%token <ssym> NAME /* BLOCKNAME defined below to give it higher precedence. */
 %token <tsym> TYPENAME
-%token <class> CLASSNAME	/* Obj-C Class name */ 
 %type <sval> name
 %type <ssym> name_not_typename
 %type <tsym> typename
@@ -253,9 +253,11 @@ exp1	:	exp
 /* Expressions, not including the comma operator.  */
 exp	:	'*' exp    %prec UNARY
 			{ write_exp_elt_opcode (UNOP_IND); }
+	;
 
 exp	:	'&' exp    %prec UNARY
 			{ write_exp_elt_opcode (UNOP_ADDR); }
+	;
 
 exp	:	'-' exp    %prec UNARY
 			{ write_exp_elt_opcode (UNOP_NEG); }
@@ -329,7 +331,7 @@ exp	:	exp '[' exp1 ']'
 			{ write_exp_elt_opcode (BINOP_SUBSCRIPT); }
 	;
 
-/* The rules below parse Obj-C message calls of the form:
+/* The rules below parse ObjC message calls of the form:
    '[' target selector {':' argument}* ']' */
 
 exp	: 	'[' TYPENAME
@@ -347,13 +349,13 @@ exp	: 	'[' TYPENAME
 			  start_msglist();
 			}
 		msglist ']'
-			{ write_exp_elt_opcode (OP_MSGCALL);
+			{ write_exp_elt_opcode (OP_OBJC_MSGCALL);
 			  end_msglist();
-			  write_exp_elt_opcode (OP_MSGCALL); 
+			  write_exp_elt_opcode (OP_OBJC_MSGCALL); 
 			}
 	;
 
-exp	:	'[' CLASSNAME
+exp	:	'[' OBJC_CLASSNAME
 			{
 			  write_exp_elt_opcode (OP_LONG);
 			  write_exp_elt_type (builtin_type_int);
@@ -362,18 +364,18 @@ exp	:	'[' CLASSNAME
 			  start_msglist();
 			}
 		msglist ']'
-			{ write_exp_elt_opcode (OP_MSGCALL);
+			{ write_exp_elt_opcode (OP_OBJC_MSGCALL);
 			  end_msglist();
-			  write_exp_elt_opcode (OP_MSGCALL); 
+			  write_exp_elt_opcode (OP_OBJC_MSGCALL); 
 			}
 	;
 
 exp	:	'[' exp
 			{ start_msglist(); }
 		msglist ']'
-			{ write_exp_elt_opcode (OP_MSGCALL);
+			{ write_exp_elt_opcode (OP_OBJC_MSGCALL);
 			  end_msglist();
-			  write_exp_elt_opcode (OP_MSGCALL); 
+			  write_exp_elt_opcode (OP_OBJC_MSGCALL); 
 			}
 	;
 
@@ -569,11 +571,11 @@ exp	:	VARIABLE
 			/* Already written by write_dollar_variable. */
 	;
 
-exp	:	SELECTOR 
+exp	:	OBJC_SELECTOR 
 			{
-			  write_exp_elt_opcode (OP_SELECTOR);
+			  write_exp_elt_opcode (OP_OBJC_SELECTOR);
 			  write_exp_string ($1);
-			  write_exp_elt_opcode (OP_SELECTOR); }
+			  write_exp_elt_opcode (OP_OBJC_SELECTOR); }
 
 
 exp	:	SIZEOF '(' type ')'	%prec UNARY
@@ -608,12 +610,12 @@ exp	:	STRING
 			  write_exp_elt_opcode (OP_ARRAY); }
 	;
 
-exp     :	NSSTRING	/* ObjC NextStep NSString constant
+exp     :	OBJC_NSSTRING	/* ObjC NextStep NSString constant
 				 * of the form '@' '"' string '"'.
 				 */
-			{ write_exp_elt_opcode (OP_NSSTRING);
+			{ write_exp_elt_opcode (OP_OBJC_NSSTRING);
 			  write_exp_string ($1);
-			  write_exp_elt_opcode (OP_NSSTRING); }
+			  write_exp_elt_opcode (OP_OBJC_NSSTRING); }
 	;
 
 /* C++.  */
@@ -739,7 +741,7 @@ variable:	qualified_name
 						 builtin_type_int);
 			    }
 			  else
-			    if (!have_full_symbols () && !have_partial_symbols () && !have_minimal_symbols ())
+			    if (!have_full_symbols () && !have_partial_symbols ())
 			      error ("No symbol table is loaded.  Use the \"file\" command.");
 			    else
 			      error ("No symbol \"%s\" in current context.", name);
@@ -769,7 +771,7 @@ variable:	name_not_typename
 			    }
 			  else if ($1.is_a_field_of_this)
 			    {
-			      /* C++/Obj-C: it hangs off of `this'.  Must
+			      /* C++/ObjC: it hangs off of `this'.  Must
 			         not inadvertently convert from a method call
 				 to data ref.  */
 			      if (innermost_block == 0 || 
@@ -783,8 +785,8 @@ variable:	name_not_typename
 			      else if (current_language->la_language == language_objc
 				       || current_language->la_language == language_objcplus)
 				{
-				  write_exp_elt_opcode (OP_SELF);
-				  write_exp_elt_opcode (OP_SELF);
+				  write_exp_elt_opcode (OP_OBJC_SELF);
+				  write_exp_elt_opcode (OP_OBJC_SELF);
 				}
 			      write_exp_elt_opcode (STRUCTOP_PTR);
 			      write_exp_string ($1.stoken);
@@ -803,7 +805,7 @@ variable:	name_not_typename
 						     lookup_function_type (builtin_type_int),
 						     builtin_type_int);
 				}
-			      else if (!have_full_symbols () && !have_partial_symbols () && !have_minimal_symbols ())
+			      else if (!have_full_symbols () && !have_partial_symbols ())
 				error ("No symbol table is loaded.  Use the \"file\" command.");
 			      else
 				error ("No symbol \"%s\" in current context.",
@@ -893,7 +895,7 @@ type	:	ptype
 typebase  /* Implements (approximately): (type-qualifier)* type-specifier */
 	:	TYPENAME
 			{ $$ = $1.type; }
-	|	CLASSNAME
+	|	OBJC_CLASSNAME
 			{
 			  if ($1.type == NULL)
 			    error ("No symbol \"%s\" in current context.", 
@@ -1048,8 +1050,8 @@ const_or_volatile_noopt:  	const_and_volatile
 name	:	NAME { $$ = $1.stoken; }
 	|	BLOCKNAME { $$ = $1.stoken; }
 	|	TYPENAME { $$ = $1.stoken; }
-	|	CLASSNAME { $$ = $1.stoken; }
-	|	NAME_OR_INT { $$ = $1.stoken; }
+	|	OBJC_CLASSNAME { $$ = $1.stoken; }
+	|	NAME_OR_INT  { $$ = $1.stoken; }
 	;
 
 name_not_typename :	NAME
@@ -1335,9 +1337,9 @@ static int
 yylex ()
 {
   int c;
+  int tokchar;
   int namelen;
   unsigned int i;
-  int tokchr;
   char *tokstart;
   char *tokptr;
   int tempbufindex;
@@ -1383,7 +1385,7 @@ yylex ()
 	return tokentab2[i].token;
       }
 
-  switch (tokchr = *tokstart)
+  switch (tokchar = c = *tokstart)
     {
     case 0:
       /* If we were just scanning the result of a macro expansion,
@@ -1430,8 +1432,7 @@ yylex ()
       c = *lexptr++;
       if (c != '\'')
 	{
-	  namelen = skip_quoted (tokstart, get_gdb_completer_word_break_characters ())
-	    - tokstart;
+	  namelen = skip_quoted (tokstart) - tokstart;
 	  if (namelen > 2)
 	    {
 	      lexptr = tokstart + namelen;
@@ -1449,14 +1450,14 @@ yylex ()
     case '(':
       paren_depth++;
       lexptr++;
-      return '(';
+      return c;
 
     case ')':
       if (paren_depth == 0)
 	return 0;
       paren_depth--;
       lexptr++;
-      return ')';
+      return c;
 
     case ',':
       if (comma_terminates
@@ -1464,7 +1465,7 @@ yylex ()
           && ! scanning_macro_expansion ())
 	return 0;
       lexptr++;
-      return ',';
+      return c;
 
     case '.':
       /* Might be a floating point number.  */
@@ -1488,12 +1489,12 @@ yylex ()
 	register char *p = tokstart;
 	int hex = input_radix > 10;
 
-	if (tokchr == '0' && (p[1] == 'x' || p[1] == 'X'))
+	if (c == '0' && (p[1] == 'x' || p[1] == 'X'))
 	  {
 	    p += 2;
 	    hex = 1;
 	  }
-	else if (tokchr == '0' && (p[1]=='t' || p[1]=='T' || p[1]=='d' || p[1]=='D'))
+	else if (c == '0' && (p[1]=='t' || p[1]=='T' || p[1]=='d' || p[1]=='D'))
 	  {
 	    p += 2;
 	    hex = 0;
@@ -1556,7 +1557,7 @@ yylex ()
     case '}':
     symbol:
       lexptr++;
-      return tokchr;
+      return c;
 
     case '@':
       if (strncmp (tokstart, "@selector", 9) == 0)
@@ -1582,14 +1583,14 @@ yylex ()
 	  yylval.sval.ptr = tempbuf;
 	  yylval.sval.length = tempbufindex;
 	  lexptr = tokptr;
-	  return SELECTOR;
+	  return OBJC_SELECTOR;
 	}
       if (tokstart[1] != '"')
         {
           lexptr++;
-          return tokchr;
+          return c;
         }
-      /* Obj-C NSString constant: fall through and parse like STRING. */
+      /* ObjC NSString constant: fall through and parse like STRING. */
       tokstart++;
 
     case '"':
@@ -1603,7 +1604,7 @@ yylex ()
 	 string instead.  This allows gdb to handle C strings (as well
 	 as strings in other languages) with embedded null bytes */
 
-      tokptr = ++tokstart;
+      tokptr = tokstart + 1;
       tempbufindex = 0;
 
       do {
@@ -1655,13 +1656,13 @@ yylex ()
       yylval.sval.ptr = tempbuf;
       yylval.sval.length = tempbufindex;
       lexptr = tokptr;
-      return (tokchr == '@' ? NSSTRING : STRING);
+      return (tokchar == '@' ? OBJC_NSSTRING : STRING);
     }
 
-  if (!(tokchr == '_' || tokchr == '$' || 
-       (tokchr >= 'a' && tokchr <= 'z') || (tokchr >= 'A' && tokchr <= 'Z')))
+  if (!(c == '_' || c == '$'
+	|| (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')))
     /* We must have come across a bad character (e.g. ';').  */
-    error ("Invalid character '%c' in expression.", tokchr);
+    error ("Invalid character '%c' in expression.", c);
 
   /* It's a name.  See how long it is.  */
   namelen = 0;
@@ -1794,8 +1795,8 @@ yylex ()
     char *tmp = copy_name (yylval.sval);
     struct symbol *sym;
     int is_a_field_of_this = 0;
-    int *need_this;
     int hextype;
+    int *need_this;
 
     if (current_language->la_language == language_cplus
 	|| current_language->la_language == language_objc
@@ -1803,13 +1804,13 @@ yylex ()
       need_this = &is_a_field_of_this;
     else
       need_this = (int *) NULL;
-
+    
     sym = lookup_symbol (tmp, expression_context_block,
 			 VAR_NAMESPACE, need_this,
 			 (struct symtab **) NULL);
     /* Call lookup_symtab, not lookup_partial_symtab, in case there are
        no psymtabs (coff, xcoff, or some future change to blow away the
-       psymtabs once symbols are read).  */
+       psymtabs once once symbols are read).  */
     if (sym && SYMBOL_CLASS (sym) == LOC_BLOCK)
       {
 	yylval.ssym.sym = sym;
@@ -1922,7 +1923,7 @@ yylex ()
     if ((yylval.tsym.type = lookup_primitive_typename (tmp)) != 0)
       return TYPENAME;
 
-    /* See if it's an Obj-C classname. */
+    /* See if it's an ObjC classname. */
     if (!sym && should_lookup_objc_class ())  
       {
 	extern struct symbol *lookup_struct_typedef ();
@@ -1934,7 +1935,7 @@ yylex ()
 	      {
 		yylval.class.class = Class;
 		yylval.class.type = SYMBOL_TYPE (sym);
-		return CLASSNAME;
+		return OBJC_CLASSNAME;
 	      }
 	  }
       }

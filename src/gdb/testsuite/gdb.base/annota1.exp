@@ -41,12 +41,6 @@ if [is_remote target] then {
 set prms_id 0
 set bug_id 0
 
-# APPLE LOCAL jmolenda
-# r. 3067257 backtrace incorrect when breakpoint on shlib func from main
-set r3067257 "(r. 3067257)"
-# r. 3061801 gdb doesn't deliver signals to inferior proccess
-set r3061801 "(r. 3061801)"
-
 set testfile "annota1"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
@@ -149,14 +143,12 @@ gdb_expect {
 #exp_internal 1
 
 # APPLE LOCAL: We also have
-# [Switching to process 8447 thread 0xb03]
-# and
 # Reading symbols for shared libraries . done
 # in our output stream
 
 send_gdb "run\n"
 gdb_expect {
-    -re "\r\n\032\032post-prompt\r\nStarting program: $binfile \(\r\n\r\n\032\032frames-invalid\)+\(\(\r\n\r\n\032\032frames-invalid\)|\(\r\n\r\n\032\032breakpoints-invalid\)|\(\r\n\\\[Switching to process \[0-9\]+ thread $hex\\\]\)\)*\r\n\r\n\032\032starting\(\r\n\r\n\032\032frames-invalid\)+\(\(\r\n\r\n\032\032frames-invalid\)|\(\r\n\r\n\032\032breakpoints-invalid\)|\(\r\nReading symbols for shared libraries \[.\]+ done\)\)*\r\n\r\n\032\032breakpoint 1\r\n\r\nBreakpoint 1, \r\n\032\032frame-begin 0 $hex\r\n\r\n\032\032frame-function-name\r\nmain\r\n\032\032frame-args\r\n \\(\\)\r\n\032\032frame-source-begin\r\n at \r\n\032\032frame-source-file\r\n.*annota1.c\r\n\032\032frame-source-file-end\r\n:\r\n\032\032frame-source-line\r\n$main_line\r\n\032\032frame-source-end\r\n\r\n\r\n\032\032source.*$srcfile:$main_line:.*:beg:$hex\r\n\r\n\032\032frame-end\r\n\r\n\032\032stopped.*$gdb_prompt$" {
+    -re "\r\n\032\032post-prompt\r\nStarting program: .*$binfile \(\r\n\r\n\032\032frames-invalid\)+\(\(\r\n\r\n\032\032frames-invalid\)|\(\r\n\r\n\032\032breakpoints-invalid\)|\(\r\nReading symbols for shared libraries \[.\]+ done\)\)*\r\n\r\n\032\032starting\(\r\n\r\n\032\032frames-invalid\)+\(\(\r\n\r\n\032\032frames-invalid\)|\(\r\n\r\n\032\032breakpoints-invalid\)|\(\r\nReading symbols for shared libraries \[.\]+ done\)\)*\r\n\r\n\032\032breakpoint 1\r\n\r\nBreakpoint 1, \r\n\032\032frame-begin 0 $hex\r\n\r\n\032\032frame-function-name\r\nmain\r\n\032\032frame-args\r\n \\(\\)\r\n\032\032frame-source-begin\r\n at \r\n\032\032frame-source-file\r\n.*annota1.c\r\n\032\032frame-source-file-end\r\n:\r\n\032\032frame-source-line\r\n$main_line\r\n\032\032frame-source-end\r\n\r\n\r\n\032\032source.*$srcfile:$main_line:.*:beg:$hex\r\n\r\n\032\032frame-end\r\n\r\n\032\032stopped.*$gdb_prompt$" {
 	pass "run until main breakpoint" 
     }
     -re ".*$gdb_prompt$" { 
@@ -262,7 +254,7 @@ send_gdb "backtrace\n"
 gdb_expect {
   -re "\r\n\032\032post-prompt\r\n\r\n\032\032frame-begin 0 $hex\r\n.0  \r\n(\032\032frame-address\r\n$hex\r\n\032\032frame-address-end\r\n in \r\n)*\032\032frame-function-name\r\nprintf\r\n\032\032frame-args\r\n \\(.*frame-end\r\n\r\n\032\032frame-begin 1 $hex\r\n.1  \r\n\032\032frame-address\r\n$hex\r\n\032\032frame-address-end\r\n in \r\n\032\032frame-function-name\r\nmain\r\n\032\032frame-args\r\n \\(\\)\r\n\032\032frame-source-begin\r\n at \r\n\032\032frame-source-file\r\n${srcdir}/${subdir}/${srcfile}\r\n\032\032frame-source-file-end\r\n:\r\n\032\032frame-source-line\r\n.*\r\n\032\032frame-source-end\r\n\r\n\r\n\032\032frame-end\r\n(\r\n\032\032frame-begin .*\r\n\r\n\032\032frame-end\r\n)*$gdb_prompt$" \
 	  { pass "backtrace from shlibrary" }
-  -re ".*$gdb_prompt$"     { fail "backtrace from shlibrary $r3067257" }
+  -re ".*$gdb_prompt$"     { fail "backtrace from shlibrary" }
   timeout	            { fail "backtrace from shlibrary (timeout)" }
 }
 
@@ -278,7 +270,7 @@ send_gdb "signal SIGUSR1\n"
 gdb_expect {
   -re "\r\n\032\032post-prompt\r\nContinuing with signal SIGUSR1.\r\n\r\n\032\032starting\r\n\r\n\032\032frames-invalid\r\n\r\n\032\032breakpoint 2\r\n\r\nBreakpoint 2, \r\n\032\032frame-begin 0 $hex\r\n\r\n\032\032frame-function-name\r\nhandle_USR1\r\n\032\032frame-args\r\n \\(\r\n\032\032arg-begin\r\nsig\r\n\032\032arg-name-end\r\n=\r\n\032\032arg-value -\r\n$decimal\r\n\032\032arg-end\r\n\\)\r\n\032\032frame-source-begin\r\n at \r\n\032\032frame-source-file\r\n${srcdir}/${subdir}/${srcfile}\r\n\032\032frame-source-file-end\r\n:\r\n\032\032frame-source-line\r\n.*\r\n\032\032frame-source-end\r\n\r\n\r\n\032\032source.*annota1.c:.*:.*:beg:$hex\r\n\r\n\032\032frame-end\r\n\r\n\032\032stopped\r\n$gdb_prompt$" \
 	{ pass "send SIGUSR1" }
-  -re ".*$gdb_prompt$"     { fail "send SIGUSR1 $r3061801" }
+  -re ".*$gdb_prompt$"     { fail "send SIGUSR1" }
   timeout	            { fail "send SIGUSR1 (timeout)" }
 }
 
@@ -450,7 +442,7 @@ send_gdb "signal SIGTRAP\n"
 gdb_expect {
   -re ".*\032\032post-prompt\r\nContinuing with signal SIGTRAP.\r\n\r\n\032\032starting\r\n\r\n\032\032frames-invalid\r\n\r\n\032\032frames-invalid\r\n\r\n\032\032signalled\r\n\r\nProgram terminated with signal \r\n\032\032signal-name\r\nSIGTRAP\r\n\032\032signal-name-end\r\n, \r\n\032\032signal-string\r\nTrace.breakpoint trap\r\n\032\032signal-string-end\r\n.\r\nThe program no longer exists.\r\n\r\n\032\032stopped\r\n$gdb_prompt$" \
 	  { pass "signal sent" }
-  -re ".*$gdb_prompt$" { fail "signal sent $r3061801" }
+  -re ".*$gdb_prompt$" { fail "signal sent" }
   timeout { fail "signal sent (timeout)" }
 }
 

@@ -34,7 +34,7 @@
 # to notice the shared library load message from the dynamic run-time linker
 # and insert the breakpoint correctly.  The shared library was unmentioned
 # at static link time (ld), so there's no information about it in the
-# executable.
+# executable.  A better name would be "ivars-loaded-by-hand".
 
 
 if $tracelevel then {
@@ -44,10 +44,6 @@ if $tracelevel then {
 set timeout 30
 set prms_id 0
 set bug_id 0
-
-# APPLE LOCAL jmolenda
-# r. 3094426 gdb future-break on selector does not work with hand-loaded shlib
-set r3094426 "(r. 3094426)"
 
 set libfile "libivars"
 set libbinfile ${objdir}/${subdir}/${libfile}.dylib
@@ -73,7 +69,7 @@ proc get_libsystem_load_addr { } {
    gdb_load "/bin/echo"
    send_gdb "info sharedlibrary\n"
    gdb_expect {
-     -re ".*$decimal libSystem...dylib - - *init Y Y \"\[^\"\]+libSystem...dylib\" at ($hex).*$gdb_prompt $" {
+     -re ".*$decimal libSystem...dylib - - *init Y Y .*libSystem...dylib at ($hex).*$gdb_prompt $" {
        set libsystem_load_addr $expect_out(1,string)
      }
      -re "$gdb_prompt $" { }
@@ -105,6 +101,7 @@ proc test_run { args } {
    global staticbinfile
    global dynamicbinfile
    global gdb_prompt
+   global hex
  
    set run_name [lindex $args 0]
 
@@ -113,7 +110,7 @@ proc test_run { args } {
    gdb_reinitialize_dir $srcdir/$subdir
    gdb_load ${staticbinfile}
    gdb_test "show lang" "The current source language is \"auto; currently objective-c\"." "obj-c lang detection ($run_name) (static prog)"
-   gdb_test "info sharedlibrary" ".*libivars.dylib.*init Y Y.*libivars.dylib.*" "info sharedlibrary pre-start ($run_name) (static prog)"
+   gdb_test "info sharedlibrary" ".*libivars.dylib.*init Y \[BY\].*libivars.dylib.*" "info sharedlibrary pre-start ($run_name) (static prog)"
    gdb_test "future-break randomFunc" ".*Breakpoint 1.*" "Set object breakpoint ($run_name) (static prog)"
    send_gdb "run\n"
    set stopped "no"
@@ -128,6 +125,10 @@ proc test_run { args } {
      }
      -re ".*internal-error: assertion failure in function.*Quit this debugging session. .y or n. $" {
        fail "continue to obj bp: assertion error! ($run_name) (static prog)"
+       set stopped "no"
+     }
+     -re ".*$gdb_prompt $" {
+       fail "continue to obj bp: Program exited ($run_name) (static prog)"
        set stopped "no"
      }
      timeout {
@@ -161,7 +162,7 @@ proc test_run { args } {
        set stopped "yes"
      }
      -re ".*Program exited.*" {
-       fail "continue to obj bp: Program exited ($run_name) (dynamic prog) (r. 3094426)"
+       fail "continue to obj bp: Program exited ($run_name) (dynamic prog)"
        set stopped "no"
      }
      -re ".*internal-error: assertion failure in function.*Quit this debugging session. .y or n. $" {

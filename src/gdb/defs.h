@@ -1,7 +1,7 @@
 /* *INDENT-OFF* */ /* ATTR_FORMAT confuses indent, avoid running it for now */
 /* Basic, host-specific, and target-specific definitions for GDB.
    Copyright 1986, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-   1997, 1998, 1999, 2000, 2001, 2002
+   1997, 1998, 1999, 2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -174,6 +174,9 @@ extern int xdb_commands;
 /* enable dbx commands if set */
 extern int dbx_commands;
 
+/* System root path, used to find libraries etc.  */
+extern char *gdb_sysroot;
+
 extern int quit_flag;
 extern int immediate_quit;
 extern int sevenbit_strings;
@@ -213,7 +216,6 @@ enum language
     language_objc,		/* Objective-C */
     language_objcplus,		/* Objective-C++ */
     language_java,		/* Java */
-    /* OBSOLETE language_chill,	*/	/* Chill */
     language_fortran,		/* Fortran */
     language_m2,		/* Modula-2 */
     language_asm,		/* Assembly language */
@@ -249,8 +251,8 @@ enum auto_boolean
 struct cleanup
   {
     struct cleanup *next;
-    void (*function) (PTR);
-    PTR arg;
+    void (*function) (void *);
+    void *arg;
   };
 
 
@@ -296,9 +298,8 @@ struct cleanup
 struct symtab;
 struct breakpoint;
 struct symtab_and_line;
-#ifdef UI_OUT
 struct ui_out;
-#endif
+struct symbol;
 
 /* From blockframe.c */
 
@@ -307,14 +308,6 @@ extern int inside_entry_func (CORE_ADDR);
 extern int inside_entry_file (CORE_ADDR addr);
 
 extern int inside_main_func (CORE_ADDR pc);
-
-/* OBSOLETE From ch-lang.c, for the moment. (FIXME) */
-
-/* OBSOLETE extern char *chill_demangle (const char *); */
-
-/* From objc-lang.c, for the moment. (FIXME) */
-
-extern char *objc_demangle (const char *);
 
 /* From utils.c */
 
@@ -359,6 +352,10 @@ extern struct cleanup *make_cleanup_freeargv (char **);
 struct ui_file;
 extern struct cleanup *make_cleanup_ui_file_delete (struct ui_file *);
 
+struct cleanup *make_cleanup_ui_out_delete (struct ui_out *);
+
+struct cleanup *make_cleanup_restore_uiout (struct ui_out *);
+
 extern struct cleanup *make_cleanup_close (int fd);
 
 extern struct cleanup *make_cleanup_bfd_close (bfd *abfd);
@@ -397,9 +394,18 @@ extern void *address_to_host_pointer (CORE_ADDR addr);
 extern char *gdb_realpath (const char *);
 extern char *xfullpath (const char *);
 
+extern unsigned long gnu_debuglink_crc32 (unsigned long crc,
+                                          unsigned char *buf, size_t len);
+
 /* From demangle.c */
 
 extern void set_demangling_style (char *);
+
+/* APPLE LOCAL fix-and-continue */
+/* From fix-and-continue.h */
+
+extern CORE_ADDR decode_fix_and_continue_trampoline (CORE_ADDR);
+extern void update_picbase_register (struct symbol *);
 
 /* From tm.h */
 
@@ -461,6 +467,8 @@ extern int putchar_unfiltered (int c);
 extern void puts_filtered (const char *);
 
 extern void puts_unfiltered (const char *);
+
+extern void puts_filtered_tabular (char *string, int width, int right);
 
 extern void puts_debug (char *prefix, char *string, char *suffix);
 
@@ -560,6 +568,8 @@ extern int input_from_terminal_p (void);
 
 extern int info_verbose;
 
+extern int gdb_quitting;
+
 /* From printcmd.c */
 
 extern void set_next_address (CORE_ADDR);
@@ -587,9 +597,15 @@ extern int source_full_path_of (char *, char **);
 
 extern void mod_path (char *, char **);
 
+extern void add_path (char *, char **, int);
+
 extern void directory_command (char *, int);
 
+extern char *source_path;
+
 extern void init_source_path (void);
+
+extern void init_last_source_visited (void);
 
 extern char *symtab_to_filename (struct symtab *);
 
@@ -628,10 +644,6 @@ enum lval_type
   };
 
 struct frame_info;
-
-/* From readline (but not in any readline .h files).  */
-
-extern char *tilde_expand (char *);
 
 /* Control types for commands */
 
@@ -763,6 +775,23 @@ struct ptid
 
 typedef struct ptid ptid_t;
 
+/* infrun.c controls the scheduler locking, but other parts of the
+   code may need to swap the mode for their own purposes.  These
+   functions allow you to do so. */
+
+enum scheduler_locking_mode {
+  scheduler_locking_off = 0,
+  scheduler_locking_on = 1,
+  scheduler_locking_step = 2
+};
+
+enum scheduler_locking_mode 
+  set_scheduler_locking_mode (enum scheduler_locking_mode new_mode);
+void scheduler_run_this_ptid (struct ptid this_ptid);
+int scheduler_lock_on_p ();
+struct cleanup * 
+  make_cleanup_set_restore_scheduler_locking_mode (enum scheduler_locking_mode new_mode);
+
 
 
 /* Optional host machine definition.  Pure autoconf targets will not
@@ -851,6 +880,8 @@ extern char *savestring (const char *, size_t);
 
 extern char *msavestring (void *, const char *, size_t);
 
+char *strsave (const char *ptr);
+
 extern char *mstrsave (void *, const char *);
 
 /* Robust versions of same.  Throw an internal error when no memory,
@@ -859,10 +890,6 @@ extern void *xmmalloc (void *md, size_t size);
 extern void *xmrealloc (void *md, void *ptr, size_t size);
 extern void *xmcalloc (void *md, size_t number, size_t size);
 extern void xmfree (void *md, void *ptr);
-
-/* xmalloc(), xrealloc() and xcalloc() have already been declared in
-   "libiberty.h". */
-extern void xfree (void *);
 
 /* Utility macros to allocate typed memory.  Avoids errors like
    ``struct foo *foo = xmalloc (sizeof bar)'' and ``struct foo *foo =
@@ -983,7 +1010,7 @@ extern int catch_exceptions (struct ui_out *uiout,
 
    This function is superseeded by catch_exceptions().  */
 
-typedef int (catch_errors_ftype) (PTR);
+typedef int (catch_errors_ftype) (void *);
 extern int catch_errors (catch_errors_ftype *, void *, char *, return_mask);
 
 /* Template to catch_errors() that wraps calls to command
@@ -995,6 +1022,41 @@ extern int catch_command_errors (catch_command_errors_ftype *func, char *command
 extern void warning (const char *, ...) ATTR_FORMAT (printf, 1, 2);
 
 extern void vwarning (const char *, va_list args);
+
+/* List of known OS ABIs.  If you change this, make sure to update the
+   table in osabi.c.  */
+enum gdb_osabi
+{
+  GDB_OSABI_UNINITIALIZED = -1, /* For struct gdbarch_info.  */
+
+  GDB_OSABI_UNKNOWN = 0,	/* keep this zero */
+
+  GDB_OSABI_SVR4,
+  GDB_OSABI_HURD,
+  GDB_OSABI_SOLARIS,
+  GDB_OSABI_OSF1,
+  GDB_OSABI_LINUX,
+  GDB_OSABI_FREEBSD_AOUT,
+  GDB_OSABI_FREEBSD_ELF,
+  GDB_OSABI_NETBSD_AOUT,
+  GDB_OSABI_NETBSD_ELF,
+  GDB_OSABI_WINCE,
+  GDB_OSABI_GO32,
+  GDB_OSABI_NETWARE,
+  GDB_OSABI_IRIX,
+  GDB_OSABI_LYNXOS,
+  GDB_OSABI_INTERIX,
+  GDB_OSABI_HPUX_ELF,
+  GDB_OSABI_HPUX_SOM,
+  GDB_OSABI_DARWIN,
+  GDB_OSABI_DARWIN64,
+
+  GDB_OSABI_ARM_EABI_V1,
+  GDB_OSABI_ARM_EABI_V2,
+  GDB_OSABI_ARM_APCS,
+
+  GDB_OSABI_INVALID		/* keep this last */
+};
 
 /* Global functions from other, non-gdb GNU thingies.
    Libiberty thingies are no longer declared here.  We include libiberty.h
@@ -1097,11 +1159,11 @@ extern LONGEST extract_signed_integer (const void *, int);
 
 extern ULONGEST extract_unsigned_integer (const void *, int);
 
-extern int extract_long_unsigned_integer (void *, int, LONGEST *);
+extern int extract_long_unsigned_integer (const void *, int, LONGEST *);
 
-extern CORE_ADDR extract_address (void *, int);
+extern CORE_ADDR extract_address (const void *, int);
 
-extern CORE_ADDR extract_typed_address (void *buf, struct type *type);
+extern CORE_ADDR extract_typed_address (const void *buf, struct type *type);
 
 extern void store_signed_integer (void *, int, LONGEST);
 

@@ -1,7 +1,8 @@
 /* Symbol table definitions for GDB.
-   Copyright 1986, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-   1997, 1998, 1999, 2000, 2001, 2002
-   Free Software Foundation, Inc.
+
+   Copyright 1986, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -93,14 +94,7 @@ struct general_symbol_info
     {
       char *demangled_name;
     }
-	objc_specific;
-#if 0
-/* OBSOLETE struct chill_specific        *//* For Chill */
-    /* OBSOLETE   { */
-    /* OBSOLETE     char *demangled_name; */
-    /* OBSOLETE   } */
-    /* OBSOLETE chill_specific; */
-#endif
+    objc_specific;
   }
   language_specific;
 
@@ -109,6 +103,11 @@ struct general_symbol_info
      union above. */
 
   enum language language BYTE_BITFIELD;
+
+  /* APPLE LOCAL fix-and-continue */
+  /* Mark this symbol as obsolete if a newer version of this symbol has
+     been loaded into the program.  */
+  int obsoleted;
 
   /* Which section is this symbol in?  This is an index into
      section_offsets for this objfile.  Negative means that the symbol
@@ -126,6 +125,14 @@ struct general_symbol_info
 
 extern CORE_ADDR symbol_overlayed_address (CORE_ADDR, asection *);
 
+/* Note that all the following SYMBOL_* macros are used with the
+   SYMBOL argument being either a partial symbol, a minimal symbol or
+   a full symbol.  All three types have a ginfo field.  In particular
+   the SYMBOL_INIT_LANGUAGE_SPECIFIC, SYMBOL_INIT_DEMANGLED_NAME,
+   SYMBOL_DEMANGLED_NAME macros cannot be entirely substituted by
+   functions, unless the callers are changed to pass in the ginfo
+   field only, instead of the SYMBOL parameter.  */
+
 #define SYMBOL_NAME(symbol)		(symbol)->ginfo.name
 #define SYMBOL_VALUE(symbol)		(symbol)->ginfo.value.ivalue
 #define SYMBOL_VALUE_ADDRESS(symbol)	(symbol)->ginfo.value.address
@@ -135,61 +142,30 @@ extern CORE_ADDR symbol_overlayed_address (CORE_ADDR, asection *);
 #define SYMBOL_LANGUAGE(symbol)		(symbol)->ginfo.language
 #define SYMBOL_SECTION(symbol)		(symbol)->ginfo.section
 #define SYMBOL_BFD_SECTION(symbol)	(symbol)->ginfo.bfd_section
+/* APPLE LOCAL fix-and-continue */
+#define SYMBOL_OBSOLETED(symbol)        (symbol)->ginfo.obsoleted
 
 #define SYMBOL_CPLUS_DEMANGLED_NAME(symbol)	\
   (symbol)->ginfo.language_specific.cplus_specific.demangled_name
 
-/* Macro that initializes the language dependent portion of a symbol
+/* Initializes the language dependent portion of a symbol
    depending upon the language for the symbol. */
 
-#define SYMBOL_INIT_LANGUAGE_SPECIFIC(symbol,language)			\
-  do {									\
-    SYMBOL_LANGUAGE (symbol) = language;				\
-    if (SYMBOL_LANGUAGE (symbol) == language_cplus			\
-	|| SYMBOL_LANGUAGE (symbol) == language_java			\
-	)								\
-      {									\
-	SYMBOL_CPLUS_DEMANGLED_NAME (symbol) = NULL;			\
-      }									\
-    else if (SYMBOL_LANGUAGE (symbol) == language_objc)			\
-      {									\
-	SYMBOL_OBJC_DEMANGLED_NAME (symbol) = NULL;			\
-      }									\
-    else if (SYMBOL_LANGUAGE (symbol) == language_objcplus)		\
-      {									\
-	SYMBOL_OBJC_DEMANGLED_NAME (symbol) = NULL;			\
-      }									\
-    /* OBSOLETE else if (SYMBOL_LANGUAGE (symbol) == language_chill) */ \
-    /* OBSOLETE   { */						 	\
-    /* OBSOLETE     SYMBOL_CHILL_DEMANGLED_NAME (symbol) = NULL; */	\
-    /* OBSOLETE   } */							\
-    else								\
-      {									\
-	memset (&(symbol)->ginfo.language_specific, 0,			\
-		sizeof ((symbol)->ginfo.language_specific));		\
-      }									\
-  } while (0)
+#define SYMBOL_INIT_LANGUAGE_SPECIFIC(symbol,language) \
+  (symbol_init_language_specific (&(symbol)->ginfo, (language)))
+extern void symbol_init_language_specific (struct general_symbol_info *symbol,
+					   enum language language);
 
 #define SYMBOL_INIT_DEMANGLED_NAME(symbol,obstack) \
   (symbol_init_demangled_name (&symbol->ginfo, (obstack)))
 extern void symbol_init_demangled_name (struct general_symbol_info *symbol,
 					struct obstack *obstack);
 
-
-/* Macro that returns the demangled name for a symbol based on the language
-   for that symbol.  If no demangled name exists, returns NULL. */
-
- #define SYMBOL_DEMANGLED_NAME(symbol)					\
-  ((SYMBOL_LANGUAGE (symbol) == language_cplus)				\
-   || (SYMBOL_LANGUAGE (symbol) == language_java)			\
-    ? SYMBOL_CPLUS_DEMANGLED_NAME (symbol)				\
-      : ((SYMBOL_LANGUAGE (symbol) == language_objc) ||			\
-         (SYMBOL_LANGUAGE (symbol) == language_objcplus)		\
-         ? SYMBOL_OBJC_DEMANGLED_NAME (symbol)				\
-	 : NULL))
-
-/* OBSOLETE #define SYMBOL_CHILL_DEMANGLED_NAME(symbol) */
-/* OBSOLETE (symbol)->ginfo.language_specific.chill_specific.demangled_name */
+/* Return the demangled name for a symbol based on the language for
+   that symbol.  If no demangled name exists, return NULL. */
+#define SYMBOL_DEMANGLED_NAME(symbol) \
+  (symbol_demangled_name (&(symbol)->ginfo))
+extern char *symbol_demangled_name (struct general_symbol_info *symbol);
 
 #define SYMBOL_OBJC_DEMANGLED_NAME(symbol)				\
    (symbol)->ginfo.language_specific.objc_specific.demangled_name
@@ -323,6 +299,8 @@ struct minimal_symbol
 
 #define MSYMBOL_INFO(msymbol)		(msymbol)->info
 #define MSYMBOL_TYPE(msymbol)		(msymbol)->type
+/* APPLE LOCAL fix-and-continue */
+#define MSYMBOL_OBSOLETED(msymbol)      (msymbol)->ginfo.obsoleted
 
 
 
@@ -628,8 +606,16 @@ enum address_class
   LOC_UNRESOLVED,
 
   /* Value is at a thread-specific location calculated by a
-     target-specific method. */
+     target-specific method. This is used only by hppa.  */
 
+  LOC_HP_THREAD_LOCAL_STATIC,
+
+  /* Value is at a thread-specific location calculated by a
+     target-specific method.  SYMBOL_OBJFILE gives the object file
+     in which the symbol is defined; the symbol's value is the
+     offset into that objfile's thread-local storage for the current
+     thread.  */
+      
   LOC_THREAD_LOCAL_STATIC,
 
   /* The variable does not actually exist in the program.
@@ -701,6 +687,12 @@ struct symbol
   {
     /* Used by LOC_BASEREG and LOC_BASEREG_ARG.  */
     short basereg;
+
+    /* Used by LOC_THREAD_LOCAL_STATIC.  The objfile in which this
+       symbol is defined.  To find a thread-local variable (e.g., a
+       variable declared with the `__thread' storage class), we may
+       need to know which object file it's in.  */
+    struct objfile *objfile;
   }
   aux_value;
 
@@ -722,6 +714,7 @@ struct symbol
 #define SYMBOL_TYPE(symbol)		(symbol)->type
 #define SYMBOL_LINE(symbol)		(symbol)->line
 #define SYMBOL_BASEREG(symbol)		(symbol)->aux_value.basereg
+#define SYMBOL_OBJFILE(symbol)          (symbol)->aux_value.objfile
 #define SYMBOL_ALIASES(symbol)		(symbol)->aliases
 #define SYMBOL_RANGES(symbol)		(symbol)->ranges
 
@@ -752,15 +745,6 @@ struct partial_symbol
 #define PSYMBOL_NAMESPACE(psymbol)	(psymbol)->namespace
 #define PSYMBOL_CLASS(psymbol)		(psymbol)->aclass
 
-
-/* Source-file information.  This describes the relation between source files,
-   line numbers and addresses in the program text.  */
-
-struct sourcevector
-{
-  int length;			/* Number of source files described */
-  struct source *source[1];	/* Descriptions of the files */
-};
 
 /* Each item represents a line-->pc (or the reverse) mapping.  This is
    somewhat more wasteful of space than one might wish, but since only
@@ -801,14 +785,6 @@ struct linetable
   struct linetable_entry item[1];
 };
 
-/* All the information on one source file.  */
-
-struct source
-{
-  char *name;			/* Name of file */
-  struct linetable contents;
-};
-
 /* How to relocate the symbols from each section in a symbol file.
    Each struct contains an array of offsets.
    The ordering and meaning of the offsets is file-type-dependent;
@@ -829,11 +805,13 @@ struct section_offsets
     ? (internal_error (__FILE__, __LINE__, "Section index is uninitialized"), -1) \
     : secoff->offsets[whichone])
 
-/* The maximum possible size of a section_offsets table.  */
-
-#define SIZEOF_SECTION_OFFSETS \
+/* The size of a section_offsets table for N sections.  */
+#define SIZEOF_N_SECTION_OFFSETS(n) \
   (sizeof (struct section_offsets) \
-   + sizeof (((struct section_offsets *) 0)->offsets) * (SECT_OFF_MAX-1))
+   + sizeof (((struct section_offsets *) 0)->offsets) * ((n)-1))
+
+/* The maximum possible size of a section_offsets table.  */
+#define SIZEOF_SECTION_OFFSETS (SIZEOF_N_SECTION_OFFSETS (SECT_OFF_MAX))
 
 /* Each source file or header is represented by a struct symtab. 
    These objects are chained through the `next' field.  */
@@ -932,10 +910,17 @@ struct symtab
 
   struct objfile *objfile;
 
+  /* APPLE LOCAL fix-and-continue */
+  /* If this symtab is 'obsolete', i.e. there exists a symtab which
+     has more up-to-date information.  */
+  unsigned char obsolete;
 };
 
 #define BLOCKVECTOR(symtab)	(symtab)->blockvector
 #define LINETABLE(symtab)	(symtab)->linetable
+
+/* APPLE LOCAL fix-and-continue */
+#define SYMTAB_OBSOLETED(symtab) (symtab)->obsolete
 
 
 /* Each source file that has not been fully read in is represented by
@@ -1031,7 +1016,15 @@ struct partial_symtab
   /* Non-zero if the symtab corresponding to this psymtab has been readin */
 
   unsigned char readin;
+
+  /* APPLE LOCAL fix-and-continue */
+  /* If this partial_symtab is 'obsolete', i.e. there exists a psymtab which
+     has more up-to-date information.  */
+  unsigned char obsolete;
 };
+
+/* APPLE LOCAL fix-and-continue */
+#define PSYMTAB_OBSOLETED(psymtab) (psymtab)->obsolete
 
 /* A fast way to get from a psymtab to its symtab (after the first time).  */
 #define	PSYMTAB_TO_SYMTAB(pst)  \
@@ -1112,8 +1105,8 @@ extern struct symbol *find_pc_sect_function (CORE_ADDR, asection *);
 
 /* lookup function from address, return name, start addr and end addr */
 
-extern int
-find_pc_partial_function (CORE_ADDR, char **, CORE_ADDR *, CORE_ADDR *);
+extern int find_pc_partial_function (CORE_ADDR, char **, CORE_ADDR *,
+				     CORE_ADDR *);
 
 extern void clear_pc_function_cache (void);
 
@@ -1245,15 +1238,7 @@ struct symtab_and_line
   CORE_ADDR end;
 };
 
-#define INIT_SAL(sal) { \
-  (sal)->symtab  = 0;   \
-  (sal)->section = 0;   \
-  (sal)->line    = 0;   \
-  (sal)->startchar = 0;   \
-  (sal)->endchar = 0;   \
-  (sal)->pc      = 0;   \
-  (sal)->end     = 0;   \
-}
+extern void init_sal (struct symtab_and_line *sal);
 
 struct symtabs_and_lines
 {
@@ -1281,6 +1266,7 @@ struct exception_event_record
   enum exception_event_kind kind;
   struct symtab_and_line throw_sal;
   struct symtab_and_line catch_sal;
+  char *exception_type;
   /* This may need to be extended in the future, if
      some platforms allow reporting more information,
      such as point of rethrow, type of exception object,
@@ -1296,6 +1282,7 @@ struct exception_event_record
 #define CURRENT_EXCEPTION_THROW_LINE (current_exception_event->throw_sal.line)
 #define CURRENT_EXCEPTION_THROW_FILE (current_exception_event->throw_sal.symtab->filename)
 #define CURRENT_EXCEPTION_THROW_PC   (current_exception_event->throw_sal.pc)
+#define CURRENT_EXCEPTION_TYPE       (current_exception_event->exception_type)
 
 
 /* Given a pc value, return line number it is in.  Second arg nonzero means
@@ -1307,19 +1294,12 @@ extern struct symtab_and_line find_pc_line (CORE_ADDR, int);
 
 extern struct symtab_and_line find_pc_sect_line (CORE_ADDR, asection *, int);
 
-/* Given an address, return the nearest symbol at or below it in memory.
-   Optionally return the symtab it's from through 2nd arg, and the
-   address in inferior memory of the symbol through 3rd arg.  */
-
-extern struct symbol *find_addr_symbol (CORE_ADDR, struct symtab **,
-					CORE_ADDR *);
-
 /* Given a symtab and line number, return the pc there.  */
 
 extern int find_line_pc (struct symtab *, int, CORE_ADDR *);
 
-extern int
-find_line_pc_range (struct symtab_and_line, CORE_ADDR *, CORE_ADDR *);
+extern int find_line_pc_range (struct symtab_and_line, CORE_ADDR *,
+			       CORE_ADDR *);
 
 extern void resolve_sal_pc (struct symtab_and_line *);
 
@@ -1357,12 +1337,10 @@ extern void clear_solib (void);
 struct section_addr_info;
 
 extern struct objfile *symbol_file_add (const char *, int,
-					struct section_addr_info *, int, int,
-					int, CORE_ADDR, const char *);
+					struct section_addr_info *, int, int);
  
 extern struct objfile *symbol_file_add_bfd (bfd *, int,
-					    struct section_addr_info *, int,
-					    int, int, CORE_ADDR, const char *);
+					    struct section_addr_info *, int, int);
  
 /* source.c */
 
@@ -1402,7 +1380,7 @@ extern struct blockvector *blockvector_for_pc_sect (CORE_ADDR, asection *,
 
 extern void clear_symtab_users (void);
 
-extern enum language deduce_language_from_filename (char *);
+extern enum language deduce_language_from_filename (const char *);
 
 /* symtab.c */
 

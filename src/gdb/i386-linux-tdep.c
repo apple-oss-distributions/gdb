@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux running on i386's, for GDB.
 
-   Copyright 2000, 2001, 2002 Free Software Foundation, Inc.
+   Copyright 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,6 +25,7 @@
 #include "value.h"
 #include "regcache.h"
 #include "inferior.h"
+#include "reggroups.h"
 
 /* For i386_linux_skip_solib_resolver.  */
 #include "symtab.h"
@@ -32,6 +33,8 @@
 #include "objfiles.h"
 
 #include "solib-svr4.h"		/* For struct link_map_offsets.  */
+
+#include "osabi.h"
 
 #include "i386-tdep.h"
 #include "i386-linux-tdep.h"
@@ -47,6 +50,20 @@ i386_linux_register_name (int reg)
 
   return i386_register_name (reg);
 }
+
+/* Return non-zero, when the register is in the corresponding register
+   group.  Put the LINUX_ORIG_EAX register in the system group.  */
+static int
+i386_linux_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
+				struct reggroup *group)
+{
+  if (regnum == I386_LINUX_ORIG_EAX_REGNUM)
+    return (group == system_reggroup
+	    || group == save_reggroup
+	    || group == restore_reggroup);
+  return i386_register_reggroup_p (gdbarch, regnum, group);
+}
+
 
 /* Recognizing signal handler frames.  */
 
@@ -209,11 +226,17 @@ i386_linux_rt_sigtramp_start (CORE_ADDR pc)
 static int
 i386_linux_pc_in_sigtramp (CORE_ADDR pc, char *name)
 {
-  if (name)
-    return STREQ ("__restore", name) || STREQ ("__restore_rt", name);
-  
-  return (i386_linux_sigtramp_start (pc) != 0
-	  || i386_linux_rt_sigtramp_start (pc) != 0);
+  /* If we have NAME, we can optimize the search.  The trampolines are
+     named __restore and __restore_rt.  However, they aren't dynamically
+     exported from the shared C library, so the trampoline may appear to
+     be part of the preceding function.  This should always be sigaction,
+     __sigaction, or __libc_sigaction (all aliases to the same function).  */
+  if (name == NULL || strstr (name, "sigaction") != NULL)
+    return (i386_linux_sigtramp_start (pc) != 0
+	    || i386_linux_rt_sigtramp_start (pc) != 0);
+
+  return (strcmp ("__restore", name) == 0
+	  || strcmp ("__restore_rt", name) == 0);
 }
 
 /* Assuming FRAME is for a GNU/Linux sigtramp routine, return the
@@ -224,16 +247,16 @@ i386_linux_sigcontext_addr (struct frame_info *frame)
 {
   CORE_ADDR pc;
 
-  pc = i386_linux_sigtramp_start (frame->pc);
+  pc = i386_linux_sigtramp_start (get_frame_pc (frame));
   if (pc)
     {
       CORE_ADDR sp;
 
-      if (frame->next)
+      if (get_next_frame (frame))
 	/* If this isn't the top frame, the next frame must be for the
 	   signal handler itself.  The sigcontext structure lives on
 	   the stack, right after the signum argument.  */
-	return frame->next->frame + 12;
+	return get_frame_base (get_next_frame (frame)) + 12;
 
       /* This is the top frame.  We'll have to find the address of the
 	 sigcontext structure by looking at the stack pointer.  Keep
@@ -241,20 +264,21 @@ i386_linux_sigcontext_addr (struct frame_info *frame)
 	 "pop %eax".  If the PC is at this instruction, adjust the
 	 returned value accordingly.  */
       sp = read_register (SP_REGNUM);
-      if (pc == frame->pc)
+      if (pc == get_frame_pc (frame))
 	return sp + 4;
       return sp;
     }
 
-  pc = i386_linux_rt_sigtramp_start (frame->pc);
+  pc = i386_linux_rt_sigtramp_start (get_frame_pc (frame));
   if (pc)
     {
-      if (frame->next)
+      if (get_next_frame (frame))
 	/* If this isn't the top frame, the next frame must be for the
 	   signal handler itself.  The sigcontext structure is part of
 	   the user context.  A pointer to the user context is passed
 	   as the third argument to the signal handler.  */
-	return read_memory_integer (frame->next->frame + 16, 4) + 20;
+	return read_memory_integer (get_frame_base (get_next_frame (frame))
+				    + 16, 4) + 20;
 
       /* This is the top frame.  Again, use the stack pointer to find
 	 the address of the sigcontext structure.  */
@@ -436,6 +460,7 @@ i386_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   set_gdbarch_write_pc (gdbarch, i386_linux_write_pc);
   set_gdbarch_num_regs (gdbarch, I386_SSE_NUM_REGS + 1);
   set_gdbarch_register_name (gdbarch, i386_linux_register_name);
+  set_gdbarch_register_reggroup_p (gdbarch, i386_linux_register_reggroup_p);
   set_gdbarch_register_bytes (gdbarch, I386_SSE_SIZEOF_REGS + 4);
 
   tdep->jb_pc_offset = 20;	/* From <bits/setjmp.h>.  */
@@ -460,6 +485,6 @@ extern void _initialize_i386_linux_tdep (void);
 void
 _initialize_i386_linux_tdep (void)
 {
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_LINUX,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_LINUX,
 			  i386_linux_init_abi);
 }

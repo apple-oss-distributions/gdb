@@ -1,5 +1,5 @@
 /* Target-dependent code for NetBSD/i386, for GDB.
-   Copyright 1988, 1989, 1991, 1992, 1994, 1996, 2000, 2001, 2002
+   Copyright 1988, 1989, 1991, 1992, 1994, 1996, 2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -24,6 +24,7 @@
 #include "gdbcore.h"
 #include "regcache.h"
 #include "arch-utils.h"
+#include "osabi.h"
 
 #include "i386-tdep.h"
 #include "i387-tdep.h"
@@ -299,8 +300,8 @@ _initialize_i386nbsd_tdep (void)
   add_core_fns (&i386nbsd_core_fns);
   add_core_fns (&i386nbsd_elfcore_fns);
 
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_NETBSD_AOUT,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_NETBSD_AOUT,
 			  i386nbsd_init_abi);
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_NETBSD_ELF,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_NETBSD_ELF,
 			  i386nbsdelf_init_abi);
 }

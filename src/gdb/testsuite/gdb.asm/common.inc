@@ -13,6 +13,15 @@
 	.word \value
 	.endm
 
+	comment "Declare a subroutine"
+	.macro gdbasm_declare name
+\name:
+	.endm
+
+	comment "End a subroutine"
+	.macro gdbasm_end name
+	.endm
+
 comment "arch.inc is responsible for defining the following macros:"
 comment "enter - subroutine prologue"
 comment "leave - subroutine epilogue"
@@ -22,6 +31,5 @@ comment "exit0 - exit (0)"
 
 comment "arch.inc may also override the default definitions of:"
 comment "datavar - define a data variable"
-
-comment "macros to label a subroutine may also eventually be needed"
-comment "i.e. .global foo\nfoo:\n"
+comment "declare - declare the start of a subroutine"
+comment "end - end a subroutine"

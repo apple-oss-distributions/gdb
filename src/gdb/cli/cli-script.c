@@ -35,9 +35,9 @@
 #include "cli/cli-decode.h"
 #include "cli/cli-script.h"
 
-/* Need this for the MI_CMD_ERROR, so we can call mi_interpreter_exec
-   in execute_control_command when the interpreter is mi.  */
-#include "mi/mi-cmds.h"
+/* From mi/mi-main.c */
+extern void mi_interpreter_exec_bp_cmd (char *command, 
+					char **argv, int argc);
 
 /* From gdb/top.c */
 
@@ -351,22 +351,13 @@ execute_control_command (struct command_line *cmd)
          command which we can use here, rather than having to 
          special case interpreters as we do here. */
 
-      if (gdb_current_interpreter_is_named ("mi"))
+      if (ui_out_is_mi_like_p (uiout))
 	{
 	  char *argv[2];
 	  int argc = 2;
-	  enum mi_cmd_result result;
 	  argv[0] = "console";
 	  argv[1] = new_line;
-	  result = mi_cmd_interpreter_exec (new_line, argv, argc);
-	  /* This is a hack.  If there is an error executing this command
-	     then throw_exception will call bpstat_clear_actions on the way
-	     out, which - if we are dealing with breakpoint commands - will
-	     clear the commands out from under bpstat_do_actions.  I am
-	     returning invalid_control to indicate that something bad has
-	     Happened, so bpstat_do_actions can do the right thing. */
-	  if (result == MI_CMD_ERROR)
-	    return invalid_control;
+	  mi_interpreter_exec_bp_cmd (new_line, argv, argc);
 	}
       else
 	execute_command (new_line, 0);
@@ -1309,7 +1300,7 @@ struct source_cleanup_lines_args
 };
 
 static void
-source_cleanup_lines (PTR args)
+source_cleanup_lines (void *args)
 {
   struct source_cleanup_lines_args *p =
   (struct source_cleanup_lines_args *) args;

@@ -49,8 +49,7 @@ struct macho_symfile_info {
 static int macho_read_indirect_symbols (bfd *abfd, 
                              struct bfd_mach_o_dysymtab_command *dysymtab, 
                              struct bfd_mach_o_symtab_command *symtab, 
-                             struct objfile *objfile, 
-                             char *symbol_name);
+                             struct objfile *objfile);
 
 static void
 macho_new_init (objfile)
@@ -146,22 +145,11 @@ macho_symfile_read (objfile, mainline)
     /* FIXME: Technically, we should iterate over all the sections and get 
        all the ones of type SYMBOL_STUB. */
     if (!macho_read_indirect_symbols (abfd, dysymtab, symtab, 
-                                      objfile, 
-                                      "LC_SEGMENT.__TEXT.__picsymbol_stub"))
+                                      objfile))
       {
         install_minimal_symbols (objfile);
         return;
       }
-                                 
-    if (!macho_read_indirect_symbols (abfd, dysymtab, symtab, 
-                                      objfile, 
-                                      "LC_SEGMENT.__TEXT.__symbol_stub"))
-      {
-        install_minimal_symbols (objfile);
-        return;
-      }
-                                 
-    
   }
 
   install_minimal_symbols (objfile);
@@ -171,62 +159,69 @@ int
 macho_read_indirect_symbols (bfd *abfd, 
                              struct bfd_mach_o_dysymtab_command *dysymtab, 
                              struct bfd_mach_o_symtab_command *symtab, 
-                             struct objfile *objfile,
-                             char *section_name)
+                             struct objfile *objfile)
 {
 
   unsigned long i, nsyms, ret;
   asymbol sym;
   asection *bfdsec = NULL;
+  long section_count;
   struct bfd_mach_o_section *section = NULL;
   struct bfd_mach_o_load_command *lcommand = NULL;
-
-  bfdsec = bfd_get_section_by_name (abfd, section_name);
-  if (bfdsec == NULL) {
-    /* warning ("Error fetching __TEXT.__picsymbol_stub section from object file."); */
-    return 0;
-  }
-
-  ret = bfd_mach_o_lookup_section (abfd, bfdsec, &lcommand, &section);
-  if ((ret != 1) || (lcommand != NULL)) {
-    /* warning ("Error fetching __TEXT.__picsymbol_stub section from object file."); */
-    return 0;
-  }
-
-  CHECK_FATAL (section != NULL);
-    
-  nsyms = section->size / section->reserved2;
-
-  for (i = 0; i < nsyms; i++) {
   
-    unsigned long cursym = section->reserved1 + i;
-    CORE_ADDR stubaddr = section->addr + (i * section->reserved2);
-    const char *sname = NULL;
-    char nname[4096];
+  for (section_count = abfd->section_count, bfdsec = abfd->sections; section_count > 0;
+       section_count--, bfdsec = bfdsec->next)
+    {
 
-    if (cursym >= dysymtab->nindirectsyms) {
-      warning ("Indirect symbol entry out of range in \"%s\" (%lu >= %lu)",
-                abfd->filename, cursym, (unsigned long) dysymtab->nindirectsyms);
-      return 0;
-    } 
-    ret = bfd_mach_o_scan_read_dysymtab_symbol (abfd, dysymtab, symtab, &sym, cursym);
-    if (ret != 0) {
-      return 0;
+      ret = bfd_mach_o_lookup_section (abfd, bfdsec, &lcommand, &section);
+      if (ret != 1) {
+	/* warning ("error fetching section %s from object file", bfd_section_name (abfd, bfdsec)); */
+	continue;
+      }
+      if (section == NULL)
+	continue;
+      if ((section->flags & BFD_MACH_O_SECTION_TYPE_MASK) != BFD_MACH_O_S_SYMBOL_STUBS)
+	continue;
+      if (section->reserved2 == 0) {
+	warning ("section %s has S_SYMBOL_STUBS flag set, but not reserved2",
+		 bfd_section_name (abfd, bfdsec));
+	continue;
+      }
+      
+      nsyms = section->size / section->reserved2;
+      
+      for (i = 0; i < nsyms; i++) {
+	
+	unsigned long cursym = section->reserved1 + i;
+	CORE_ADDR stubaddr = section->addr + (i * section->reserved2);
+	const char *sname = NULL;
+	char nname[4096];
+	
+	if (cursym >= dysymtab->nindirectsyms) {
+	  warning ("Indirect symbol entry out of range in \"%s\" (%lu >= %lu)",
+		   abfd->filename, cursym, (unsigned long) dysymtab->nindirectsyms);
+	  return 0;
+	} 
+	ret = bfd_mach_o_scan_read_dysymtab_symbol (abfd, dysymtab, symtab, &sym, cursym);
+	if (ret != 0) {
+	  return 0;
+	}
+	
+	sname = sym.name;
+	CHECK_FATAL (sname != NULL);
+	if (sname[0] == bfd_get_symbol_leading_char (abfd)) {
+	  sname++;
+	}
+	
+	CHECK_FATAL ((strlen (sname) + sizeof ("__dyld_stub_") + 1) < 4096);
+	sprintf (nname, "dyld_stub_%s", sname);
+	
+	stubaddr += ANOFFSET (objfile->section_offsets, SECT_OFF_TEXT (objfile));
+	prim_record_minimal_symbol_and_info
+	  (nname, stubaddr, mst_solib_trampoline, NULL, SECT_OFF_TEXT (objfile), bfd_get_section (&sym), objfile);
+      }
     }
 
-    sname = sym.name;
-    CHECK_FATAL (sname != NULL);
-    if (sname[0] == bfd_get_symbol_leading_char (abfd)) {
-      sname++;
-    }
-
-    CHECK_FATAL ((strlen (sname) + sizeof ("__dyld_stub_") + 1) < 4096);
-    sprintf (nname, "dyld_stub_%s", sname);
-
-    stubaddr += ANOFFSET (objfile->section_offsets, SECT_OFF_TEXT (objfile));
-    prim_record_minimal_symbol_and_info
-      (nname, stubaddr, mst_solib_trampoline, NULL, SECT_OFF_TEXT (objfile), bfd_get_section (&sym), objfile);
-  }
   return 1;
 }
 
@@ -253,7 +248,7 @@ macho_symfile_offsets (objfile, addrs)
     objfile->sections[i].endaddr += addrs->other[0].addr;
   }
 
-  for (i = 0; i < MAX_SECTIONS; i++) {
+  for (i = 0; i < SECT_OFF_MAX; i++) {
     objfile->section_offsets->offsets[i] = addrs->other[0].addr;
   }
 

@@ -1,6 +1,6 @@
 /* Dynamic architecture support for GDB, the GNU debugger.
 
-   Copyright 1998, 1999, 2000, 2001, 2002 Free Software Foundation,
+   Copyright 1998, 1999, 2000, 2001, 2002, 2003 Free Software Foundation,
    Inc.
 
    This file is part of GDB.
@@ -99,7 +99,7 @@ legacy_extract_return_value (struct type *type, struct regcache *regcache,
 {
   char *registers = deprecated_grub_regcache_for_registers (regcache);
   bfd_byte *buf = valbuf;
-  DEPRECATED_EXTRACT_RETURN_VALUE (type, registers, buf);
+  DEPRECATED_EXTRACT_RETURN_VALUE (type, registers, buf); /* OK */
 }
 
 /* Implementation of store return value that grubs the register cache.
@@ -319,13 +319,6 @@ no_op_reg_to_regnum (int reg)
   return reg;
 }
 
-/* For use by frame_args_address and frame_locals_address.  */
-CORE_ADDR
-default_frame_address (struct frame_info *fi)
-{
-  return fi->frame;
-}
-
 /* Default prepare_to_procced().  */
 int
 default_prepare_to_proceed (int select_it)
@@ -386,21 +379,22 @@ generic_prepare_to_proceed (int select_it)
   
 }
 
-void
+CORE_ADDR
 init_frame_pc_noop (int fromleaf, struct frame_info *prev)
 {
-  return;
+  /* Do nothing, implies return the same PC value.  */
+  return get_frame_pc (prev);
 }
 
-void
+CORE_ADDR
 init_frame_pc_default (int fromleaf, struct frame_info *prev)
 {
   if (fromleaf)
-    prev->pc = SAVED_PC_AFTER_CALL (prev->next);
-  else if (prev->next != NULL)
-    prev->pc = FRAME_SAVED_PC (prev->next);
+    return SAVED_PC_AFTER_CALL (get_next_frame (prev));
+  else if (get_next_frame (prev) != NULL)
+    return FRAME_SAVED_PC (get_next_frame (prev));
   else
-    prev->pc = read_pc ();
+    return read_pc ();
 }
 
 void
@@ -925,6 +919,7 @@ gdbarch_info_init (struct gdbarch_info *info)
 {
   memset (info, 0, sizeof (struct gdbarch_info));
   info->byte_order = BFD_ENDIAN_UNKNOWN;
+  info->osabi = GDB_OSABI_UNINITIALIZED;
 }
 
 /* */

@@ -55,9 +55,9 @@ void macosx_cfm_thread_create (macosx_cfm_thread_status *s, task_t task)
   snprintf (buf, 64, "PrepareClosure + %s", core_addr_to_string (s->breakpoint_offset));
   s->notify_debugger = lookup_address ("PrepareClosure") + s->breakpoint_offset;
 
-  INIT_SAL (&sal);
+  init_sal (&sal);
   sal.pc = s->notify_debugger;
-  s->cfm_breakpoint = set_momentary_breakpoint (sal, NULL, bp_shlib_event);
+  s->cfm_breakpoint = set_momentary_breakpoint (sal, null_frame_id, bp_shlib_event);
   s->cfm_breakpoint->disposition = disp_donttouch;
   s->cfm_breakpoint->thread = -1;
   s->cfm_breakpoint->addr_string = savestring (buf, strlen (buf));

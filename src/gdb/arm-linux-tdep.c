@@ -1,5 +1,5 @@
 /* GNU/Linux on ARM target support.
-   Copyright 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +27,7 @@
 #include "frame.h"
 #include "regcache.h"
 #include "doublest.h"
+#include "osabi.h"
 
 #include "arm-tdep.h"
 
@@ -543,5 +544,6 @@ arm_linux_init_abi (struct gdbarch_info info,
 void
 _initialize_arm_linux_tdep (void)
 {
-  gdbarch_register_osabi (bfd_arch_arm, GDB_OSABI_LINUX, arm_linux_init_abi);
+  gdbarch_register_osabi (bfd_arch_arm, 0, GDB_OSABI_LINUX,
+			  arm_linux_init_abi);
 }

@@ -1,3 +1,139 @@
+2003-01-23  Jim Blandy  <jimb@redhat.com>
+
+	* gdb.texinfo (Separate Debug Files): New section.
+
+2003-01-22  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.texinfo (Maintenance Commands): Add "maint set profile"
+	and "maint show profile".
+
+2003-01-16  Michael Chastain  <mec@shout.net>
+
+	* gdb.texinfo (Installing GDB): Warn against
+	".../gdb-VERSION/gdb/configure".
+	(Separate Objdir): Likewise.
+
+2003-01-15  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Target Architecture Definition): Delete
+	definition of PRINT_REGISTER_HOOK.
+
+2003-01-15  Elena Zannoni  <ezannoni@redhat.com>
+
+	(OpenRISC 1000): Fix formatting of command names.
+
+2003-01-15  Elena Zannoni  <ezannoni@redhat.com>
+
+	* gdb.texinfo (Continuing and Stepping): Add new command
+	'advance'. Clarify behavior of 'until'.
+
+2003-01-13  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.texinfo (Files): Document solib-absolute-prefix and
+	solib-search-path.
+
+2003-01-09  Michael Chastain  <mec@shout.net>
+
+	* gdbint.texinfo (Configuring @value{GDBN} for Release): Delete.
+	(Create a Release): Add new instructions for new @file{src-release}.
+	Document existing instructions for @file{Makefile.in} as
+	being for @value{GDBN} 5.3.1 or earlier.
+
+2003-01-09  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Target Architecture Definition): Mention
+	frame_saved_regs_zalloc and frame_extra_info_zalloc as the way to
+	allocate memory.
+
+2003-01-04  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.texinfo (Controlling GDB): Add @kindex for
+	"show osabi".
+	(Backtraces): Add @kindex's for backtrace-below-main.
+
+2003-01-04  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.texinfo (Controlling GDB): Document "set osabi".
+
+2003-01-04  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.texinfo (Backtraces): Document "set backtrace-below-main".
+	* gdbint.texinfo (FRAME_CHAIN_VALID): Update documentation.
+
+2003-01-04  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.texinfo (Controlling GDB): Add ABI section.  Document
+	"set coerce-float-to-double".
+	* gdbint.texinfo (COERCE_FLOAT_TO_DOUBLE): Remove documentation.
+
+2003-01-02  Andrew Cagney  <ac131313@redhat.com>
+
+	* stabs.texinfo: Remove obsolete text.
+	* gdbint.texinfo: Ditto.
+	* gdb.texinfo: Ditto.
+
+2002-12-22  Mark Kettenis  <kettenis@gnu.org>
+
+	* gdbint.texinfo (Target Architecture Definition): Update
+	description of gdbarch_register_osabi.
+
+2002-12-20  Kazu Hirata  <kazu@cs.umass.edu>
+
+	* agentexpr.texi: Fix typos.
+	* annotate.texi: Likewise.
+	* fdl.texi: Likewise.
+
+2002-12-10  Andrew Cagney  <cagney@redhat.com>
+
+	* gdbint.texinfo (Algorithms): Replace INIT_FRAME_PC with
+	DEPRECATED_INIT_FRAME_PC.
+
+2002-12-01  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Target Architecture Definition): Delete
+	PC_IN_CALL_DUMMY.
+
+2002-11-28  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Host Definition): Delete documentation on
+	USE_GENERIC_DUMMY_FRAMES.
+
+2002-11-26  Elena Zannoni  <ezannoni@redhat.com>
+
+        Fix PR gdb/723 and PR gdb/245.
+	* Makefile.in (install-info): Run the install-info command as part
+	of the post install steps only.
+	(uninstall-info): New target.
+	(uninstall): New target.
+
+2002-11-22  Elena Zannoni  <ezannoni@redhat.com>
+
+	* Makefile.in (install): Make install do some real work.
+
+2002-11-19  Andrew Cagney  <ac131313@redhat.com>
+
+	Fix POSIX problem reported by Paul Eggert.
+	* Makefile.in (GDBvn.texi): Use `sed q' instead of `head -1'.
+	Fix PR gdb/527.
+
+2002-10-26  Andrew Cagney  <cagney@redhat.com>
+
+	* gdbint.texinfo (Target Architecture Definition): Delete
+	definition of DO_REGISTERS_INFO.
+
+2002-10-18  Kevin Buettner  <kevinb@redhat.com>
+
+	* gdbint.texinfo (Address Classes): Fix problems with insertion
+	of ``{'' and ``}'' in example.
+
+2002-10-17  Kevin Buettner  <kevinb@redhat.com>
+
+	* gdbint.texinfo (Address Classes): New section.
+	(Target Conditionals): Document ADDRESS_CLASS_NAME_TO_TYPE_FLAGS,
+	ADDRESS_CLASS_NAME_TO_TYPE_FLAGS_P, ADDRESS_CLASS_TYPE_FLAGS,
+	ADDRESS_CLASS_TYPE_FLAGS_P, ADDRESS_CLASS_TYPE_FLAGS_TO_NAME, and
+	ADDRESS_CLASS_TYPE_FLAGS_TO_NAME_P.
+
 2002-10-11  Klee Dienes  <kdienes@apple.com>
 
 	* gdb.texinfo (Registers): Mention vector registers as well as

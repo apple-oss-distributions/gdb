@@ -1,5 +1,7 @@
-/* GDB-specific functions for operating on agent expressions
-   Copyright 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+/* GDB-specific functions for operating on agent expressions.
+
+   Copyright 1998, 1999, 2000, 2001, 2003 Free Software Foundation,
+   Inc.
 
    This file is part of GDB.
 
@@ -1157,7 +1159,7 @@ find_field (struct type *type, char *name)
     {
       char *this_name = TYPE_FIELD_NAME (type, i);
 
-      if (this_name && STREQ (name, this_name))
+      if (this_name && strcmp (name, this_name) == 0)
 	return i;
 
       if (this_name[0] == '\0')
@@ -1836,7 +1838,7 @@ agent_command (char *exp, int from_tty)
 
   expr = parse_expression (exp);
   old_chain = make_cleanup (free_current_contents, &expr);
-  agent = gen_trace_for_expr (fi->pc, expr);
+  agent = gen_trace_for_expr (get_frame_pc (fi), expr);
   make_cleanup_free_agent_expr (agent);
   ax_print (gdb_stdout, agent);
 

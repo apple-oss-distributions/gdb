@@ -35,12 +35,6 @@ set testfile "call-rt-st"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
 
-# APPLE LOCAL jmolenda
-# r. 3049981 Stack setup incorrect in inf. func. call w/ struct containing chars
-set r3049981 "(r. 3049981)"
-# r. 3049138 inferior function calls with structs containing doubles bug
-set r3049138 "(r. 3049138)"
-
 # Test depends on printf, which the sparclet stub doesn't support.  
 if { [istarget "sparclet-*-*"] } {
     return 0;
@@ -148,7 +142,6 @@ gdb_expect {
 # reliably.
 proc print_struct_call { expr result } {
     global gdb_prompt
-    global radar_number
 
     set command "print $expr"
     send_gdb "${command}\n"
@@ -160,7 +153,7 @@ proc print_struct_call { expr result } {
             unsupported "$command"
         }
         -re "$gdb_prompt $" {
-            fail "$command$radar_number"
+            fail "$command"
         }
         timeout {
             fail "$command (timeout)"
@@ -179,13 +172,11 @@ if ![gdb_skip_stdio_test "print print_one_large_struct(...)"] {
             ".*\[ \t\]+4\[ \t\]+1\[ \r\n\]+.\[0-9\]+ = \\{next_index = \\{1, 2, 3, 4, 5, 6, 7, 8, 9, 10\\}, values = \\{4, 6, 8, 10, 12, 14, 16, 18, 20, 22\\}, head = 0\\}"
 }
 
-set radar_number " $r3049138"
 if {![gdb_skip_float_test "print print_one_double(*d1)"] && \
         ![gdb_skip_stdio_test "print print_one_double(*d1)"] } {
     print_struct_call "print_one_double(*d1)" \
 	    ".*Contents of one_double_t:\[ \r\n\]+1\\.111110\[ \r\n\]+.\[0-9\]+ = \\{double1 = 1\\.111\[0-9\]*\\}"
 }
-set radar_number ""
 
 if {![gdb_skip_float_test "print print_two_floats(*f3)"] && \
         ![gdb_skip_stdio_test "print print_two_floats(*f3)"] } {
@@ -203,19 +194,15 @@ if ![gdb_skip_stdio_test "print print_bit_flags_combo(*flags_combo)"] {
             ".*alpha\[ \r\n\]+gamma\[ \r\n\]+epsilon\[ \r\n\]+ch1: y\[ \t\]+ch2: n\[ \r\n\]+.\[0-9\]+ = \\{alpha = 1, beta = 0, ch1 = 121 'y', gamma = 1, delta = 0, ch2 = 110 'n', epsilon = 1, omega = 0\\}"
 }
 
-set radar_number " $r3049981"
 if ![gdb_skip_stdio_test "print print_three_chars(*three_chars)"] {
     print_struct_call "print_three_chars(*three_char)" \
             ".*Contents of three_char_t:\[ \r\n\]+x\[ \t\]+y\[ \t\]+z\[ \r\n\]+.\[0-9\]+ = \\{ch1 = 120 'x', ch2 = 121 'y', ch3 = 122 'z'\\}"
 }
-set radar_number ""
 
-set radar_number " $r3049981"
 if ![gdb_skip_stdio_test "print print_five_chars(*five_chars)"] {
     print_struct_call "print_five_chars(*five_char)" \
             ".*Contents of five_char_t:\[ \r\n\]+h\[ \t\]+e\[ \t\]+l\[ \t\]+l\[ \t\]+o\[ \r\n\]+.\[0-9\]+ = \\{ch1 = 104 'h', ch2 = 101 'e', ch3 = 108 'l', ch4 = 108 'l', ch5 = 111 'o'\\}"
 }
-set radar_number ""
 
 if ![gdb_skip_stdio_test "print print_int_char_combo(*int_char_combo)"] {
     print_struct_call "print_int_char_combo(*int_char_combo)" \

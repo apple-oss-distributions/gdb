@@ -4,6 +4,7 @@
 #define GDB_PPC_THREAD_STATE 1
 #define GDB_PPC_THREAD_FPSTATE 2
 #define GDB_PPC_THREAD_VPSTATE 4
+#define GDB_PPC_THREAD_STATE_64 5
 
 struct gdb_ppc_thread_state {
 
@@ -22,6 +23,23 @@ struct gdb_ppc_thread_state {
 };
 
 typedef struct gdb_ppc_thread_state gdb_ppc_thread_state_t;
+
+struct gdb_ppc_thread_state_64 {
+
+  unsigned long long srr0;	/* program counter */
+  unsigned long long srr1;	/* machine state register */
+
+  unsigned long long gpregs[32];
+
+  unsigned int cr;		/* condition register */
+  unsigned long long xer;	/* integer exception register */
+  unsigned long long lr;	/* link register */
+  unsigned long long ctr;
+
+  unsigned int vrsave;		/* vector save register */
+};
+
+typedef struct gdb_ppc_thread_state_64 gdb_ppc_thread_state_64_t;
 
 struct gdb_ppc_thread_fpstate {
 
@@ -45,6 +63,9 @@ typedef struct gdb_ppc_thread_vpstate gdb_ppc_thread_vpstate_t;
 
 #define GDB_PPC_THREAD_STATE_COUNT \
   (sizeof (gdb_ppc_thread_state_t) / sizeof (unsigned int))
+
+#define GDB_PPC_THREAD_STATE_64_COUNT \
+  (sizeof (gdb_ppc_thread_state_64_t) / sizeof (unsigned int))
 
 #define GDB_PPC_THREAD_FPSTATE_COUNT \
   (sizeof (gdb_ppc_thread_fpstate_t) / sizeof (unsigned int))

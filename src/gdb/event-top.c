@@ -1002,6 +1002,16 @@ handle_sigint (int sig)
 {
   signal (sig, handle_sigint);
 
+  /* We used to set the quit flag in async_request_quit, which is either
+     called when immediate_quit is 1, or when we get back to the event
+     loop.  This is wrong, because you could be running in a loop reading
+     in symfiles or something, and it could be quite a while before you 
+     get to the event loop.  Instead, set quit_flag to 1 here, then mark
+     the sigint handler as ready.  Then if somebody calls QUIT before you
+     get to the event loop, they will unwind as expected.  */
+
+  quit_flag = 1;
+
   /* If immediate_quit is set, we go ahead and process the SIGINT right
      away, even if we usually would defer this to the event loop. The
      assumption here is that it is safe to process ^C immediately if
@@ -1014,14 +1024,22 @@ handle_sigint (int sig)
   else
     /* If immediate quit is not set, we process SIGINT the next time
        through the loop, which is fine. */
-    mark_async_signal_handler_wrapper (sigint_token);
+      mark_async_signal_handler_wrapper (sigint_token);
 }
 
 /* Do the quit. All the checks have been done by the caller. */
 void
 async_request_quit (gdb_client_data arg)
 {
-  quit_flag = 1;
+
+  /* If the quit_flag has gotten reset back to 0 by the time we get
+     back here, that means that an exception was thrown to unwind
+     the current command before we got back to the event loop.  So
+     there is no reason to call quit again here. */
+
+  if (quit_flag == 0)
+    return;
+
 #ifdef REQUEST_QUIT
   REQUEST_QUIT;
 #else
@@ -1226,7 +1244,7 @@ gdb_setup_readline (void)
 
 /* Disable command input through the standard CLI channels.  Used in
    the suspend proc for interpreters that use the standard gdb readline
-   interface, like the cli & the mi. */
+   interface, like the cli & the mi.  */
 
 void
 gdb_disable_readline (void)
@@ -1259,8 +1277,8 @@ void
 _initialize_event_loop (void)
 {
   /* Tell gdb to use the cli_command_loop as the main loop. */
+
   if (event_loop_p && command_loop_hook == NULL)
-    {
-      command_loop_hook = cli_command_loop;
-    }
+    command_loop_hook = cli_command_loop;
 }
+

@@ -78,8 +78,29 @@ ppc_frame_saved_regs (struct frame_info *frame, CORE_ADDR *saved_regs)
     prev_sp = saved_regs[SP_REGNUM] = frame->frame;
   }
 
-  saved_regs[PC_REGNUM] = ppc_frame_saved_pc (frame);
+  /* I am not sure how this is supposed to work.  The saved_regs array is supposed
+     to hold the location of the address where the register is saved.  This is tricky
+     in the bottom-most frame, but it looks like this cache doesn't get used then.
+     So for now I am leaving out all the complex cases in ppc_frame_find_pc. 
 
+     I am also not doing the CALL_DUMMY case, here.  I think that should be
+     handled by the CALL_DUMMY unwinder.  */
+
+  if (get_frame_type (frame) == SIGTRAMP_FRAME) 
+    {
+      CORE_ADDR psp = read_memory_unsigned_integer (frame->frame, 4);
+      saved_regs[PC_REGNUM] = psp + PPC_SIGCONTEXT_PC_OFFSET;
+    }
+  else
+    {
+      if (prev_sp == 0)
+	saved_regs[PC_REGNUM] = 0;
+      else
+	{
+	  saved_regs[PC_REGNUM] = prev_sp + props->lr_offset;
+	}
+    }
+  
   if (props->cr_saved) {
     saved_regs[CR_REGNUM] = prev_sp + props->cr_offset;
   }

@@ -1,5 +1,6 @@
 /* Disassemble support for GDB.
-   Copyright 2000, 2001, 2002 Free Software Foundation, Inc.
+
+   Copyright 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -66,7 +67,7 @@ gdb_dis_asm_read_memory (bfd_vma memaddr, bfd_byte * myaddr,
 }
 
 static int
-compare_lines (const PTR mle1p, const PTR mle2p)
+compare_lines (const void *mle1p, const void *mle2p)
 {
   struct dis_line_entry *mle1, *mle2;
   int val;

@@ -1,6 +1,6 @@
 /* List lines of source files for GDB, the GNU debugger.
    Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
-   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
+   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -45,6 +45,7 @@
 #include "filenames.h"		/* for DOSish file names */
 #include "completer.h"
 #include "ui-out.h"
+#include <readline/readline.h>
 
 #ifdef CRLF_SOURCE_FILES
 
@@ -256,9 +257,9 @@ select_source_symtab (register struct symtab *s)
 
   current_source_line = 1;
 
-  for (ofp = object_files; ofp != NULL; ofp = ofp->next)
+  ALL_OBJFILES (ofp)
     {
-      for (s = ofp->symtabs; s; s = s->next)
+      ALL_SYMTABS (ofp, s)
 	{
 	  char *name = s->filename;
 	  int len = strlen (name);
@@ -273,9 +274,9 @@ select_source_symtab (register struct symtab *s)
 
   /* Howabout the partial symbol tables? */
 
-  for (ofp = object_files; ofp != NULL; ofp = ofp->next)
+  ALL_OBJFILES (ofp)
     {
-      for (ps = ofp->psymtabs; ps != NULL; ps = ps->next)
+      ALL_OBJFILE_PSYMTABS (ofp, ps)
 	{
 	  char *name = ps->filename;
 	  int len = strlen (name);
@@ -323,9 +324,9 @@ forget_cached_source_info (void)
   register struct objfile *objfile;
   struct partial_symtab *pst;
 
-  for (objfile = object_files; objfile != NULL; objfile = objfile->next)
+  ALL_OBJFILES (objfile)
     {
-      for (s = objfile->symtabs; s != NULL; s = s->next)
+      ALL_OBJFILE_SYMTABS (objfile, s)
 	{
 	  if (s->line_charpos != NULL)
 	    {
@@ -360,6 +361,12 @@ init_source_path (void)
   forget_cached_source_info ();
 }
 
+void
+init_last_source_visited (void)
+{
+  last_source_visited = NULL;
+}
+
 /* Add zero or more directories to the front of the source path.  */
 
 void
@@ -390,6 +397,18 @@ directory_command (char *dirname, int from_tty)
 void
 mod_path (char *dirname, char **which_path)
 {
+  add_path (dirname, which_path, 1);
+}
+
+/* Workhorse of mod_path.  Takes an extra argument to determine
+   if dirname should be parsed for separators that indicate multiple
+   directories.  This allows for interfaces that pre-parse the dirname
+   and allow specification of traditional separator characters such
+   as space or tab. */
+
+void
+add_path (char *dirname, char **which_path, int parse_separators)
+{
   char *old = *which_path;
   int prefix = 0;
 
@@ -406,12 +425,40 @@ mod_path (char *dirname, char **which_path)
       struct stat st;
 
       {
-	char *separator = strchr (name, DIRNAME_SEPARATOR);
-	char *space = strchr (name, ' ');
-	char *tab = strchr (name, '\t');
+	char *separator = NULL;
+	char *space = NULL;
+	char *tab = NULL;
+
+	if (parse_separators)
+	  {
+	    separator = strchr (name, DIRNAME_SEPARATOR);
+	    space = strchr (name, ' ');
+	    tab = strchr (name, '\t');
+	  }
 
 	if (separator == 0 && space == 0 && tab == 0)
 	  p = dirname = name + strlen (name);
+	else if (parse_separators && *name == '"')
+	  {
+	    p = name + 1;
+
+	    while (*p != '\0')
+	      {
+		if (p[0] == '"' && p[-1] != '\\') 
+		  {
+		    dirname = p + 1;
+		    name += 1;
+		    break;
+		  }
+		p++;
+	      }
+	    if (*p == '\0')
+	      error ("Unmatched separators in dir pathname");
+	    while (*dirname == DIRNAME_SEPARATOR
+		   || *dirname == ' '
+		   || *dirname == '\t')
+	      ++dirname;
+	  }
 	else
 	  {
 	    p = 0;
@@ -539,7 +586,8 @@ mod_path (char *dirname, char **which_path)
 	    tinybuf[0] = DIRNAME_SEPARATOR;
 	    tinybuf[1] = '\0';
 
-	    /* If we have already tacked on a name(s) in this command,                     be sure they stay on the front as we tack on some more.  */
+	    /* If we have already tacked on a name(s) in this command, be sure they stay 
+	       on the front as we tack on some more.  */
 	    if (prefix)
 	      {
 		char *temp, c;
@@ -650,14 +698,24 @@ openp (const char *path, int try_cwd_first, const char *string,
   mode |= O_BINARY;
 #endif
 
-  if ((try_cwd_first || IS_ABSOLUTE_PATH (string)) && is_regular_file (string))
+  if (try_cwd_first || IS_ABSOLUTE_PATH (string))
     {
       int i;
-      filename = alloca (strlen (string) + 1);
-      strcpy (filename, string);
-      fd = open (filename, mode, prot);
-      if (fd >= 0)
-	goto done;
+
+      if (is_regular_file (string))
+	{
+	  filename = alloca (strlen (string) + 1);
+	  strcpy (filename, string);
+	  fd = open (filename, mode, prot);
+	  if (fd >= 0)
+	    goto done;
+	}
+      else
+	{
+	  filename = NULL;
+	  fd = -1;
+	}
+
       for (i = 0; string[i]; i++)
 	if (IS_DIR_SEPARATOR (string[i]))
 	  goto done;
@@ -1390,7 +1448,7 @@ line_info (char *arg, int from_tty)
   CORE_ADDR start_pc, end_pc;
   int i;
 
-  INIT_SAL (&sal);		/* initialize to zeroes */
+  init_sal (&sal);		/* initialize to zeroes */
 
   if (arg == 0)
     {

@@ -34,6 +34,12 @@ PARAMS ((struct dyld_objfile_info *old,
 	 struct dyld_objfile_info *new,
 	 struct dyld_objfile_info *result));
 
+void dyld_prune_shlib
+PARAMS ((const struct macosx_dyld_thread_status *s,
+	 struct dyld_path_info *d,
+	 struct dyld_objfile_info *old, 
+	 struct dyld_objfile_entry *n));
+
 void dyld_merge_shlibs
 PARAMS ((const struct macosx_dyld_thread_status *s,
 	 struct dyld_path_info *d,
@@ -70,5 +76,8 @@ unsigned int dyld_parse_load_level PARAMS ((const char *s));
 int dyld_minimal_load_flag
 PARAMS ((const struct dyld_path_info *d,
 	 struct dyld_objfile_entry *e));
+
+
+char *dyld_find_dylib_name (CORE_ADDR addr, unsigned int ncmds);
 
 #endif /* __GDB_MACOSX_NAT_DYLD_PROCESS_H__ */

@@ -45,7 +45,7 @@ struct ui_out_hdr
    is always available.  Stack/nested level 0 is reserved for the
    top-level result. */
 
-enum { MAX_UI_OUT_LEVELS = 5 };
+enum { MAX_UI_OUT_LEVELS = 6 };
 
 struct ui_out_level
   {
@@ -807,7 +807,7 @@ gdb_query (struct ui_out *uiout, int qflags, char *qprompt)
 int
 ui_out_is_mi_like_p (struct ui_out *uiout)
 {
-  if (uiout == NULL)
+  if (uiout == NULL || uiout->impl == NULL)
     return 0;
   else
     return uiout->impl->is_mi_like_p;

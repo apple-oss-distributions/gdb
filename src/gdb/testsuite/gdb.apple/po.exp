@@ -52,6 +52,33 @@ gdb_test "break stringmaker" ".*Breakpoint.*"
 gdb_test "continue" ".*Continuing.*Breakpoint 2, stringmaker.*"
 gdb_test "next" ""
 
+
+
+
+#
+# The following decode_line_1 parsing tests inspired by radar 3106132, 
+# "Unmatched single quote."
+#
+
+gdb_test "break '\[NSException raise\]'" \
+         "Breakpoint \[0-9\] at $hex" \
+         "breakpoint on class member function with apostrophy, no dash"
+
+gdb_test "break '-\[NSException raise\]'" \
+         "Note: breakpoint.* also set at pc $hex.\[\r\n\]+Breakpoint \[0-9\] at $hex" \
+         "breakpoint on class member function with apostrophy, dash"
+
+gdb_test "break \[NSException raise\]" \
+         "Note: breakpoint.* also set at pc $hex.\[\r\n\]+Breakpoint \[0-9\] at $hex" \
+         "breakpoint on class member function without apostrophy, no dash"
+
+gdb_test "break -\[NSException raise\]" \
+         "Note: breakpoint.* also set at pc $hex.\[\r\n\]+Breakpoint \[0-9\] at $hex" \
+         "breakpoint on class member function without apostrophy, dash"
+
+
+
+
 # Simple print objects involving an object in the program.
 
 gdb_test "po mystr" "Hello, World!"

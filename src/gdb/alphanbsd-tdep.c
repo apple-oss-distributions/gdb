@@ -1,5 +1,5 @@
 /* Target-dependent code for NetBSD/Alpha.
-   Copyright 2002 Free Software Foundation, Inc.
+   Copyright 2002, 2003 Free Software Foundation, Inc.
    Contributed by Wasabi Systems, Inc.
 
    This file is part of GDB.
@@ -24,6 +24,7 @@
 #include "frame.h"
 #include "regcache.h"
 #include "value.h"
+#include "osabi.h"
 
 #include "solib-svr4.h"
 
@@ -232,7 +233,7 @@ alphanbsd_init_abi (struct gdbarch_info info,
 void
 _initialize_alphanbsd_tdep (void)
 {
-  gdbarch_register_osabi (bfd_arch_alpha, GDB_OSABI_NETBSD_ELF,
+  gdbarch_register_osabi (bfd_arch_alpha, 0, GDB_OSABI_NETBSD_ELF,
                           alphanbsd_init_abi);
 
   add_core_fns (&alphanbsd_core_fns);

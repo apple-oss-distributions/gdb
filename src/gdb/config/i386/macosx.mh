@@ -1,7 +1,5 @@
 # Host: IA86 running Mac OS X
 
-TERMCAP = -lcurses
-
 SER_HARDWIRE = ser-unix.o ser-tcp.o
 
 XM_FILE = xm-i386-macosx.h

@@ -1,7 +1,8 @@
 /* Read ELF (Executable and Linking Format) object files for GDB.
-   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002
-   Free Software Foundation, Inc.
+
+   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
+   2000, 2001, 2002, 2003 Free Software Foundation, Inc.
+
    Written by Fred Fish at Cygnus Support.
 
    This file is part of GDB.
@@ -51,20 +52,6 @@ struct elfinfo
     asection *stabindexsect;	/* Section pointer for .stab.index section */
     asection *mdebugsect;	/* Section pointer for .mdebug section */
   };
-
-/* Various things we might complain about... */
-
-struct complaint section_info_complaint =
-{"elf/stab section information %s without a preceding file symbol", 0, 0};
-
-struct complaint section_info_dup_complaint =
-{"duplicated elf/stab section information for %s", 0, 0};
-
-struct complaint stab_info_mismatch_complaint =
-{"elf/stab section information missing for %s", 0, 0};
-
-struct complaint stab_info_questionable_complaint =
-{"elf/stab section information questionable for %s", 0, 0};
 
 static void free_elfinfo (void *);
 
@@ -365,10 +352,10 @@ elf_symtab_read (struct objfile *objfile, int dynamic)
 		    /* Looks like a compiler-generated label.  Skip
 		       it.  The assembler should be skipping these (to
 		       keep executables small), but apparently with
-		       gcc on the (OBSOLETE) delta m88k SVR4, it
-		       loses.  So to have us check too should be
-		       harmless (but I encourage people to fix this in
-		       the assembler instead of adding checks here).  */
+		       gcc on the (deleted) delta m88k SVR4, it loses.
+		       So to have us check too should be harmless (but
+		       I encourage people to fix this in the assembler
+		       instead of adding checks here).  */
 		    continue;
 		  else
 		    {
@@ -420,8 +407,9 @@ elf_symtab_read (struct objfile *objfile, int dynamic)
 				      sizeof (*sectinfo));
 			      if (filesym == NULL)
 				{
-				  complain (&section_info_complaint,
-					    sym->name);
+				  complaint (&symfile_complaints,
+					     "elf/stab section information %s without a preceding file symbol",
+					     sym->name);
 				}
 			      else
 				{
@@ -433,8 +421,9 @@ elf_symtab_read (struct objfile *objfile, int dynamic)
 			    { 
 			      if (sectinfo->sections[index] != 0)
 				{
-				  complain (&section_info_dup_complaint,
-					    sectinfo->filename);
+				  complaint (&symfile_complaints,
+					     "duplicated elf/stab section information for %s",
+					     sectinfo->filename);
 				}
 			    }
 			  else
@@ -745,7 +734,8 @@ elfstab_offset_sections (struct objfile *objfile, struct partial_symtab *pst)
 
   if (maybe == 0 && questionable != 0)
     {
-      complain (&stab_info_questionable_complaint, filename);
+      complaint (&symfile_complaints,
+		 "elf/stab section information questionable for %s", filename);
       maybe = questionable;
     }
 
@@ -762,7 +752,8 @@ elfstab_offset_sections (struct objfile *objfile, struct partial_symtab *pst)
 
   /* We were unable to find any offsets for this file.  Complain.  */
   if (dbx->stab_section_info)	/* If there *is* any info, */
-    complain (&stab_info_mismatch_complaint, filename);
+    complaint (&symfile_complaints,
+	       "elf/stab section information missing for %s", filename);
 }
 
 /* Register that we are able to handle ELF object file formats.  */

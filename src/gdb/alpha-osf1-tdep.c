@@ -1,5 +1,5 @@
 /* Target-dependent code for OSF/1 on Alpha.
-   Copyright 2002 Free Software Foundation, Inc.
+   Copyright 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,6 +22,7 @@
 #include "frame.h"
 #include "gdbcore.h"
 #include "value.h"
+#include "osabi.h"
 
 #include "alpha-tdep.h"
 
@@ -41,7 +42,7 @@ alpha_osf1_skip_sigtramp_frame (struct frame_info *frame, CORE_ADDR pc)
 static int
 alpha_osf1_pc_in_sigtramp (CORE_ADDR pc, char *func_name)
 {
-  return (func_name != NULL && STREQ ("__sigtramp", func_name));
+  return (func_name != NULL && strcmp ("__sigtramp", func_name) == 0);
 }
 
 static CORE_ADDR
@@ -73,5 +74,6 @@ alpha_osf1_init_abi (struct gdbarch_info info,
 void
 _initialize_alpha_osf1_tdep (void)
 {
-  gdbarch_register_osabi (bfd_arch_alpha, GDB_OSABI_OSF1, alpha_osf1_init_abi);
+  gdbarch_register_osabi (bfd_arch_alpha, 0, GDB_OSABI_OSF1,
+			  alpha_osf1_init_abi);
 }

@@ -1,7 +1,8 @@
 /* Find a variable's value in memory, for GDB, the GNU debugger.
-   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
-   1996, 1997, 1998, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
+   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2003 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -115,7 +116,7 @@ That operation is not available on integers of more than %d bytes.",
    function returns 1 and sets *PVAL.  Otherwise it returns 0.  */
 
 int
-extract_long_unsigned_integer (void *addr, int orig_len, LONGEST *pval)
+extract_long_unsigned_integer (const void *addr, int orig_len, LONGEST *pval)
 {
   char *p, *first_addr;
   int len;
@@ -173,7 +174,7 @@ extract_long_unsigned_integer (void *addr, int orig_len, LONGEST *pval)
    else based on POINTER_TO_ADDRESS.  */
 
 CORE_ADDR
-extract_address (void *addr, int len)
+extract_address (const void *addr, int len)
 {
   /* Assume a CORE_ADDR can fit in a LONGEST (for now).  Not sure
      whether we want this to be true eventually.  */
@@ -184,7 +185,7 @@ extract_address (void *addr, int len)
 /* Treat the bytes at BUF as a pointer of type TYPE, and return the
    address it represents.  */
 CORE_ADDR
-extract_typed_address (void *buf, struct type *type)
+extract_typed_address (const void *buf, struct type *type)
 {
   if (TYPE_CODE (type) != TYPE_CODE_PTR
       && TYPE_CODE (type) != TYPE_CODE_REF)
@@ -303,7 +304,7 @@ value_of_register (int regnum, struct frame_info *frame)
   /* Builtin registers lie completly outside of the range of normal
      registers.  Catch them early so that the target never sees them.  */
   if (regnum >= NUM_REGS + NUM_PSEUDO_REGS)
-    return value_of_builtin_reg (regnum, selected_frame);
+    return value_of_builtin_reg (regnum, deprecated_selected_frame);
 
   get_saved_register (raw_buffer, &optim, &addr,
 		      frame, regnum, &lval);
@@ -347,13 +348,13 @@ value_of_register (int regnum, struct frame_info *frame)
 /* Given a pointer of type TYPE in target form in BUF, return the
    address it represents.  */
 CORE_ADDR
-unsigned_pointer_to_address (struct type *type, void *buf)
+unsigned_pointer_to_address (struct type *type, const void *buf)
 {
   return extract_address (buf, TYPE_LENGTH (type));
 }
 
 CORE_ADDR
-signed_pointer_to_address (struct type *type, void *buf)
+signed_pointer_to_address (struct type *type, const void *buf)
 {
   return extract_signed_integer (buf, TYPE_LENGTH (type));
 }
@@ -391,7 +392,7 @@ symbol_read_needs_frame (struct symbol *sym)
     case LOC_LOCAL_ARG:
     case LOC_BASEREG:
     case LOC_BASEREG_ARG:
-    case LOC_THREAD_LOCAL_STATIC:
+    case LOC_HP_THREAD_LOCAL_STATIC:
       return 1;
 
     case LOC_UNDEF:
@@ -418,7 +419,7 @@ symbol_read_needs_frame (struct symbol *sym)
    and a stack frame id, read the value of the variable
    and return a (pointer to a) struct value containing the value. 
    If the variable cannot be found, return a zero pointer.
-   If FRAME is NULL, use the selected_frame.  */
+   If FRAME is NULL, use the deprecated_selected_frame.  */
 
 struct value *
 read_var_value (register struct symbol *var, struct frame_info *frame)
@@ -435,7 +436,7 @@ read_var_value (register struct symbol *var, struct frame_info *frame)
   len = TYPE_LENGTH (type);
 
   if (frame == NULL)
-    frame = selected_frame;
+    frame = deprecated_selected_frame;
 
   switch (SYMBOL_CLASS (var))
     {
@@ -529,7 +530,7 @@ addresses have not been bound by the dynamic loader. Try again when executable i
 
     case LOC_BASEREG:
     case LOC_BASEREG_ARG:
-    case LOC_THREAD_LOCAL_STATIC:
+    case LOC_HP_THREAD_LOCAL_STATIC:
       {
 	struct value *regval;
 
@@ -540,6 +541,20 @@ addresses have not been bound by the dynamic loader. Try again when executable i
 	addr = value_as_address (regval);
 	addr += SYMBOL_VALUE (var);
 	break;
+      }
+
+    case LOC_THREAD_LOCAL_STATIC:
+      {
+        if (target_get_thread_local_address_p ())
+          addr = target_get_thread_local_address (inferior_ptid,
+                                                  SYMBOL_OBJFILE (var),
+                                                  SYMBOL_VALUE_ADDRESS (var));
+        /* It wouldn't be wrong here to try a gdbarch method, too;
+           finding TLS is an ABI-specific thing.  But we don't do that
+           yet.  */
+        else
+          error ("Cannot find thread-local variables on this target");
+        break;
       }
 
     case LOC_TYPEDEF:
@@ -772,7 +787,7 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
 	   for some good purpose.  */
 	{
 	  VALUE_LVAL (v) = lval_reg_frame_relative;
-	  VALUE_FRAME (v) = FRAME_FP (frame);
+	  VALUE_FRAME (v) = get_frame_base (frame);
 	  VALUE_FRAME_REGNUM (v) = regnum;
 	}
       else if (mem_stor)

@@ -1,3 +1,102 @@
+2003-02-27  Klee Dienes  <kdienes@apple.com>
+
+	* defs.h (gdb_osabi): Add support for 64-bit registers on Darwin.
+	* osabi.c (gdb_osabi_names): Add support for 64-bit registers on Darwin.
+
+2003-01-13  Klee Dienes  <kdienes@apple.com>
+
+	* ltmain.sh (SED): Hard-code to 'sed'.
+
+2003-01-13  Klee Dienes  <kdienes@apple.com>
+
+	* gettext.m4 (CY_WITH_NLS): Default msgfmt to ':'.
+
+2002-01-07  Klee Dienes  <kdienes@apple.com>
+
+	* config.if: Update to autoconf-2.57.
+	* Makefile.tpl: Echo sub-configure commands before executing.
+	* configure.in: Update to autoconf-2.57.
+
+2002-12-12  Klee Dienes  <kdienes@apple.com>
+
+	* gettext.m4 (CY_WITH_NLS): Default msgfmt to ':'.
+
+2002-12-12  Klee Dienes  <kdienes@apple.com>
+
+	* Makefile.in (NSLIBTOOL): Use cc -dynamiclib.
+	(stamp-gdb-framework): Restore; was deleted in merge.
+	* configure (--build): Check for NOBUILD, not "".
+
+2002-12-07  Klee Dienes  <kdienes@apple.com>
+
+	* libtool.m4: Remove.
+	* ltcf-c.sh: Remove.
+	* ltcf-cxx.sh: Remove.
+	* ltcf-gcj.sh: Remove.
+	* ltconfig: Remove.
+
+2002-12-07  Klee Dienes  <kdienes@apple.com>
+
+        * configure: Change the rules for build/host/target processing to
+        the following:
+
+        The inputs are:
+          configure --host=HOST --target=TARGET UNDEFS
+          configure --build=BUILD --host=HOST --target=TARGET UNDEFS
+
+        The rules are:
+          1. You aren't allowed to specify --host, --build, --target, and undefs
+             at the same time.
+          2. Build defaults to undefs.
+          3. If undefs is not specified, then build defaults to the current host,
+             as determined by config.guess.
+          4. Host defaults to undefs.
+          5. If undefs is not specified, then host defaults to build.
+          6. Target defaults to undefs.
+          7. If undefs is not specified, then target defaults to host.
+
+        Only pass --host= and --target= to sub-configures when they are
+        passed by the top-level configure.  Treat the build as a
+        cross-compilation whenever --target is specified, even if it
+        matches the value of --build and --host.
+
+2002-12-07  Klee Dienes  <kdienes@apple.com>
+
+        * .cvsignore: Add autom4te.cache.
+
+2002-11-21  Klee Dienes  <kdienes@apple.com>
+
+	* depcomp: Update to the version from automake-1.7.
+	* missing: Update to the version from automake-1.7.
+
+2002-11-12  Klee Dienes  <kdienes@apple.com>
+
+	* configure.in: Generalize the Darwin config to *-*-darwin* (not
+	just PowerPC).  Remove bfd, binutils, opcodes, gdb, and gprof from
+	noconfigdirs.
+
+2002-11-05  Klee Dienes <kdienes@apple.com>
+
+	* Makefile.in: Remove extra definition of clean-target, to
+	match FSF sources.
+
+2002-11-05  Klee Dienes <kdienes@apple.com>
+
+	* ylwrap: Update to automake-1.7.
+
+2002-10-28  Klee Dienes <kdienes@apple.com>
+	
+	* gettext.m4: Enable use of libtool for libintl (set l=l,
+	INTLDEPS=libintl.la).
+	* ltcf-c.sh: Move darwin/rhapsody section from the "using GNU
+	linker" portion of the script to the "not using GNU linker"
+	section.  Also recognize powerpc-apple-macos10* as a valid string.
+	Set ac_cv_prog_cc_pic, not lt_cv_prog_cc_pic.
+	* ltconfig: Default CONFIG_SHELL to /bin/sh.  Also recognize
+	powerpc-apple-macos10* as a valid string.  Remove extra '$' in
+	library_names_spec, that was leading to libraries named
+	libname.1.$dylib instead of libname.1.dylib.
+	
 2002-10-14  Klee Dienes <kdienes@apple.com>
 
         * configure.in: Update powerpc-apple-darwin* target to include

@@ -1,8 +1,8 @@
 /* Symbol table lookup for the GNU debugger, GDB.
 
    Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
-   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software
-   Foundation, Inc.
+   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -56,12 +56,6 @@ extern int metrowerks_step_func_start;
 extern int metrowerks_step_func_end;
 
 int metrowerks_ignore_breakpoint_errors_flag = 0;
-int allow_objc_selectors_flag = 1;
-
-/* Prototype for one function in parser-defs.h,
-   instead of including that entire file. */
-
-extern char *find_template_name_end (char *);
 
 /* Prototypes for local functions */
 
@@ -96,6 +90,41 @@ static struct symbol *lookup_symbol_aux (const char *name,
 					 int *is_a_field_of_this,
 					 struct symtab **symtab);
 
+static
+struct symbol *lookup_symbol_aux_local (const char *name,
+					const char *mangled_name,
+					const struct block *block,
+					const namespace_enum namespace,
+					struct symtab **symtab,
+					const struct block **static_block);
+
+static
+struct symbol *lookup_symbol_aux_block (const char *name,
+					const char *mangled_name,
+					const struct block *block,
+					const namespace_enum namespace,
+					struct symtab **symtab);
+
+static
+struct symbol *lookup_symbol_aux_symtabs (int block_index,
+					  const char *name,
+					  const char *mangled_name,
+					  const namespace_enum namespace,
+					  struct symtab **symtab);
+
+static
+struct symbol *lookup_symbol_aux_psymtabs (int block_index,
+					   const char *name,
+					   const char *mangled_name,
+					   const namespace_enum namespace,
+					   struct symtab **symtab);
+
+static
+struct symbol *lookup_symbol_aux_minsyms (const char *name,
+					  const char *mangled_name,
+					  const namespace_enum namespace,
+					  int *is_a_field_of_this,
+					  struct symtab **symtab);
 
 static struct symbol *find_active_alias (struct symbol *sym, CORE_ADDR addr);
 
@@ -128,19 +157,6 @@ struct type *builtin_type_error;
    value_of_this. */
 
 const struct block *block_found;
-
-/* While the C++ support is still in flux, issue a possibly helpful hint on
-   using the new command completion feature on single quoted demangled C++
-   symbols.  Remove when loose ends are cleaned up.   FIXME -fnf */
-
-static void
-cplusplus_hint (char *name)
-{
-  while (*name == '\'')
-    name++;
-  printf_filtered ("Hint: try '%s<TAB> or '%s<ESC-?>\n", name, name);
-  printf_filtered ("(Note leading single quote.)\n");
-}
 
 /* Check for a symtab of a specific name; first in symtabs, then in
    psymtabs.  *If* there is no '/' in the name, a match after a '/'
@@ -411,6 +427,30 @@ gdb_mangle_name (struct type *type, int method_id, int signature_id)
 }
 
 
+/* Initialize the language dependent portion of a symbol
+   depending upon the language for the symbol. */
+void
+symbol_init_language_specific (struct general_symbol_info *gsymbol,
+			       enum language language)
+{
+  gsymbol->language = language;
+  if (gsymbol->language == language_cplus
+      || gsymbol->language == language_java)
+    {
+      gsymbol->language_specific.cplus_specific.demangled_name = NULL;
+    }
+  else if (gsymbol->language == language_objc
+	   || gsymbol->language == language_objcplus)
+    {
+      gsymbol->language_specific.objc_specific.demangled_name = NULL;
+    }
+  else
+    {
+      memset (&gsymbol->language_specific, 0,
+	      sizeof (gsymbol->language_specific));
+    }
+}
+
 /* Initialize a symbol's mangled name.  */
 
 /* Try to initialize the demangled name for a symbol, based on the
@@ -426,16 +466,33 @@ void
 symbol_init_demangled_name (struct general_symbol_info *gsymbol,
                             struct obstack *obstack)
 {
-  char *mangled = gsymbol->name;
-  char *demangled = NULL;
-
   if (gsymbol->language == language_unknown)
     gsymbol->language = language_auto;
 
-  if (gsymbol->language == language_cplus
+  if (gsymbol->language == language_objc
+      || gsymbol->language == language_objcplus
       || gsymbol->language == language_auto)
     {
-      demangled =
+      char *demangled =
+	objc_demangle (gsymbol->name);
+      if (demangled != NULL)
+	{
+	  gsymbol->language = language_objc;
+	  gsymbol->language_specific.objc_specific.demangled_name =
+	    obsavestring (demangled, strlen (demangled), (obstack));
+	  xfree (demangled);
+	}
+      else
+	{
+	  gsymbol->language_specific.objc_specific.demangled_name = NULL;
+	}
+    }
+  
+  if (gsymbol->language == language_cplus
+      || gsymbol->language == language_objcplus
+      || gsymbol->language == language_auto)
+    {
+      char *demangled =
         cplus_demangle (gsymbol->name, DMGL_PARAMS | DMGL_ANSI);
       if (demangled != NULL)
         {
@@ -452,7 +509,7 @@ symbol_init_demangled_name (struct general_symbol_info *gsymbol,
 
   if (gsymbol->language == language_java)
     {
-      demangled =
+      char *demangled =
         cplus_demangle (gsymbol->name,
                         DMGL_PARAMS | DMGL_ANSI | DMGL_JAVA);
       if (demangled != NULL)
@@ -468,74 +525,39 @@ symbol_init_demangled_name (struct general_symbol_info *gsymbol,
         }
     }
 
-#if 0
-  /* OBSOLETE if (demangled == NULL */
-  /* OBSOLETE     && (gsymbol->language == language_chill */
-  /* OBSOLETE         || gsymbol->language == language_auto)) */
-  /* OBSOLETE   { */
-  /* OBSOLETE     demangled = */
-  /* OBSOLETE       chill_demangle (gsymbol->name); */
-  /* OBSOLETE     if (demangled != NULL) */
-  /* OBSOLETE       { */
-  /* OBSOLETE         gsymbol->language = language_chill; */
-  /* OBSOLETE         gsymbol->language_specific.chill_specific.demangled_name = */
-  /* OBSOLETE           obsavestring (demangled, strlen (demangled), obstack); */
-  /* OBSOLETE         xfree (demangled); */
-  /* OBSOLETE       } */
-  /* OBSOLETE     else */
-  /* OBSOLETE       { */
-  /* OBSOLETE         gsymbol->language_specific.chill_specific.demangled_name = NULL; */
-  /* OBSOLETE       } */
-  /* OBSOLETE   } */
-#endif
-
-  if (demangled == NULL &&
-      (gsymbol->language == language_objc ||
-       gsymbol->language == language_objcplus ||
-       gsymbol->language == language_auto))
-    {
-      demangled =
-	objc_demangle (gsymbol->name);
-      if (demangled != NULL)
-	{
-	  gsymbol->language = language_objc;
-	  if (gsymbol->language == language_auto)
-	    gsymbol->language_specific.objc_specific.demangled_name =
-	      obsavestring (demangled, strlen (demangled), (obstack));
-	  xfree (demangled);
-	}
-      else
-	{
-	  gsymbol->language_specific.objc_specific.demangled_name = NULL;
-	}
-    }
-  
-  if (demangled &&
-      gsymbol->language != language_objc &&
-      gsymbol->language != language_objcplus &&
-      (demangled = gsymbol->name) &&
-      demangled[0] == '_' &&
-      (demangled[1] == 'i' || demangled[1] == 'c') &&
-      demangled[2] == '_')
-    /* some other demangling succeeded, yet it looks like ObjC   */
-    {
-      demangled =
-	objc_demangle (gsymbol->name);
-      if (demangled != NULL)	/*  yes, it was ObjC: let ObjC win   */
-	{			/* (C++ demangling is too forgiving) */
-	  gsymbol->language = language_objc;
-	  gsymbol->language_specific.objc_specific.demangled_name =
-	    obsavestring (demangled, strlen (demangled), (obstack));
-	  xfree (demangled);
-	}
-    }
-
   if (gsymbol->language == language_auto)
-    {
-      gsymbol->language = language_unknown;
-    }
+    gsymbol->language = language_unknown;
 }
 
+/* Return the demangled name for a symbol based on the language for
+   that symbol.  If no demangled name exists, return NULL. */
+char *
+symbol_demangled_name (struct general_symbol_info *gsymbol)
+{
+  if (gsymbol->language == language_cplus
+      || gsymbol->language == language_java)
+    return gsymbol->language_specific.cplus_specific.demangled_name;
+
+  else if (gsymbol->language == language_objc
+	   || gsymbol->language == language_objcplus)
+    return gsymbol->language_specific.objc_specific.demangled_name;
+
+  else 
+    return NULL;
+}
+
+/* Initialize the structure fields to zero values.  */
+void
+init_sal (struct symtab_and_line *sal)
+{
+  sal->symtab = 0;
+  sal->section = 0;
+  sal->line = 0;
+  sal->startchar = 0;
+  sal->endchar = 0;
+  sal->pc = 0;
+  sal->end = 0;
+}
 
 
 
@@ -697,8 +719,10 @@ fixup_section (struct general_symbol_info *ginfo, struct objfile *objfile)
 
   if (msym)
     {
-      ginfo->bfd_section = SYMBOL_BFD_SECTION (msym);
-      ginfo->section = SYMBOL_SECTION (msym);
+      if (ginfo->bfd_section != SYMBOL_BFD_SECTION (msym))
+	ginfo->bfd_section = SYMBOL_BFD_SECTION (msym);
+      if (ginfo->section != SYMBOL_SECTION (msym))
+	ginfo->section = SYMBOL_SECTION (msym);
     }
 }
 
@@ -766,7 +790,8 @@ lookup_symbol (const char *name, const struct block *block,
 
   /* If we are using C++ language, demangle the name before doing a lookup, so
      we can always binary search. */
-  if (current_language->la_language == language_cplus)
+  if (current_language->la_language == language_cplus ||
+      current_language->la_language == language_objcplus)
     {
       demangled_name = cplus_demangle (name, DMGL_ANSI | DMGL_PARAMS);
       if (demangled_name)
@@ -803,43 +828,21 @@ lookup_symbol_aux (const char *name, const char *mangled_name,
 		   const struct block *block, const namespace_enum namespace,
 		   int *is_a_field_of_this, struct symtab **symtab)
 {
-  register struct symbol *sym;
-  register struct symtab *s = NULL;
-  register struct partial_symtab *ps;
-  register struct blockvector *bv;
-  register struct objfile *objfile = NULL;
-  register struct block *b;
-  register struct minimal_symbol *msymbol;
+  struct symbol *sym;
+  const struct block *static_block;
 
+  /* Search specified block and its superiors.  Don't search
+     STATIC_BLOCK or GLOBAL_BLOCK.  */
 
-  /* Search specified block and its superiors.  */
+  sym = lookup_symbol_aux_local (name, mangled_name, block, namespace,
+				 symtab, &static_block);
+  if (sym != NULL)
+    return sym;
 
-  while (block != 0)
-    {
-      sym = lookup_block_symbol (block, name, mangled_name, namespace);
-      if (sym)
-	{
-	  block_found = block;
-	  if (symtab != NULL)
-	    {
-	      /* Search the list of symtabs for one which contains the
-	         address of the start of this block.  */
-	      ALL_SYMTABS (objfile, s)
-	      {
-		bv = BLOCKVECTOR (s);
-		b = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
-		if (BLOCK_START (b) <= BLOCK_START (block)
-		    && BLOCK_END (b) > BLOCK_START (block))
-		  goto found;
-	      }
-	    found:
-	      *symtab = s;
-	    }
-
-	  return fixup_symbol_section (sym, objfile);
-	}
-      block = BLOCK_SUPERBLOCK (block);
-    }
+#if 0
+  /* NOTE: carlton/2002-11-05: At the time that this code was
+     #ifdeffed out, the value of 'block' was always NULL at this
+     point, hence the bemused comments below.  */
 
   /* FIXME: this code is never executed--block is always NULL at this
      point.  What is it trying to do, anyway?  We already should have
@@ -870,7 +873,8 @@ lookup_symbol_aux (const char *name, const char *mangled_name,
 	    && BLOCK_END (b) > BLOCK_START (block))
 	  {
 	    sym = lookup_block_symbol (b, name, mangled_name, VAR_NAMESPACE);
-	    if (sym)
+            /* APPLE LOCAL fix-and-continue */
+	    if (sym && !SYMBOL_OBSOLETED (sym))
 	      {
 		block_found = b;
 		if (symtab != NULL)
@@ -880,7 +884,7 @@ lookup_symbol_aux (const char *name, const char *mangled_name,
 	  }
       }
     }
-
+#endif /* 0 */
 
   /* C++/Java/Objective-C: If requested to do so by the caller, 
      check to see if NAME is a field of `this'. */
@@ -898,24 +902,47 @@ lookup_symbol_aux (const char *name, const char *mangled_name,
 	}
     }
 
+  /* If there's a static block to search, search it next.  */
+
+  /* NOTE: carlton/2002-12-05: There is a question as to whether or
+     not it would be appropriate to search the current global block
+     here as well.  (That's what this code used to do before the
+     is_a_field_of_this check was moved up.)  On the one hand, it's
+     redundant with the lookup_symbol_aux_symtabs search that happens
+     next.  On the other hand, if decode_line_1 is passed an argument
+     like filename:var, then the user presumably wants 'var' to be
+     searched for in filename.  On the third hand, there shouldn't be
+     multiple global variables all of which are named 'var', and it's
+     not like decode_line_1 has ever restricted its search to only
+     global variables in a single filename.  All in all, only
+     searching the static block here seems best: it's correct and it's
+     cleanest.  */
+
+  /* NOTE: carlton/2002-12-05: There's also a possible performance
+     issue here: if you usually search for global symbols in the
+     current file, then it would be slightly better to search the
+     current global block before searching all the symtabs.  But there
+     are other factors that have a much greater effect on performance
+     than that one, so I don't think we should worry about that for
+     now.  */
+
+  if (static_block != NULL)
+    {
+      sym = lookup_symbol_aux_block (name, mangled_name, static_block,
+				     namespace, symtab);
+      if (sym != NULL)
+	return sym;
+    }
+
   /* Now search all global blocks.  Do the symtab's first, then
      check the psymtab's. If a psymtab indicates the existence
      of the desired name as a global, then do psymtab-to-symtab
      conversion on the fly and return the found symbol. */
 
-  ALL_SYMTABS (objfile, s)
-  {
-    bv = BLOCKVECTOR (s);
-    block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
-    sym = lookup_block_symbol (block, name, mangled_name, namespace);
-    if (sym)
-      {
-	block_found = block;
-	if (symtab != NULL)
-	  *symtab = s;
-	return fixup_symbol_section (sym, objfile);
-      }
-  }
+  sym = lookup_symbol_aux_symtabs (GLOBAL_BLOCK, name, mangled_name,
+				   namespace, symtab);
+  if (sym != NULL)
+    return sym;
 
 #ifndef HPUXHPPA
 
@@ -923,154 +950,35 @@ lookup_symbol_aux (const char *name, const char *mangled_name,
      a mangled variable that is stored in one of the minimal symbol tables.
      Eventually, all global symbols might be resolved in this way.  */
 
-  if (namespace == VAR_NAMESPACE)
-    {
-      msymbol = lookup_minimal_symbol (name, NULL, NULL);
-      if (msymbol != NULL)
-	{
-	  if ((MSYMBOL_TYPE (msymbol) == mst_text)
-	      || (MSYMBOL_TYPE (msymbol) == mst_file_text))
-        {
-	  s = find_pc_sect_symtab (SYMBOL_VALUE_ADDRESS (msymbol),
-				   SYMBOL_BFD_SECTION (msymbol));
-	  if (s != NULL)
-	    {
-	      /* This is a function which has a symtab for its address.  */
-	      bv = BLOCKVECTOR (s);
-	      block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
-
-              /* This call used to pass `SYMBOL_NAME (msymbol)' as the
-                 `name' argument to lookup_block_symbol.  But the name
-                 of a minimal symbol is always mangled, so that seems
-                 to be clearly the wrong thing to pass as the
-                 unmangled name.  */
-	      sym = lookup_block_symbol (block, name, mangled_name, namespace);
-	      /* We kept static functions in minimal symbol table as well as
-	         in static scope. We want to find them in the symbol table. */
-	      if (!sym)
-		{
-		  block = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
-		  sym = lookup_block_symbol (block, name,
-                                             mangled_name, namespace);
-		}
-
-	      /* sym == 0 if symbol was found in the minimal symbol table
-	         but not in the symtab.
-	         Return 0 to use the msymbol definition of "foo_".
-
-	         This happens for Fortran  "foo_" symbols,
-	         which are "foo" in the symtab.
-
-	         This can also happen if "asm" is used to make a
-	         regular symbol but not a debugging symbol, e.g.
-	         asm(".globl _main");
-	         asm("_main:");
-	       */
-
-	      if (symtab != NULL)
-		*symtab = s;
-	      return fixup_symbol_section (sym, objfile);
-	    }
-	}
-	  else if (!STREQ (name, SYMBOL_NAME (msymbol)))
-	    {
-	      /* This is a mangled variable, look it up by its
-	         mangled name.  */
-	     
-	      /* FIXME - I am not really sure why this call is
-		 necessary, since we go to all the trouble to make
-		 sure we unmangle the symbol before calling this function
-		 from lookup_symbol.  (JCI) */
-
-	      return lookup_symbol_aux (SYMBOL_NAME (msymbol), mangled_name, block,
-					namespace, is_a_field_of_this, symtab);
-	    }
-	  /* There are no debug symbols for this file, or we are looking
-	     for an unmangled variable.
-	     Try to find a matching static symbol below. */
-	}
-    }
+  sym = lookup_symbol_aux_minsyms (name, mangled_name,
+				   namespace, is_a_field_of_this,
+				   symtab);
+  
+  if (sym != NULL)
+    return sym;
 
 #endif
 
-  ALL_PSYMTABS (objfile, ps)
-  {
-    if (!ps->readin && lookup_partial_symbol (ps, name, 1, namespace))
-      {
-	s = PSYMTAB_TO_SYMTAB (ps);
-	bv = BLOCKVECTOR (s);
-	block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
-	sym = lookup_block_symbol (block, name, mangled_name, namespace);
-	if (!sym)
-	  {
-	    /* This shouldn't be necessary, but as a last resort
-	     * try looking in the statics even though the psymtab
-	     * claimed the symbol was global. It's possible that
-	     * the psymtab gets it wrong in some cases.
-	     */
-	    block = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
-	    sym = lookup_block_symbol (block, name, mangled_name, namespace);
-	    if (!sym)
-	      error ("Internal: global symbol `%s' found in %s psymtab but not in symtab.\n\
-%s may be an inlined function, or may be a template function\n\
-(if a template, try specifying an instantiation: %s<type>).",
-		     name, ps->filename, name, name);
-	  }
-	if (symtab != NULL)
-	  *symtab = s;
-	return fixup_symbol_section (sym, objfile);
-      }
-  }
+  sym = lookup_symbol_aux_psymtabs (GLOBAL_BLOCK, name, mangled_name,
+				    namespace, symtab);
+  if (sym != NULL)
+    return sym;
 
-  /* Now search all static file-level symbols.
-     Not strictly correct, but more useful than an error.
-     Do the symtabs first, then check the psymtabs.
-     If a psymtab indicates the existence
-     of the desired name as a file-level static, then do psymtab-to-symtab
+  /* Now search all static file-level symbols.  Not strictly correct,
+     but more useful than an error.  Do the symtabs first, then check
+     the psymtabs.  If a psymtab indicates the existence of the
+     desired name as a file-level static, then do psymtab-to-symtab
      conversion on the fly and return the found symbol. */
 
-  ALL_SYMTABS (objfile, s)
-  {
-    bv = BLOCKVECTOR (s);
-    block = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
-    sym = lookup_block_symbol (block, name, mangled_name, namespace);
-    if (sym)
-      {
-	block_found = block;
-	if (symtab != NULL)
-	  *symtab = s;
-	return fixup_symbol_section (sym, objfile);
-      }
-  }
-
-  ALL_PSYMTABS (objfile, ps)
-  {
-    if (!ps->readin && lookup_partial_symbol (ps, name, 0, namespace))
-      {
-	s = PSYMTAB_TO_SYMTAB (ps);
-	bv = BLOCKVECTOR (s);
-	block = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
-	sym = lookup_block_symbol (block, name, mangled_name, namespace);
-	if (!sym)
-	  {
-	    /* This shouldn't be necessary, but as a last resort
-	     * try looking in the globals even though the psymtab
-	     * claimed the symbol was static. It's possible that
-	     * the psymtab gets it wrong in some cases.
-	     */
-	    block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
-	    sym = lookup_block_symbol (block, name, mangled_name, namespace);
-	    if (!sym)
-	      error ("Internal: static symbol `%s' found in %s psymtab but not in symtab.\n\
-%s may be an inlined function, or may be a template function\n\
-(if a template, try specifying an instantiation: %s<type>).",
-		     name, ps->filename, name, name);
-	  }
-	if (symtab != NULL)
-	  *symtab = s;
-	return fixup_symbol_section (sym, objfile);
-      }
-  }
+  sym = lookup_symbol_aux_symtabs (STATIC_BLOCK, name, mangled_name,
+				   namespace, symtab);
+  if (sym != NULL)
+    return sym;
+  
+  sym = lookup_symbol_aux_psymtabs (STATIC_BLOCK, name, mangled_name,
+				    namespace, symtab);
+  if (sym != NULL)
+    return sym;
 
 #ifdef HPUXHPPA
 
@@ -1089,53 +997,289 @@ lookup_symbol_aux (const char *name, const char *mangled_name,
      the static check in this case? 
    */
 
+  sym = lookup_symbol_aux_minsyms (name, mangled_name,
+				   namespace, is_a_field_of_this,
+				   symtab);
+  
+  if (sym != NULL)
+    return sym;
+
+#endif
+
+  if (symtab != NULL)
+    *symtab = NULL;
+  return NULL;
+}
+
+/* Check to see if the symbol is defined in BLOCK or its superiors.
+   Don't search STATIC_BLOCK or GLOBAL_BLOCK.  If we don't find a
+   match, store the address of STATIC_BLOCK in static_block.  */
+
+static struct symbol *
+lookup_symbol_aux_local (const char *name, const char *mangled_name,
+			 const struct block *block,
+			 const namespace_enum namespace,
+			 struct symtab **symtab,
+			 const struct block **static_block)
+{
+  struct symbol *sym;
+  
+  /* Check if either no block is specified or it's a global block.  */
+
+  if (block == NULL || BLOCK_SUPERBLOCK (block) == NULL)
+    {
+      *static_block = NULL;
+      return NULL;
+    }
+
+  while (BLOCK_SUPERBLOCK (BLOCK_SUPERBLOCK (block)) != NULL)
+    {
+      sym = lookup_symbol_aux_block (name, mangled_name, block, namespace,
+				     symtab);
+      if (sym != NULL)
+	return sym;
+      block = BLOCK_SUPERBLOCK (block);
+    }
+
+  /* We've reached the static block.  */
+
+  *static_block = block;
+  return NULL;
+}
+
+/* Look up a symbol in a block; if found, locate its symtab, fixup the
+   symbol, and set block_found appropriately.  */
+
+static struct symbol *
+lookup_symbol_aux_block (const char *name, const char *mangled_name,
+			 const struct block *block,
+			 const namespace_enum namespace,
+			 struct symtab **symtab)
+{
+  struct symbol *sym;
+  struct objfile *objfile = NULL;
+  struct blockvector *bv;
+  struct block *b;
+  struct symtab *s = NULL;
+
+  sym = lookup_block_symbol (block, name, mangled_name, namespace);
+  /* APPLE LOCAL fix-and-continue */
+  if (sym && !SYMBOL_OBSOLETED (sym))
+    {
+      block_found = block;
+      if (symtab != NULL)
+	{
+	  /* Search the list of symtabs for one which contains the
+	     address of the start of this block.  */
+          /* APPLE LOCAL fix-and-continue: Search obsoleted blocks.  If
+             gdb found the blockvector to an obsoleted section, it's no
+             good to pretend it didn't exist at this point.  */
+	  ALL_SYMTABS_INCL_OBSOLETED (objfile, s)
+	    {
+	      bv = BLOCKVECTOR (s);
+	      b = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
+	      if (BLOCK_START (b) <= BLOCK_START (block)
+		  && BLOCK_END (b) > BLOCK_START (block))
+		goto found;
+	    }
+	found:
+	  *symtab = s;
+	}
+      
+      return fixup_symbol_section (sym, objfile);
+    }
+
+  return NULL;
+}
+
+/* Check to see if the symbol is defined in one of the symtabs.
+   BLOCK_INDEX should be either GLOBAL_BLOCK or STATIC_BLOCK,
+   depending on whether or not we want to search global symbols or
+   static symbols.  */
+
+static struct symbol *
+lookup_symbol_aux_symtabs (int block_index,
+			   const char *name, const char *mangled_name,
+			   const namespace_enum namespace,
+			   struct symtab **symtab)
+{
+  struct symbol *sym;
+  struct objfile *objfile;
+  struct blockvector *bv;
+  const struct block *block;
+  struct symtab *s;
+
+  ALL_SYMTABS_INCL_OBSOLETED (objfile, s)
+  {
+    bv = BLOCKVECTOR (s);
+    block = BLOCKVECTOR_BLOCK (bv, block_index);
+    sym = lookup_block_symbol (block, name, mangled_name, namespace);
+    /* APPLE LOCAL fix-and-continue */
+    if (sym && !SYMBOL_OBSOLETED (sym))
+      {
+	block_found = block;
+	if (symtab != NULL)
+	  *symtab = s;
+	return fixup_symbol_section (sym, objfile);
+      }
+  }
+
+  return NULL;
+}
+
+/* Check to see if the symbol is defined in one of the partial
+   symtabs.  BLOCK_INDEX should be either GLOBAL_BLOCK or
+   STATIC_BLOCK, depending on whether or not we want to search global
+   symbols or static symbols.  */
+
+static struct symbol *
+lookup_symbol_aux_psymtabs (int block_index, const char *name,
+			    const char *mangled_name,
+			    const namespace_enum namespace,
+			    struct symtab **symtab)
+{
+  struct symbol *sym;
+  struct objfile *objfile;
+  struct blockvector *bv;
+  const struct block *block;
+  struct partial_symtab *ps;
+  struct symtab *s;
+  const int psymtab_index = (block_index == GLOBAL_BLOCK ? 1 : 0);
+
+  ALL_PSYMTABS (objfile, ps)
+  {
+    if (!ps->readin
+	&& lookup_partial_symbol (ps, name, psymtab_index, namespace))
+      {
+	s = PSYMTAB_TO_SYMTAB (ps);
+	bv = BLOCKVECTOR (s);
+	block = BLOCKVECTOR_BLOCK (bv, block_index);
+	sym = lookup_block_symbol (block, name, mangled_name, namespace);
+        /* APPLE LOCAL fix-and-continue */
+	if (!sym || SYMBOL_OBSOLETED (sym))
+	  {
+	    /* This shouldn't be necessary, but as a last resort try
+	       looking in the statics even though the psymtab claimed
+	       the symbol was global, or vice-versa. It's possible
+	       that the psymtab gets it wrong in some cases.  */
+
+	    /* FIXME: carlton/2002-09-30: Should we really do that?
+	       If that happens, isn't it likely to be a GDB error, in
+	       which case we should fix the GDB error rather than
+	       silently dealing with it here?  So I'd vote for
+	       removing the check for the symbol in the other
+	       block.  */
+	    block = BLOCKVECTOR_BLOCK (bv,
+				       block_index == GLOBAL_BLOCK ?
+				       STATIC_BLOCK : GLOBAL_BLOCK);
+	    sym = lookup_block_symbol (block, name, mangled_name, namespace);
+            /* APPLE LOCAL fix-and-continue */
+	    if (!sym || SYMBOL_OBSOLETED (sym))
+	      error ("Internal: %s symbol `%s' found in %s psymtab but not in symtab.\n%s may be an inlined function, or may be a template function\n(if a template, try specifying an instantiation: %s<type>).",
+		     block_index == GLOBAL_BLOCK ? "global" : "static",
+		     name, ps->filename, name, name);
+	  }
+	if (symtab != NULL)
+	  *symtab = s;
+	return fixup_symbol_section (sym, objfile);
+      }
+  }
+
+  return NULL;
+}
+
+/* Check for the possibility of the symbol being a function or a
+   mangled variable that is stored in one of the minimal symbol
+   tables.  Eventually, all global symbols might be resolved in this
+   way.  */
+
+/* NOTE: carlton/2002-12-05: At one point, this function was part of
+   lookup_symbol_aux, and what are now 'return' statements within
+   lookup_symbol_aux_minsyms returned from lookup_symbol_aux, even if
+   sym was NULL.  As far as I can tell, this was basically accidental;
+   it didn't happen every time that msymbol was non-NULL, but only if
+   some additional conditions held as well, and it caused problems
+   with HP-generated symbol tables.  */
+
+static struct symbol *
+lookup_symbol_aux_minsyms (const char *name,
+			   const char *mangled_name,
+			   const namespace_enum namespace,
+			   int *is_a_field_of_this,
+			   struct symtab **symtab)
+{
+  struct symbol *sym;
+  struct blockvector *bv;
+  const struct block *block;
+  struct minimal_symbol *msymbol;
+  struct symtab *s;
+
   if (namespace == VAR_NAMESPACE)
     {
       msymbol = lookup_minimal_symbol (name, NULL, NULL);
-      if (msymbol != NULL)
-	{
-	  /* OK, we found a minimal symbol in spite of not
-	   * finding any symbol. There are various possible
-	   * explanations for this. One possibility is the symbol
-	   * exists in code not compiled -g. Another possibility
-	   * is that the 'psymtab' isn't doing its job.
-	   * A third possibility, related to #2, is that we were confused 
-	   * by name-mangling. For instance, maybe the psymtab isn't
-	   * doing its job because it only know about demangled
-	   * names, but we were given a mangled name...
-	   */
 
-	  /* We first use the address in the msymbol to try to
-	   * locate the appropriate symtab. Note that find_pc_symtab()
-	   * has a side-effect of doing psymtab-to-symtab expansion,
-	   * for the found symtab.
-	   */
-	  s = find_pc_symtab (SYMBOL_VALUE_ADDRESS (msymbol));
+      /* APPLE LOCAL fix-and-continue */
+      if (msymbol != NULL && !MSYMBOL_OBSOLETED(msymbol))
+	{
+	  /* OK, we found a minimal symbol in spite of not finding any
+	     symbol. There are various possible explanations for
+	     this. One possibility is the symbol exists in code not
+	     compiled -g. Another possibility is that the 'psymtab'
+	     isn't doing its job.  A third possibility, related to #2,
+	     is that we were confused by name-mangling. For instance,
+	     maybe the psymtab isn't doing its job because it only
+	     know about demangled names, but we were given a mangled
+	     name...  */
+
+	  /* We first use the address in the msymbol to try to locate
+	     the appropriate symtab. Note that find_pc_sect_symtab()
+	     has a side-effect of doing psymtab-to-symtab expansion,
+	     for the found symtab.  */
+	  s = find_pc_sect_symtab (SYMBOL_VALUE_ADDRESS (msymbol),
+				   SYMBOL_BFD_SECTION (msymbol));
 	  if (s != NULL)
 	    {
+	      /* This is a function which has a symtab for its address.  */
 	      bv = BLOCKVECTOR (s);
 	      block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
-              /* This call used to pass `SYMBOL_NAME (msymbol)' as the
-                 `name' argument to lookup_block_symbol.  But the name
-                 of a minimal symbol is always mangled, so that seems
-                 to be clearly the wrong thing to pass as the
-                 unmangled name.  */
-	      sym = lookup_block_symbol (block, name, mangled_name, namespace);
+
+	      /* This call used to pass `SYMBOL_NAME (msymbol)' as the
+	         `name' argument to lookup_block_symbol.  But the name
+	         of a minimal symbol is always mangled, so that seems
+	         to be clearly the wrong thing to pass as the
+	         unmangled name.  */
+	      sym =
+		lookup_block_symbol (block, name, mangled_name, namespace);
 	      /* We kept static functions in minimal symbol table as well as
 	         in static scope. We want to find them in the symbol table. */
-	      if (!sym)
+              /* APPLE LOCAL fix-and-continue */
+	      if (!sym || SYMBOL_OBSOLETED (sym))
 		{
 		  block = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
 		  sym = lookup_block_symbol (block, name,
-                                             mangled_name, namespace);
+					     mangled_name, namespace);
 		}
-	      /* If we found one, return it */
-	      if (sym)
-		{
-		  if (symtab != NULL)
-		    *symtab = s;
-		  return sym;
-		}
+
+	      /* NOTE: carlton/2002-12-04: The following comment was
+		 taken from a time when two versions of this function
+		 were part of the body of lookup_symbol_aux: this
+		 comment was taken from the version of the function
+		 that was #ifdef HPUXHPPA, and the comment was right
+		 before the 'return NULL' part of lookup_symbol_aux.
+		 (Hence the "Fall through and return 0" comment.)
+		 Elena did some digging into the situation for
+		 Fortran, and she reports:
+
+		 "I asked around (thanks to Jeff Knaggs), and I think
+		 the story for Fortran goes like this:
+
+		 "Apparently, in older Fortrans, '_' was not part of
+		 the user namespace.  g77 attached a final '_' to
+		 procedure names as the exported symbols for linkage
+		 (foo_) , but the symbols went in the debug info just
+		 like 'foo'. The rationale behind this is not
+		 completely clear, and maybe it was done to other
+		 symbols as well, not just procedures."  */
 
 	      /* If we get here with sym == 0, the symbol was 
 	         found in the minimal symbol table
@@ -1154,30 +1298,17 @@ lookup_symbol_aux (const char *name, const char *mangled_name,
 	         asm(".globl _main");
 	         asm("_main:");
 	       */
-	    }
 
-	  /* If the lookup-by-address fails, try repeating the
-	   * entire lookup process with the symbol name from
-	   * the msymbol (if different from the original symbol name).
-	   */
-	  else if (MSYMBOL_TYPE (msymbol) != mst_text
-		   && MSYMBOL_TYPE (msymbol) != mst_file_text
-		   && !STREQ (name, SYMBOL_NAME (msymbol)))
-	    {
-	      return lookup_symbol_aux (SYMBOL_NAME (msymbol), mangled_name,
-					block, namespace, is_a_field_of_this,
-					symtab);
+	      if (symtab != NULL && sym != NULL)
+		*symtab = s;
+	      return fixup_symbol_section (sym, s->objfile);
 	    }
 	}
     }
 
-#endif
-
-  if (symtab != NULL)
-    *symtab = NULL;
-  return 0;
+  return NULL;
 }
-								
+
 /* Look, in partial_symtab PST, for symbol NAME.  Check the global
    symbols if GLOBAL, the static symbols if not */
 
@@ -1187,7 +1318,7 @@ lookup_partial_symbol (struct partial_symtab *pst, const char *name, int global,
 {
   struct partial_symbol *temp;
   struct partial_symbol **start, **psym;
-  struct partial_symbol **top, **bottom, **center;
+  struct partial_symbol **top, **real_top, **bottom, **center;
   int length = (global ? pst->n_global_syms : pst->n_static_syms);
   int do_linear_search = 1;
   
@@ -1210,6 +1341,7 @@ lookup_partial_symbol (struct partial_symtab *pst, const char *name, int global,
 
       bottom = start;
       top = start + length - 1;
+      real_top = top;
       while (top > bottom)
 	{
 	  center = bottom + (top - bottom) / 2;
@@ -1235,7 +1367,7 @@ lookup_partial_symbol (struct partial_symtab *pst, const char *name, int global,
       /* djb - 2000-06-03 - Use SYMBOL_MATCHES_NAME, not a strcmp, so
 	 we don't have to force a linear search on C++. Probably holds true
 	 for JAVA as well, no way to check.*/
-      while ((top < (start + length)) && (SYMBOL_MATCHES_NAME (*top, name)))
+      while (top <= real_top && SYMBOL_MATCHES_NAME (*top,name))
 	{
 	  if (SYMBOL_NAMESPACE (*top) == namespace)
 	    {
@@ -1288,12 +1420,13 @@ lookup_transparent_type (const char *name)
      of the desired name as a global, then do psymtab-to-symtab
      conversion on the fly and return the found symbol.  */
 
-  ALL_SYMTABS (objfile, s)
+  ALL_SYMTABS_INCL_OBSOLETED (objfile, s)
   {
     bv = BLOCKVECTOR (s);
     block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
     sym = lookup_block_symbol (block, name, NULL, STRUCT_NAMESPACE);
-    if (sym && !TYPE_IS_OPAQUE (SYMBOL_TYPE (sym)))
+    /* APPLE LOCAL fix-and-continue */
+    if (sym && !TYPE_IS_OPAQUE (SYMBOL_TYPE (sym)) && !SYMBOL_OBSOLETED (sym))
       {
 	return SYMBOL_TYPE (sym);
       }
@@ -1307,7 +1440,8 @@ lookup_transparent_type (const char *name)
 	bv = BLOCKVECTOR (s);
 	block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
 	sym = lookup_block_symbol (block, name, NULL, STRUCT_NAMESPACE);
-	if (!sym)
+        /* APPLE LOCAL fix-and-continue */
+	if (!sym || SYMBOL_OBSOLETED (sym))
 	  {
 	    /* This shouldn't be necessary, but as a last resort
 	     * try looking in the statics even though the psymtab
@@ -1316,7 +1450,8 @@ lookup_transparent_type (const char *name)
 	     */
 	    block = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
 	    sym = lookup_block_symbol (block, name, NULL, STRUCT_NAMESPACE);
-	    if (!sym)
+            /* APPLE LOCAL fix-and-continue */
+	    if (!sym || SYMBOL_OBSOLETED (sym))
 	      error ("Internal: global symbol `%s' found in %s psymtab but not in symtab.\n\
 %s may be an inlined function, or may be a template function\n\
 (if a template, try specifying an instantiation: %s<type>).",
@@ -1335,12 +1470,13 @@ lookup_transparent_type (const char *name)
      conversion on the fly and return the found symbol.
    */
 
-  ALL_SYMTABS (objfile, s)
+  ALL_SYMTABS_INCL_OBSOLETED (objfile, s)
   {
     bv = BLOCKVECTOR (s);
     block = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
     sym = lookup_block_symbol (block, name, NULL, STRUCT_NAMESPACE);
-    if (sym && !TYPE_IS_OPAQUE (SYMBOL_TYPE (sym)))
+    /* APPLE LOCAL fix-and-continue */
+    if (sym && !TYPE_IS_OPAQUE (SYMBOL_TYPE (sym)) && !SYMBOL_OBSOLETED (sym))
       {
 	return SYMBOL_TYPE (sym);
       }
@@ -1354,7 +1490,8 @@ lookup_transparent_type (const char *name)
 	bv = BLOCKVECTOR (s);
 	block = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
 	sym = lookup_block_symbol (block, name, NULL, STRUCT_NAMESPACE);
-	if (!sym)
+        /* APPLE LOCAL fix-and-continue */
+	if (!sym || SYMBOL_OBSOLETED (sym))
 	  {
 	    /* This shouldn't be necessary, but as a last resort
 	     * try looking in the globals even though the psymtab
@@ -1363,7 +1500,8 @@ lookup_transparent_type (const char *name)
 	     */
 	    block = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
 	    sym = lookup_block_symbol (block, name, NULL, STRUCT_NAMESPACE);
-	    if (!sym)
+            /* APPLE LOCAL fix-and-continue */
+	    if (!sym || SYMBOL_OBSOLETED (sym))
 	      error ("Internal: static symbol `%s' found in %s psymtab but not in symtab.\n\
 %s may be an inlined function, or may be a template function\n\
 (if a template, try specifying an instantiation: %s<type>).",
@@ -1499,7 +1637,9 @@ lookup_block_symbol (register const struct block *block, const char *name,
       while (bot < top)
 	{
 	  sym = BLOCK_SYM (block, bot);
-	  if (SYMBOL_NAMESPACE (sym) == namespace
+          /* APPLE LOCAL fix-and-continue */
+	  if (!SYMBOL_OBSOLETED (sym) &&
+              SYMBOL_NAMESPACE (sym) == namespace
 	      && (mangled_name
 		  ? strcmp (SYMBOL_NAME (sym), mangled_name) == 0
 		  : SYMBOL_MATCHES_NAME (sym, name)))
@@ -1534,7 +1674,9 @@ lookup_block_symbol (register const struct block *block, const char *name,
       while (bot < top)
 	{
 	  sym = BLOCK_SYM (block, bot);
-	  if (SYMBOL_NAMESPACE (sym) == namespace
+          /* APPLE LOCAL fix-and-continue */
+	  if (!SYMBOL_OBSOLETED (sym) &&
+              SYMBOL_NAMESPACE (sym) == namespace
 	      && (mangled_name
 		  ? strcmp (SYMBOL_NAME (sym), mangled_name) == 0
 		  : SYMBOL_MATCHES_NAME (sym, name)))
@@ -1667,7 +1809,10 @@ find_pc_sect_symtab (CORE_ADDR pc, asection *section)
      It also happens for objfiles that have their functions reordered.
      For these, the symtab we are looking for is not necessarily read in.  */
 
-  ALL_SYMTABS (objfile, s)
+  /* APPLE LOCAL fix-and-continue: Iterate over all object files so we can
+     do pc-to-sym matching even in an obsoleted section of code. */
+
+  ALL_SYMTABS_INCL_OBSOLETED (objfile, s)
   {
     bv = BLOCKVECTOR (s);
     b = BLOCKVECTOR_BLOCK (bv, GLOBAL_BLOCK);
@@ -1737,94 +1882,6 @@ find_pc_symtab (CORE_ADDR pc)
 }
 
 
-#if 0
-
-/* Find the closest symbol value (of any sort -- function or variable)
-   for a given address value.  Slow but complete.  (currently unused,
-   mainly because it is too slow.  We could fix it if each symtab and
-   psymtab had contained in it the addresses ranges of each of its
-   sections, which also would be required to make things like "info
-   line *0x2345" cause psymtabs to be converted to symtabs).  */
-
-struct symbol *
-find_addr_symbol (CORE_ADDR addr, struct symtab **symtabp, CORE_ADDR *symaddrp)
-{
-  struct symtab *symtab, *best_symtab;
-  struct objfile *objfile;
-  register int bot, top;
-  register struct symbol *sym;
-  register CORE_ADDR sym_addr;
-  struct block *block;
-  int blocknum;
-
-  /* Info on best symbol seen so far */
-
-  register CORE_ADDR best_sym_addr = 0;
-  struct symbol *best_sym = 0;
-
-  /* FIXME -- we should pull in all the psymtabs, too!  */
-  ALL_SYMTABS (objfile, symtab)
-  {
-    /* Search the global and static blocks in this symtab for
-       the closest symbol-address to the desired address.  */
-
-    for (blocknum = GLOBAL_BLOCK; blocknum <= STATIC_BLOCK; blocknum++)
-      {
-	QUIT;
-	block = BLOCKVECTOR_BLOCK (BLOCKVECTOR (symtab), blocknum);
-	ALL_BLOCK_SYMBOLS (block, bot, sym)
-	  {
-	    switch (SYMBOL_CLASS (sym))
-	      {
-	      case LOC_STATIC:
-	      case LOC_LABEL:
-		sym_addr = SYMBOL_VALUE_ADDRESS (sym);
-		break;
-
-	      case LOC_INDIRECT:
-		sym_addr = SYMBOL_VALUE_ADDRESS (sym);
-		/* An indirect symbol really lives at *sym_addr,
-		 * so an indirection needs to be done.
-		 * However, I am leaving this commented out because it's
-		 * expensive, and it's possible that symbolization
-		 * could be done without an active process (in
-		 * case this read_memory will fail). RT
-		 sym_addr = read_memory_unsigned_integer
-		 (sym_addr, TARGET_PTR_BIT / TARGET_CHAR_BIT);
-		 */
-		break;
-
-	      case LOC_BLOCK:
-		sym_addr = BLOCK_START (SYMBOL_BLOCK_VALUE (sym));
-		break;
-
-	      default:
-		continue;
-	      }
-
-	    if (sym_addr <= addr)
-	      if (sym_addr > best_sym_addr)
-		{
-		  /* Quit if we found an exact match.  */
-		  best_sym = sym;
-		  best_sym_addr = sym_addr;
-		  best_symtab = symtab;
-		  if (sym_addr == addr)
-		    goto done;
-		}
-	  }
-      }
-  }
-
-done:
-  if (symtabp)
-    *symtabp = best_symtab;
-  if (symaddrp)
-    *symaddrp = best_sym_addr;
-  return best_sym;
-}
-#endif /* 0 */
-
 /* Find the source file and line number for a given PC value and SECTION.
    Return a structure containing a symtab pointer, a line number,
    and a pc range for the entire source line.
@@ -1879,7 +1936,7 @@ find_pc_sect_line (CORE_ADDR pc, struct sec *section, int notcurrent)
      But what we want is the statement containing the instruction.
      Fudge the pc to make sure we get that.  */
 
-  INIT_SAL (&val);		/* initialize to zeroes */
+  init_sal (&val);		/* initialize to zeroes */
 
   /* It's tempting to assume that, if we can't find debugging info for
      any function enclosing PC, that we shouldn't search for line
@@ -2022,9 +2079,11 @@ find_pc_sect_line (CORE_ADDR pc, struct sec *section, int notcurrent)
          the first line, prev will not be set.  */
 
       /* Is this file's best line closer than the best in the other files?
-         If so, record this file, and its best line, as best so far.  */
+         If so, record this file, and its best line, as best so far.  Don't
+         save prev if it represents the end of a function (i.e. line number
+         0) instead of a real line.  */
 
-      if (prev && (!best || prev->pc > best->pc))
+      if (prev && prev->line && (!best || prev->pc > best->pc))
 	{
 	  best = prev;
 	  best_symtab = s;
@@ -2191,32 +2250,13 @@ done:
    Returns zero for invalid line number (and sets the PC to 0).
    The source file is specified with a struct symtab.  */
 
-static int
-find_line_pc_helper (struct symtab *symtab, int line, CORE_ADDR *pc)
-{
-  struct linetable *l;
-  int ind;
-
-  *pc = 0;
-  if (symtab == 0)
-    return 0;
-
-  symtab = find_line_symtab (symtab, line, &ind, NULL);
-  if (symtab != NULL)
-    {
-      l = LINETABLE (symtab);
-      *pc = l->item[ind].pc;
-      return 1;
-    }
-  else
-    return 0;
-}
-
 int
 find_line_pc (struct symtab *symtab, int line, CORE_ADDR *pc)
 {
   CORE_ADDR end;
   struct symtab_and_line sal;
+
+  *pc = 0;
 
   sal.symtab = symtab;
   sal.line = line;
@@ -2239,28 +2279,58 @@ find_line_pc_range (struct symtab_and_line sal, CORE_ADDR *startptr,
   struct symtab_and_line found_sal;
   int line;
 
-  startaddr = sal.pc;
+  if (sal.symtab == NULL)
+    return 0;
+  if (sal.symtab->linetable == NULL)
+    return 0;
 
-  if (sal.symtab->line_charpos == 0)
+  if ((sal.symtab->line_charpos == 0) && (sal.symtab->linetable->lines_are_chars))
     {
-      int fd;
-      fd = open_source_file (sal.symtab);
-      if (fd >= 0)
-	{
-	  find_source_lines (sal.symtab, fd);
-	  close (fd);
-	}
+      int fd = open_source_file (sal.symtab);
+      if (fd < 0)
+	return 0;
+      find_source_lines (sal.symtab, fd);
+      close (fd);
     }
 
-  if (!sal.symtab->linetable)
-      return 0;
-  else if (sal.symtab->linetable->lines_are_chars)
+  if (sal.symtab->linetable->lines_are_chars)
     line = sal.symtab->line_charpos[sal.line - 1];
   else
     line = sal.line;
 
-  if (startaddr == 0 && !find_line_pc_helper (sal.symtab, line, &startaddr))
-    return 0;
+  if (sal.pc == 0)
+    {
+      struct symtab *symtab;
+      struct linetable *l;
+      int ind;
+
+      symtab = find_line_symtab (sal.symtab, line, &ind, NULL);
+      if (symtab == NULL)
+	return 0;
+      
+      l = LINETABLE (symtab);
+      /* APPLE LOCAL: We KNOW that this is found by file & line, so the
+	 comment below is not relevant.  We already found the start &
+	 end addresses, let's just record them and get out of here... */
+      *startptr = l->item[ind].pc;
+      if (ind == l->nitems - 1)
+	/* This shouldn't happen, since there is always a function ending
+	   marker entry in the linetable, but I am not sure we should error
+	   out here... */
+	*endptr = *startptr;
+      else if (l->item[ind].line != line)
+	/* This gets the case where there is no code at the given line */
+	*endptr = *startptr;
+      else
+	*endptr = l->item[ind + 1].pc;
+      return 1;
+      /* END APPLE LOCAL */
+      
+    }
+  else
+    {
+      startaddr = sal.pc;
+    }
 
   /* This whole function is based on address.  For example, if line 10 has
      two parts, one from 0x100 to 0x200 and one from 0x300 to 0x400, then
@@ -2907,6 +2977,10 @@ search_symbols (char *regexp, namespace_enum kind, int nfiles, char *files[],
       objfile_demangle_msymbols (objfile);
       ALL_OBJFILE_MSYMBOLS (objfile, msymbol)
       {
+        /* APPLE LOCAL fix-and-continue */
+        if (MSYMBOL_OBSOLETED (msymbol))
+          continue;
+
 	if (MSYMBOL_TYPE (msymbol) == ourtype ||
 	    MSYMBOL_TYPE (msymbol) == ourtype2 ||
 	    MSYMBOL_TYPE (msymbol) == ourtype3 ||
@@ -2916,12 +2990,31 @@ search_symbols (char *regexp, namespace_enum kind, int nfiles, char *files[],
 	      {
 		if (0 == find_pc_symtab (SYMBOL_VALUE_ADDRESS (msymbol)))
 		  {
-		    if (kind == FUNCTIONS_NAMESPACE
-			|| lookup_symbol (SYMBOL_NAME (msymbol),
-					  (struct block *) NULL,
-					  VAR_NAMESPACE,
-					0, (struct symtab **) NULL) == NULL)
-		      found_misc = 1;
+		    if (kind == FUNCTIONS_NAMESPACE)
+		      {
+			found_misc = 1;
+		      }
+		    else
+		      {
+			struct symbol *sym;
+
+			if (SYMBOL_DEMANGLED_NAME (msymbol) != NULL)
+			  sym
+			    = lookup_symbol_aux_minsyms (SYMBOL_DEMANGLED_NAME
+							 (msymbol),
+							 SYMBOL_NAME (msymbol),
+							 VAR_NAMESPACE,
+							 NULL, NULL);
+			else
+			  sym
+			    = lookup_symbol_aux_minsyms (SYMBOL_NAME (msymbol),
+							 NULL,
+							 VAR_NAMESPACE,
+							 NULL, NULL);
+
+			if (sym == NULL)
+			  found_misc = 1;
+		      }
 		  }
 	      }
 	  }
@@ -2946,6 +3039,10 @@ search_symbols (char *regexp, namespace_enum kind, int nfiles, char *files[],
 	  ALL_BLOCK_SYMBOLS (b, j, sym)
 	    {
 	      QUIT;
+              /* APPLE LOCAL fix-and-continue */
+              if (SYMBOL_OBSOLETED (sym))
+                continue;
+
 	      if (file_matches (s->filename, files, nfiles)
 		  && ((regexp == NULL || SYMBOL_MATCHES_REGEXP (sym))
 		      && ((kind == VARIABLES_NAMESPACE && SYMBOL_CLASS (sym) != LOC_TYPEDEF
@@ -2999,6 +3096,10 @@ search_symbols (char *regexp, namespace_enum kind, int nfiles, char *files[],
       objfile_demangle_msymbols (objfile);
       ALL_OBJFILE_MSYMBOLS (objfile, msymbol)
       {
+        /* APPLE LOCAL fix-and-continue */
+        if (MSYMBOL_OBSOLETED (msymbol))
+          continue;
+
 	if (MSYMBOL_TYPE (msymbol) == ourtype ||
 	    MSYMBOL_TYPE (msymbol) == ourtype2 ||
 	    MSYMBOL_TYPE (msymbol) == ourtype3 ||
@@ -3076,30 +3177,6 @@ print_symbol_info (namespace_enum kind, struct symtab *s, struct symbol *sym,
 		  gdb_stdout, 0);
 
       printf_filtered (";\n");
-    }
-  else
-    {
-#if 0
-      /* Tiemann says: "info methods was never implemented."  */
-      char *demangled_name;
-      c_type_print_base (TYPE_FN_FIELD_TYPE (t, block),
-			 gdb_stdout, 0, 0);
-      c_type_print_varspec_prefix (TYPE_FN_FIELD_TYPE (t, block),
-				   gdb_stdout, 0);
-      if (TYPE_FN_FIELD_STUB (t, block))
-	check_stub_method (TYPE_DOMAIN_TYPE (type), j, block);
-      demangled_name =
-	cplus_demangle (TYPE_FN_FIELD_PHYSNAME (t, block),
-			DMGL_ANSI | DMGL_PARAMS);
-      if (demangled_name == NULL)
-	fprintf_filtered (stream, "<badly mangled name %s>",
-			  TYPE_FN_FIELD_PHYSNAME (t, block));
-      else
-	{
-	  fputs_filtered (demangled_name, stream);
-	  xfree (demangled_name);
-	}
-#endif
     }
 }
 
@@ -3194,15 +3271,6 @@ types_info (char *regexp, int from_tty)
   symtab_symbol_info (regexp, TYPES_NAMESPACE, from_tty);
 }
 
-#if 0
-/* Tiemann says: "info methods was never implemented."  */
-static void
-methods_info (char *regexp)
-{
-  symtab_symbol_info (regexp, METHODS_NAMESPACE, 0, from_tty);
-}
-#endif /* 0 */
-
 /* Breakpoint all functions matching regular expression. */
 
 void
@@ -3216,7 +3284,7 @@ rbreak_command (char *regexp, int from_tty)
 {
   struct symbol_search *ss;
   struct symbol_search *p;
-  struct cleanup *old_chain;
+  struct cleanup *old_chain, *objc_selectors_cleanup;
 
   search_symbols (regexp, FUNCTIONS_NAMESPACE, 0, (char **) NULL, &ss);
   old_chain = make_cleanup_free_search_symbols (ss);
@@ -3241,9 +3309,19 @@ rbreak_command (char *regexp, int from_tty)
 	}
       else
 	{
+          /* APPLE LOCAL:  The symbol names are canonical at this point so
+             we need to disable allow_objc_selectors_flag or else we might
+             have an ambiguous break command if the function name matches
+             some random ObjC selectors. */
+          allow_objc_selectors_flag = 0;
+          objc_selectors_cleanup = 
+              make_cleanup (reset_allow_objc_selectors_flag, 0);
+
 	  break_command (SYMBOL_NAME (p->msymbol), from_tty);
 	  printf_filtered ("<function, no debug info> %s;\n",
 			   SYMBOL_SOURCE_NAME (p->msymbol));
+
+          do_cleanups (objc_selectors_cleanup);
 	}
     }
 
@@ -4287,13 +4365,6 @@ _initialize_symtab (void)
   add_info ("types", types_info,
 	    "All type names, or those matching REGEXP.");
 
-#if 0
-  add_info ("methods", methods_info,
-	    "All method names, or those matching REGEXP::REGEXP.\n\
-If the class qualifier is omitted, it is assumed to be the current scope.\n\
-If the first REGEXP is omitted, then all methods matching the second REGEXP\n\
-are listed.");
-#endif
   add_info ("sources", sources_info,
 	    "Source files in the program.");
 

@@ -23,17 +23,12 @@ main ()
   vector unsigned int z; 
   int a;
 
-#ifdef __APPLE__
-  unsigned long vrsavex = 0xffffffff;
-  __asm__ volatile ("mtspr 256, %0" : : "r" (vrsavex));
-#else
   /* This line may look unnecessary but we do need it, because we want to
      have a line to do a next over (so that gdb refetches the registers)
      and we don't want the code to change any vector registers.
      The splat operations below modify the VRs,i
      so we don't want to execute them yet.  */
   a = 9;
-#endif
 
   x = ((vector unsigned int) vec_splat_u8 (-2));
   y = ((vector unsigned int) vec_splat_u8 (1));

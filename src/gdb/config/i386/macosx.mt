@@ -13,6 +13,9 @@ TDEPFILES = \
 	kdp-udp.o \
 	kdp-transactions.o \
 	kdp-protocol.o \
-	macosx-tdep.o
+	macosx-tdep.o \
+	machoread.o \
+	symread.o \
+	pefread.o
 
 TM_FILE= tm-i386-macosx.h

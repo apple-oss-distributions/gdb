@@ -100,6 +100,8 @@
 #define CALL_DUMMY_BREAKPOINT_OFFSET_P 1
 #undef  CALL_DUMMY_LOCATION 
 #define CALL_DUMMY_LOCATION AT_ENTRY_POINT
+#undef  DEPRECATED_PC_IN_CALL_DUMMY
+#define DEPRECATED_PC_IN_CALL_DUMMY(pc, sp, frame_address) deprecated_pc_in_call_dummy_at_entry_point (pc, sp, frame_address)
 #undef  CALL_DUMMY_STACK_ADJUST
 #define CALL_DUMMY_STACK_ADJUST 128
 #undef  SIZEOF_CALL_DUMMY_WORDS
@@ -110,14 +112,13 @@
 #define FIX_CALL_DUMMY(DUMMYNAME, PC, FUN, NARGS, ARGS, TYPE, GCC_P) 
 #undef  PUSH_RETURN_ADDRESS
 #define PUSH_RETURN_ADDRESS(PC, SP) sparc_at_entry_push_return_address (PC, SP)
-extern CORE_ADDR 
-sparc_at_entry_push_return_address (CORE_ADDR pc, CORE_ADDR sp);
+extern CORE_ADDR sparc_at_entry_push_return_address (CORE_ADDR pc,
+						     CORE_ADDR sp);
 
 #undef  STORE_STRUCT_RETURN
 #define STORE_STRUCT_RETURN(ADDR, SP) \
      sparc_at_entry_store_struct_return (ADDR, SP)
-extern void 
-sparc_at_entry_store_struct_return (CORE_ADDR addr, CORE_ADDR sp);
+extern void sparc_at_entry_store_struct_return (CORE_ADDR addr, CORE_ADDR sp);
 
 
 #else
@@ -168,6 +169,8 @@ sparc_at_entry_store_struct_return (CORE_ADDR addr, CORE_ADDR sp);
 /* Call dummy will be located on the stack.  */
 #undef  CALL_DUMMY_LOCATION
 #define CALL_DUMMY_LOCATION ON_STACK
+#undef  DEPRECATED_PC_IN_CALL_DUMMY
+#define DEPRECATED_PC_IN_CALL_DUMMY(pc, sp, frame_address) deprecated_pc_in_call_dummy_on_stack (pc, sp, frame_address)
 
 /* Insert the function address into the call dummy.  */
 #undef  FIX_CALL_DUMMY

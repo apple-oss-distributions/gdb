@@ -1502,8 +1502,8 @@ char *gdb_set_register(char *theRegister, void *value, int size)
     if (!target_has_registers)
     	return ("no registers available at this time");
     
-    if (selected_frame == NULL)
-    	return ("no frame selected");
+    if (get_selected_frame () == NULL)
+      return ("no frame selected");
     
     if (*start == '$')
 	++start;
@@ -1523,7 +1523,7 @@ char *gdb_set_register(char *theRegister, void *value, int size)
     if (VALUE_LVAL(vp) != lval_register)
     	return ("left operand of assignment is not an lvalue");
     
-    write_register_bytes(VALUE_ADDRESS(vp) + VALUE_OFFSET(vp), (char *)value, size);
+    deprecated_write_register_bytes(VALUE_ADDRESS(vp) + VALUE_OFFSET(vp), (char *)value, size);
     
     return (NULL);
 }
@@ -1564,8 +1564,8 @@ void *gdb_get_register(char *theRegister, void *value, int *size)
 	return (NULL);
     }
     
-    if (selected_frame == NULL) {
-	strcpy((char *)value, "no frame selected");
+    if (get_selected_frame () == NULL) {
+	strcpy((char *) value, "no frame selected");
 	return (NULL);
     }
     
@@ -1579,7 +1579,7 @@ void *gdb_get_register(char *theRegister, void *value, int *size)
 	return (NULL);
     }
 
-    if (frame_register_read (selected_frame, regnum, (char *)value)) {
+    if (frame_register_read (get_selected_frame (), regnum, (char *)value)) {
     	strcpy((char *)value, "value not available");
 	return (NULL);
     }

@@ -448,6 +448,13 @@ static int rootcount = 0;	/* number of root varobjs in the list */
 /* Pointer to the varobj hash table (built at run time) */
 static struct vlist **varobj_table;
 
+/* Switch to determine whether to try to freeze the other threads in the 
+   inferior when I evaluate varobj's (so that if the varobj is a function
+   call I don't inadvertently allow the inferior to make progress while
+   evaluating the varobj. */
+
+int varobj_runs_all_threads = 0;
+
 /* Is the variable X one of our "fake" children? */
 #define CPLUS_FAKE_CHILD(x) \
 ((x) != NULL && (x)->fake_child)
@@ -538,7 +545,21 @@ varobj_fixup_value (struct value *in_value,
 						  &using_enc);
       
       if (dynamic_type)
-	dynamic_type = lookup_pointer_type (dynamic_type);
+	{
+	  dynamic_type = lookup_pointer_type (dynamic_type);
+	}
+      else
+	{
+	  /* If we didn't find a C++ class, let's see if we can find
+	     an ObjC class. */
+	  int ret_val;
+
+	  ret_val = safe_value_objc_target_type (in_value, &dynamic_type);
+	  if (!ret_val)
+	    dynamic_type = NULL;
+	  else if (dynamic_type)
+	    dynamic_type = lookup_pointer_type (dynamic_type);
+	}
     }
   else if (TYPE_CODE (base_type) == TYPE_CODE_REF)
     {
@@ -561,15 +582,38 @@ varobj_fixup_value (struct value *in_value,
 						      &using_enc);
 	  if (dynamic_type)
 	    dynamic_type = lookup_reference_type (dynamic_type);
+	  else
+	    {
+	      /* If we didn't find a C++ class, let's see if we can find
+		 an ObjC class. */
+	      int ret_val;
+
+	      ret_val = safe_value_objc_target_type (in_value, &dynamic_type);
+	      if (!ret_val)
+		dynamic_type = NULL;
+	      else if (dynamic_type)
+		dynamic_type = lookup_reference_type (dynamic_type);
+	    }
 	}
     }
 
   /* Now, if we have found a full type, record the static type in the
-     type field, and then cast the value to the new type. */
+     type field, and then cast the value to the new type.  For now we 
+     have to wrap the call to value_cast, since gdb fails - sometime with
+     a real error - when casting up classes with virtual inheritance.  */
   
   if (dynamic_type && use_dynamic_type)
     {
-      full_value = value_cast (dynamic_type, in_value);
+      int retval;
+      retval = gdb_value_cast (dynamic_type, in_value, &full_value);
+      /* If there is an error back out, resetting the dynamic value,
+	 and the dynamic_type. */
+
+      if (retval == 0)
+	{
+	  full_value = in_value;
+	  dynamic_type = VALUE_TYPE (in_value);
+	}
     }
 
   if (dynamic_type_handle != NULL)
@@ -580,6 +624,27 @@ varobj_fixup_value (struct value *in_value,
 
 /* Creates a varobj (not its children) */
 
+/* Return the full FRAME which corresponds to the given CORE_ADDR
+   or NULL if no FRAME on the chain corresponds to CORE_ADDR.  */
+
+static struct frame_info *
+find_frame_addr_in_frame_chain (CORE_ADDR frame_addr)
+{
+  struct frame_info *frame = NULL;
+
+  if (frame_addr == (CORE_ADDR) 0)
+    return NULL;
+
+  while (1)
+    {
+      frame = get_prev_frame (frame);
+      if (frame == NULL)
+	return NULL;
+      if (get_frame_base (frame) == frame_addr)
+	return frame;
+    }
+}
+
 struct varobj *
 varobj_create (char *objname,
 	       char *expression, CORE_ADDR frame, 
@@ -588,13 +653,23 @@ varobj_create (char *objname,
 {
   struct varobj *var;
   struct frame_info *fi;
-  struct frame_info *old_fi = NULL;
-  struct cleanup *old_chain;
+  struct frame_id var_frame_id;
+  struct frame_id old_frame_id = null_frame_id;
+  struct cleanup *old_chain, *schedlock_chain;
   int expr_len;
 
   /* Fill out a varobj structure for the (root) variable being constructed. */
   var = new_root_variable ();
   old_chain = make_cleanup_free_variable (var);
+
+  /* We are also going to fix the scheduler-locking here so we
+     don't end up running other threads.  Note that not only can
+     getting the value cause a function call, even parsing the
+     expression for dynamic languages might trigger a lookup 
+     call. */
+  
+  if (!varobj_runs_all_threads)
+    schedlock_chain = make_cleanup_set_restore_scheduler_locking_mode (scheduler_locking_on);
 
   if (expression != NULL)
     {
@@ -605,12 +680,21 @@ varobj_create (char *objname,
          of the variable's data as possible */
 
       /* Allow creator to specify context of variable */
-      if ((type == USE_CURRENT_FRAME) || (type == USE_SELECTED_FRAME))
-	fi = selected_frame;
-      else if (type == USE_BLOCK_IN_FRAME)
-	fi = selected_frame;
+      if ((type == USE_CURRENT_FRAME) || (type == USE_SELECTED_FRAME)
+	  || (type == USE_BLOCK_IN_FRAME))
+	fi = deprecated_selected_frame;
       else
+	/* FIXME: cagney/2002-11-23: This code should be doing a
+	   lookup using the frame ID and not just the frame's
+	   ``address''.  This, of course, means an interface change.
+	   However, with out that interface change ISAs, such as the
+	   ia64 with its two stacks, won't work.  Similar goes for the
+	   case where there is a frameless function.  */
 	fi = find_frame_addr_in_frame_chain (frame);
+
+
+      if (fi != NULL)
+	var_frame_id = get_frame_id (fi);
 
       /* frame = -2 means always use selected frame */
       if (type == USE_SELECTED_FRAME)
@@ -621,7 +705,7 @@ varobj_create (char *objname,
 	  if (type == USE_BLOCK_IN_FRAME) 
 	    {
 	      warning ("Attempting to create USE_BLOCK_IN_FRAME variable with NULL block.");
-	      return NULL;
+	      goto error_cleanup;
 	    }
 	  else if (fi != NULL)
 	    block = get_frame_block (fi, 0);
@@ -633,20 +717,19 @@ varobj_create (char *objname,
          return a sensible error.  For use_selected_frame variables
          create a dummy here that will get filled in later when 
          we get to a frame that actually has this variable.  */
-
+      
       if (gdb_parse_exp_1 (&p, block, 0, &var->root->exp))
 	{
 
 	  /* Don't allow variables to be created for types. */
 	  if (var->root->exp->elts[0].opcode == OP_TYPE)
 	    {
-	      do_cleanups (old_chain);
 	      warning ("Attempt to use a type name as an expression.");
-	      return NULL;
+	      goto error_cleanup;
 	    }
 	}
       else if (var->root->use_selected_frame != 1)
-	return NULL;
+	goto error_cleanup;
 
       var->format = variable_default_display (var);
       var->root->valid_block = innermost_block;
@@ -668,11 +751,13 @@ varobj_create (char *objname,
 	     Since select_frame is so benign, just call it for all cases. */
 	  if (fi != NULL)
 	    {
-	      var->root->frame.base = FRAME_FP (fi);
-	      old_fi = selected_frame;
+	      fi = frame_find_by_id (var_frame_id);
+
+	      var->root->frame = var_frame_id;
+	      old_frame_id = get_frame_id (get_current_frame ());
 	      select_frame (fi);
 	    }
-	  
+
 	  /* We definitively need to catch errors here.
 	     If evaluate_expression succeeds we got the value we wanted.
 	     But if it fails, we still go on with a call to evaluate_type().
@@ -683,7 +768,8 @@ varobj_create (char *objname,
 	     variable is not in scope yet, don't evaluate it.  This will often
 	     succeed (since the memory is set aside for it) but that is a bogus
 	     success, since technically the variable does not exist yet... */
-	  
+
+	      	      
 	  if ((var->root->use_selected_frame || varobj_pc_in_valid_block_p (var)) 
 	      && gdb_evaluate_expression (var->root->exp, &var->value))
 	    {
@@ -701,15 +787,32 @@ varobj_create (char *objname,
 	    }
 	  else
 	    {
-	      var->value = evaluate_type (var->root->exp);
-	      var->type = VALUE_TYPE (var->value);
-	      var->root->in_scope = 0;
+	      int retval;
+	      /* You might wonder how evaluate_type could get an error?
+		 If you are in ObjC, then to get the type of an expression that
+		 contains a method call, we currently look up the function that
+		 implementation, and if the object is bad, the runtime can crash
+		 in the lookup call...  */
+
+	      retval = gdb_evaluate_type (var->root->exp, &var->value);
+	      if (retval != 0)
+		{
+		  var->type = VALUE_TYPE (var->value);
+		  var->root->in_scope = 0;
+		}
+	      else
+		{
+		  var->root->in_scope = 0;
+		  var->type = NULL;
+		  var->value = NULL;
+		}
 	    }
 
-	  /* Since both branches of the if assign a value, we should
+	  /* If we managed to find a value, we should
 	     remove it from the Values auto-free list */
 	  
-	  release_value (var->value);
+	  if (var->value)
+	    release_value (var->value);
 	  
 	  /* Set language info */
 	  lang = variable_language (var);
@@ -727,8 +830,9 @@ varobj_create (char *objname,
       var->root->rootvar = var;
 
       /* Reset the selected frame */
-      if (old_fi != NULL)
-	select_frame (old_fi);
+      if (frame_id_p (old_frame_id))
+	select_frame (frame_find_by_id (old_frame_id));
+
     }
 
   /* If the variable object name is null, that means this
@@ -747,8 +851,14 @@ varobj_create (char *objname,
 	}
     }
 
+  /* Reset the scheduler lock, and discard the varobj deletion. */
+  do_cleanups (schedlock_chain);
   discard_cleanups (old_chain);
   return var;
+
+ error_cleanup:
+  do_cleanups (old_chain);
+  return NULL;
 }
 
 /* Generates an unique name that can be used for a varobj */
@@ -939,6 +1049,12 @@ varobj_list_children (struct varobj *var, struct varobj ***childlist)
   return var->num_children;
 }
 
+int 
+varobj_is_fake_child (struct varobj *var)
+{
+  return CPLUS_FAKE_CHILD (var);
+}
+
 /* Obtain the type of an object Variable as a string similar to the one gdb
    prints on the console */
 
@@ -946,10 +1062,6 @@ char *
 varobj_get_type (struct varobj *var)
 {
   struct value *val;
-  struct cleanup *old_chain;
-  struct ui_file *stb;
-  char *thetype;
-  long length;
 
   /* For the "fake" variables, do not return a type. (It's type is
      NULL, too.) */
@@ -959,17 +1071,11 @@ varobj_get_type (struct varobj *var)
   if (var->type == NULL)
     return savestring ("<error getting type>", strlen ("<error getting type>"));
 
-  stb = mem_fileopen ();
-  old_chain = make_cleanup_ui_file_delete (stb);
-
   /* To print the type, we simply create a zero ``struct value *'' and
      cast it to our type. We then typeprint this variable. */
   val = value_zero (var->type, not_lval);
-  type_print (VALUE_TYPE (val), "", stb, -1);
 
-  thetype = ui_file_xstrdup (stb, &length);
-  do_cleanups (old_chain);
-  return thetype;
+  return (type_sprint (VALUE_TYPE (val), "", -1));
 }
 
 /* Obtain the full (most specific class) type of an object Variable as
@@ -979,25 +1085,15 @@ char *
 varobj_get_dynamic_type (struct varobj *var)
 {
   struct value *val;
-  struct cleanup *old_chain;
-  struct ui_file *stb;
-  char *thetype;
-  long length;
 
   if (var->dynamic_type == NULL)
     return xstrdup ("");
 
-  stb = mem_fileopen ();
-  old_chain = make_cleanup_ui_file_delete (stb);
-
   /* To print the type, we simply create a zero ``struct value *'' and
      cast it to our type. We then typeprint this variable. */
   val = value_zero (var->dynamic_type, not_lval);
-  type_print (VALUE_TYPE(val), "", stb, -1);
 
-  thetype = ui_file_xstrdup (stb, &length);
-  do_cleanups (old_chain);
-  return thetype;
+  return (type_sprint (VALUE_TYPE(val), "", -1));
 }
 
 struct type *
@@ -1062,6 +1158,8 @@ varobj_get_value (struct varobj *var)
 {
   if (var->root->exp == NULL)
     return NULL;
+  else if (var->value == NULL)
+    return NULL;
   else
     return my_value_of_variable (var);
 }
@@ -1082,34 +1180,50 @@ varobj_set_value (struct varobj *var, char *expression)
   struct expression *exp;
   struct value *value;
   int saved_input_radix = input_radix;
+  enum scheduler_locking_mode old_mode;
+  int ret_val = 1;
+  struct cleanup *schedlock_chain;
+
+  schedlock_chain = make_cleanup_set_restore_scheduler_locking_mode (scheduler_locking_on);
 
   if (var->value != NULL && variable_editable (var) && !var->error)
     {
       char *s = expression;
 
       input_radix = 10;		/* ALWAYS reset to decimal temporarily */
+      
       if (!gdb_parse_exp_1 (&s, 0, 0, &exp))
-	/* We cannot proceed without a well-formed expression. */
-	return 0;
+	{
+	  /* We cannot proceed without a well-formed expression. */
+	  ret_val = 0;
+	  goto cleanup;
+	}
       if (!gdb_evaluate_expression (exp, &value))
 	{
 	  /* We cannot proceed without a valid expression. */
 	  xfree (exp);
-	  return 0;
+	  ret_val = 0;
+	  goto cleanup;
 	}
 
       if (!my_value_equal (var->value, value, &error))
 	var->updated = 1;
       if (!gdb_value_assign (var->value, value, &val))
-	return 0;
+	{
+	  ret_val = 0;
+	  goto cleanup;
+	}
       value_free (var->value);
       release_value (val);
       var->value = val;
       input_radix = saved_input_radix;
-      return 1;
+      ret_val = 1;
     }
 
-  return 0;
+ cleanup:
+  do_cleanups (schedlock_chain);
+  return ret_val;
+
 }
 
 /* Returns a malloc'ed list with all root variable objects */
@@ -1185,8 +1299,7 @@ varobj_update (struct varobj **varp, struct varobj_changelist **changelist)
 
   /* Save the selected stack frame, since we will need to change it
      in order to evaluate expressions. */
-
-  get_frame_id (selected_frame, &old_fid);
+  old_fid = get_frame_id (deprecated_selected_frame);
 
   /* Update the root variable. value_of_root can return NULL
      if the variable is no longer around, i.e. we stepped out of
@@ -1658,8 +1771,7 @@ new_root_variable (void)
   var->root->lang = NULL;
   var->root->exp = NULL;
   var->root->valid_block = NULL;
-  var->root->frame.base = 0;
-  var->root->frame.pc = 0;
+  var->root->frame = null_frame_id;
   var->root->use_selected_frame = 0;
   var->root->in_scope = 0;
   var->root->rootvar = NULL;
@@ -1702,7 +1814,22 @@ make_cleanup_free_variable (struct varobj *var)
    is set, it will return the full type rather than the base type.
 
    NOTE: TYPE_TARGET_TYPE should NOT be used anywhere in this file
-   except within get_target_type and get_type. */
+   except within get_target_type and get_type. 
+
+   APPLE LOCAL:
+   JCI: This comment does not seem right to me.  When we get the type of
+   a child varobj, where the parent is a struct or a union, we call
+   lookup_struct_elt_type.  This directly calls TYPE_TARGET_TYPE, so we
+   get the TYPEDEF name, not the resolved name.  This is actually useful,
+   since you may want to display two typedef's differently, though their
+   base type is the same.  Of course, when you go to make the child of
+   one of these child varobj's, you need to resolve the typedef then...
+
+   This comes up below in c_type_of_child, when we are creating children of
+   an array type.  There we were calling get_target_type (parent) but that
+   obscured the typedef info.  Calling TYPE_TARGET_TYPE directly is more
+   useful.
+*/
 
 static struct type *
 get_type (struct varobj *var)
@@ -2080,7 +2207,16 @@ value_of_root (struct varobj **var_handle, enum varobj_type_change *type_changed
   if (var->root->rootvar != var)
     return NULL;
 
-  if (var->root->use_selected_frame)
+  /* If we have a use_selected_frame variable, we need to reparse the
+     expression from scratch to see if it is of a different type, etc.
+     Also, if we failed to even get the type of the varobj, we should try
+     to recreate the varobj to see if we have gotten past the failure.
+     One example where this could happen is if the varobj is an ObjC expression
+     which references something that hasn't been initialized yet... In this
+     case one of the "lookup implementation for selector & object" functions
+     can crash, so we can't even get the type.  */
+
+  if (var->root->use_selected_frame || get_type (var) == NULL)
     {
       struct varobj *tmp_var;
 
@@ -2317,6 +2453,8 @@ c_number_of_children (struct varobj *var)
   int children;
 
   type = get_type (var);
+  if (type == NULL)
+    return -1;
 
   target = get_target_type (type);
   children = 0;
@@ -2497,7 +2635,8 @@ c_value_of_root (struct varobj **var_handle, enum varobj_type_change *type_chang
   struct varobj *var = *var_handle;
   struct frame_info *fi;
   int within_scope;
-
+  struct value *ret_value = NULL; 
+  
   /*  Only root variables can be updated... */
   if (var->root->rootvar != var)
     /* Not a root var */
@@ -2509,6 +2648,7 @@ c_value_of_root (struct varobj **var_handle, enum varobj_type_change *type_chang
     within_scope = 1;
   else
     {
+      reinit_frame_cache ();
       fi = frame_find_by_id (var->root->frame);
       within_scope = fi != NULL;
       /* FIXME: select_frame could fail */
@@ -2521,6 +2661,10 @@ c_value_of_root (struct varobj **var_handle, enum varobj_type_change *type_chang
       /* We need to catch errors here, because if evaluate
          expression fails we just want to make val->error = 1 and
          go on */
+      struct cleanup *schedlock_chain;
+
+      schedlock_chain = make_cleanup_set_restore_scheduler_locking_mode (scheduler_locking_on);
+
       if (gdb_evaluate_expression (var->root->exp, &new_val))
 	{
 	  struct type *dynamic_type;
@@ -2548,15 +2692,18 @@ c_value_of_root (struct varobj **var_handle, enum varobj_type_change *type_chang
 	      else
 		var->error = 0;
 	    }
+	  release_value (new_val);
+	  ret_value = new_val;
 	}
       else
-	var->error = 1;
+	{
+	  var->error = 1;
+	}
+      do_cleanups (schedlock_chain);
 
-      release_value (new_val);
-      return new_val;
     }
 
-  return NULL;
+  return ret_value;
 }
 
 static struct value *
@@ -2644,7 +2791,7 @@ c_type_of_child (struct varobj *parent, int index)
 {
   struct type *type;
   struct varobj *child;
-  struct type *parent_type = check_typedef (parent->type);
+  struct type *parent_type = get_type (parent);
   struct type *target_type;
 
   char *name;
@@ -2658,7 +2805,11 @@ c_type_of_child (struct varobj *parent, int index)
   switch (TYPE_CODE (parent_type))
     {
     case TYPE_CODE_ARRAY:
-      type = get_target_type (parent->type);
+      /* APPLE LOCAL: Don't call get_target_type here, that
+	 skips over typedefs, but what the variable was typedef'ed
+	 to be is often useful. */
+      type = TYPE_TARGET_TYPE (parent->type); 
+      /* END APPLE LOCAL */
       break;
 
     case TYPE_CODE_STRUCT:
@@ -2785,8 +2936,8 @@ cplus_number_of_children (struct varobj *var)
       if (type == NULL)
 	{
 	  /* If I can't get the type, I have no hope of
-	     counting the children.  Return 0... */
-	  return 0;
+	     counting the children.  Return -1 for not set... */
+	  return -1;
 	}
       else if (((TYPE_CODE (type)) == TYPE_CODE_STRUCT) 
 	       || ((TYPE_CODE (type)) == TYPE_CODE_UNION))
@@ -2815,9 +2966,9 @@ cplus_number_of_children (struct varobj *var)
       type = get_type_deref (var->parent, NULL);
 
       cplus_class_num_children (type, kids);
-      if (STREQ (name_of_variable (var), "public"))
+      if (strcmp (name_of_variable (var), "public") == 0)
 	children = kids[v_public];
-      else if (STREQ (name_of_variable (var), "private"))
+      else if (strcmp (name_of_variable (var), "private") == 0)
 	children = kids[v_private];
       else
 	children = kids[v_protected];
@@ -2944,7 +3095,6 @@ cplus_make_name_of_child (struct varobj *parent, int index)
 {
   char *name;
   struct type *type;
-  int children[3];
 
   if (CPLUS_FAKE_CHILD (parent))
     {
@@ -2959,75 +3109,100 @@ cplus_make_name_of_child (struct varobj *parent, int index)
     {
     case TYPE_CODE_STRUCT:
     case TYPE_CODE_UNION:
-      cplus_class_num_children (type, children);
-
       if (CPLUS_FAKE_CHILD (parent))
 	{
-          int index_in_type;
-          enum vsections prot;
-	  char *parent_name = name_of_variable (parent);
-          
-	  if (STREQ (parent_name, "private"))
-            prot = v_private;
-          else if (STREQ (parent_name, "protected"))
-            prot = v_protected;
-	  else if (STREQ (parent_name, "public"))
-            prot = v_public;
+	  /* The fields of the class type are ordered as they
+	     appear in the class.  We are given an index for a
+	     particular access control type ("public","protected",
+	     or "private").  We must skip over fields that don't
+	     have the access control we are looking for to properly
+	     find the indexed field. */
+	  int type_index = TYPE_N_BASECLASSES (type);
+	  if (strcmp (parent->name, "private") == 0)
+	    {
+	      while (index >= 0)
+		{
+	  	  if (TYPE_VPTR_BASETYPE (type) == type
+	      	      && type_index == TYPE_VPTR_FIELDNO (type))
+		    ; /* ignore vptr */
+		  else if (TYPE_FIELD_PRIVATE (type, type_index))
+		    --index;
+		  ++type_index;
+		}
+	      --type_index;
+	    }
+	  else if (strcmp (parent->name, "protected") == 0)
+	    {
+	      while (index >= 0)
+		{
+	  	  if (TYPE_VPTR_BASETYPE (type) == type
+	      	      && type_index == TYPE_VPTR_FIELDNO (type))
+		    ; /* ignore vptr */
+		  else if (TYPE_FIELD_PROTECTED (type, type_index))
+		    --index;
+		  ++type_index;
+		}
+	      --type_index;
+	    }
 	  else
 	    {
-	      error ("cplus_make_name_of_child got a parent with invalid "
-		   "fake child name: \"%s\".", parent_name);
-	      return NULL;
+	      while (index >= 0)
+		{
+	  	  if (TYPE_VPTR_BASETYPE (type) == type
+	      	      && type_index == TYPE_VPTR_FIELDNO (type))
+		    ; /* ignore vptr */
+		  else if (!TYPE_FIELD_PRIVATE (type, type_index) &&
+		      !TYPE_FIELD_PROTECTED (type, type_index))
+		    --index;
+		  ++type_index;
+		}
+	      --type_index;
 	    }
 
-          index_in_type = 
-            cplus_real_type_index_for_fake_child_index (type, prot, index);
-          
-	  if (index_in_type == -1)
-	    return NULL;
-	  else
-	    name = TYPE_FIELD_NAME (type, index_in_type);
+	  name = TYPE_FIELD_NAME (type, type_index);
 	}
       else if (index < TYPE_N_BASECLASSES (type))
+	/* We are looking up the name of a base class */
 	name = TYPE_FIELD_NAME (type, index);
       else
 	{
+	  int children[3];
+	  cplus_class_num_children(type, children);
+
 	  /* Everything beyond the baseclasses can
-	     only be "public", "private", or "protected" */
+	     only be "public", "private", or "protected"
+
+	     The special "fake" children are always output by varobj in
+	     this order. So if INDEX == 2, it MUST be "protected". */
 	  index -= TYPE_N_BASECLASSES (type);
-          
           switch (index)
             {
-            case 0:
-              if (children[v_public] != 0)
-                name = "public";
-              else if (children[v_private] != 0)
-                name = "private";
-              else if (children[v_protected] != 0)
-                name = "protected";
-              break;
-            case 1:
-              if (children[v_public] != 0)
-                {
-                  if (children[v_private] != 0)
-                    name = "private";
-                  else if (children[v_protected] != 0)
-                    name = "protected";
-                }
-              else if (children[v_private] != 0)
-                {
-                  if (children[v_protected] != 0)
-                    name = "protected";
-                }
-              break;
-            case 2:
-              if (children[v_public] != 0
-                  && children[v_private] != 0
-                  && children[v_protected] != 0)
-                name = "protected";
-              break;
-            default:
-              break;
+	    case 0:
+	      if (children[v_public] > 0)
+	 	name = "public";
+	      else if (children[v_private] > 0)
+	 	name = "private";
+	      else 
+	 	name = "protected";
+	      break;
+	    case 1:
+	      if (children[v_public] > 0)
+		{
+		  if (children[v_private] > 0)
+		    name = "private";
+		  else
+		    name = "protected";
+		}
+	      else if (children[v_private] > 0)
+	 	name = "protected";
+	      break;
+	    case 2:
+	      /* Must be protected */
+	      name = "protected";
+	      break;
+	    default:
+	      /* error! */
+	      break;
             }
             if (name == NULL)
               return NULL;
@@ -3094,11 +3269,11 @@ cplus_path_expr_of_child (struct varobj *parent, int index)
           enum vsections prot;
 	  char *parent_name = name_of_variable (parent);
           
-	  if (STREQ (parent_name, "private"))
+	  if (strcmp (parent_name, "private") == 0)
             prot = v_private;
-          else if (STREQ (parent_name, "protected"))
+          else if (strcmp (parent_name, "protected") == 0)
             prot = v_protected;
-	  else if (STREQ (parent_name, "public"))
+	  else if (strcmp (parent_name, "public") == 0)
             prot = v_public;
           else
             {
@@ -3418,6 +3593,11 @@ When non-zero, varobj debugging is enabled.", &setlist),
   add_show_from_set (add_set_cmd ("varobj-print-object", class_obscure, var_boolean, 
 				  (char *) &varobj_use_dynamic_type, "Set varobj to construct "
 				  "children using the most specific class type.", &setlist),
+		     &showlist);
+
+  add_show_from_set (add_set_cmd ("varobj-runs-all-threads", class_obscure, var_boolean, 
+				  (char *) &varobj_runs_all_threads, "Set to run all threads "
+				  "when evaluating varobjs.", &setlist),
 		     &showlist);
 				 
 }

@@ -1,5 +1,5 @@
 /* Target-machine dependent code for Motorola MCore for GDB, the GNU debugger
-   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -289,19 +289,22 @@ analyze_dummy_frame (CORE_ADDR pc, CORE_ADDR frame)
 
   if (dummy == NULL)
     {
-      dummy = (struct frame_info *) xmalloc (sizeof (struct frame_info));
-      dummy->saved_regs = (CORE_ADDR *) xmalloc (SIZEOF_FRAME_SAVED_REGS);
-      dummy->extra_info =
-	(struct frame_extra_info *) xmalloc (sizeof (struct frame_extra_info));
+      struct frame_extra_info *extra_info;
+      CORE_ADDR *saved_regs;
+      dummy = deprecated_frame_xmalloc ();
+      saved_regs = (CORE_ADDR *) xmalloc (SIZEOF_FRAME_SAVED_REGS);
+      deprecated_set_frame_saved_regs_hack (dummy, saved_regs);
+      extra_info = XMALLOC (struct frame_extra_info);
+      deprecated_set_frame_extra_info_hack (dummy, extra_info);
     }
 
-  dummy->next = NULL;
-  dummy->prev = NULL;
-  dummy->pc = pc;
-  dummy->frame = frame;
-  dummy->extra_info->status = 0;
-  dummy->extra_info->framesize = 0;
-  memset (dummy->saved_regs, '\000', SIZEOF_FRAME_SAVED_REGS);
+  deprecated_set_frame_next_hack (dummy, NULL);
+  deprecated_set_frame_prev_hack (dummy, NULL);
+  deprecated_update_frame_pc_hack (dummy, pc);
+  deprecated_update_frame_base_hack (dummy, frame);
+  get_frame_extra_info (dummy)->status = 0;
+  get_frame_extra_info (dummy)->framesize = 0;
+  memset (get_frame_saved_regs (dummy), '\000', SIZEOF_FRAME_SAVED_REGS);
   mcore_analyze_prologue (dummy, 0, 0);
   return dummy;
 }
@@ -345,7 +348,7 @@ mcore_analyze_prologue (struct frame_info *fi, CORE_ADDR pc, int skip_prologue)
 
   /* If provided, use the PC in the frame to look up the
      start of this function. */
-  pc = (fi == NULL ? pc : fi->pc);
+  pc = (fi == NULL ? pc : get_frame_pc (fi));
 
   /* Find the start of this function. */
   status = find_pc_partial_function (pc, &name, &func_addr, &func_end);
@@ -359,7 +362,7 @@ mcore_analyze_prologue (struct frame_info *fi, CORE_ADDR pc, int skip_prologue)
   if (func_addr == entry_point_address ())
     {
       if (fi != NULL)
-	fi->extra_info->status |= NO_MORE_FRAMES;
+	get_frame_extra_info (fi)->status |= NO_MORE_FRAMES;
       return pc;
     }
 
@@ -384,21 +387,21 @@ mcore_analyze_prologue (struct frame_info *fi, CORE_ADDR pc, int skip_prologue)
   if (fi != NULL && IS_RTS (insn))
     {
       mcore_insn_debug (("MCORE: got jmp r15"));
-      if (fi->next == NULL)
-	fi->frame = read_sp ();
-      return fi->pc;
+      if (get_next_frame (fi) == NULL)
+	deprecated_update_frame_base_hack (fi, read_sp ());
+      return get_frame_pc (fi);
     }
 
   /* Check for first insn of prologue */
-  if (fi != NULL && fi->pc == func_addr)
+  if (fi != NULL && get_frame_pc (fi) == func_addr)
     {
-      if (fi->next == NULL)
-	fi->frame = read_sp ();
-      return fi->pc;
+      if (get_next_frame (fi) == NULL)
+	deprecated_update_frame_base_hack (fi, read_sp ());
+      return get_frame_pc (fi);
     }
 
   /* Figure out where to stop scanning */
-  stop = (fi ? fi->pc : func_end);
+  stop = (fi ? get_frame_pc (fi) : func_end);
 
   /* Don't walk off the end of the function */
   stop = (stop > func_end ? func_end : stop);
@@ -605,19 +608,19 @@ mcore_analyze_prologue (struct frame_info *fi, CORE_ADDR pc, int skip_prologue)
   /* Save everything we have learned about this frame into FI. */
   if (fi != NULL)
     {
-      fi->extra_info->framesize = framesize;
-      fi->extra_info->fp_regnum = fp_regnum;
-      fi->extra_info->status = flags;
+      get_frame_extra_info (fi)->framesize = framesize;
+      get_frame_extra_info (fi)->fp_regnum = fp_regnum;
+      get_frame_extra_info (fi)->status = flags;
 
       /* Fix the frame pointer. When gcc uses r8 as a frame pointer,
          it is really an arg ptr. We adjust fi->frame to be a "real"
          frame pointer. */
-      if (fi->next == NULL)
+      if (get_next_frame (fi) == NULL)
 	{
-	  if (fi->extra_info->status & MY_FRAME_IN_SP)
-	    fi->frame = read_sp () + framesize;
+	  if (get_frame_extra_info (fi)->status & MY_FRAME_IN_SP)
+	    deprecated_update_frame_base_hack (fi, read_sp () + framesize);
 	  else
-	    fi->frame = read_register (fp_regnum) + framesize;
+	    deprecated_update_frame_base_hack (fi, read_register (fp_regnum) + framesize);
 	}
 
       /* Note where saved registers are stored. The offsets in REGISTER_OFFSETS
@@ -626,7 +629,7 @@ mcore_analyze_prologue (struct frame_info *fi, CORE_ADDR pc, int skip_prologue)
 	{
 	  if (register_offsets[rn] >= 0)
 	    {
-	      fi->saved_regs[rn] = fi->frame - register_offsets[rn];
+	      get_frame_saved_regs (fi)[rn] = get_frame_base (fi) - register_offsets[rn];
 	      mcore_insn_debug (("Saved register %s stored at 0x%08x, value=0x%08x\n",
 			       mcore_register_names[rn], fi->saved_regs[rn],
 			      read_memory_integer (fi->saved_regs[rn], 4)));
@@ -638,9 +641,10 @@ mcore_analyze_prologue (struct frame_info *fi, CORE_ADDR pc, int skip_prologue)
   return addr;
 }
 
-/* Given a GDB frame, determine the address of the calling function's frame.
-   This will be used to create a new GDB frame struct, and then
-   INIT_EXTRA_FRAME_INFO and INIT_FRAME_PC will be called for the new frame. */
+/* Given a GDB frame, determine the address of the calling function's
+   frame.  This will be used to create a new GDB frame struct, and
+   then INIT_EXTRA_FRAME_INFO and DEPRECATED_INIT_FRAME_PC will be
+   called for the new frame. */
 
 CORE_ADDR
 mcore_frame_chain (struct frame_info * fi)
@@ -649,11 +653,11 @@ mcore_frame_chain (struct frame_info * fi)
   CORE_ADDR callers_addr;
 
   /* Analyze the prologue of this function. */
-  if (fi->extra_info->status == 0)
+  if (get_frame_extra_info (fi)->status == 0)
     mcore_analyze_prologue (fi, 0, 0);
 
   /* If mcore_analyze_prologue set NO_MORE_FRAMES, quit now. */
-  if (fi->extra_info->status & NO_MORE_FRAMES)
+  if (get_frame_extra_info (fi)->status & NO_MORE_FRAMES)
     return 0;
 
   /* Now that we've analyzed our prologue, we can start to ask
@@ -667,31 +671,31 @@ mcore_frame_chain (struct frame_info * fi)
 
      If our caller does not have a frame pointer, then his frame base
      is <our base> + -<caller's frame size>. */
-  dummy = analyze_dummy_frame (FRAME_SAVED_PC (fi), fi->frame);
+  dummy = analyze_dummy_frame (FRAME_SAVED_PC (fi), get_frame_base (fi));
 
-  if (dummy->extra_info->status & MY_FRAME_IN_FP)
+  if (get_frame_extra_info (dummy)->status & MY_FRAME_IN_FP)
     {
-      int fp = dummy->extra_info->fp_regnum;
+      int fp = get_frame_extra_info (dummy)->fp_regnum;
 
       /* Our caller has a frame pointer. */
-      if (fi->saved_regs[fp] != 0)
+      if (get_frame_saved_regs (fi)[fp] != 0)
 	{
 	  /* The "FP" was saved on the stack.  Don't forget to adjust
 	     the "FP" with the framesize to get a real FP. */
-	  callers_addr = read_memory_integer (fi->saved_regs[fp], REGISTER_SIZE)
-	    + dummy->extra_info->framesize;
+	  callers_addr = read_memory_integer (get_frame_saved_regs (fi)[fp], REGISTER_SIZE)
+	    + get_frame_extra_info (dummy)->framesize;
 	}
       else
 	{
 	  /* It's still in the register.  Don't forget to adjust
 	     the "FP" with the framesize to get a real FP. */
-	  callers_addr = read_register (fp) + dummy->extra_info->framesize;
+	  callers_addr = read_register (fp) + get_frame_extra_info (dummy)->framesize;
 	}
     }
   else
     {
       /* Our caller does not have a frame pointer. */
-      callers_addr = fi->frame + dummy->extra_info->framesize;
+      callers_addr = get_frame_base (fi) + get_frame_extra_info (dummy)->framesize;
     }
 
   return callers_addr;
@@ -722,13 +726,13 @@ mcore_skip_prologue (CORE_ADDR pc)
 CORE_ADDR
 mcore_frame_args_address (struct frame_info * fi)
 {
-  return fi->frame - fi->extra_info->framesize;
+  return get_frame_base (fi) - get_frame_extra_info (fi)->framesize;
 }
 
 CORE_ADDR
 mcore_frame_locals_address (struct frame_info * fi)
 {
-  return fi->frame - fi->extra_info->framesize;
+  return get_frame_base (fi) - get_frame_extra_info (fi)->framesize;
 }
 
 /* Return the frame pointer in use at address PC. */
@@ -737,14 +741,14 @@ void
 mcore_virtual_frame_pointer (CORE_ADDR pc, int *reg, LONGEST *offset)
 {
   struct frame_info *dummy = analyze_dummy_frame (pc, 0);
-  if (dummy->extra_info->status & MY_FRAME_IN_SP)
+  if (get_frame_extra_info (dummy)->status & MY_FRAME_IN_SP)
     {
       *reg = SP_REGNUM;
       *offset = 0;
     }
   else
     {
-      *reg = dummy->extra_info->fp_regnum;
+      *reg = get_frame_extra_info (dummy)->fp_regnum;
       *offset = 0;
     }
 }
@@ -754,12 +758,14 @@ mcore_virtual_frame_pointer (CORE_ADDR pc, int *reg, LONGEST *offset)
 CORE_ADDR
 mcore_find_callers_reg (struct frame_info *fi, int regnum)
 {
-  for (; fi != NULL; fi = fi->next)
+  for (; fi != NULL; fi = get_next_frame (fi))
     {
-      if (PC_IN_CALL_DUMMY (fi->pc, fi->frame, fi->frame))
-	return deprecated_read_register_dummy (fi->pc, fi->frame, regnum);
-      else if (fi->saved_regs[regnum] != 0)
-	return read_memory_integer (fi->saved_regs[regnum],
+      if (DEPRECATED_PC_IN_CALL_DUMMY (get_frame_pc (fi), get_frame_base (fi),
+				       get_frame_base (fi)))
+	return deprecated_read_register_dummy (get_frame_pc (fi),
+					       get_frame_base (fi), regnum);
+      else if (get_frame_saved_regs (fi)[regnum] != 0)
+	return read_memory_integer (get_frame_saved_regs (fi)[regnum],
 				    REGISTER_SIZE);
     }
 
@@ -772,8 +778,10 @@ CORE_ADDR
 mcore_frame_saved_pc (struct frame_info * fi)
 {
 
-  if (PC_IN_CALL_DUMMY (fi->pc, fi->frame, fi->frame))
-    return deprecated_read_register_dummy (fi->pc, fi->frame, PC_REGNUM);
+  if (DEPRECATED_PC_IN_CALL_DUMMY (get_frame_pc (fi), get_frame_base (fi),
+				   get_frame_base (fi)))
+    return deprecated_read_register_dummy (get_frame_pc (fi),
+					   get_frame_base (fi), PC_REGNUM);
   else
     return mcore_find_callers_reg (fi, PR_REGNUM);
 }
@@ -789,7 +797,8 @@ mcore_pop_frame (void)
   int rn;
   struct frame_info *fi = get_current_frame ();
 
-  if (PC_IN_CALL_DUMMY (fi->pc, fi->frame, fi->frame))
+  if (DEPRECATED_PC_IN_CALL_DUMMY (get_frame_pc (fi), get_frame_base (fi),
+				   get_frame_base (fi)))
     generic_pop_dummy_frame ();
   else
     {
@@ -799,18 +808,18 @@ mcore_pop_frame (void)
       /* Restore any saved registers. */
       for (rn = 0; rn < NUM_REGS; rn++)
 	{
-	  if (fi->saved_regs[rn] != 0)
+	  if (get_frame_saved_regs (fi)[rn] != 0)
 	    {
 	      ULONGEST value;
 
-	      value = read_memory_unsigned_integer (fi->saved_regs[rn],
+	      value = read_memory_unsigned_integer (get_frame_saved_regs (fi)[rn],
 						    REGISTER_SIZE);
 	      write_register (rn, value);
 	    }
 	}
 
       /* Actually cut back the stack. */
-      write_register (SP_REGNUM, FRAME_FP (fi));
+      write_register (SP_REGNUM, get_frame_base (fi));
     }
 
   /* Finally, throw away any cached frame information. */
@@ -1024,8 +1033,9 @@ mcore_store_return_value (struct type *type, char *valbuf)
   zeros = alloca (return_size);
   memset (zeros, 0, return_size);
 
-  write_register_bytes (REGISTER_BYTE (RETVAL_REGNUM), zeros, return_size);
-  write_register_bytes (offset, valbuf, value_size);
+  deprecated_write_register_bytes (REGISTER_BYTE (RETVAL_REGNUM), zeros,
+				   return_size);
+  deprecated_write_register_bytes (offset, valbuf, value_size);
 }
 
 /* Initialize our target-dependent "stuff" for this newly created frame.
@@ -1036,21 +1046,21 @@ mcore_store_return_value (struct type *type, char *valbuf)
 void
 mcore_init_extra_frame_info (int fromleaf, struct frame_info *fi)
 {
-  if (fi && fi->next)
-    fi->pc = FRAME_SAVED_PC (fi->next);
+  if (fi && get_next_frame (fi))
+    deprecated_update_frame_pc_hack (fi, FRAME_SAVED_PC (get_next_frame (fi)));
 
   frame_saved_regs_zalloc (fi);
 
-  fi->extra_info = (struct frame_extra_info *)
-    frame_obstack_alloc (sizeof (struct frame_extra_info));
-  fi->extra_info->status = 0;
-  fi->extra_info->framesize = 0;
+  frame_extra_info_zalloc (fi, sizeof (struct frame_extra_info));
+  get_frame_extra_info (fi)->status = 0;
+  get_frame_extra_info (fi)->framesize = 0;
 
-  if (PC_IN_CALL_DUMMY (fi->pc, fi->frame, fi->frame))
+  if (DEPRECATED_PC_IN_CALL_DUMMY (get_frame_pc (fi), get_frame_base (fi),
+				   get_frame_base (fi)))
     {
       /* We need to setup fi->frame here because run_stack_dummy gets it wrong
          by assuming it's always FP.  */
-      fi->frame = deprecated_read_register_dummy (fi->pc, fi->frame, SP_REGNUM);
+      deprecated_update_frame_base_hack (fi, deprecated_read_register_dummy (get_frame_pc (fi), get_frame_base (fi), SP_REGNUM));
     }
   else
     mcore_analyze_prologue (fi, 0, 0);
@@ -1083,6 +1093,10 @@ mcore_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   gdbarch = gdbarch_alloc (&info, 0);
 
+  /* NOTE: cagney/2002-12-06: This can be deleted when this arch is
+     ready to unwind the PC first (see frame.c:get_prev_frame()).  */
+  set_gdbarch_deprecated_init_frame_pc (gdbarch, init_frame_pc_default);
+
   /* Registers: */
 
   /* All registers are 32 bits */
@@ -1099,22 +1113,18 @@ mcore_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_pc_regnum (gdbarch, 64);
   set_gdbarch_sp_regnum (gdbarch, 0);
   set_gdbarch_fp_regnum (gdbarch, 0);
-  set_gdbarch_get_saved_register (gdbarch, generic_unwind_get_saved_register);
 
   /* Call Dummies:  */
 
   set_gdbarch_call_dummy_p (gdbarch, 1);
-  set_gdbarch_use_generic_dummy_frames (gdbarch, 1);
   set_gdbarch_call_dummy_words (gdbarch, call_dummy_words);
   set_gdbarch_sizeof_call_dummy_words (gdbarch, 0);
   set_gdbarch_call_dummy_start_offset (gdbarch, 0);
   set_gdbarch_call_dummy_breakpoint_offset_p (gdbarch, 1);
   set_gdbarch_call_dummy_breakpoint_offset (gdbarch, 0);
-  set_gdbarch_call_dummy_location (gdbarch, AT_ENTRY_POINT);
   set_gdbarch_fix_call_dummy (gdbarch, generic_fix_call_dummy);
   set_gdbarch_call_dummy_address (gdbarch, entry_point_address);
   set_gdbarch_save_dummy_frame_tos (gdbarch, generic_save_dummy_frame_tos);
-  set_gdbarch_pc_in_call_dummy (gdbarch, generic_pc_in_call_dummy);
   set_gdbarch_call_dummy_stack_adjust_p (gdbarch, 0);
   set_gdbarch_saved_pc_after_call (gdbarch, mcore_saved_pc_after_call);
   set_gdbarch_function_start_offset (gdbarch, 0);
@@ -1129,7 +1139,6 @@ mcore_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   set_gdbarch_init_extra_frame_info (gdbarch, mcore_init_extra_frame_info);
   set_gdbarch_frame_chain (gdbarch, mcore_frame_chain);
-  set_gdbarch_frame_chain_valid (gdbarch, generic_func_frame_chain_valid);
   set_gdbarch_frame_init_saved_regs (gdbarch, mcore_frame_init_saved_regs);
   set_gdbarch_frame_saved_pc (gdbarch, mcore_frame_saved_pc);
   set_gdbarch_deprecated_store_return_value (gdbarch, mcore_store_return_value);

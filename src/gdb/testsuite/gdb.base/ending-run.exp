@@ -31,12 +31,6 @@ set testfile ending-run
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
 
-# APPLE LOCAL jmolenda
-# r. 3052470: 'clear' cmd clears too aggressively
-# r. 2844245: Process doesn't get output from child process when communicating via ptys
-set r3052470 "(r. 3052470)"
-set r2844245 "(r. 2844245)"
-
 remote_exec build "rm -f ${binfile}"
 remote_exec build "rm -f core"
 
@@ -103,7 +97,7 @@ gdb_expect {
 gdb_test "b ending-run.c:1" ".*Breakpoint.*4.*"
 gdb_test "b ending-run.c:13" ".*Note.*also.*Breakpoint.*5.*" "b ending-run.c:13, two"
 gdb_test "cle ending-run.c:13" \
-	".*Deleted breakpoint 5.*" "Only cleared 1 by line $r3052470"
+	".*Deleted breakpoint 5.*" "Only cleared 1 by line"
 
 send_gdb "inf line ending-run.c:13\n"
 gdb_expect {
@@ -336,7 +330,7 @@ if {! [target_info exists use_gdb_stub]
 	    pass "ls: core (No core dumped on quit)"
 	} else {
 	    remote_exec build "rm -f core"
-	    fail "ls: core (Core dumped on quit) $r2844245"
+	    fail "ls: core (Core dumped on quit)"
 	}
     }
 }

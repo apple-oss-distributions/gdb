@@ -74,12 +74,6 @@ extern int addressprint;	/* Print machine addresses? */
 
 extern void output_command (char *, int);
 
-/* If this definition isn't overridden by the header files, assume
-   that isatty and fileno exist on this system.  */
-#ifndef ISATTY
-#define ISATTY(FP)	(isatty (fileno (FP)))
-#endif
-
 /* 
    Tracepoint.c:
 
@@ -1862,7 +1856,7 @@ finish_tfind_command (char *msg,
   struct symbol *old_func;
   char *reply;
 
-  old_frame_addr = FRAME_FP (get_current_frame ());
+  old_frame_addr = get_frame_base (get_current_frame ());
   old_func = find_pc_function (read_pc ());
 
   putpkt (msg);
@@ -1948,13 +1942,14 @@ finish_tfind_command (char *msg,
 
       if (old_func == find_pc_function (read_pc ()) &&
 	  (old_frame_addr == 0 ||
-	   FRAME_FP (get_current_frame ()) == 0 ||
-	   old_frame_addr == FRAME_FP (get_current_frame ())))
+	   get_frame_base (get_current_frame ()) == 0 ||
+	   old_frame_addr == get_frame_base (get_current_frame ())))
 	source_only = -1;
       else
 	source_only = 1;
 
-      print_stack_frame (selected_frame, frame_relative_level (selected_frame),
+      print_stack_frame (deprecated_selected_frame,
+			 frame_relative_level (deprecated_selected_frame),
 			 source_only);
       do_displays ();
     }
@@ -2104,7 +2099,7 @@ trace_find_line_command (char *args, int from_tty)
     {
       if (args == 0 || *args == 0)
 	{
-	  sal = find_pc_line ((get_current_frame ())->pc, 0);
+	  sal = find_pc_line (get_frame_pc (get_current_frame ()), 0);
 	  sals.nelts = 1;
 	  sals.sals = (struct symtab_and_line *)
 	    xmalloc (sizeof (struct symtab_and_line));

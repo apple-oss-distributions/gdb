@@ -39,12 +39,6 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {deb
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
-# APPLE LOCAL jmolenda
-# r. 3061579 gdb should get the exectuable proc name from corefile
-set r3061579 "(r. 3061579)"
-# r. 3061590 stack backtrace in corefile not correct
-set r3061590 "(r. 3061590)"
-
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
 if [get_compiler_info ${binfile}] {
@@ -130,7 +124,7 @@ gdb_expect {
     -re ".*registers from core file: File in wrong format.* $" {
 	fail "args: -core=corefile (could not read registers from core file)"
     }
-    -re ".*$gdb_prompt $"	{ fail "args: -core=corefile $r3061579" }
+    -re ".*$gdb_prompt $"	{ fail "args: -core=corefile" }
     timeout 		{ fail "(timeout) starting with -core" }
 }
 
@@ -153,7 +147,7 @@ gdb_expect {
     -re ".*registers from core file: File in wrong format.* $" {
 	fail "args: execfile -core=corefile (could not read registers from core file)"
     }
-    -re ".*$gdb_prompt $"	{ fail "args: execfile -core=corefile $r3061579" }
+    -re ".*$gdb_prompt $"	{ fail "args: execfile -core=corefile" }
     timeout 		{ fail "(timeout) starting with -core" }
 }
 set timeout $oldtimeout
@@ -185,7 +179,7 @@ gdb_expect {
     -re ".*registers from core file: File in wrong format.* $" {
 	fail "core-file command (could not read registers from core file)"
     }
-    -re ".*$gdb_prompt $"	{ fail "core-file command $r3061579" }
+    -re ".*$gdb_prompt $"	{ fail "core-file command" }
     timeout 		{ fail "(timeout) core-file command" }
 }
 
@@ -200,7 +194,7 @@ gdb_test "print func2::coremaker_local" "\\\$$decimal = \\{0, 1, 2, 3, 4\\}"
 # Somehow we better test the ability to read the registers out of the core
 # file correctly.  I don't think the other tests do this.
 
-gdb_test "bt" "abort.*func2.*func1.*main.*" "backtrace in corefile.exp $r3061590"
+gdb_test "bt" "abort.*func2.*func1.*main.*" "backtrace in corefile.exp"
 gdb_test "up" "#\[0-9\]* *\[0-9xa-fH'\]* in .* \\(.*\\).*" "up in corefile.exp"
 
 # Test ability to read mmap'd data

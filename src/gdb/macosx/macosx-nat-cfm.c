@@ -39,15 +39,9 @@
 #define CFM_MAX_SECTION_LENGTH 1024
 #define CFM_MAX_INSTANCE_LENGTH 1024
 
-enum cfm_errtype { 
-  noErr = 0,
-  paramErr = -1,
-  cfragCFMInternalErr = -2,
-  cfragConnectionIDErr = -3,
-  cfragContainerIDErr = -4,
-  cfragFragmentCorruptErr = -5,
-  cfragNoSectionErr = -6
-};
+#define CFM_NO_ERROR 0
+#define CFM_INTERNAL_ERROR -1
+#define CFM_NO_SECTION_ERROR -2
 
 #define CFContHashedStringLength(hash) ((hash) >> 16)
 
@@ -77,15 +71,15 @@ cfm_update (task_t task, struct dyld_objfile_info *info)
   cfm_context = read_memory_unsigned_integer (cfm_cookie, 4);
 
   ret = cfm_fetch_context_containers (cfm_parser, cfm_context, 0, 0, &n_container_ids, NULL);
-  if (ret != noErr)
-      return ret;
+  if (ret != CFM_NO_ERROR)
+    return ret;
 
   container_ids = (unsigned long *) xmalloc (n_container_ids * sizeof (unsigned long));
 
   ret = cfm_fetch_context_containers 
     (cfm_parser, cfm_context, 
      n_container_ids, 0, &nread_container_ids, container_ids);
-  if (ret != noErr)
+  if (ret != CFM_NO_ERROR)
       return ret;
 
   CHECK (n_container_ids == nread_container_ids);
@@ -96,12 +90,12 @@ cfm_update (task_t task, struct dyld_objfile_info *info)
       NCFragSectionInfo section_info;
 
       ret = cfm_fetch_container_info (cfm_parser, container_ids[container_index], &container_info);
-      if (ret != noErr)
+      if (ret != CFM_NO_ERROR)
 	continue;
       
       if (container_info.sectionCount > 0) {
 	ret = cfm_fetch_container_section_info (cfm_parser, container_ids[container_index], 0, &section_info);
-	if (ret != noErr)
+	if (ret != CFM_NO_ERROR)
 	  continue;
       }
 
@@ -125,7 +119,7 @@ cfm_update (task_t task, struct dyld_objfile_info *info)
       }
     }
 
-  return noErr;
+  return CFM_NO_ERROR;
 }
 
 long
@@ -194,14 +188,14 @@ cfm_fetch_container_info
 
   name_length = CFContHashedStringLength (bfd_getb32 (buf + parser->container_fragment_name_offset));
   if (name_length > 63)
-    return cfragFragmentCorruptErr;
+    return CFM_INTERNAL_ERROR;
   name_addr = bfd_getb32 (buf + parser->container_fragment_name_offset + 4);
 
   info->name[0] = name_length;
   
   ret = target_read_memory_partial (name_addr, &info->name[1], name_length, &err);
   if (ret < 0)
-    return cfragFragmentCorruptErr;
+    return CFM_INTERNAL_ERROR;
 
   info->name[name_length + 1] = '\0';
 
@@ -284,7 +278,7 @@ cfm_fetch_context_containers
   if (skipCount >= localTotal)
     {
       *totalCount_o = localTotal;
-      return noErr;
+      return CFM_NO_ERROR;
     }
 
   if (requestedCount > (localTotal - skipCount))
@@ -295,7 +289,7 @@ cfm_fetch_context_containers
   while (skipCount > 0)
     {
       if (curContainer == 0)
-	return cfragCFMInternalErr;
+	return CFM_INTERNAL_ERROR;
 
       ret = cfm_fetch_container_info (parser, curContainer, &container);
 
@@ -306,7 +300,7 @@ cfm_fetch_context_containers
   for (currIDSlot = 0; currIDSlot < requestedCount; currIDSlot += 1)
     {
       if (curContainer == 0)
-	return cfragCFMInternalErr;
+	return CFM_INTERNAL_ERROR;
 
       ret = cfm_fetch_container_info (parser, curContainer, &container);
 
@@ -315,7 +309,7 @@ cfm_fetch_context_containers
     }
 
   *totalCount_o = localTotal;
-  return noErr;
+  return CFM_NO_ERROR;
 }
 
 long
@@ -331,19 +325,19 @@ cfm_fetch_container_section_info
 
   ret = cfm_fetch_container_info (parser, addr, &container);
   if (ret < 0)
-    return cfragCFMInternalErr;
+    return CFM_INTERNAL_ERROR;
   
   if (sectionIndex >= container.sectionCount)
-    return cfragNoSectionErr;
+    return CFM_NO_SECTION_ERROR;
 
   offset = (addr + parser->container_length - (2 * parser->section_length) + (sectionIndex * parser->section_length));
   ret = target_read_memory_partial (offset, section_buf, parser->section_length, &err);
   if (ret < 0)
-    return cfragCFMInternalErr;
+    return CFM_INTERNAL_ERROR;
   
   ret = cfm_parse_section_info (parser, section_buf, parser->section_length, section);
   if (ret < 0)
     return ret;
 
-  return noErr;
+  return CFM_NO_ERROR;
 }

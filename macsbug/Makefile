@@ -129,9 +129,9 @@ CFLAGS 				= 	-g 				\
 
 ifneq ($(BUILD_VERSION),10.0)
 LDFLAGS				=	-bundle 			\
-					-bundle_loader $(GDBROOT)$(GDBDIR)/gdb-powerpc-apple-macos10 \
+					-bundle_loader $(GDBROOT)$(GDBDIR)/gdb-powerpc-apple-darwin \
 					-twolevel_namespace \
-					-F$(BINUTILS_BUILD_ROOT)/System/Library/PrivateFrameworks -framework liberty 
+					#-F$(BINUTILS_BUILD_ROOT)/System/Library/PrivateFrameworks -framework liberty
 else
 LDFLAGS				=	-bundle 			\
 					-undefined suppress

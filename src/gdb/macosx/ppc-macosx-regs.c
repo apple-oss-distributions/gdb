@@ -35,13 +35,47 @@
 
 #include "ppc-macosx-regs.h"
 
-#define supply_unsigned_int(regnum, val)\
-store_unsigned_integer (buf, 4, val); \
-supply_register(regnum, buf);
+static inline void supply_unsigned_int (int regnum, unsigned int val)
+{
+  char buf[8];
+  store_unsigned_integer (buf + 4, 4, val);
+  if (gdbarch_register_raw_size (current_gdbarch, regnum) == 4)
+    supply_register (regnum, buf + 4);
+  else if (gdbarch_register_raw_size (current_gdbarch, regnum) == 8)
+    supply_register (regnum, buf);
+  else
+    internal_error (__FILE__, __LINE__, "unknown size for register");
+}
 
-#define collect_unsigned_int(regnum, addr)\
-regcache_collect (regnum, buf); \
-(* (addr)) = extract_unsigned_integer (buf, 4);
+static inline void collect_unsigned_int (int regnum, unsigned int *addr)
+{
+  char buf[8];
+  regcache_collect (regnum, buf);
+  if (gdbarch_register_raw_size (current_gdbarch, regnum) == 4)
+    *addr = extract_unsigned_integer (buf, 4);
+  else if (gdbarch_register_raw_size (current_gdbarch, regnum) == 8)
+    *addr = extract_unsigned_integer (buf + 4, 4);
+  else
+    internal_error (__FILE__, __LINE__, "unknown size for register");
+}
+
+static inline void supply_unsigned_int_64 (int regnum, unsigned long long val)
+{
+  char buf[8];
+  store_unsigned_integer (buf, 8, val);
+  if (gdbarch_register_raw_size (current_gdbarch, regnum) != 8)
+    internal_error (__FILE__, __LINE__, "incorrect size for register");
+  supply_register (regnum, buf);
+}
+
+static inline void collect_unsigned_int_64 (int regnum, unsigned long long *addr)
+{
+  char buf[8];
+  regcache_collect (regnum, buf);
+  if (gdbarch_register_raw_size (current_gdbarch, regnum) != 8)
+    internal_error (__FILE__, __LINE__, "incorrect size for register");
+  *addr = extract_unsigned_integer (buf, 8);
+}
 
 void ppc_macosx_fetch_gp_registers (gdb_ppc_thread_state_t *gp_regs)
 {
@@ -59,13 +93,12 @@ void ppc_macosx_fetch_gp_registers (gdb_ppc_thread_state_t *gp_regs)
   supply_unsigned_int (CTR_REGNUM, gp_regs->ctr);
   supply_unsigned_int (XER_REGNUM, gp_regs->xer);
   supply_unsigned_int (MQ_REGNUM, gp_regs->mq);
-  /* supply_unsigned_int (VRSAVE_REGNUM, gp_regs->vrsave); */
+  supply_unsigned_int (VRSAVE_REGNUM, gp_regs->vrsave);
 }
 
 void ppc_macosx_store_gp_registers (gdb_ppc_thread_state_t *gp_regs)
 {
   int i;
-  unsigned char buf[4];
 
   for (i = 0; i < NUM_GP_REGS; i++) {
     collect_unsigned_int (FIRST_GP_REGNUM + i, &gp_regs->gpregs[i]);
@@ -78,7 +111,44 @@ void ppc_macosx_store_gp_registers (gdb_ppc_thread_state_t *gp_regs)
   collect_unsigned_int (CTR_REGNUM, &gp_regs->ctr);
   collect_unsigned_int (XER_REGNUM, &gp_regs->xer);
   collect_unsigned_int (MQ_REGNUM, &gp_regs->mq);
-  /* collect_unsigned_int (VRSAVE_REGNUM, &gp_regs->vrsave); */
+  collect_unsigned_int (VRSAVE_REGNUM, &gp_regs->vrsave);
+}
+
+void ppc_macosx_fetch_gp_registers_64 (gdb_ppc_thread_state_64_t *gp_regs)
+{
+  int i;
+  unsigned char buf[4];
+
+  for (i = 0; i < NUM_GP_REGS; i++) {
+    supply_unsigned_int_64 (FIRST_GP_REGNUM + i, gp_regs->gpregs[i]);
+  }
+
+  supply_unsigned_int_64 (PC_REGNUM, gp_regs->srr0);
+  supply_unsigned_int_64 (PS_REGNUM, gp_regs->srr1);
+  supply_unsigned_int (CR_REGNUM, gp_regs->cr);
+  supply_unsigned_int_64 (LR_REGNUM, gp_regs->lr);
+  supply_unsigned_int_64 (CTR_REGNUM, gp_regs->ctr);
+  supply_unsigned_int_64 (XER_REGNUM, gp_regs->xer);
+  /* supply_unsigned_int (MQ_REGNUM, gp_regs->mq); */
+  supply_unsigned_int (VRSAVE_REGNUM, gp_regs->vrsave);
+}
+
+void ppc_macosx_store_gp_registers_64 (gdb_ppc_thread_state_64_t *gp_regs)
+{
+  int i;
+
+  for (i = 0; i < NUM_GP_REGS; i++) {
+    collect_unsigned_int_64 (FIRST_GP_REGNUM + i, &gp_regs->gpregs[i]);
+  }
+
+  collect_unsigned_int_64 (PC_REGNUM, &gp_regs->srr0);
+  collect_unsigned_int_64 (PS_REGNUM, &gp_regs->srr1);
+  collect_unsigned_int (CR_REGNUM, &gp_regs->cr);
+  collect_unsigned_int_64 (LR_REGNUM, &gp_regs->lr);
+  collect_unsigned_int_64 (CTR_REGNUM, &gp_regs->ctr);
+  collect_unsigned_int_64 (XER_REGNUM, &gp_regs->xer);
+  /* collect_unsigned_int (MQ_REGNUM, &gp_regs->mq); */
+  collect_unsigned_int (VRSAVE_REGNUM, &gp_regs->vrsave);
 }
 
 void ppc_macosx_fetch_fp_registers (gdb_ppc_thread_fpstate_t *fp_regs)
@@ -121,7 +191,7 @@ void ppc_macosx_fetch_vp_registers (gdb_ppc_thread_vpstate_t *vp_regs)
   }
 
   supply_unsigned_int (VSCR_REGNUM, vp_regs->save_vscr[3]);
-  supply_unsigned_int (VRSAVE_REGNUM, vp_regs->save_vrvalid);
+  /* supply_unsigned_int (VRSAVE_REGNUM, vp_regs->save_vrvalid); */
 }
   
 void ppc_macosx_store_vp_registers (gdb_ppc_thread_vpstate_t *vp_regs)
@@ -138,8 +208,8 @@ void ppc_macosx_store_vp_registers (gdb_ppc_thread_vpstate_t *vp_regs)
   memset (&vp_regs->save_vscr, 0, sizeof (vp_regs->save_vscr));
   regcache_collect (VSCR_REGNUM, &vp_regs->save_vscr[3]);
   memset (&vp_regs->save_pad5, 0, sizeof (vp_regs->save_pad5));
-  regcache_collect (VRSAVE_REGNUM, &vp_regs->save_vrvalid);
-  memset (&vp_regs->save_pad5, 0, sizeof (vp_regs->save_pad6));
+  vp_regs->save_vrvalid = 0xffffffff;
+  memset (&vp_regs->save_pad6, 0, sizeof (vp_regs->save_pad6));
 }
 
 /* Convert a dbx stab register number (from `r' declaration) to a gdb

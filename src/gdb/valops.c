@@ -1,6 +1,6 @@
 /* Perform non-arithmetic operations on values, for GDB.
    Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
-   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
+   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -88,13 +88,43 @@ int overload_resolution = 0;
    The default is to stop in the frame where the signal was received. */
 
 int unwind_on_signal_p = 0;
-
+
+/* How you should pass arguments to a function depends on whether it
+   was defined in K&R style or prototype style.  If you define a
+   function using the K&R syntax that takes a `float' argument, then
+   callers must pass that argument as a `double'.  If you define the
+   function using the prototype syntax, then you must pass the
+   argument as a `float', with no promotion.
+
+   Unfortunately, on certain older platforms, the debug info doesn't
+   indicate reliably how each function was defined.  A function type's
+   TYPE_FLAG_PROTOTYPED flag may be clear, even if the function was
+   defined in prototype style.  When calling a function whose
+   TYPE_FLAG_PROTOTYPED flag is clear, GDB consults this flag to decide
+   what to do.
+
+   For modern targets, it is proper to assume that, if the prototype
+   flag is clear, that can be trusted: `float' arguments should be
+   promoted to `double'.  For some older targets, if the prototype
+   flag is clear, that doesn't tell us anything.  The default is to
+   trust the debug information; the user can override this behavior
+   with "set coerce-float-to-double 0".  */
+
+static int coerce_float_to_double;
 
 extern struct type *msym_text_symbol_type;
 extern struct type *msym_data_symbol_type;
 extern struct type *msym_unknown_symbol_type;
 
 extern unsigned int symbol_generation;
+
+int
+set_unwind_on_signal (int new_val)
+{
+  int old_val = unwind_on_signal_p;
+  unwind_on_signal_p = new_val;
+  return old_val;
+}
 
 struct cached_value *
 create_cached_function (name, type)
@@ -111,14 +141,6 @@ create_cached_function (name, type)
   ptr->generation = (unsigned int) -1;
 
   return ptr;
-}
-
-int
-set_unwind_on_signal (int new_val)
-{
-  int old_val = unwind_on_signal_p;
-  unwind_on_signal_p = new_val;
-  return old_val;
 }
 
 struct value *
@@ -439,49 +461,6 @@ value_cast (struct type *type, struct value *arg2)
       VALUE_POINTED_TO_OFFSET (arg2) = 0;	/* pai: chk_val */
       return arg2;
     }
-  /* OBSOLETE else if (chill_varying_type (type)) */
-  /* OBSOLETE   { */
-  /* OBSOLETE     struct type *range1, *range2, *eltype1, *eltype2; */
-  /* OBSOLETE     struct value *val; */
-  /* OBSOLETE     int count1, count2; */
-  /* OBSOLETE     LONGEST low_bound, high_bound; */
-  /* OBSOLETE     char *valaddr, *valaddr_data; */
-  /* OBSOLETE     *//* For lint warning about eltype2 possibly uninitialized: */
-  /* OBSOLETE     eltype2 = NULL; */
-  /* OBSOLETE     if (code2 == TYPE_CODE_BITSTRING) */
-  /* OBSOLETE       error ("not implemented: converting bitstring to varying type"); */
-  /* OBSOLETE     if ((code2 != TYPE_CODE_ARRAY && code2 != TYPE_CODE_STRING) */
-  /* OBSOLETE         || (eltype1 = check_typedef (TYPE_TARGET_TYPE (TYPE_FIELD_TYPE (type, 1))), */
-  /* OBSOLETE       eltype2 = check_typedef (TYPE_TARGET_TYPE (type2)), */
-  /* OBSOLETE                                (TYPE_LENGTH (eltype1) != TYPE_LENGTH (eltype2) */
-  /* OBSOLETE     *//*|| TYPE_CODE (eltype1) != TYPE_CODE (eltype2) *//* ))) */
-  /* OBSOLETE      error ("Invalid conversion to varying type"); */
-  /* OBSOLETE     range1 = TYPE_FIELD_TYPE (TYPE_FIELD_TYPE (type, 1), 0); */
-  /* OBSOLETE     range2 = TYPE_FIELD_TYPE (type2, 0); */
-  /* OBSOLETE     if (get_discrete_bounds (range1, &low_bound, &high_bound) < 0) */
-  /* OBSOLETE       count1 = -1; */
-  /* OBSOLETE     else */
-  /* OBSOLETE       count1 = high_bound - low_bound + 1; */
-  /* OBSOLETE     if (get_discrete_bounds (range2, &low_bound, &high_bound) < 0) */
-  /* OBSOLETE       count1 = -1, count2 = 0;	*//* To force error before */
-  /* OBSOLETE     else */
-  /* OBSOLETE       count2 = high_bound - low_bound + 1; */
-  /* OBSOLETE     if (count2 > count1) */
-  /* OBSOLETE       error ("target varying type is too small"); */
-  /* OBSOLETE     val = allocate_value (type); */
-  /* OBSOLETE     valaddr = VALUE_CONTENTS_RAW (val); */
-  /* OBSOLETE     valaddr_data = valaddr + TYPE_FIELD_BITPOS (type, 1) / 8; */
-  /* OBSOLETE     *//* Set val's __var_length field to count2. */
-  /* OBSOLETE     store_signed_integer (valaddr, TYPE_LENGTH (TYPE_FIELD_TYPE (type, 0)), */
-  /* OBSOLETE 	    count2); */
-  /* OBSOLETE     *//* Set the __var_data field to count2 elements copied from arg2. */
-  /* OBSOLETE     memcpy (valaddr_data, VALUE_CONTENTS (arg2), */
-  /* OBSOLETE      count2 * TYPE_LENGTH (eltype2)); */
-  /* OBSOLETE     *//* Zero the rest of the __var_data field of val. */
-  /* OBSOLETE     memset (valaddr_data + count2 * TYPE_LENGTH (eltype2), '\0', */
-  /* OBSOLETE      (count1 - count2) * TYPE_LENGTH (eltype2)); */
-  /* OBSOLETE     return val; */
-  /* OBSOLETE   } */
   else if (VALUE_LVAL (arg2) == lval_memory)
     {
       return value_at_lazy (type, VALUE_ADDRESS (arg2) + VALUE_OFFSET (arg2),
@@ -693,132 +672,120 @@ value_assign (struct value *toval, struct value *fromval)
       }
       break;
 
-    case lval_register:
-      if (VALUE_BITSIZE (toval))
-	{
-	  char buffer[sizeof (LONGEST)];
-	  int len =
-		REGISTER_RAW_SIZE (VALUE_REGNO (toval)) - VALUE_OFFSET (toval);
-
-	  if (len > (int) sizeof (LONGEST))
-	    error ("Can't handle bitfields in registers larger than %d bits.",
-		   (int) sizeof (LONGEST) * HOST_CHAR_BIT);
-
-	  if (VALUE_BITPOS (toval) + VALUE_BITSIZE (toval)
-	      > len * HOST_CHAR_BIT)
-	    /* Getting this right would involve being very careful about
-	       byte order.  */
-	    error ("Can't assign to bitfields that cross register "
-		   "boundaries.");
-
-	  read_register_bytes (VALUE_ADDRESS (toval) + VALUE_OFFSET (toval),
-			       buffer, len);
-	  modify_field (buffer, value_as_long (fromval),
-			VALUE_BITPOS (toval), VALUE_BITSIZE (toval));
-	  write_register_bytes (VALUE_ADDRESS (toval) + VALUE_OFFSET (toval),
-				buffer, len);
-	}
-      else if (use_buffer)
-	write_register_bytes (VALUE_ADDRESS (toval) + VALUE_OFFSET (toval),
-			      raw_buffer, use_buffer);
-      else
-	{
-	  /* Do any conversion necessary when storing this type to more
-	     than one register.  */
-#ifdef REGISTER_CONVERT_FROM_TYPE
-	  memcpy (raw_buffer, VALUE_CONTENTS (fromval), TYPE_LENGTH (type));
-	  REGISTER_CONVERT_FROM_TYPE (VALUE_REGNO (toval), type, raw_buffer);
-	  write_register_bytes (VALUE_ADDRESS (toval) + VALUE_OFFSET (toval),
-				raw_buffer, TYPE_LENGTH (type));
-#else
-	  write_register_bytes (VALUE_ADDRESS (toval) + VALUE_OFFSET (toval),
-			      VALUE_CONTENTS (fromval), TYPE_LENGTH (type));
-#endif
-	}
-
-      target_changed_event ();
-
-      /* Assigning to the stack pointer, frame pointer, and other
-         (architecture and calling convention specific) registers may
-         cause the frame cache to be out of date.  We just do this
-         on all assignments to registers for simplicity; I doubt the slowdown
-         matters.  */
-      reinit_frame_cache ();
-      break;
-
     case lval_reg_frame_relative:
+    case lval_register:
       {
+	struct frame_id old_frame;
 	/* value is stored in a series of registers in the frame
 	   specified by the structure.  Copy that value out, modify
 	   it, and copy it back in.  */
-	int amount_to_copy = (VALUE_BITSIZE (toval) ? 1 : TYPE_LENGTH (type));
-	int reg_size = REGISTER_RAW_SIZE (VALUE_FRAME_REGNUM (toval));
-	int byte_offset = VALUE_OFFSET (toval) % reg_size;
-	int reg_offset = VALUE_OFFSET (toval) / reg_size;
 	int amount_copied;
-
-	/* Make the buffer large enough in all cases.  */
-	/* FIXME (alloca): Not safe for very large data types. */
-	char *buffer = (char *) alloca (amount_to_copy
-					+ sizeof (LONGEST)
-					+ MAX_REGISTER_RAW_SIZE);
-
+	int amount_to_copy;
+	char *buffer;
+	int value_reg;
+	int reg_offset;
+	int byte_offset;
 	int regno;
 	struct frame_info *frame;
 
+	/* Since modifying a register can trash the frame chain, we
+           save the old frame and then restore the new frame
+           afterwards.  */
+	old_frame = get_frame_id (deprecated_selected_frame);
+
 	/* Figure out which frame this is in currently.  */
-	for (frame = get_current_frame ();
-	     frame && FRAME_FP (frame) != VALUE_FRAME (toval);
-	     frame = get_prev_frame (frame))
-	  ;
+	if (VALUE_LVAL (toval) == lval_register)
+	  {
+	    frame = get_current_frame ();
+	    value_reg = VALUE_REGNO (toval);
+	  }
+	else
+	  {
+	    for (frame = get_current_frame ();
+		 frame && get_frame_base (frame) != VALUE_FRAME (toval);
+		 frame = get_prev_frame (frame))
+	      ;
+	    value_reg = VALUE_FRAME_REGNUM (toval);
+	  }
 
 	if (!frame)
 	  error ("Value being assigned to is no longer active.");
 
-	amount_to_copy += (reg_size - amount_to_copy % reg_size);
+	/* Locate the first register that falls in the value that
+           needs to be transfered.  Compute the offset of the value in
+           that register.  */
+	{
+	  int offset;
+	  for (reg_offset = value_reg, offset = 0;
+	       offset + REGISTER_RAW_SIZE (reg_offset) <= VALUE_OFFSET (toval);
+	       reg_offset++);
+	  byte_offset = VALUE_OFFSET (toval) - offset;
+	}
 
-	/* Copy it out.  */
-	for ((regno = VALUE_FRAME_REGNUM (toval) + reg_offset,
-	      amount_copied = 0);
+	/* Compute the number of register aligned values that need to
+           be copied.  */
+	if (VALUE_BITSIZE (toval))
+	  amount_to_copy = byte_offset + 1;
+	else
+	  amount_to_copy = byte_offset + TYPE_LENGTH (type);
+
+	/* And a bounce buffer.  Be slightly over generous.  */
+	buffer = (char *) alloca (amount_to_copy
+				  + MAX_REGISTER_RAW_SIZE);
+
+	/* Copy it in.  */
+	for (regno = reg_offset, amount_copied = 0;
 	     amount_copied < amount_to_copy;
-	     amount_copied += reg_size, regno++)
+	     amount_copied += REGISTER_RAW_SIZE (regno), regno++)
 	  {
-	    get_saved_register (buffer + amount_copied,
-				(int *) NULL, (CORE_ADDR *) NULL,
-				frame, regno, (enum lval_type *) NULL);
+	    frame_register_read (frame, regno, buffer + amount_copied);
 	  }
-
+	
 	/* Modify what needs to be modified.  */
 	if (VALUE_BITSIZE (toval))
-	  modify_field (buffer + byte_offset,
-			value_as_long (fromval),
-			VALUE_BITPOS (toval), VALUE_BITSIZE (toval));
+	  {
+	    modify_field (buffer + byte_offset,
+			  value_as_long (fromval),
+			  VALUE_BITPOS (toval), VALUE_BITSIZE (toval));
+	  }
 	else if (use_buffer)
-	  memcpy (buffer + byte_offset, raw_buffer, use_buffer);
+	  {
+	    memcpy (buffer + VALUE_OFFSET (toval), raw_buffer, use_buffer);
+	  }
 	else
-	  memcpy (buffer + byte_offset, VALUE_CONTENTS (fromval),
-		  TYPE_LENGTH (type));
+	  {
+	    memcpy (buffer + byte_offset, VALUE_CONTENTS (fromval),
+		    TYPE_LENGTH (type));
+	    /* Do any conversion necessary when storing this type to
+	       more than one register.  */
+#ifdef REGISTER_CONVERT_FROM_TYPE
+	    REGISTER_CONVERT_FROM_TYPE (value_reg, type,
+					(buffer + byte_offset));
+#endif
+	  }
 
-	/* Copy it back.  */
-	for ((regno = VALUE_FRAME_REGNUM (toval) + reg_offset,
-	      amount_copied = 0);
+	/* Copy it out.  */
+	for (regno = reg_offset, amount_copied = 0;
 	     amount_copied < amount_to_copy;
-	     amount_copied += reg_size, regno++)
+	     amount_copied += REGISTER_RAW_SIZE (regno), regno++)
 	  {
 	    enum lval_type lval;
 	    CORE_ADDR addr;
 	    int optim;
-
+	    int realnum;
+	    
 	    /* Just find out where to put it.  */
-	    get_saved_register ((char *) NULL,
-				&optim, &addr, frame, regno, &lval);
-
+	    frame_register (frame, regno, &optim, &lval, &addr, &realnum,
+			    NULL);
+	    
 	    if (optim)
 	      error ("Attempt to assign to a value that was optimized out.");
 	    if (lval == lval_memory)
-	      write_memory (addr, buffer + amount_copied, reg_size);
+	      write_memory (addr, buffer + amount_copied,
+			    REGISTER_RAW_SIZE (regno));
 	    else if (lval == lval_register)
-	      write_register_bytes (addr, buffer + amount_copied, reg_size);
+	      regcache_cooked_write (current_regcache, realnum,
+				     (buffer + amount_copied));
 	    else
 	      error ("Attempt to assign to an unmodifiable value.");
 	  }
@@ -826,10 +793,31 @@ value_assign (struct value *toval, struct value *fromval)
 	if (register_changed_hook)
 	  register_changed_hook (-1);
 	target_changed_event ();
+
+	/* Assigning to the stack pointer, frame pointer, and other
+	   (architecture and calling convention specific) registers
+	   may cause the frame cache to be out of date.  We just do
+	   this on all assignments to registers for simplicity; I
+	   doubt the slowdown matters.  */
+	reinit_frame_cache ();
+
+	/* Having destoroyed the frame cache, restore the selected
+           frame.  */
+	/* FIXME: cagney/2002-11-02: There has to be a better way of
+           doing this.  Instead of constantly saving/restoring the
+           frame.  Why not create a get_selected_frame() function
+           that, having saved the selected frame's ID can
+           automatically re-find the previously selected frame
+           automatically.  */
+	{
+	  struct frame_info *fi = frame_find_by_id (old_frame);
+	  if (fi != NULL)
+	    select_frame (fi);
+	}
       }
       break;
-
-
+      
+      
     default:
       error ("Left operand of assignment is not an lvalue.");
     }
@@ -1151,49 +1139,6 @@ default_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
   return sp;
 }
 
-
-/* Functions to use for the COERCE_FLOAT_TO_DOUBLE gdbarch method.
-
-   How you should pass arguments to a function depends on whether it
-   was defined in K&R style or prototype style.  If you define a
-   function using the K&R syntax that takes a `float' argument, then
-   callers must pass that argument as a `double'.  If you define the
-   function using the prototype syntax, then you must pass the
-   argument as a `float', with no promotion.
-
-   Unfortunately, on certain older platforms, the debug info doesn't
-   indicate reliably how each function was defined.  A function type's
-   TYPE_FLAG_PROTOTYPED flag may be clear, even if the function was
-   defined in prototype style.  When calling a function whose
-   TYPE_FLAG_PROTOTYPED flag is clear, GDB consults the
-   COERCE_FLOAT_TO_DOUBLE gdbarch method to decide what to do.
-
-   For modern targets, it is proper to assume that, if the prototype
-   flag is clear, that can be trusted: `float' arguments should be
-   promoted to `double'.  You should register the function
-   `standard_coerce_float_to_double' to get this behavior.
-
-   For some older targets, if the prototype flag is clear, that
-   doesn't tell us anything.  So we guess that, if we don't have a
-   type for the formal parameter (i.e., the first argument to
-   COERCE_FLOAT_TO_DOUBLE is null), then we should promote it;
-   otherwise, we should leave it alone.  The function
-   `default_coerce_float_to_double' provides this behavior; it is the
-   default value, for compatibility with older configurations.  */
-int
-default_coerce_float_to_double (struct type *formal, struct type *actual)
-{
-  return formal == NULL;
-}
-
-
-int
-standard_coerce_float_to_double (struct type *formal, struct type *actual)
-{
-  return 1;
-}
-
-
 /* Perform the standard coercions that are specified
    for arguments to be passed to C functions.
 
@@ -1236,11 +1181,7 @@ value_arg_coerce (struct value *arg, struct type *param_type,
 	type = builtin_type_int;
       break;
     case TYPE_CODE_FLT:
-      /* FIXME: We should always convert floats to doubles in the
-         non-prototyped case.  As many debugging formats include
-         no information about prototyping, we have to live with
-         COERCE_FLOAT_TO_DOUBLE for now.  */
-      if (!is_prototyped && COERCE_FLOAT_TO_DOUBLE (param_type, arg_type))
+      if (!is_prototyped && coerce_float_to_double)
 	{
 	  if (TYPE_LENGTH (type) < TYPE_LENGTH (builtin_type_double))
 	    type = builtin_type_double;
@@ -1335,6 +1276,10 @@ find_function_addr (struct value *function, struct type **retval_type)
   return funaddr;
 }
 
+#if defined (NM_NEXTSTEP)
+extern void macosx_setup_registers_before_hand_call ();
+#endif
+
 /* All this stuff with a dummy frame may seem unnecessarily complicated
    (why not just save registers in GDB?).  The purpose of pushing a dummy
    frame which looks just like a real frame is so that if you call a
@@ -1404,8 +1349,12 @@ hand_function_call (struct value *function, struct type *expect_type,
   funaddr = find_function_addr (function, &value_type);
   CHECK_TYPEDEF (value_type);
 
+  /* We don't require expect_type not to be a typedef, so remember to
+     run check_typedef here */
+
   if ((value_type == NULL) || (TYPE_CODE (value_type) == TYPE_CODE_ERROR))
-    value_type = expect_type;
+    if (expect_type != NULL)
+      value_type = check_typedef (expect_type);
 
   if ((value_type == NULL) || (TYPE_CODE (value_type) == TYPE_CODE_ERROR))
     error ("Unable to call function at 0x%lx: no return type information available.\n"
@@ -1422,6 +1371,10 @@ hand_function_call (struct value *function, struct type *expect_type,
   /* A cleanup for the inferior status.  Create this AFTER the retbuf
      so that this can be discarded or applied without interfering with
      the regbuf.  */
+#if defined (NM_NEXTSTEP)
+  macosx_setup_registers_before_hand_call ();
+#endif
+
   inf_status = save_inferior_status (1);
   inf_status_cleanup = make_cleanup_restore_inferior_status (inf_status);
 
@@ -1529,45 +1482,14 @@ hand_function_call (struct value *function, struct type *expect_type,
   if (CALL_DUMMY_LOCATION == ON_STACK)
     {
       write_memory (start_sp, (char *) dummy1, sizeof_dummy1);
-      if (USE_GENERIC_DUMMY_FRAMES)
+      if (DEPRECATED_USE_GENERIC_DUMMY_FRAMES)
 	generic_save_call_dummy_addr (start_sp, start_sp + sizeof_dummy1);
-    }
-
-  if (CALL_DUMMY_LOCATION == BEFORE_TEXT_END)
-    {
-      /* Convex Unix prohibits executing in the stack segment. */
-      /* Hope there is empty room at the top of the text segment. */
-      extern CORE_ADDR text_end;
-      static int checked = 0;
-      if (!checked)
-	for (start_sp = text_end - sizeof_dummy1; start_sp < text_end; ++start_sp)
-	  if (read_memory_integer (start_sp, 1) != 0)
-	    error ("text segment full -- no place to put call");
-      checked = 1;
-      sp = old_sp;
-      real_pc = text_end - sizeof_dummy1;
-      write_memory (real_pc, (char *) dummy1, sizeof_dummy1);
-      if (USE_GENERIC_DUMMY_FRAMES)
-	generic_save_call_dummy_addr (real_pc, real_pc + sizeof_dummy1);
-    }
-
-  if (CALL_DUMMY_LOCATION == AFTER_TEXT_END)
-    {
-      extern CORE_ADDR text_end;
-      int errcode;
-      sp = old_sp;
-      real_pc = text_end;
-      errcode = target_write_memory (real_pc, (char *) dummy1, sizeof_dummy1);
-      if (errcode != 0)
-	error ("Cannot write text segment -- call_function failed");
-      if (USE_GENERIC_DUMMY_FRAMES)
-	generic_save_call_dummy_addr (real_pc, real_pc + sizeof_dummy1);
     }
 
   if (CALL_DUMMY_LOCATION == AT_ENTRY_POINT)
     {
       real_pc = funaddr;
-      if (USE_GENERIC_DUMMY_FRAMES)
+      if (DEPRECATED_USE_GENERIC_DUMMY_FRAMES)
 	/* NOTE: cagney/2002-04-13: The entry point is going to be
            modified with a single breakpoint.  */
 	generic_save_call_dummy_addr (CALL_DUMMY_ADDRESS (),
@@ -1846,8 +1768,9 @@ You must use a pointer to function type variable. Command ignored.", arg_name);
 	  {
 	    /* The user wants the context restored. */
 
-            /* We must get back to the frame we were before the dummy call. */
-            POP_FRAME;
+            /* We must get back to the frame we were before the dummy
+               call. */
+	    frame_pop (get_current_frame ());
 
 	    /* FIXME: Insert a bunch of wrap_here; name can be very long if it's
 	       a C++ name with arguments and stuff.  */
@@ -2244,22 +2167,23 @@ search_struct_field (char *name, struct value *arg1, int offset,
 		/* Look for a match through the fields of an anonymous union,
 		   or anonymous struct.  C++ provides anonymous unions.
 
-		   In the GNU Chill (OBSOLETE) implementation of
-		   variant record types, each <alternative field> has
-		   an (anonymous) union type, each member of the union
-		   represents a <variant alternative>.  Each <variant
-		   alternative> is represented as a struct, with a
-		   member for each <variant field>.  */
+		   In the GNU Chill (now deleted from GDB)
+		   implementation of variant record types, each
+		   <alternative field> has an (anonymous) union type,
+		   each member of the union represents a <variant
+		   alternative>.  Each <variant alternative> is
+		   represented as a struct, with a member for each
+		   <variant field>.  */
 
 		struct value *v;
 		int new_offset = offset;
 
 		/* This is pretty gross.  In G++, the offset in an
 		   anonymous union is relative to the beginning of the
-		   enclosing struct.  In the GNU Chill (OBSOLETE)
-		   implementation of variant records, the bitpos is
-		   zero in an anonymous union field, so we have to add
-		   the offset of the union here. */
+		   enclosing struct.  In the GNU Chill (now deleted
+		   from GDB) implementation of variant records, the
+		   bitpos is zero in an anonymous union field, so we
+		   have to add the offset of the union here. */
 		if (TYPE_CODE (field_type) == TYPE_CODE_STRUCT
 		    || (TYPE_NFIELDS (field_type) > 0
 			&& TYPE_FIELD_BITPOS (field_type, 0) == 0))
@@ -3413,7 +3337,7 @@ value_of_local (const char *name, int complain)
   int i;
   struct value * ret;
 
-  if (selected_frame == 0)
+  if (deprecated_selected_frame == 0)
     {
       if (complain)
 	error ("no frame selected");
@@ -3421,11 +3345,11 @@ value_of_local (const char *name, int complain)
 	return 0;
     }
 
-  func = get_frame_function (selected_frame);
+  func = get_frame_function (deprecated_selected_frame);
   if (!func)
     {
       if (complain)
-	error ("no %s in nameless context", name);
+	error ("no `%s' in nameless context", name);
       else
 	return 0;
     }
@@ -3435,7 +3359,7 @@ value_of_local (const char *name, int complain)
   if (i <= 0)
     {
       if (complain)
-	error ("no args, no %s", name);
+	error ("no args, no `%s'", name);
       else
 	return 0;
     }
@@ -3446,14 +3370,14 @@ value_of_local (const char *name, int complain)
   if (sym == NULL)
     {
       if (complain)
-	error ("current stack frame does not contain a variable named \"%s\"", name);
+	error ("current stack frame does not contain a variable named `%s'", name);
       else
 	return NULL;
     }
 
-  ret = read_var_value (sym, selected_frame);
+  ret = read_var_value (sym, deprecated_selected_frame);
   if (ret == 0 && complain)
-    error ("%s argument unreadable", name);
+    error ("`%s' argument unreadable", name);
   return ret;
 }
 
@@ -3466,6 +3390,23 @@ value_of_this (int complain)
 {
   if (current_language->la_language == language_objc)
     return value_of_local ("self", complain);
+  else if (current_language->la_language == language_objcplus)
+    {
+      /* INIT_SYMBOL_DEMANGLED_NAME sets the language of a function
+	 symbol to C++ if it's name passes the C++ demangler.  So 
+	 let's use that to get the frame's language... */
+      struct symbol *sym = 
+	get_frame_function (deprecated_selected_frame);
+      if (sym)
+	if (SYMBOL_LANGUAGE (sym) == language_cplus)
+	  return value_of_local ("this", complain);
+	else
+	  return value_of_local ("self", complain);
+      else
+	/* Not sure why we would not be able to get the function
+	   here. */
+	error ("Couldn't find symbol for current pc.");
+    }
   else
     return value_of_local ("this", complain);
 }
@@ -3478,7 +3419,7 @@ struct value *
 value_slice (struct value *array, int lowbound, int length)
 {
   struct type *slice_range_type, *slice_type, *range_type;
-  LONGEST lowerbound, upperbound, offset;
+  LONGEST lowerbound, upperbound;
   struct value *slice;
   struct type *array_type;
   array_type = check_typedef (VALUE_TYPE (array));
@@ -3492,9 +3433,6 @@ value_slice (struct value *array, int lowbound, int length)
     error ("slice from bad array or bitstring");
   if (lowbound < lowerbound || length < 0
       || lowbound + length - 1 > upperbound)
-    /* OBSOLETE Chill allows zero-length strings but not arrays. */
-    /* OBSOLETE || (current_language->la_language == language_chill */
-    /* OBSOLETE && length == 0 && TYPE_CODE (array_type) == TYPE_CODE_ARRAY)) */
     error ("slice out of range");
   /* FIXME-type-allocation: need a way to free this type when we are
      done with it.  */
@@ -3529,7 +3467,7 @@ value_slice (struct value *array, int lowbound, int length)
   else
     {
       struct type *element_type = TYPE_TARGET_TYPE (array_type);
-      offset
+      LONGEST offset
 	= (lowbound - lowerbound) * TYPE_LENGTH (check_typedef (element_type));
       slice_type = create_array_type ((struct type *) NULL, element_type,
 				      slice_range_type);
@@ -3548,19 +3486,6 @@ value_slice (struct value *array, int lowbound, int length)
       VALUE_OFFSET (slice) = VALUE_OFFSET (array) + offset;
     }
   return slice;
-}
-
-/* Assuming OBSOLETE chill_varying_type (VARRAY) is true, return an
-   equivalent value as a fixed-length array. */
-
-struct value *
-varying_to_slice (struct value *varray)
-{
-  struct type *vtype = check_typedef (VALUE_TYPE (varray));
-  LONGEST length = unpack_long (TYPE_FIELD_TYPE (vtype, 0),
-				VALUE_CONTENTS (varray)
-				+ TYPE_FIELD_BITPOS (vtype, 0) / 8);
-  return value_slice (value_primitive_field (varray, 0, 1, vtype), 0, length);
 }
 
 /* Create a value for a FORTRAN complex number.  Currently most of
@@ -3640,4 +3565,19 @@ is received while in a function called from gdb (call dummy).  If set, gdb\n\
 unwinds the stack and restore the context to what as it was before the call.\n\
 The default is to stop in the frame where the signal was received.", &setlist),
 		     &showlist);
+
+  add_show_from_set
+    (add_set_cmd ("coerce-float-to-double", class_obscure, var_boolean,
+		  (char *) &coerce_float_to_double,
+		  "Set coercion of floats to doubles when calling functions\n"
+ "Variables of type float should generally be converted to doubles before\n"
+ "calling an unprototyped function, and left alone when calling a prototyped\n"
+ "function.  However, some older debug info formats do not provide enough\n"
+ "information to determine that a function is prototyped.  If this flag is\n"
+ "set, GDB will perform the conversion for a function it considers\n"
+ "unprototyped.\n"
+ "The default is to perform the conversion.\n",
+		  &setlist),
+     &showlist);
+  coerce_float_to_double = 1;
 }

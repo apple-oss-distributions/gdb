@@ -1,7 +1,7 @@
 /* Top level stuff for GDB, the GNU debugger.
 
    Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
-   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002
+   1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -173,6 +173,12 @@ int remote_debug = 0;
    breakpoint, for instance. This is a real indicator whether the
    target is off and running, which gdb is doing something else. */
 int target_executing = 0;
+
+/* Non-zero means gdb is quitting - some parts of gdb, for instance
+   generic_mourn_inferior want to re-read the exec file when shutting
+   down, which is annoying.  Use this flag to decide whether to do things
+   that you don't need to do when gdb is going away. */
+int gdb_quitting = 0;
 
 /* Level of control structure.  */
 static int control_level;
@@ -1418,7 +1424,7 @@ print_gdb_version (struct ui_file *stream)
 
   /* Second line is a copyright notice. */
 
-  fprintf_filtered (stream, "Copyright 2002 Free Software Foundation, Inc.\n");
+  fprintf_filtered (stream, "Copyright 2003 Free Software Foundation, Inc.\n");
 
   /* Following the copyright is a brief statement that the program is
      free software, that users are free to copy and change it on
@@ -1758,6 +1764,8 @@ void
 quit_force (char *args, int from_tty)
 {
   int exit_code = 0;
+  
+  gdb_quitting = 1;
 
   /* An optional expression may be used to cause gdb to terminate with the 
      value of that expression. */
@@ -2019,7 +2027,7 @@ init_main (void)
   write_history_p = 0;
 
   /* Setup important stuff for command line editing.  */
-  rl_completion_entry_function = (int (*)()) readline_line_completion_function;
+  rl_completion_entry_function = readline_line_completion_function;
   rl_completer_word_break_characters =
 				 get_gdb_completer_word_break_characters ();
   rl_completer_quote_characters = get_gdb_completer_quote_characters ();
@@ -2195,7 +2203,7 @@ gdb_init (char *argv0)
     { 
       struct gdb_interpreter *interp; 
       if (interpreter_p == NULL) 
-	interpreter_p = strsave ("console"); 
+	interpreter_p = xstrdup ("console"); 
  
       interp = gdb_lookup_interpreter (interpreter_p); 
  

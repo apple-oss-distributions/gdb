@@ -100,7 +100,7 @@ metrowerks_step (CORE_ADDR range_start, CORE_ADDR range_stop, int step_into)
   frame = get_current_frame ();
   if (frame == NULL)
     error ("No current frame");
-  step_frame_address = FRAME_FP (frame);
+  step_frame_id = get_frame_id (frame);
   step_sp = read_sp ();
   
   step_range_start = range_start;

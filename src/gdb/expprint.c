@@ -1,6 +1,7 @@
 /* Print in infix form a struct expression.
+
    Copyright 1986, 1988, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000 Free Software Foundation, Inc.
+   1998, 1999, 2000, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +28,8 @@
 #include "language.h"
 #include "parser-defs.h"
 #include "frame.h"		/* For frame_map_regnum_to_name.  */
+#include "target.h"
+#include "gdb_string.h"
 
 #ifdef HAVE_CTYPE_H
 #include <ctype.h>
@@ -177,7 +180,7 @@ print_subexp (register struct expression *exp, register int *pos,
       fprintf_unfiltered (stream, "B'<unimplemented>'");
       return;
 
-    case OP_NSSTRING:		/* Objective C Foundation Class NSString constant */
+    case OP_OBJC_NSSTRING:	/* Objective-C Foundation Class NSString constant.  */
       nargs = longest_to_int (exp->elts[pc + 1].longconst);
       (*pos) += 3 + BYTES_TO_EXP_ELEM (nargs + 1);
       fputs_filtered ("@\"", stream);
@@ -185,8 +188,8 @@ print_subexp (register struct expression *exp, register int *pos,
       fputs_filtered ("\"", stream);
       return;
 
-    case OP_MSGCALL:
-      {				/* Objective C message (method) call */
+    case OP_OBJC_MSGCALL:
+      {			/* Objective C message (method) call.  */
 	char *selector;
 	(*pos) += 3;
 	nargs = longest_to_int (exp->elts[pc + 2].longconst);
@@ -198,7 +201,6 @@ print_subexp (register struct expression *exp, register int *pos,
 	    error ("bad selector");
 	    return;
 	  }
-	/* NOTE: "selector" was malloc'd by target_read_string; must be freed */
 	if (nargs)
 	  {
 	    char *s, *nextS;
@@ -218,6 +220,7 @@ print_subexp (register struct expression *exp, register int *pos,
 	    fprintf_unfiltered (stream, " %s", selector);
 	  }
 	fprintf_unfiltered (stream, "]");
+	/* "selector" was malloc'd by target_read_string. Free it.  */
 	xfree (selector);
 	return;
       }
@@ -265,8 +268,6 @@ print_subexp (register struct expression *exp, register int *pos,
 	}
       else
 	{
-	  /* OBSOLETE int is_chill = exp->language_defn->la_language == language_chill; */
-	  /* OBSOLETE fputs_filtered (is_chill ? " [" : " {", stream); */
 	  fputs_filtered (" {", stream);
 	  for (tem = 0; tem < nargs; tem++)
 	    {
@@ -276,7 +277,6 @@ print_subexp (register struct expression *exp, register int *pos,
 		}
 	      print_subexp (exp, pos, stream, PREC_ABOVE_COMMA);
 	    }
-	  /* OBSOLETE fputs_filtered (is_chill ? "]" : "}", stream); */
 	  fputs_filtered ("}", stream);
 	}
       return;
@@ -284,29 +284,15 @@ print_subexp (register struct expression *exp, register int *pos,
     case OP_LABELED:
       tem = longest_to_int (exp->elts[pc + 1].longconst);
       (*pos) += 3 + BYTES_TO_EXP_ELEM (tem + 1);
-
-#if 0
-      if (0 /* OBSOLETE exp->language_defn->la_language == language_chill */)
-	{ /* OBSOLETE */
-	  fputs_filtered (".", stream); /* OBSOLETE */
-	  fputs_filtered (&exp->elts[pc + 2].string, stream); /* OBSOLETE */
-	  fputs_filtered (exp->elts[*pos].opcode == OP_LABELED ? ", " /* OBSOLETE */
-			  : ": ", /* OBSOLETE */
-			  stream); /* OBSOLETE */
-	} /* OBSOLETE */
-      else /* OBSOLETE */
-#endif
-	{
-	  /* Gcc support both these syntaxes.  Unsure which is preferred.  */
+      /* Gcc support both these syntaxes.  Unsure which is preferred.  */
 #if 1
-	  fputs_filtered (&exp->elts[pc + 2].string, stream);
-	  fputs_filtered (": ", stream);
+      fputs_filtered (&exp->elts[pc + 2].string, stream);
+      fputs_filtered (": ", stream);
 #else
-	  fputs_filtered (".", stream);
-	  fputs_filtered (&exp->elts[pc + 2].string, stream);
-	  fputs_filtered ("=", stream);
+      fputs_filtered (".", stream);
+      fputs_filtered (&exp->elts[pc + 2].string, stream);
+      fputs_filtered ("=", stream);
 #endif
-	}
       print_subexp (exp, pos, stream, PREC_SUFFIX);
       return;
 
@@ -429,18 +415,18 @@ print_subexp (register struct expression *exp, register int *pos,
 	error ("Invalid expression");
       break;
 
-      /* Objective-C ops */
-
-    case OP_SELF:
-      ++(*pos);
-      fputs_filtered ("self", stream);	/* the ObjC equivalent of "this" */
-      return;
-
       /* C++ ops */
 
     case OP_THIS:
       ++(*pos);
       fputs_filtered ("this", stream);
+      return;
+
+      /* Objective-C ops */
+
+    case OP_OBJC_SELF:
+      ++(*pos);
+      fputs_filtered ("self", stream);	/* The ObjC equivalent of "this".  */
       return;
 
       /* Modula-2 ops */
@@ -736,8 +722,8 @@ op_name (int opcode)
       return "STRUCTOP_PTR";
     case OP_THIS:
       return "OP_THIS";
-    case OP_SELF:
-      return "OP_SELF";
+    case OP_OBJC_SELF:
+      return "OP_OBJC_SELF";
     case OP_SCOPE:
       return "OP_SCOPE";
     case OP_TYPE:

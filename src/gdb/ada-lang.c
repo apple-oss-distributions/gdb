@@ -36,9 +36,7 @@ Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.  */
 #include "breakpoint.h"
 #include "gdbcore.h"
 #include "ada-lang.h"
-#ifdef UI_OUT
 #include "ui-out.h"
-#endif
 
 struct cleanup *unresolved_names;
 
@@ -3536,7 +3534,7 @@ add_symbols_from_enclosing_procs (const char *name, namespace_enum namespace,
 	-(long) TYPE_LENGTH (SYMBOL_TYPE (static_link));
     }
 
-  frame = selected_frame;
+  frame = deprecated_selected_frame;
   while (frame != NULL && ndefns == 0)
     {
       struct block *block;
@@ -4189,6 +4187,7 @@ fill_in_ada_prototype (struct symbol *func)
       case LOC_REGPARM_ADDR:
 	TYPE_FIELD_BITPOS (ftype, nargs) = nargs;
 	TYPE_FIELD_BITSIZE (ftype, nargs) = 0;
+	TYPE_FIELD_STATIC_KIND (ftype, nargs) = 0;
 	TYPE_FIELD_TYPE (ftype, nargs) =
 	  lookup_pointer_type (check_typedef (SYMBOL_TYPE (sym)));
 	TYPE_FIELD_NAME (ftype, nargs) = SYMBOL_NAME (sym);
@@ -4202,6 +4201,7 @@ fill_in_ada_prototype (struct symbol *func)
       case LOC_BASEREG_ARG:
 	TYPE_FIELD_BITPOS (ftype, nargs) = nargs;
 	TYPE_FIELD_BITSIZE (ftype, nargs) = 0;
+	TYPE_FIELD_STATIC_KIND (ftype, nargs) = 0;
 	TYPE_FIELD_TYPE (ftype, nargs) = check_typedef (SYMBOL_TYPE (sym));
 	TYPE_FIELD_NAME (ftype, nargs) = SYMBOL_NAME (sym);
 	nargs += 1;
@@ -4395,7 +4395,7 @@ ada_finish_decode_line_1 (char **spec, struct symtab *file_table,
 #endif
       struct minimal_symbol *msymbol;
 
-      INIT_SAL (&val);
+      init_sal (&val);
 
       msymbol = NULL;
       if (lower_name != NULL)
@@ -4537,7 +4537,7 @@ done:
   sals.nelts = 1;
   sals.sals = (struct symtab_and_line *) xmalloc (sizeof (sals.sals[0]));
 
-  INIT_SAL (&sals.sals[0]);
+  init_sal (&sals.sals[0]);
 
   sals.sals[0].line = best_linetable->item[best_index].line;
   sals.sals[0].pc = best_linetable->item[best_index].pc;
@@ -4856,7 +4856,7 @@ all_sals_for_line (const char *filename, int line_num, char ***canonical)
 	  break;
 
 	GROW_VECT (result.sals, len, result.nelts + 1);
-	INIT_SAL (&result.sals[result.nelts]);
+	init_sal (&result.sals[result.nelts]);
 	result.sals[result.nelts].line = LINETABLE (s)->item[ind].line;
 	result.sals[result.nelts].pc = LINETABLE (s)->item[ind].pc;
 	result.sals[result.nelts].symtab = s;
@@ -5030,17 +5030,7 @@ find_printable_frame (struct frame_info *fi, int level)
 
   for (; fi != NULL; level += 1, fi = get_prev_frame (fi))
     {
-      /* If fi is not the innermost frame, that normally means that fi->pc
-         points to *after* the call instruction, and we want to get the line
-         containing the call, never the next line.  But if the next frame is
-         a signal_handler_caller or a dummy frame, then the next frame was
-         not entered as the result of a call, and we want to get the line
-         containing fi->pc.  */
-      sal =
-	find_pc_line (fi->pc,
-		      fi->next != NULL
-		      && !fi->next->signal_handler_caller
-		      && !frame_in_dummy (fi->next));
+      find_frame_sal (fi, &sal);
       if (sal.symtab && !is_ada_runtime_file (sal.symtab->filename))
 	{
 #if defined(__alpha__) && defined(__osf__) && !defined(VXWORKS_TARGET)
@@ -5051,7 +5041,7 @@ find_printable_frame (struct frame_info *fi, int level)
 	      STREQ (sal.symtab->objfile->name, "/usr/shlib/libpthread.so"))
 	    continue;
 #endif
-	  selected_frame = fi;
+	  deprecated_selected_frame = fi;
 	  break;
 	}
     }
@@ -5062,7 +5052,6 @@ find_printable_frame (struct frame_info *fi, int level)
 void
 ada_report_exception_break (struct breakpoint *b)
 {
-#ifdef UI_OUT
   /* FIXME: break_on_exception should be defined in breakpoint.h */
   /*  if (b->break_on_exception == 1)
      {
@@ -5100,7 +5089,6 @@ ada_report_exception_break (struct breakpoint *b)
    else if (b->break_on_exception == 3)
    fputs_filtered ("on assert failure", gdb_stdout);
  */
-#endif
 }
 
 int
@@ -6046,6 +6034,7 @@ template_to_fixed_record_type (struct type *type, char *valaddr,
        * rediscover why we needed field_offset and fix it properly. */
       TYPE_FIELD_BITPOS (rtype, f) = off;
       TYPE_FIELD_BITSIZE (rtype, f) = 0;
+      TYPE_FIELD_STATIC_KIND (rtype, f) = 0;
 
       if (ada_is_variant_part (type, f))
 	{
@@ -6149,6 +6138,7 @@ template_to_static_fixed_type (struct type *templ_type)
     {
       TYPE_FIELD_BITPOS (type, f) = 0;
       TYPE_FIELD_BITSIZE (type, f) = 0;
+      TYPE_FIELD_STATIC_KIND (type, f) = 0;
 
       if (is_dynamic_field (templ_type, f))
 	{
@@ -6218,6 +6208,7 @@ to_record_with_fixed_variant_part (struct type *type, char *valaddr,
       TYPE_FIELD_TYPE (rtype, nfields - 1) = branch_type;
       TYPE_FIELD_NAME (rtype, nfields - 1) = "S";
       TYPE_FIELD_BITSIZE (rtype, nfields - 1) = 0;
+      TYPE_FIELD_STATIC_KIND (rtype, nfields - 1) = 0;
       TYPE_LENGTH (rtype) += TYPE_LENGTH (branch_type);
       -TYPE_LENGTH (TYPE_FIELD_TYPE (type, nfields - 1));
     }

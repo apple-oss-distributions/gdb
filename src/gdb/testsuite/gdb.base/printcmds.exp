@@ -1,4 +1,4 @@
-# Copyright 1992, 1994, 1995, 1996, 1997, 1999, 2000, 2002 Free
+# Copyright 1992, 1994, 1995, 1996, 1997, 1999, 2000, 2002, 2003 Free
 # Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
@@ -33,10 +33,6 @@ set binfile ${objdir}/${subdir}/${testfile}
 if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
-
-# APPLE LOCAL jmolenda
-# r. 3056074 gdb expression parser misunderstands array typedef
-set r3056074 "(r. 3056074)"
 
 # Set the current language to C.  This counts as a test.  If it
 # fails, then we skip the other tests.
@@ -559,19 +555,18 @@ proc test_print_int_arrays {} {
 
 proc test_print_typedef_arrays {} {
     global gdb_prompt
-    global r3056074
 
     gdb_test "set print elements 24" ""
 
     gdb_test_escape_braces "p a1" \
 	" = {2, 4, 6, 8, 10, 12, 14, 16, 18, 20}"
-    gdb_test "p a1\[0\]" " = 2" "p a1_0 $r3056074"
-    gdb_test "p a1\[9\]" " = 20" "p a1_9 $r3056074"
+    gdb_test "p a1\[0\]" " = 2"
+    gdb_test "p a1\[9\]" " = 20"
 
     gdb_test "p a2" \
 	" = \"abcd\""
-    gdb_test "p a2\[0\]" " = 97 'a'" "p a2_0 $r3056074"
-    gdb_test "p a2\[3\]" " = 100 'd'" "p a2_3 $r3056074"
+    gdb_test "p a2\[0\]" " = 97 'a'"
+    gdb_test "p a2\[3\]" " = 100 'd'"
 }
 
 proc test_artificial_arrays {} {
@@ -632,7 +627,7 @@ proc test_print_string_constants {} {
     gdb_test "p *\"foo\""		" = 102 'f'"
     gdb_test "ptype *\"foo\""		" = char"
     gdb_test "p &*\"foo\""		" = \"foo\""
-    # setup_kfail "gdb/538"
+    setup_kfail "gdb/538" *-*-*
     gdb_test "ptype &*\"foo\""	"type = char \\*"
     gdb_test "p (char *)\"foo\""	" = \"foo\""
 }

@@ -123,7 +123,26 @@ proc mi_gdb_start { } {
 	return 1;
     }
     gdb_expect {
-	-re ".*$mi_gdb_prompt$" {
+	-re "~\"GNU.*\r\n~\".*$mi_gdb_prompt$" {
+	    # We have a new format mi startup prompt.  If we are
+	    # running mi1, then this is an error as we should be
+	    # using the old-style prompt.
+	    if { $MIFLAGS == "-i=mi1" } {
+	        # perror "(mi startup) Got unexpected new mi prompt."
+	        # remote_close host;
+	        # return -1;
+	    }
+	    verbose "GDB initialized."
+	}
+	-re "\[^~\].*$mi_gdb_prompt$" {
+	    # We have an old format mi startup prompt.  If we are
+	    # not running mi1, then this is an error as we should be
+	    # using the new-style prompt.
+	    if { $MIFLAGS != "-i=mi1" } {
+	        # perror "(mi startup) Got unexpected old mi prompt."
+	        # remote_close host;
+	        # return -1;
+	    }
 	    verbose "GDB initialized."
 	}
 	-re ".*$gdb_prompt $" {
@@ -149,6 +168,18 @@ proc mi_gdb_start { } {
     }
     set gdb_spawn_id -1;
 
+    # APPLE LOCAL: Turn off MI timings for the testsuite.
+    send_gdb "99-mi-enable-timings no\n"
+    gdb_expect 10 {
+        -re ".*99\\\^done\r\n$mi_gdb_prompt$" {
+            verbose "Disabling MI timings." 2
+        }
+        timeout {
+            warning "Couldn't disable MI timings."
+        }
+    }
+    # APPLE LOCAL
+    
     # FIXME: mi output does not go through pagers, so these can be removed.
     # force the height to "unlimited", so no pagers get used
     send_gdb "100-gdb-set height 0\n"
@@ -193,7 +224,7 @@ proc mi_delete_breakpoints {} {
 	 -re ".*102-break-delete\r\n102\\\^done\r\n$mi_gdb_prompt$" {
             # This happens if there were no breakpoints
 	 }
-	 timeout { perror "Delete all breakpoints in delete_breakpoints (timeout)" ; return }
+	 timeout { perror "Delete all breakpoints in mi_delete_breakpoints (timeout)" ; return }
     }
 
 # The correct output is not "No breakpoints or watchpoints." but an
@@ -215,6 +246,7 @@ proc mi_delete_breakpoints {} {
 
 proc mi_gdb_reinitialize_dir { subdir } {
     global mi_gdb_prompt
+    global MIFLAGS
 
     global suppress_flag
     if { $suppress_flag } {
@@ -225,8 +257,9 @@ proc mi_gdb_reinitialize_dir { subdir } {
 	return "";
     }
 
-    send_gdb "104-environment-directory\n"
-    gdb_expect 60 {
+    if { $MIFLAGS == "-i=mi1" } {
+      send_gdb "104-environment-directory\n"
+      gdb_expect 60 {
 	-re ".*Reinitialize source path to empty.*y or n. " {
             warning "Got confirmation prompt for dir reinitialization."
 	    send_gdb "y\n"
@@ -237,6 +270,14 @@ proc mi_gdb_reinitialize_dir { subdir } {
 	}
 	-re "$mi_gdb_prompt$" {}
         timeout {error "Dir reinitialization failed (timeout)"}
+      }
+    } else {
+      send_gdb "104-environment-directory -r\n"
+      gdb_expect 60 {
+	-re "104\\\^done,source-path=.*\r\n$mi_gdb_prompt$" {}
+	-re "$mi_gdb_prompt$" {}
+        timeout {error "Dir reinitialization failed (timeout)"}
+      }
     }
 
     send_gdb "105-environment-directory $subdir\n"
@@ -244,7 +285,7 @@ proc mi_gdb_reinitialize_dir { subdir } {
 	-re "Source directories searched.*$mi_gdb_prompt$" {
 	    verbose "Dir set to $subdir"
 	}
-	-re "105\\\^done\r\n$mi_gdb_prompt$" {
+	-re "105\\\^done.*\r\n$mi_gdb_prompt$" {
             # FIXME: We return just the prompt for now.
 	    verbose "Dir set to $subdir"
 	    # perror "Dir \"$subdir\" failed."

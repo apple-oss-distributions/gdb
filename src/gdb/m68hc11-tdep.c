@@ -1,5 +1,5 @@
 /* Target-dependent code for Motorola 68HC11 & 68HC12
-   Copyright 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
    Contributed by Stephane Carrez, stcarrez@nerim.fr
 
 This file is part of GDB.
@@ -401,7 +401,7 @@ m68hc11_saved_pc_after_call (struct frame_info *frame)
 static CORE_ADDR
 m68hc11_frame_saved_pc (struct frame_info *frame)
 {
-  return frame->extra_info->return_pc;
+  return get_frame_extra_info (frame)->return_pc;
 }
 
 static CORE_ADDR
@@ -409,10 +409,10 @@ m68hc11_frame_args_address (struct frame_info *frame)
 {
   CORE_ADDR addr;
 
-  addr = frame->frame + frame->extra_info->size + STACK_CORRECTION + 2;
-  if (frame->extra_info->return_kind == RETURN_RTC)
+  addr = get_frame_base (frame) + get_frame_extra_info (frame)->size + STACK_CORRECTION + 2;
+  if (get_frame_extra_info (frame)->return_kind == RETURN_RTC)
     addr += 1;
-  else if (frame->extra_info->return_kind == RETURN_RTI)
+  else if (get_frame_extra_info (frame)->return_kind == RETURN_RTI)
     addr += 7;
 
   return addr;
@@ -421,7 +421,7 @@ m68hc11_frame_args_address (struct frame_info *frame)
 static CORE_ADDR
 m68hc11_frame_locals_address (struct frame_info *frame)
 {
-  return frame->frame;
+  return get_frame_base (frame);
 }
 
 /* Discard from the stack the innermost frame, restoring all saved
@@ -434,21 +434,23 @@ m68hc11_pop_frame (void)
   register CORE_ADDR fp, sp;
   register int regnum;
 
-  if (PC_IN_CALL_DUMMY (frame->pc, frame->frame, frame->frame))
+  if (DEPRECATED_PC_IN_CALL_DUMMY (get_frame_pc (frame),
+				   get_frame_base (frame),
+				   get_frame_base (frame)))
     generic_pop_dummy_frame ();
   else
     {
-      fp = FRAME_FP (frame);
+      fp = get_frame_base (frame);
       FRAME_INIT_SAVED_REGS (frame);
 
       /* Copy regs from where they were saved in the frame.  */
       for (regnum = 0; regnum < M68HC11_ALL_REGS; regnum++)
-	if (frame->saved_regs[regnum])
+	if (get_frame_saved_regs (frame)[regnum])
 	  write_register (regnum,
-                          read_memory_integer (frame->saved_regs[regnum], 2));
+                          read_memory_integer (get_frame_saved_regs (frame)[regnum], 2));
 
-      write_register (HARD_PC_REGNUM, frame->extra_info->return_pc);
-      sp = (fp + frame->extra_info->size + 2) & 0x0ffff;
+      write_register (HARD_PC_REGNUM, get_frame_extra_info (frame)->return_pc);
+      sp = (fp + get_frame_extra_info (frame)->size + 2) & 0x0ffff;
       write_register (HARD_SP_REGNUM, sp);
     }
   flush_cached_frames ();
@@ -802,29 +804,31 @@ m68hc11_skip_prologue (CORE_ADDR pc)
   return pc;
 }
 
-/* Given a GDB frame, determine the address of the calling function's frame.
-   This will be used to create a new GDB frame struct, and then
-   INIT_EXTRA_FRAME_INFO and INIT_FRAME_PC will be called for the new frame.
-*/
+/* Given a GDB frame, determine the address of the calling function's
+   frame.  This will be used to create a new GDB frame struct, and
+   then INIT_EXTRA_FRAME_INFO and DEPRECATED_INIT_FRAME_PC will be
+   called for the new frame.  */
 
 static CORE_ADDR
 m68hc11_frame_chain (struct frame_info *frame)
 {
   CORE_ADDR addr;
 
-  if (PC_IN_CALL_DUMMY (frame->pc, frame->frame, frame->frame))
-    return frame->frame;	/* dummy frame same as caller's frame */
+  if (DEPRECATED_PC_IN_CALL_DUMMY (get_frame_pc (frame),
+				   get_frame_base (frame),
+				   get_frame_base (frame)))
+    return get_frame_base (frame);	/* dummy frame same as caller's frame */
 
-  if (frame->extra_info->return_pc == 0
-      || inside_entry_file (frame->extra_info->return_pc))
+  if (get_frame_extra_info (frame)->return_pc == 0
+      || inside_entry_file (get_frame_extra_info (frame)->return_pc))
     return (CORE_ADDR) 0;
 
-  if (frame->frame == 0)
+  if (get_frame_base (frame) == 0)
     {
       return (CORE_ADDR) 0;
     }
 
-  addr = frame->frame + frame->extra_info->size + STACK_CORRECTION - 2;
+  addr = get_frame_base (frame) + get_frame_extra_info (frame)->size + STACK_CORRECTION - 2;
   addr = read_memory_unsigned_integer (addr, 2) & 0x0FFFF;
   return addr;
 }  
@@ -840,36 +844,37 @@ m68hc11_frame_init_saved_regs (struct frame_info *fi)
   CORE_ADDR pc;
   CORE_ADDR addr;
 
-  if (fi->saved_regs == NULL)
+  if (get_frame_saved_regs (fi) == NULL)
     frame_saved_regs_zalloc (fi);
   else
-    memset (fi->saved_regs, 0, sizeof (fi->saved_regs));
+    memset (get_frame_saved_regs (fi), 0, SIZEOF_FRAME_SAVED_REGS);
 
-  pc = fi->pc;
-  fi->extra_info->return_kind = m68hc11_get_return_insn (pc);
-  m68hc11_guess_from_prologue (pc, fi->frame, &pc, &fi->extra_info->size,
-                               fi->saved_regs);
+  pc = get_frame_pc (fi);
+  get_frame_extra_info (fi)->return_kind = m68hc11_get_return_insn (pc);
+  m68hc11_guess_from_prologue (pc, get_frame_base (fi), &pc,
+			       &get_frame_extra_info (fi)->size,
+                               get_frame_saved_regs (fi));
 
-  addr = fi->frame + fi->extra_info->size + STACK_CORRECTION;
+  addr = get_frame_base (fi) + get_frame_extra_info (fi)->size + STACK_CORRECTION;
   if (soft_regs[SOFT_FP_REGNUM].name)
-    fi->saved_regs[SOFT_FP_REGNUM] = addr - 2;
+    get_frame_saved_regs (fi)[SOFT_FP_REGNUM] = addr - 2;
 
   /* Take into account how the function was called/returns.  */
-  if (fi->extra_info->return_kind == RETURN_RTC)
+  if (get_frame_extra_info (fi)->return_kind == RETURN_RTC)
     {
-      fi->saved_regs[HARD_PAGE_REGNUM] = addr;
+      get_frame_saved_regs (fi)[HARD_PAGE_REGNUM] = addr;
       addr++;
     }
-  else if (fi->extra_info->return_kind == RETURN_RTI)
+  else if (get_frame_extra_info (fi)->return_kind == RETURN_RTI)
     {
-      fi->saved_regs[HARD_CCR_REGNUM] = addr;
-      fi->saved_regs[HARD_D_REGNUM] = addr + 1;
-      fi->saved_regs[HARD_X_REGNUM] = addr + 3;
-      fi->saved_regs[HARD_Y_REGNUM] = addr + 5;
+      get_frame_saved_regs (fi)[HARD_CCR_REGNUM] = addr;
+      get_frame_saved_regs (fi)[HARD_D_REGNUM] = addr + 1;
+      get_frame_saved_regs (fi)[HARD_X_REGNUM] = addr + 3;
+      get_frame_saved_regs (fi)[HARD_Y_REGNUM] = addr + 5;
       addr += 7;
     }
-  fi->saved_regs[HARD_SP_REGNUM] = addr;
-  fi->saved_regs[HARD_PC_REGNUM] = fi->saved_regs[HARD_SP_REGNUM];
+  get_frame_saved_regs (fi)[HARD_SP_REGNUM] = addr;
+  get_frame_saved_regs (fi)[HARD_PC_REGNUM] = get_frame_saved_regs (fi)[HARD_SP_REGNUM];
 }
 
 static void
@@ -877,37 +882,36 @@ m68hc11_init_extra_frame_info (int fromleaf, struct frame_info *fi)
 {
   CORE_ADDR addr;
 
-  fi->extra_info = (struct frame_extra_info *)
-    frame_obstack_alloc (sizeof (struct frame_extra_info));
+  frame_extra_info_zalloc (fi, sizeof (struct frame_extra_info));
   
-  if (fi->next)
-    fi->pc = FRAME_SAVED_PC (fi->next);
+  if (get_next_frame (fi))
+    deprecated_update_frame_pc_hack (fi, FRAME_SAVED_PC (get_next_frame (fi)));
   
   m68hc11_frame_init_saved_regs (fi);
 
   if (fromleaf)
     {
-      fi->extra_info->return_kind = m68hc11_get_return_insn (fi->pc);
-      fi->extra_info->return_pc = m68hc11_saved_pc_after_call (fi);
+      get_frame_extra_info (fi)->return_kind = m68hc11_get_return_insn (get_frame_pc (fi));
+      get_frame_extra_info (fi)->return_pc = m68hc11_saved_pc_after_call (fi);
     }
   else
     {
-      addr = fi->saved_regs[HARD_PC_REGNUM];
+      addr = get_frame_saved_regs (fi)[HARD_PC_REGNUM];
       addr = read_memory_unsigned_integer (addr, 2) & 0x0ffff;
 
       /* Take into account the 68HC12 specific call (PC + page).  */
-      if (fi->extra_info->return_kind == RETURN_RTC
+      if (get_frame_extra_info (fi)->return_kind == RETURN_RTC
           && addr >= 0x08000 && addr < 0x0c000
           && USE_PAGE_REGISTER)
         {
-          CORE_ADDR page_addr = fi->saved_regs[HARD_PAGE_REGNUM];
+          CORE_ADDR page_addr = get_frame_saved_regs (fi)[HARD_PAGE_REGNUM];
 
           unsigned page = read_memory_unsigned_integer (page_addr, 1);
           addr -= 0x08000;
           addr += ((page & 0x0ff) << 14);
           addr += 0x1000000;
         }
-      fi->extra_info->return_pc = addr;
+      get_frame_extra_info (fi)->return_pc = addr;
     }
 }
 
@@ -1177,33 +1181,6 @@ m68hc11_push_return_address (CORE_ADDR pc, CORE_ADDR sp)
   return sp;
 }
 
-/* Index within `registers' of the first byte of the space for
-   register N.  */
-static int
-m68hc11_register_byte (int reg_nr)
-{
-  return (reg_nr * M68HC11_REG_SIZE);
-}
-
-static int
-m68hc11_register_raw_size (int reg_nr)
-{
-  switch (reg_nr)
-    {
-    case HARD_PAGE_REGNUM:
-    case HARD_A_REGNUM:
-    case HARD_B_REGNUM:
-    case HARD_CCR_REGNUM:
-      return 1;
-
-    case M68HC12_HARD_PC_REGNUM:
-      return 4;
-
-    default:
-      return M68HC11_REG_SIZE;
-    }
-}
-
 /* Test whether the ELF symbol corresponds to a function using rtc or
    rti to return.  */
    
@@ -1263,6 +1240,10 @@ m68hc11_gdbarch_init (struct gdbarch_info info,
   gdbarch = gdbarch_alloc (&info, tdep);
   tdep->elf_flags = elf_flags;
 
+  /* NOTE: cagney/2002-12-06: This can be deleted when this arch is
+     ready to unwind the PC first (see frame.c:get_prev_frame()).  */
+  set_gdbarch_deprecated_init_frame_pc (gdbarch, init_frame_pc_default);
+
   switch (info.bfd_arch_info->arch)
     {
     case bfd_arch_m68hc11:
@@ -1311,9 +1292,6 @@ m68hc11_gdbarch_init (struct gdbarch_info info,
   set_gdbarch_fp0_regnum (gdbarch, -1);
   set_gdbarch_max_register_raw_size (gdbarch, 2);
   set_gdbarch_max_register_virtual_size (gdbarch, 2);
-  set_gdbarch_register_raw_size (gdbarch, m68hc11_register_raw_size);
-  set_gdbarch_register_virtual_size (gdbarch, m68hc11_register_raw_size);
-  set_gdbarch_register_byte (gdbarch, m68hc11_register_byte);
   set_gdbarch_frame_init_saved_regs (gdbarch, m68hc11_frame_init_saved_regs);
   set_gdbarch_frame_args_skip (gdbarch, 0);
 
@@ -1332,20 +1310,17 @@ m68hc11_gdbarch_init (struct gdbarch_info info,
   set_gdbarch_pseudo_register_read (gdbarch, m68hc11_pseudo_register_read);
   set_gdbarch_pseudo_register_write (gdbarch, m68hc11_pseudo_register_write);
 
-  set_gdbarch_use_generic_dummy_frames (gdbarch, 1);
   set_gdbarch_call_dummy_length (gdbarch, 0);
-  set_gdbarch_call_dummy_location (gdbarch, AT_ENTRY_POINT);
   set_gdbarch_call_dummy_address (gdbarch, m68hc11_call_dummy_address);
   set_gdbarch_call_dummy_breakpoint_offset_p (gdbarch, 1); /*???*/
   set_gdbarch_call_dummy_breakpoint_offset (gdbarch, 0);
   set_gdbarch_call_dummy_start_offset (gdbarch, 0);
-  set_gdbarch_pc_in_call_dummy (gdbarch, generic_pc_in_call_dummy);
   set_gdbarch_call_dummy_words (gdbarch, m68hc11_call_dummy_words);
   set_gdbarch_sizeof_call_dummy_words (gdbarch,
                                        sizeof (m68hc11_call_dummy_words));
   set_gdbarch_call_dummy_p (gdbarch, 1);
   set_gdbarch_call_dummy_stack_adjust_p (gdbarch, 0);
-  set_gdbarch_get_saved_register (gdbarch, generic_get_saved_register);
+  set_gdbarch_get_saved_register (gdbarch, deprecated_generic_get_saved_register);
   set_gdbarch_fix_call_dummy (gdbarch, generic_fix_call_dummy);
   set_gdbarch_deprecated_extract_return_value (gdbarch, m68hc11_extract_return_value);
   set_gdbarch_push_arguments (gdbarch, m68hc11_push_arguments);
@@ -1360,15 +1335,13 @@ m68hc11_gdbarch_init (struct gdbarch_info info,
 
 
   set_gdbarch_frame_chain (gdbarch, m68hc11_frame_chain);
-  set_gdbarch_frame_chain_valid (gdbarch, generic_file_frame_chain_valid);
   set_gdbarch_frame_saved_pc (gdbarch, m68hc11_frame_saved_pc);
   set_gdbarch_frame_args_address (gdbarch, m68hc11_frame_args_address);
   set_gdbarch_frame_locals_address (gdbarch, m68hc11_frame_locals_address);
   set_gdbarch_saved_pc_after_call (gdbarch, m68hc11_saved_pc_after_call);
   set_gdbarch_frame_num_args (gdbarch, frame_num_args_unknown);
 
-  set_gdbarch_frame_chain_valid (gdbarch, func_frame_chain_valid);
-  set_gdbarch_get_saved_register (gdbarch, generic_get_saved_register);
+  set_gdbarch_get_saved_register (gdbarch, deprecated_generic_get_saved_register);
 
   set_gdbarch_store_struct_return (gdbarch, m68hc11_store_struct_return);
   set_gdbarch_deprecated_store_return_value (gdbarch, m68hc11_store_return_value);

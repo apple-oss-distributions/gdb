@@ -1,4 +1,4 @@
-# Copyright (C) 2002 Free Software Foundation, Inc.
+# Copyright (C) 2002, 2003 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,10 +25,6 @@ if $tracelevel then {
     strace $tracelevel
 }
 
-# APPLE LOCAL jmolenda
-# r. 3067314 gcc generates unpleasant stabs data for vector types
-set r3067314 "(r. 3067314)"
-
 #
 # This file uses altivec-abi.c for input.
 #
@@ -47,10 +43,9 @@ if [istarget "powerpc-*altivec"] {
 
 set testfile "altivec-abi"
 set binfile ${objdir}/${subdir}/${testfile}
+set srcfile ${testfile}.c
 
-set src1 ${srcdir}/${subdir}/${testfile}.c
-
-if  { [gdb_compile ${src1} ${binfile} executable ${compile_flags}] != "" } {
+if  { [gdb_compile ${srcdir}/${subdir}/${srcfile} ${binfile} executable ${compile_flags}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
@@ -80,17 +75,17 @@ append pattern1 " at.*altivec-abi.c.*vint_res  = vec_add.*vint_f, intv_on_stack_
 # Now let's call the function.  This function has > 12 args,
 # the last one will go on the stack.
 gdb_test "p vec_func(vshort,vushort,vint,vuint,vchar,vuchar,vfloat,x,y,a,b,c,intv_on_stack)" \
-".\[0-9\]+ = .2, 2, 2, 2." "call inferior function with vectors (1) $r3067314"
+".\[0-9\]+ = .2, 2, 2, 2." "call inferior function with vectors (1)"
 
 # Let's call the function again with dummy arguments.  This is to clean
 # up the contents of the vector registers before the next call.
 gdb_test "p vec_func(vshort_d,vushort_d,vint_d,vuint_d,vchar_d,vuchar_d,vfloat_d,x_d,y_d,a_d,b_d,c_d,intv_on_stack_d)" \
-".\[0-9\]+ = .0, 0, 0, 0." "call inferior function with vectors (2) $r3067314"
+".\[0-9\]+ = .0, 0, 0, 0." "call inferior function with vectors (2)"
 
 # Let's step into the function, to see if the args are printed correctly.
 gdb_test "step" \
   $pattern1 \
-  "step into vec_fun $r3067314"
+  "step into vec_fun"
 
 set pattern2 $pattern
 append pattern2 " at.*altivec-abi.c.*in main.*result = vec_func .vshort,.*goes in v2.*Value returned is.*= .2, 2, 2, 2."
@@ -98,7 +93,7 @@ append pattern2 " at.*altivec-abi.c.*in main.*result = vec_func .vshort,.*goes i
 # Let's see if the result is returned correctly.
 gdb_test "finish" \
   "Run till exit from .0.*$pattern2" \
-  "vector value returned correctly $r3067314"
+  "vector value returned correctly"
 
 # can we print the args correctly for this function?
 gdb_test "break struct_of_vector_func" "" ""
@@ -107,15 +102,15 @@ set pattern "struct_of_vector_func .vector_struct=.vshort1 = .1, 2, 3, 4, 5, 6, 
 
 gdb_test "continue" \
   "Breakpoint 3, $pattern.*vector_struct.vshort1 = vec_add .vector_struct.vshort1, vector_struct.vshort2.;" \
-  "continue to struct_of_vector_func $r3067314"
+  "continue to struct_of_vector_func"
 
 gdb_test "finish" \
   "Run till exit from .0  $pattern\[ \r\n\]+main.*altivec-abi.c.*array_of_vector_func.*" \
-  "back to main (2) $r3067314"
+  "back to main (2)"
 
 gdb_test "step" "" "step into array_of_vector_func"
-gdb_test "p matrix\[0\]" ".*= .1, 2, 3, 4, 5, 6, 7, 8." "print first vector $r3067314"
-gdb_test "p matrix\[1\]" ".*= .11, 12, 13, 14, 15, 16, 17, 18." "print second vector $r3067314"
-gdb_test "p matrix\[2\]" ".*= .21, 22, 23, 24, 25, 26, 27, 28." "print third vector $r3067314"
-gdb_test "p matrix\[3\]" ".*= .31, 32, 33, 34, 35, 36, 37, 38." "print fourth vector $r3067314"
+gdb_test "p matrix\[0\]" ".*= .1, 2, 3, 4, 5, 6, 7, 8." "print first vector"
+gdb_test "p matrix\[1\]" ".*= .11, 12, 13, 14, 15, 16, 17, 18." "print second vector"
+gdb_test "p matrix\[2\]" ".*= .21, 22, 23, 24, 25, 26, 27, 28." "print third vector"
+gdb_test "p matrix\[3\]" ".*= .31, 32, 33, 34, 35, 36, 37, 38." "print fourth vector"
 

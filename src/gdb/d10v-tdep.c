@@ -1,6 +1,6 @@
 /* Target-dependent code for Mitsubishi D10V, for GDB.
 
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003 Free Software
    Foundation, Inc.
 
    This file is part of GDB.
@@ -41,6 +41,8 @@
 #include "floatformat.h"
 #include "gdb/sim-d10v.h"
 #include "sim-regno.h"
+
+#include "gdb_assert.h"
 
 struct frame_extra_info
   {
@@ -112,14 +114,7 @@ static void do_d10v_pop_frame (struct frame_info *fi);
 static int
 d10v_frame_chain_valid (CORE_ADDR chain, struct frame_info *frame)
 {
-  if (chain != 0 && frame != NULL)
-    {
-      if (PC_IN_CALL_DUMMY (frame->pc, frame->frame, frame->frame))
-	return 1;	/* Path back from a call dummy must be valid. */
-      return ((frame)->pc > IMEM_START
-	      && !inside_main_func (frame->pc));
-    }
-  else return 0;
+    return (get_frame_pc (frame) > IMEM_START);
 }
 
 static CORE_ADDR
@@ -436,7 +431,7 @@ d10v_address_to_pointer (struct type *type, void *buf, CORE_ADDR addr)
 }
 
 static CORE_ADDR
-d10v_pointer_to_address (struct type *type, void *buf)
+d10v_pointer_to_address (struct type *type, const void *buf)
 {
   CORE_ADDR addr = extract_address (buf, TYPE_LENGTH (type));
 
@@ -479,22 +474,36 @@ d10v_store_struct_return (CORE_ADDR addr, CORE_ADDR sp)
    Things always get returned in RET1_REGNUM, RET2_REGNUM, ... */
 
 static void
-d10v_store_return_value (struct type *type, char *valbuf)
+d10v_store_return_value (struct type *type, struct regcache *regcache,
+			 const void *valbuf)
 {
-  char tmp = 0;
-  /* Only char return values need to be shifted right within R0.  */
+  /* Only char return values need to be shifted right within the first
+     regnum.  */
   if (TYPE_LENGTH (type) == 1
       && TYPE_CODE (type) == TYPE_CODE_INT)
     {
-      write_register_bytes (REGISTER_BYTE (RET1_REGNUM),
-			    &tmp, 1);	/* zero the high byte */
-      write_register_bytes (REGISTER_BYTE (RET1_REGNUM) + 1,
-			    valbuf, 1);	/* copy the low byte */
+      bfd_byte tmp[2];
+      tmp[1] = *(bfd_byte *)valbuf;
+      regcache_cooked_write (regcache, RET1_REGNUM, tmp);
     }
   else
-    write_register_bytes (REGISTER_BYTE (RET1_REGNUM),
-			  valbuf,
-			  TYPE_LENGTH (type));
+    {
+      int reg;
+      /* A structure is never more than 8 bytes long.  See
+         use_struct_convention().  */
+      gdb_assert (TYPE_LENGTH (type) <= 8);
+      /* Write out most registers, stop loop before trying to write
+         out any dangling byte at the end of the buffer.  */
+      for (reg = 0; (reg * 2) + 1 < TYPE_LENGTH (type); reg++)
+	{
+	  regcache_cooked_write (regcache, RET1_REGNUM + reg,
+				 (bfd_byte *) valbuf + reg * 2);
+	}
+      /* Write out any dangling byte at the end of the buffer.  */
+      if ((reg * 2) + 1 == TYPE_LENGTH (type))
+	regcache_cooked_write_part (regcache, reg, 0, 1,
+				    (bfd_byte *) valbuf + reg * 2);
+    }
 }
 
 /* Extract from an array REGBUF containing the (raw) register state
@@ -502,17 +511,17 @@ d10v_store_return_value (struct type *type, char *valbuf)
    as a CORE_ADDR (or an expression that can be used as one).  */
 
 static CORE_ADDR
-d10v_extract_struct_value_address (char *regbuf)
+d10v_extract_struct_value_address (struct regcache *regcache)
 {
-  return (extract_address ((regbuf) + REGISTER_BYTE (ARG1_REGNUM),
-			   REGISTER_RAW_SIZE (ARG1_REGNUM))
-	  | DMEM_START);
+  ULONGEST addr;
+  regcache_cooked_read_unsigned (regcache, ARG1_REGNUM, &addr);
+  return (addr | DMEM_START);
 }
 
 static CORE_ADDR
 d10v_frame_saved_pc (struct frame_info *frame)
 {
-  if (PC_IN_CALL_DUMMY (frame->pc, frame->frame, frame->frame))
+  if (DEPRECATED_PC_IN_CALL_DUMMY (frame->pc, 0, 0))
     return d10v_make_iaddr (deprecated_read_register_dummy (frame->pc, 
 							    frame->frame, 
 							    PC_REGNUM));
@@ -547,7 +556,7 @@ do_d10v_pop_frame (struct frame_info *fi)
   int regnum;
   char raw_buffer[8];
 
-  fp = FRAME_FP (fi);
+  fp = get_frame_base (fi);
   /* fill out fsr with the address of where each */
   /* register was stored in the frame */
   d10v_frame_init_saved_regs (fi);
@@ -555,26 +564,27 @@ do_d10v_pop_frame (struct frame_info *fi)
   /* now update the current registers with the old values */
   for (regnum = A0_REGNUM; regnum < A0_REGNUM + NR_A_REGS; regnum++)
     {
-      if (fi->saved_regs[regnum])
+      if (get_frame_saved_regs (fi)[regnum])
 	{
-	  read_memory (fi->saved_regs[regnum], raw_buffer, REGISTER_RAW_SIZE (regnum));
-	  write_register_bytes (REGISTER_BYTE (regnum), raw_buffer, REGISTER_RAW_SIZE (regnum));
+	  read_memory (get_frame_saved_regs (fi)[regnum], raw_buffer, REGISTER_RAW_SIZE (regnum));
+	  deprecated_write_register_bytes (REGISTER_BYTE (regnum), raw_buffer,
+					   REGISTER_RAW_SIZE (regnum));
 	}
     }
   for (regnum = 0; regnum < SP_REGNUM; regnum++)
     {
-      if (fi->saved_regs[regnum])
+      if (get_frame_saved_regs (fi)[regnum])
 	{
-	  write_register (regnum, read_memory_unsigned_integer (fi->saved_regs[regnum], REGISTER_RAW_SIZE (regnum)));
+	  write_register (regnum, read_memory_unsigned_integer (get_frame_saved_regs (fi)[regnum], REGISTER_RAW_SIZE (regnum)));
 	}
     }
-  if (fi->saved_regs[PSW_REGNUM])
+  if (get_frame_saved_regs (fi)[PSW_REGNUM])
     {
-      write_register (PSW_REGNUM, read_memory_unsigned_integer (fi->saved_regs[PSW_REGNUM], REGISTER_RAW_SIZE (PSW_REGNUM)));
+      write_register (PSW_REGNUM, read_memory_unsigned_integer (get_frame_saved_regs (fi)[PSW_REGNUM], REGISTER_RAW_SIZE (PSW_REGNUM)));
     }
 
   write_register (PC_REGNUM, read_register (LR_REGNUM));
-  write_register (SP_REGNUM, fp + fi->extra_info->size);
+  write_register (SP_REGNUM, fp + get_frame_extra_info (fi)->size);
   target_store_registers (-1);
   flush_cached_frames ();
 }
@@ -676,10 +686,10 @@ d10v_skip_prologue (CORE_ADDR pc)
   return pc;
 }
 
-/* Given a GDB frame, determine the address of the calling function's frame.
-   This will be used to create a new GDB frame struct, and then
-   INIT_EXTRA_FRAME_INFO and INIT_FRAME_PC will be called for the new frame.
- */
+/* Given a GDB frame, determine the address of the calling function's
+   frame.  This will be used to create a new GDB frame struct, and
+   then INIT_EXTRA_FRAME_INFO and DEPRECATED_INIT_FRAME_PC will be
+   called for the new frame.  */
 
 static CORE_ADDR
 d10v_frame_chain (struct frame_info *fi)
@@ -687,31 +697,29 @@ d10v_frame_chain (struct frame_info *fi)
   CORE_ADDR addr;
 
   /* A generic call dummy's frame is the same as caller's.  */
-  if (PC_IN_CALL_DUMMY (fi->pc, fi->frame, fi->frame))
+  if (DEPRECATED_PC_IN_CALL_DUMMY (fi->pc, 0, 0))
     return fi->frame;
 
   d10v_frame_init_saved_regs (fi);
-
   
-  if (fi->extra_info->return_pc == IMEM_START
-      || inside_entry_file (fi->extra_info->return_pc))
+  if (get_frame_extra_info (fi)->return_pc == IMEM_START
+      || inside_entry_file (get_frame_extra_info (fi)->return_pc))
     {
       /* This is meant to halt the backtrace at "_start".
 	 Make sure we don't halt it at a generic dummy frame. */
-      if (!PC_IN_CALL_DUMMY (fi->extra_info->return_pc, 0, 0))
-	return (CORE_ADDR) 0;
+      return (CORE_ADDR) 0;
     }
 
-  if (!fi->saved_regs[FP_REGNUM])
+  if (!get_frame_saved_regs (fi)[FP_REGNUM])
     {
-      if (!fi->saved_regs[SP_REGNUM]
-	  || fi->saved_regs[SP_REGNUM] == STACK_START)
+      if (!get_frame_saved_regs (fi)[SP_REGNUM]
+	  || get_frame_saved_regs (fi)[SP_REGNUM] == STACK_START)
 	return (CORE_ADDR) 0;
 
-      return fi->saved_regs[SP_REGNUM];
+      return get_frame_saved_regs (fi)[SP_REGNUM];
     }
 
-  addr = read_memory_unsigned_integer (fi->saved_regs[FP_REGNUM],
+  addr = read_memory_unsigned_integer (get_frame_saved_regs (fi)[FP_REGNUM],
 				       REGISTER_RAW_SIZE (FP_REGNUM));
   if (addr == 0)
     return (CORE_ADDR) 0;
@@ -731,7 +739,7 @@ prologue_find_regs (unsigned short op, struct frame_info *fi, CORE_ADDR addr)
     {
       n = (op & 0x1E0) >> 5;
       next_addr -= 2;
-      fi->saved_regs[n] = next_addr;
+      get_frame_saved_regs (fi)[n] = next_addr;
       return 1;
     }
 
@@ -740,8 +748,8 @@ prologue_find_regs (unsigned short op, struct frame_info *fi, CORE_ADDR addr)
     {
       n = (op & 0x1E0) >> 5;
       next_addr -= 4;
-      fi->saved_regs[n] = next_addr;
-      fi->saved_regs[n + 1] = next_addr + 2;
+      get_frame_saved_regs (fi)[n] = next_addr;
+      get_frame_saved_regs (fi)[n + 1] = next_addr + 2;
       return 1;
     }
 
@@ -770,7 +778,7 @@ prologue_find_regs (unsigned short op, struct frame_info *fi, CORE_ADDR addr)
   if ((op & 0x7E1F) == 0x681E)
     {
       n = (op & 0x1E0) >> 5;
-      fi->saved_regs[n] = next_addr;
+      get_frame_saved_regs (fi)[n] = next_addr;
       return 1;
     }
 
@@ -778,8 +786,8 @@ prologue_find_regs (unsigned short op, struct frame_info *fi, CORE_ADDR addr)
   if ((op & 0x7E3F) == 0x3A1E)
     {
       n = (op & 0x1E0) >> 5;
-      fi->saved_regs[n] = next_addr;
-      fi->saved_regs[n + 1] = next_addr + 2;
+      get_frame_saved_regs (fi)[n] = next_addr;
+      get_frame_saved_regs (fi)[n + 1] = next_addr + 2;
       return 1;
     }
 
@@ -800,11 +808,11 @@ d10v_frame_init_saved_regs (struct frame_info *fi)
   unsigned short op1, op2;
   int i;
 
-  fp = fi->frame;
-  memset (fi->saved_regs, 0, SIZEOF_FRAME_SAVED_REGS);
+  fp = get_frame_base (fi);
+  memset (get_frame_saved_regs (fi), 0, SIZEOF_FRAME_SAVED_REGS);
   next_addr = 0;
 
-  pc = get_pc_function_start (fi->pc);
+  pc = get_pc_function_start (get_frame_pc (fi));
 
   uses_frame = 0;
   while (1)
@@ -824,15 +832,15 @@ d10v_frame_init_saved_regs (struct frame_info *fi)
 	      /* st  rn, @(offset,sp) */
 	      short offset = op & 0xFFFF;
 	      short n = (op >> 20) & 0xF;
-	      fi->saved_regs[n] = next_addr + offset;
+	      get_frame_saved_regs (fi)[n] = next_addr + offset;
 	    }
 	  else if ((op & 0x3F1F0000) == 0x350F0000)
 	    {
 	      /* st2w  rn, @(offset,sp) */
 	      short offset = op & 0xFFFF;
 	      short n = (op >> 20) & 0xF;
-	      fi->saved_regs[n] = next_addr + offset;
-	      fi->saved_regs[n + 1] = next_addr + offset + 2;
+	      get_frame_saved_regs (fi)[n] = next_addr + offset;
+	      get_frame_saved_regs (fi)[n + 1] = next_addr + offset + 2;
 	    }
 	  else
 	    break;
@@ -857,42 +865,42 @@ d10v_frame_init_saved_regs (struct frame_info *fi)
       pc += 4;
     }
 
-  fi->extra_info->size = -next_addr;
+  get_frame_extra_info (fi)->size = -next_addr;
 
   if (!(fp & 0xffff))
     fp = d10v_read_sp ();
 
   for (i = 0; i < NUM_REGS - 1; i++)
-    if (fi->saved_regs[i])
+    if (get_frame_saved_regs (fi)[i])
       {
-	fi->saved_regs[i] = fp - (next_addr - fi->saved_regs[i]);
+	get_frame_saved_regs (fi)[i] = fp - (next_addr - get_frame_saved_regs (fi)[i]);
       }
 
-  if (fi->saved_regs[LR_REGNUM])
+  if (get_frame_saved_regs (fi)[LR_REGNUM])
     {
       CORE_ADDR return_pc 
-	= read_memory_unsigned_integer (fi->saved_regs[LR_REGNUM], 
+	= read_memory_unsigned_integer (get_frame_saved_regs (fi)[LR_REGNUM], 
 					REGISTER_RAW_SIZE (LR_REGNUM));
-      fi->extra_info->return_pc = d10v_make_iaddr (return_pc);
+      get_frame_extra_info (fi)->return_pc = d10v_make_iaddr (return_pc);
     }
   else
     {
-      fi->extra_info->return_pc = d10v_make_iaddr (read_register (LR_REGNUM));
+      get_frame_extra_info (fi)->return_pc = d10v_make_iaddr (read_register (LR_REGNUM));
     }
 
   /* The SP is not normally (ever?) saved, but check anyway */
-  if (!fi->saved_regs[SP_REGNUM])
+  if (!get_frame_saved_regs (fi)[SP_REGNUM])
     {
       /* if the FP was saved, that means the current FP is valid, */
       /* otherwise, it isn't being used, so we use the SP instead */
       if (uses_frame)
-	fi->saved_regs[SP_REGNUM] 
-	  = d10v_read_fp () + fi->extra_info->size;
+	get_frame_saved_regs (fi)[SP_REGNUM] 
+	  = d10v_read_fp () + get_frame_extra_info (fi)->size;
       else
 	{
-	  fi->saved_regs[SP_REGNUM] = fp + fi->extra_info->size;
-	  fi->extra_info->frameless = 1;
-	  fi->saved_regs[FP_REGNUM] = 0;
+	  get_frame_saved_regs (fi)[SP_REGNUM] = fp + get_frame_extra_info (fi)->size;
+	  get_frame_extra_info (fi)->frameless = 1;
+	  get_frame_saved_regs (fi)[FP_REGNUM] = 0;
 	}
     }
 }
@@ -900,30 +908,23 @@ d10v_frame_init_saved_regs (struct frame_info *fi)
 static void
 d10v_init_extra_frame_info (int fromleaf, struct frame_info *fi)
 {
-  fi->extra_info = (struct frame_extra_info *)
-    frame_obstack_alloc (sizeof (struct frame_extra_info));
+  frame_extra_info_zalloc (fi, sizeof (struct frame_extra_info));
   frame_saved_regs_zalloc (fi);
 
-  fi->extra_info->frameless = 0;
-  fi->extra_info->size = 0;
-  fi->extra_info->return_pc = 0;
+  get_frame_extra_info (fi)->frameless = 0;
+  get_frame_extra_info (fi)->size = 0;
+  get_frame_extra_info (fi)->return_pc = 0;
 
-  /* If fi->pc is zero, but this is not the outermost frame, 
+  /* If get_frame_pc (fi) is zero, but this is not the outermost frame, 
      then let's snatch the return_pc from the callee, so that
-     PC_IN_CALL_DUMMY will work.  */
-  if (fi->pc == 0 && fi->level != 0 && fi->next != NULL)
-    fi->pc = d10v_frame_saved_pc (fi->next);
+     DEPRECATED_PC_IN_CALL_DUMMY will work.  */
+  if (get_frame_pc (fi) == 0
+      && frame_relative_level (fi) != 0 && get_next_frame (fi) != NULL)
+    deprecated_update_frame_pc_hack (fi, d10v_frame_saved_pc (get_next_frame (fi)));
 
   /* The call dummy doesn't save any registers on the stack, so we can
      return now.  */
-  if (PC_IN_CALL_DUMMY (fi->pc, fi->frame, fi->frame))
-    {
-      return;
-    }
-  else
-    {
-      d10v_frame_init_saved_regs (fi);
-    }
+  d10v_frame_init_saved_regs (fi);
 }
 
 static void
@@ -977,7 +978,7 @@ show_regs (char *args, int from_tty)
       char num[MAX_REGISTER_RAW_SIZE];
       int i;
       printf_filtered ("  ");
-      read_register_gen (a, (char *) &num);
+      deprecated_read_register_gen (a, (char *) &num);
       for (i = 0; i < MAX_REGISTER_RAW_SIZE; i++)
 	{
 	  printf_filtered ("%02x", (num[i] & 0xff));
@@ -1151,8 +1152,8 @@ d10v_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
    extract and copy its value into `valbuf'.  */
 
 static void
-d10v_extract_return_value (struct type *type, char regbuf[REGISTER_BYTES],
-			   char *valbuf)
+d10v_extract_return_value (struct type *type, struct regcache *regcache,
+			   void *valbuf)
 {
   int len;
 #if 0
@@ -1161,25 +1162,34 @@ d10v_extract_return_value (struct type *type, char regbuf[REGISTER_BYTES],
 	 (int) extract_unsigned_integer (regbuf + REGISTER_BYTE(RET1_REGNUM), 
 					 REGISTER_RAW_SIZE (RET1_REGNUM)));
 #endif
-  len = TYPE_LENGTH (type);
-  if (len == 1)
+  if (TYPE_LENGTH (type) == 1)
     {
-      unsigned short c;
-
-      c = extract_unsigned_integer (regbuf + REGISTER_BYTE (RET1_REGNUM), 
-				    REGISTER_RAW_SIZE (RET1_REGNUM));
+      ULONGEST c;
+      regcache_cooked_read_unsigned (regcache, RET1_REGNUM, &c);
       store_unsigned_integer (valbuf, 1, c);
     }
-  else if ((len & 1) == 0)
-    memcpy (valbuf, regbuf + REGISTER_BYTE (RET1_REGNUM), len);
   else
     {
       /* For return values of odd size, the first byte is in the
 	 least significant part of the first register.  The
-	 remaining bytes in remaining registers. Interestingly,
-	 when such values are passed in, the last byte is in the
-	 most significant byte of that same register - wierd. */
-      memcpy (valbuf, regbuf + REGISTER_BYTE (RET1_REGNUM) + 1, len);
+	 remaining bytes in remaining registers. Interestingly, when
+	 such values are passed in, the last byte is in the most
+	 significant byte of that same register - wierd. */
+      int reg = RET1_REGNUM;
+      int off = 0;
+      if (TYPE_LENGTH (type) & 1)
+	{
+	  regcache_cooked_read_part (regcache, RET1_REGNUM, 1, 1,
+				     (bfd_byte *)valbuf + off);
+	  off++;
+	  reg++;
+	}
+      /* Transfer the remaining registers.  */
+      for (; off < TYPE_LENGTH (type); reg++, off += 2)
+	{
+	  regcache_cooked_read (regcache, RET1_REGNUM + reg,
+				(bfd_byte *) valbuf + off);
+	}
     }
 }
 
@@ -1517,6 +1527,10 @@ d10v_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   tdep = XMALLOC (struct gdbarch_tdep);
   gdbarch = gdbarch_alloc (&info, tdep);
 
+  /* NOTE: cagney/2002-12-06: This can be deleted when this arch is
+     ready to unwind the PC first (see frame.c:get_prev_frame()).  */
+  set_gdbarch_deprecated_init_frame_pc (gdbarch, init_frame_pc_default);
+
   switch (info.bfd_arch_info->mach)
     {
     case bfd_mach_d10v_ts2:
@@ -1591,29 +1605,25 @@ d10v_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 		      "d10v_gdbarch_init: bad byte order for float format");
     }
 
-  set_gdbarch_use_generic_dummy_frames (gdbarch, 1);
   set_gdbarch_call_dummy_length (gdbarch, 0);
-  set_gdbarch_call_dummy_location (gdbarch, AT_ENTRY_POINT);
   set_gdbarch_call_dummy_address (gdbarch, entry_point_address);
   set_gdbarch_call_dummy_breakpoint_offset_p (gdbarch, 1);
   set_gdbarch_call_dummy_breakpoint_offset (gdbarch, 0);
   set_gdbarch_call_dummy_start_offset (gdbarch, 0);
-  set_gdbarch_pc_in_call_dummy (gdbarch, generic_pc_in_call_dummy);
   set_gdbarch_call_dummy_words (gdbarch, d10v_call_dummy_words);
   set_gdbarch_sizeof_call_dummy_words (gdbarch, sizeof (d10v_call_dummy_words));
   set_gdbarch_call_dummy_p (gdbarch, 1);
   set_gdbarch_call_dummy_stack_adjust_p (gdbarch, 0);
-  set_gdbarch_get_saved_register (gdbarch, generic_unwind_get_saved_register);
   set_gdbarch_fix_call_dummy (gdbarch, generic_fix_call_dummy);
 
-  set_gdbarch_deprecated_extract_return_value (gdbarch, d10v_extract_return_value);
+  set_gdbarch_extract_return_value (gdbarch, d10v_extract_return_value);
   set_gdbarch_push_arguments (gdbarch, d10v_push_arguments);
   set_gdbarch_push_dummy_frame (gdbarch, generic_push_dummy_frame);
   set_gdbarch_push_return_address (gdbarch, d10v_push_return_address);
 
   set_gdbarch_store_struct_return (gdbarch, d10v_store_struct_return);
-  set_gdbarch_deprecated_store_return_value (gdbarch, d10v_store_return_value);
-  set_gdbarch_deprecated_extract_struct_value_address (gdbarch, d10v_extract_struct_value_address);
+  set_gdbarch_store_return_value (gdbarch, d10v_store_return_value);
+  set_gdbarch_extract_struct_value_address (gdbarch, d10v_extract_struct_value_address);
   set_gdbarch_use_struct_convention (gdbarch, d10v_use_struct_convention);
 
   set_gdbarch_frame_init_saved_regs (gdbarch, d10v_frame_init_saved_regs);
@@ -1634,8 +1644,7 @@ d10v_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_frame_chain (gdbarch, d10v_frame_chain);
   set_gdbarch_frame_chain_valid (gdbarch, d10v_frame_chain_valid);
   set_gdbarch_frame_saved_pc (gdbarch, d10v_frame_saved_pc);
-  set_gdbarch_frame_args_address (gdbarch, default_frame_address);
-  set_gdbarch_frame_locals_address (gdbarch, default_frame_address);
+
   set_gdbarch_saved_pc_after_call (gdbarch, d10v_saved_pc_after_call);
   set_gdbarch_frame_num_args (gdbarch, frame_num_args_unknown);
   set_gdbarch_stack_align (gdbarch, d10v_stack_align);

@@ -1,4 +1,4 @@
-# Copyright (C) 2002 Free Software Foundation, Inc.
+# Copyright (C) 2002, 2003 Free Software Foundation, Inc.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,21 +29,15 @@ if $tracelevel then {
 # This file uses altivec-regs.c for input.
 #
 
-# APPLE LOCAL jmolenda
-# r. 3067302 Altivec registers not being saved
-set r3067302 "(r. 3067302)"
-# r. 3067314 gcc generates unpleasant stabs data for vector types
-set r3067314 "(r. 3067314)"
-
 set prms_id 0
 set bug_id 0
 
-if [istarget "powerpc-*altivec"] {
-    set vrbase "vr"
-    set compile_flags { debug additional_flags=-w }
-} elseif [istarget "powerpc-apple-*"] {
+if [istarget "powerpc-apple-*"] {
     set vrbase "v"
     set compile_flags { debug additional_flags=-w additional_flags=-faltivec }
+} elseif [istarget "powerpc-*"] {
+    set vrbase "vr"
+    set compile_flags { debug additional_flags=-w }
 } else {
     verbose "Skipping altivec register tests."
     return
@@ -51,9 +45,9 @@ if [istarget "powerpc-*altivec"] {
 
 set testfile "altivec-regs"
 set binfile ${objdir}/${subdir}/${testfile}
-set src1 ${srcdir}/${subdir}/${testfile}.c
+set srcfile ${testfile}.c
 
-if  { [gdb_compile ${src1} ${binfile} executable ${compile_flags}] != "" } {
+if  { [gdb_compile ${srcdir}/${subdir}/${srcfile} ${binfile} executable ${compile_flags}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
@@ -100,23 +94,17 @@ gdb_expect {
 # b) the register read (below) also works.
 
 if {$endianness == "big"} {
-    set hex_vector ".uint128 = 0x00000001000000010000000100000001, v4_float = .0x0, 0x0, 0x0, 0x0., v4_int32 = .0x1, 0x1, 0x1, 0x1., v8_int16 = .0x0, 0x1, 0x0, 0x1, 0x0, 0x1, 0x0, 0x1., v16_int8 = .0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1.."
+    set decimal_vector ".uint128 = 0x00000001000000010000000100000001, v4_float = .1.*e-45, 1.*e-45, 1.*e-45, 1.*e-45., v4_int32 = .1, 1, 1, 1., v8_int16 = .0, 1, 0, 1, 0, 1, 0, 1., v16_int8 = ..00*.00*.00*.001.00*.00*.00*.001.00*.00*.00*.001.00*.00*.00*.001.."
 } else {
-    set hex_vector ".uint128 = 0x00000001000000010000000100000001, v4_float = .0x0, 0x0, 0x0, 0x0., v4_int32 = .0x1, 0x1, 0x1, 0x1., v8_int16 = .0x1, 0x0, 0x1, 0x0, 0x1, 0x0, 0x1, 0x0., v16_int8 = .0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0.."
-}
-
-if {$endianness == "big"} {
-     set decimal_vector ".uint128 = 0x00000001000000010000000100000001, v4_float = .1.*e-45, 1.*e-45, 1.*e-45, 1.*e-45., v4_int32 = .1, 1, 1, 1., v8_int16 = .0, 1, 0, 1, 0, 1, 0, 1., v16_int8 = ..0.0.0.001.0.0.0.001.0.0.0.001.0.0.0.001.."
-} else {
-     set decimal_vector ".uint128 = 0x00000001000000010000000100000001, v4_float = .1.*e-45, 1.*e-45, 1.*e-45, 1.*e-45., v4_int32 = .1, 1, 1, 1., v8_int16 = .1, 0, 1, 0, 1, 0, 1, 0., v16_int8 = ..001.0.0.0.001.0.0.0.001.0.0.0.001.0.0.."
+    set decimal_vector ".uint128 = 0x00000001000000010000000100000001, v4_float = .1.*e-45, 1.*e-45, 1.*e-45, 1.*e-45., v4_int32 = .1, 1, 1, 1., v8_int16 = .1, 0, 1, 0, 1, 0, 1, 0., v16_int8 = ..001.00*.00*.00*.001.00*.00*.00*.001.00*.00*.00*.001.00*.00*.."
 }
 
 for {set i 0} {$i < 32} {incr i 1} {
-        gdb_test "info reg $vrbase$i" "$vrbase$i.*$decimal_vector" "info reg $vrbase$i $r3067302"
+        gdb_test "info reg $vrbase$i" "$vrbase$i.*$decimal_vector\t\\(raw 0x00000001000000010000000100000001\\)" "info reg $vrbase$i"
 }
 
-gdb_test "info reg vrsave" "vrsave.*0x1" "info reg vrsave $r3067302"
-gdb_test "info reg vscr" "vscr.*0x1" "info reg vscr $r3067302"
+gdb_test "info reg vrsave" "vrsave.*0x1\t1" "info reg vrsave"
+gdb_test "info reg vscr" "vscr.*0x1\t1" "info reg vscr"
 
 # Now redo the same tests, but using the print command.
 # Note: in LE case, the char array is printed WITHOUT the last character.
@@ -124,25 +112,30 @@ gdb_test "info reg vscr" "vscr.*0x1" "info reg vscr $r3067302"
 # null char in a string and doesn't print it. This is not a failure, but
 # the way gdb works.
 
-for {set i 0} {$i < 32} {incr i 1} {
-        gdb_test "print \$$vrbase$i" ".* = $decimal_vector" "print $vrbase$i (natural) $r3067302"
+if {$endianness == "big"} {
+    set hex_vector ".uint128 = 0x00000001000000010000000100000001, v4_float = .0x0, 0x0, 0x0, 0x0., v4_int32 = .0x1, 0x1, 0x1, 0x1., v8_int16 = .0x0, 0x1, 0x0, 0x1, 0x0, 0x1, 0x0, 0x1., v16_int8 = .0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1.."
+} else {
+    set hex_vector ".uint128 = 0x00000001000000010000000100000001, v4_float = .0x0, 0x0, 0x0, 0x0., v4_int32 = .0x1, 0x1, 0x1, 0x1., v8_int16 = .0x1, 0x0, 0x1, 0x0, 0x1, 0x0, 0x1, 0x0., v16_int8 = .0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0.."
 }
 
 for {set i 0} {$i < 32} {incr i 1} {
-        gdb_test "print /x \$$vrbase$i" ".* = $hex_vector" "print $vrbase$i (hex) $r3067302"
+        gdb_test "print \$$vrbase$i" ".* = $decimal_vector" "print $vrbase$i (natural)"
 }
 
-gdb_test "print \$vrsave" ".* = 1" "print vrsave $r3067302"
-gdb_test "print \$vscr" ".* = 1" "print vscr $r3067302"
+for {set i 0} {$i < 32} {incr i 1} {
+        gdb_test "print /x \$$vrbase$i" ".* = $hex_vector" "print $vrbase$i (hex)"
+}
 
-if 0 {
+gdb_test "print \$vrsave" ".* = 1" "print vrsave"
+gdb_test "print \$vscr" ".* = 1" "print vscr"
+
 for {set i 0} {$i < 32} {incr i 1} {
          set pattern$i ".*$vrbase$i.*"
          append pattern$i $decimal_vector
 }
 
-send_gdb "info powerpc altivec\n"
-gdb_expect_list "info powerpc altivec" ".*$gdb_prompt $" {
+send_gdb "info vector\n"
+gdb_expect_list "info vector" ".*$gdb_prompt $" {
 [$pattern0]
 [$pattern1]
 [$pattern2]
@@ -175,9 +168,8 @@ gdb_expect_list "info powerpc altivec" ".*$gdb_prompt $" {
 [$pattern29]
 [$pattern30]
 [$pattern31]
-"\[ \t\n\r\]+vscr\[ \t\]+0x1"
-"\[ \t\n\r\]+vrsave\[ \t\]+0x1"
-}
+"\[ \t\n\r\]+vscr\[ \t\]+0x1\t1"
+"\[ \t\n\r\]+vrsave\[ \t\]+0x1\t1"
 }
 
 gdb_test "break vector_fun" \
@@ -232,7 +224,7 @@ gdb_test "down" \
 
 gdb_test "finish" \
   "Run till exit from .0  vector_fun \\(a=.0x2020202, 0x2020202, 0x2020202, 0x2020202., b=.0x3030303, 0x3030303, 0x3030303, 0x3030303.\\) at.*altivec-regs.c.*in main \\(\\) at.*altivec-regs.c.*z = vector_fun \\(x, y\\);.*Value returned is.*= .0x5050505, 0x5050505, 0x5050505, 0x5050505." \
-  "finish returned correct value $r3067314"
+  "finish returned correct value"
 
 
 

@@ -42,7 +42,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
-#include <malloc.h>
 #ifdef HAVE_TERM_H
 #include <term.h>
 #endif
@@ -395,8 +394,8 @@ tui_enable (void)
 
   tui_version = 1;
   tui_active = 1;
-  if (selected_frame)
-     tuiShowFrameInfo (selected_frame);
+  if (deprecated_selected_frame)
+     tuiShowFrameInfo (deprecated_selected_frame);
 
   /* Restore TUI keymap.  */
   tui_set_key_mode (tui_current_key_mode);

@@ -33,13 +33,8 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {deb
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
-# APPLE LOCAL jmolenda
-# r. 3058181 'return' command fails to return correct value for several types
-set r3058181 "(r. 3058181)"
-
 proc return_1 { type } {
     global gdb_prompt
-    global r3058181
 
     gdb_test "break ${type}_func" "Breakpoint \[0123456789\].*" \
 	    "set break on ${type}_func"
@@ -66,9 +61,9 @@ proc return_1 { type } {
 	}
     }
     gdb_test "print ${type}_resultval == testval.${type}_testval" ".* = 1" \
-	    "${type} value returned successfully $r3058181"
+	    "${type} value returned successfully"
     gdb_test "print ${type}_resultval != ${type}_returnval" ".* = 1" \
-	    "validate result value not equal to program return value $r3058181"
+	    "validate result value not equal to program return value"
 }
 
 proc return_void { } {

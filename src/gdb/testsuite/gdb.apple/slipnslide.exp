@@ -55,7 +55,7 @@ gdb_load ${binfile}
 # name.
 send_gdb "info sharedlibrary\n"
 gdb_expect {
-   -re ".* (libSystem...dylib) *(-|$hex) *- *init Y Y \"(.*libSystem.B.dylib)\" at ($hex)( \\(offset (0x0)\\))?\[\r\n\].*" {
+   -re ".* (libSystem...dylib) *(-|$hex) *- *init Y Y (.*libSystem.B.dylib) at ($hex)( \\(offset (0x0)\\))?\[\r\n\].*" {
       pass "get libSystem pre-startup load address"
       set libsystem_shortname $expect_out(1,string)
       set libsystem_full_pathname $expect_out(3,string)
@@ -70,6 +70,7 @@ gdb_expect {
 }
 
 # See where printf() normally loads.
+set printf_address {}
 send_gdb "p printf\n"
 gdb_expect {
   -re ".*\\\$1 = .* ($hex) <printf>.*$gdb_prompt $" {
@@ -107,7 +108,7 @@ if ![runto_main] then {
 # Verify that nothing has slid with the default case.
 send_gdb "info sharedlibrary\n"
 gdb_expect {
-  -re ".* $decimal $libsystem_shortname *- $libsystem_load_addr *dyld Y Y \"$libsystem_full_pathname\" at $libsystem_load_addr \\(offset 0x0\\).*$gdb_prompt $" {
+  -re ".* $decimal $libsystem_shortname *- $libsystem_load_addr *dyld Y Y $libsystem_full_pathname at $libsystem_load_addr \\(offset 0x0\\).*$gdb_prompt $" {
     pass "default libSystem didn't slide"
   }
   -re "$gdb_prompt $" {
@@ -144,7 +145,7 @@ mi_gdb_test "30-gdb-set stop-on-solib-events 1" "30\\^done" "gdb shows solib eve
 
 send_gdb "40-exec-run\n"
 gdb_expect {
-  -re "40\\^running\[^(\]*=shlibs-updated\[^(\]*$mi_gdb_prompt" {
+  -re "(40\\^running\[\r\n\]|=shlibs-updated\[\r\n\]|$mi_gdb_prompt)+" {
     pass "first part of run startup.."
   }
   timeout {
@@ -192,7 +193,7 @@ gdb_load ${binfile}
 # Verify that libSystem and mylib are both going to try loading at the same addr.
 send_gdb "info sharedlibrary\n"
 gdb_expect {
-  -re ".* $decimal ${testlibfile}.dylib *- *- *init Y Y \"$libbinfile\" at $libsystem_load_addr.* $decimal $libsystem_shortname *- *- *init Y Y \"$libsystem_full_pathname\" at $libsystem_load_addr.*$gdb_prompt $" {
+  -re ".* $decimal ${testlibfile}.dylib *- *- *init Y Y $libbinfile at $libsystem_load_addr.* $decimal $libsystem_shortname *- *- *init Y Y $libsystem_full_pathname at $libsystem_load_addr.*$gdb_prompt $" {
     pass "libmylib and libsystem will both try to load at same addr"
   }
   -re "$gdb_prompt $" {
@@ -285,7 +286,7 @@ gdb_test "run" "Starting program:.*"
 # Verify that mydlib slid like it should have and libSystem stayed put.
 send_gdb "info sharedlibrary\n"
 gdb_expect {
-  -re ".* $decimal ${testlibfile}.dylib *- ($hex) *dyld Y Y \"$libbinfile\" at ($hex) \\(offset (0x\[^0\]\[0-9a-fA-F\]+)\\).* $decimal $libsystem_shortname *- $libsystem_load_addr *dyld Y Y \"$libsystem_full_pathname\" at $libsystem_load_addr \\(offset 0x0\\).*$gdb_prompt $" {
+  -re ".* $decimal ${testlibfile}.dylib *- ($hex) *dyld Y Y $libbinfile at ($hex) \\(offset (0x\[^0\]\[0-9a-fA-F\]+)\\).* $decimal $libsystem_shortname *- $libsystem_load_addr *dyld Y Y $libsystem_full_pathname at $libsystem_load_addr \\(offset 0x0\\).*$gdb_prompt $" {
     set mylib_slid_addr $expect_out(1,string)
     set mylib_slid_addr_duplicate $expect_out(1,string)
     set mylib_slid_offset $expect_out(2,string)

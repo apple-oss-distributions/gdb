@@ -1,5 +1,5 @@
 /* Target-dependent code for i386 BSD's.
-   Copyright 2001, 2002 Free Software Foundation, Inc.
+   Copyright 2001, 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,6 +23,7 @@
 #include "frame.h"
 #include "gdbcore.h"
 #include "regcache.h"
+#include "osabi.h"
 
 #include "gdb_string.h"
 
@@ -195,8 +196,8 @@ _initialize_i386bsd_tdep (void)
   gdbarch_register_osabi_sniffer (bfd_arch_i386, bfd_target_aout_flavour,
 				  i386bsd_aout_osabi_sniffer);
 
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_FREEBSD_AOUT,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_FREEBSD_AOUT,
 			  i386fbsdaout_init_abi);
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_FREEBSD_ELF,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_FREEBSD_ELF,
 			  i386fbsd4_init_abi);
 }

@@ -121,11 +121,6 @@ main (void)
   short var_short = 3;
   struct test_vec_struct vect_struct;
   
-#ifdef __APPLE__
-  unsigned long vrsavex = 0xffffffff;
-  __asm__ volatile ("mtspr 256, %0" : : "r" (vrsavex));
-#endif
-
   vect_struct.vshort1 = VDECL8 (vector signed short, 1, 2, 3, 4, 5, 6, 7, 8);
   vect_struct.vshort2 = VDECL8 (vector signed short, 11, 12, 13, 14, 15, 16, 17, 18);
   vect_struct.vshort3 = VDECL8 (vector signed short, 21, 22, 23, 24, 25, 26, 27, 28);

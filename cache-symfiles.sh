@@ -6,46 +6,47 @@ if [ `id -u` != "0" ]; then
 fi
 
 dir=/usr/libexec/gdb/symfiles
+gdb=/usr/bin/gdb
 
 echo -n "Removing current cache ... "
 rm -rf "$dir"
 mkdir -p "$dir"
 echo "done"
 
-cat > /tmp/syms_$$.c <<EOF
-int main ()
-{
-}
-EOF
+echo -n "Finding libraries ... "
 
-libs="-F/System/Library/PrivateFrameworks"
+libs="/usr/lib/dyld"
 
-for i in `ls -d /System/Library/Frameworks/*.framework | grep -v Kernel`; do
+for i in \
+    /System/Library/Frameworks/*.framework \
+    /System/Library/PrivateFrameworks/*.framework \
+    /System/Library/Frameworks/*.framework/Frameworks/*.framework \
+    /System/Library/PrivateFrameworks/*.framework/Frameworks/*.framework \
+    ; do
     name=`basename $i .framework`
-    libs="$libs -framework $name"
+    if [ -f $i/$name ]; then
+	libs="$libs $i/$name"
+    fi
 done 
 
-for i in `ls -d /System/Library/PrivateFrameworks/*.framework | grep -v AppSupport | grep -v LogViewerAPI | grep -v PBRuntime | grep -v PrintService | grep -v SMBDefines`; do
-    name=`basename $i .framework`
-    libs="$libs -framework $name"
-done 
-
-for i in `ls /usr/lib/lib*.dylib | grep -v _profile | grep -v _debug`; do
+for i in \
+    `find /usr/lib -name lib\*.dylib -type f` \
+    /System/Library/Frameworks/*.framework/Libraries/*.dylib \
+    ; do
     name=`basename $i .dylib`
     name=`echo $name | sed -e 's/\.[ABC]$//' -e 's/^lib//'`
-    libs="$libs -l$name"
+    libs="$libs $i"
 done 
 
-cc -g -o /tmp/syms_$$ /tmp/syms_$$.c $libs
+echo "done"
 
-cat > /tmp/syms_$$.gdb <<EOF
-file /tmp/syms_$$
-run
-sharedlibrary cache-symfiles $dir
-quit
-EOF
+for i in $libs; do
+    echo "sharedlibrary cache-symfile $i $dir" >> /tmp/syms_$$.gdb
+done
 
-cat /tmp/syms_$$.gdb | /usr/bin/gdb
+echo -n "Processing libraries ... "
+$gdb -nx --batch --command=/tmp/syms_$$.gdb
+echo "done"
 
-rm -f "$dir/syms_$$.syms"
-rm -f "/tmp/syms_$$.*"
+rm "/tmp/syms_$$.gdb"
+rm "${dir}/dyld.syms"

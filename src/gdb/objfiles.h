@@ -338,7 +338,7 @@ struct objfile
        the memory mapped malloc() package to manage storage for this objfile's
        data.  NULL if we are not. */
 
-    PTR md;
+    void *md;
 
     /* The file descriptor that was used to obtain the mmalloc descriptor
        for this objfile.  If we call mmalloc_detach with the malloc descriptor
@@ -369,7 +369,7 @@ struct objfile
        typically a pointer to malloc'd memory.  The symbol reader's finish
        function is responsible for freeing the memory thusly allocated.  */
 
-    PTR sym_private;
+    void *sym_private;
 
     /* Hook for target-architecture-specific information.  This must
        point to memory allocated on one of the obstacks in this objfile,
@@ -424,6 +424,15 @@ struct objfile
     ExportEntry *export_list;
     int export_list_size;
 
+    /* Link to objfile that contains the debug symbols for this one.
+       One is loaded if this file has an debug link to an existing
+       debug file with the right checksum */
+    struct objfile *separate_debug_objfile;
+
+    /* If this is a separate debug object, this is used as a link to the
+       actual executable objfile. */
+    struct objfile *separate_debug_objfile_backlink;
+    
     /* Place to stash various statistics about this objfile */
       OBJSTATS;
   };
@@ -519,6 +528,10 @@ extern struct objfile *object_files;
 
 extern void objfile_to_front (struct objfile *);
 
+extern void put_objfile_before (struct objfile *, struct objfile *);
+
+extern void link_objfile (struct objfile *);
+
 extern void unlink_objfile (struct objfile *);
 
 extern void free_objfile (struct objfile *);
@@ -561,8 +574,30 @@ extern void objfile_demangle_msymbols (struct objfile *);
 /* Traverse all object files.  ALL_OBJFILES_SAFE works even if you delete
    the objfile during the traversal.  */
 
+struct objfile_list {
+  struct objfile *objfile;
+  struct objfile_list *next;
+};
+
+extern struct objfile_list *objfile_list;
+
+struct objfile *objfile_get_first ();
+struct objfile *objfile_get_next (struct objfile *);
+void objfile_restrict_search (int);
+void objfile_add_to_restrict_list (struct objfile *objfile);
+void objfile_clear_restrict_list ();
+
+/* APPLE LOCAL begin fix-and-continue */
+struct symtab *symtab_get_first (struct objfile *, int );
+struct symtab *symtab_get_next (struct symtab *, int );
+struct partial_symtab *psymtab_get_first (struct objfile *, int );
+struct partial_symtab *psymtab_get_next (struct partial_symtab *, int );
+/* APPLE LOCAL end fix-and-continue */
+
 #define	ALL_OBJFILES(obj) \
-  for ((obj) = object_files; (obj) != NULL; (obj) = (obj)->next)
+  for ((obj) = objfile_get_first (); \
+       (obj) != NULL; \
+       (obj) = objfile_get_next (obj))
 
 #define	ALL_OBJFILES_SAFE(obj,nxt) \
   for ((obj) = object_files; 	   \
@@ -571,13 +606,30 @@ extern void objfile_demangle_msymbols (struct objfile *);
 
 /* Traverse all symtabs in one objfile.  */
 
+/* APPLE LOCAL fix-and-continue */
 #define	ALL_OBJFILE_SYMTABS(objfile, s) \
-    for ((s) = (objfile) -> symtabs; (s) != NULL; (s) = (s) -> next)
+    for ((s) = symtab_get_first (objfile, 1);  \
+         (s) != NULL; \
+         (s) = symtab_get_next (s, 1))
+
+#define	ALL_OBJFILE_SYMTABS_INCL_OBSOLETED(objfile, s) \
+    for ((s) = symtab_get_first (objfile, 0);  \
+         (s) != NULL; \
+         (s) = symtab_get_next (s, 0))
 
 /* Traverse all psymtabs in one objfile.  */
 
+/* APPLE LOCAL fix-and-continue */
 #define	ALL_OBJFILE_PSYMTABS(objfile, p) \
-    for ((p) = (objfile) -> psymtabs; (p) != NULL; (p) = (p) -> next)
+    for ((p) = psymtab_get_first (objfile, 1); \
+         (p) != NULL; \
+         (p) = psymtab_get_next (p, 1))
+
+/* APPLE LOCAL fix-and-continue */
+#define	ALL_OBJFILE_PSYMTABS_INCL_OBSOLETED(objfile, p) \
+    for ((p) = psymtab_get_first (objfile, 0); \
+         (p) != NULL; \
+         (p) = psymtab_get_next (p, 0))
 
 /* Traverse all minimal symbols in one objfile.  */
 
@@ -590,6 +642,10 @@ extern void objfile_demangle_msymbols (struct objfile *);
 #define	ALL_SYMTABS(objfile, s) \
   ALL_OBJFILES (objfile)	 \
     ALL_OBJFILE_SYMTABS (objfile, s)
+
+#define	ALL_SYMTABS_INCL_OBSOLETED(objfile, s) \
+  ALL_OBJFILES (objfile)	 \
+    ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (objfile, s)
 
 /* Traverse all psymtabs in all objfiles.  */
 

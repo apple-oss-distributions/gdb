@@ -31,10 +31,6 @@ set testfile "dump"
 set srcfile  ${testfile}.c
 set binfile  ${objdir}/${subdir}/${testfile}
 
-# APPLE LOCAL jmolenda
-# r. 3051712 Slight Apple vs FSF gdb behavior diff with file and shared library support
-set r3051712 "(r. 3051712)"
-
 if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
@@ -209,31 +205,31 @@ proc test_restore_saved_value { restore_args msg oldval newval } {
     }
 }
 
-test_reload_saved_value "intarr1.srec" "reload array as value, srec $r3051712" \
+test_reload_saved_value "intarr1.srec" "reload array as value, srec" \
 	$array_val "intarray"
-test_reload_saved_value "intstr1.srec" "reload struct as value, srec $r3051712" \
+test_reload_saved_value "intstr1.srec" "reload struct as value, srec" \
 	$struct_val "intstruct"
-test_reload_saved_value "intarr2.srec" "reload array as memory, srec $r3051712" \
+test_reload_saved_value "intarr2.srec" "reload array as memory, srec" \
 	$array_val "intarray"
-test_reload_saved_value "intstr2.srec" "reload struct as memory, srec $r3051712" \
-	$struct_val "intstruct"
-
-test_reload_saved_value "intarr1.ihex" "reload array as value, intel hex $r3051712" \
-	$array_val "intarray"
-test_reload_saved_value "intstr1.ihex" "reload struct as value, intel hex $r3051712" \
-	$struct_val "intstruct"
-test_reload_saved_value "intarr2.ihex" "reload array as memory, intel hex $r3051712" \
-	$array_val "intarray"
-test_reload_saved_value "intstr2.ihex" "reload struct as memory, intel hex $r3051712" \
+test_reload_saved_value "intstr2.srec" "reload struct as memory, srec" \
 	$struct_val "intstruct"
 
-test_reload_saved_value "intarr1.tekhex" "reload array as value, tekhex $r3051712" \
+test_reload_saved_value "intarr1.ihex" "reload array as value, intel hex" \
 	$array_val "intarray"
-test_reload_saved_value "intstr1.tekhex" "reload struct as value, tekhex $r3051712" \
+test_reload_saved_value "intstr1.ihex" "reload struct as value, intel hex" \
 	$struct_val "intstruct"
-test_reload_saved_value "intarr2.tekhex" "reload array as memory, tekhex $r3051712" \
+test_reload_saved_value "intarr2.ihex" "reload array as memory, intel hex" \
 	$array_val "intarray"
-test_reload_saved_value "intstr2.tekhex" "reload struct as memory, tekhex $r3051712" \
+test_reload_saved_value "intstr2.ihex" "reload struct as memory, intel hex" \
+	$struct_val "intstruct"
+
+test_reload_saved_value "intarr1.tekhex" "reload array as value, tekhex" \
+	$array_val "intarray"
+test_reload_saved_value "intstr1.tekhex" "reload struct as value, tekhex" \
+	$struct_val "intstruct"
+test_reload_saved_value "intarr2.tekhex" "reload array as memory, tekhex" \
+	$array_val "intarray"
+test_reload_saved_value "intstr2.tekhex" "reload struct as memory, tekhex" \
 	$struct_val "intstruct"
 
 # Start a fresh gdb session

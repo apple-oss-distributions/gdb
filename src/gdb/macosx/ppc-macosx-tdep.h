@@ -23,9 +23,9 @@ void ppc_init_extra_frame_info (int fromleaf, struct frame_info *prev);
 
 void ppc_print_extra_frame_info (struct frame_info *frame);
 
-void ppc_init_frame_pc_first (int fromleaf, struct frame_info *prev);
+CORE_ADDR ppc_init_frame_pc_first (int fromleaf, struct frame_info *prev);
 
-void ppc_init_frame_pc (int fromleaf, struct frame_info *prev);
+CORE_ADDR ppc_init_frame_pc (int fromleaf, struct frame_info *prev);
 
 CORE_ADDR ppc_frame_saved_pc (struct frame_info *fi);
 
@@ -71,4 +71,10 @@ int ppc_macosx_in_solib_return_trampoline (CORE_ADDR pc, char *name);
 
 CORE_ADDR ppc_macosx_skip_trampoline_code (CORE_ADDR pc);
 
+int
+ppc_fast_show_stack (int show_frames, int get_names,
+		     unsigned int count_limit, unsigned int print_limit,
+		     unsigned int *count,
+		     void (print_fun) (struct ui_out *uiout, int frame_num,
+				       CORE_ADDR pc, CORE_ADDR fp));
 #endif /* __GDB_PPC_MACOSX_TDEP_H__ */

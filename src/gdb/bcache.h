@@ -76,13 +76,13 @@ extern void bcache_xfree (struct bcache *bcache);
 
 extern void
 bcache_specify_allocation_with_arg
-(struct bcache *b, void * (* alloc) (void *, long),
+(struct bcache *b, void * (* alloc) (void *, size_t),
  void (* free) (void *, void *), void *arg);
 
 extern void
 bcache_specify_allocation
-(struct bcache *b, void * (* alloc) (void *, long),
- void (* free) (void *, void *));
+(struct bcache *b, void * (* alloc) (size_t),
+ void (* free) (void *));
 
 /* Create a new bcache object.  */
 extern struct bcache *bcache_xmalloc (void *);

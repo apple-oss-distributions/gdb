@@ -1,4 +1,4 @@
-#   Copyright (C) 1999, 2000, 2002 Free Software Foundation, Inc.
+# Copyright (C) 1999, 2000, 2002 Free Software Foundation, Inc.
 #
 # This Program Is Free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,10 +21,6 @@
 #
 # Verify that, using the MI, we can create, update, delete variables.
 #
-
-# APPLE LOCAL jmolenda
-# r. 3080771 Long numbers (#'s with "L" suffix) unrecognized by gdb exp parser
-set r3080771 "(r. 3080771)"
 
 
 load_lib mi-support.exp
@@ -58,7 +54,7 @@ mi_gdb_load ${binfile}
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 
 mi_gdb_test "111-var-create global_simple * global_simple" \
-	"111\\^done,name=\"global_simple\",numchild=\"6\",type=\"simpleton\",typecode=\"STRUCT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"111\\^done,name=\"global_simple\",numchild=\"6\",type=\"simpleton\",typecode=\"STRUCT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create global variable"
 
 # Test: c_variable-1.2
@@ -77,101 +73,95 @@ mi_gdb_test "113-var-create argc * argc" \
 	"113\\^error,msg=\"mi_cmd_var_create: unable to create variable object\"" \
 	"create out of scope variable"
 
-mi_gdb_test "200-break-insert do_locals_tests" \
-	"200\\^done,bkpt=\{number=\"1\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"do_locals_tests\",file=\".*var-cmd.c\",line=\"106\",times=\"0\"\}" \
-	"break-insert operation"
-
-mi_run_cmd
-# The running part has been checked already by mi_run_cmd
-mi_get_bp_stopped "1" "\[01\]" "" "do_locals_tests" "var-cmd.c" "106" "run to do_locals_tests"
+mi_runto do_locals_tests
 
 # Test: c_variable-1.4
 # Desc: create local variables
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create linteger * linteger" \
-	"\\^done,name=\"linteger\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"linteger\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable linteger"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lpinteger * lpinteger" \
-	"\\^done,name=\"lpinteger\",numchild=\"1\",type=\"int \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lpinteger\",numchild=\"1\",type=\"int \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable lpinteger"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lcharacter * lcharacter" \
-	"\\^done,name=\"lcharacter\",numchild=\"0\",type=\"char\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lcharacter\",numchild=\"0\",type=\"char\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variablelcharacter"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lpcharacter * lpcharacter" \
-	"\\^done,name=\"lpcharacter\",numchild=\"1\",type=\"char \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lpcharacter\",numchild=\"1\",type=\"char \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable lpcharacter"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create llong * llong" \
-	"\\^done,name=\"llong\",numchild=\"0\",type=\"long int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"llong\",numchild=\"0\",type=\"long int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable llong"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lplong * lplong" \
-	"\\^done,name=\"lplong\",numchild=\"1\",type=\"long int \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lplong\",numchild=\"1\",type=\"long int \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable lplong"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lfloat * lfloat" \
-	"\\^done,name=\"lfloat\",numchild=\"0\",type=\"float\",typecode=\"FLT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lfloat\",numchild=\"0\",type=\"float\",typecode=\"FLT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable lfloat"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lpfloat * lpfloat" \
-	"\\^done,name=\"lpfloat\",numchild=\"1\",type=\"float \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lpfloat\",numchild=\"1\",type=\"float \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable lpfloat"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create ldouble * ldouble" \
-	"\\^done,name=\"ldouble\",numchild=\"0\",type=\"double\",typecode=\"FLT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"ldouble\",numchild=\"0\",type=\"double\",typecode=\"FLT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable ldouble"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lpdouble * lpdouble" \
-	"\\^done,name=\"lpdouble\",numchild=\"1\",type=\"double \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lpdouble\",numchild=\"1\",type=\"double \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable lpdouble"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lsimple * lsimple" \
-	"\\^done,name=\"lsimple\",numchild=\"6\",type=\"struct _simple_struct\",typecode=\"STRUCT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lsimple\",numchild=\"6\",type=\"struct _simple_struct\",typecode=\"STRUCT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable lsimple"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lpsimple * lpsimple" \
-	"\\^done,name=\"lpsimple\",numchild=\"6\",type=\"struct _simple_struct \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lpsimple\",numchild=\"6\",type=\"struct _simple_struct \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable lpsimple"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create func * func" \
-	"\\^done,name=\"func\",numchild=\"0\",type=\"void \\(\\*\\)\\((void|)\\)\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"func\",numchild=\"0\",type=\"void \\(\\*\\)\\((void|)\\)\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create local variable func"
 
 # Test: c_variable-1.5
 # Desc: create lsimple.character
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lsimple.character * lsimple.character" \
-	"\\^done,name=\"lsimple.character\",numchild=\"0\",type=\"char\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lsimple.character\",numchild=\"0\",type=\"char\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create lsimple.character"
 
 # Test: c_variable-1.6
 # Desc: create lpsimple->integer
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lsimple->integer * lsimple->integer" \
-	"\\^done,name=\"lsimple->integer\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lsimple->integer\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create lsimple->integer"
 
 # Test: c_variable-1.7
 # Desc: ceate lsimple.integer
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create lsimple.integer * lsimple.integer" \
-	"\\^done,name=\"lsimple.integer\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"lsimple.integer\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create lsimple->integer"
 
 
@@ -315,6 +305,20 @@ mi_gdb_test "-var-assign linteger 3333" \
 	"\\^done,value=\"3333\"" \
 	"assign to linteger"
 
+# APPLE LOCAL: [var-update] CHANGELIST is a list, tuple is named as VAROBJ
+mi_gdb_test "-var-update *" \
+	"\\^done,changelist=\\\[varobj=\{name=\"linteger\",in_scope=\"true\",type_changed=\"false\"\}\\\]" \
+	"update all vars: linteger changed after assign"
+
+mi_gdb_test "-var-assign linteger 3333" \
+	"\\^done,value=\"3333\"" \
+	"assign to linteger again, same value"
+
+# APPLE LOCAL: [var-update] CHANGELIST is a list
+mi_gdb_test "-var-update *" \
+	"\\^done,changelist=\\\[\\\]" \
+	"update all vars: linteger not changed after same assign"
+
 mi_gdb_test "-var-evaluate-expression linteger" \
 	"\\^done,value=\"3333\"" \
 	"eval linteger"
@@ -322,6 +326,16 @@ mi_gdb_test "-var-evaluate-expression linteger" \
 mi_gdb_test "-var-assign lpinteger \"&linteger + 3\"" \
 	"\\^done,value=\"$hex\"" \
 	"assign to lpinteger"
+
+# APPLE LOCAL: [var-update] CHANGELIST is a list, tuple is named as VAROBJ
+mi_gdb_test "-var-update *" \
+	"\\^done,changelist=\\\[varobj=\{name=\"lpinteger\",in_scope=\"true\",type_changed=\"false\"\}\\\]" \
+	"update all vars: lpinteger changed after assign"
+
+# APPLE LOCAL: [var-update] CHANGELIST is a list
+mi_gdb_test "-var-update *" \
+	"\\^done,changelist=\\\[\\\]" \
+	"update all vars: no changes for second update"
 
 mi_gdb_test "-var-evaluate-expression lpinteger" \
 	"\\^done,value=\"$hex\"" \
@@ -347,13 +361,13 @@ mi_gdb_test "-var-evaluate-expression lcharacter" \
 
 mi_gdb_test "-var-assign llong 1313L" \
 	"\\^done,value=\"1313\"" \
-	"assign to llong $r3080771"
+	"assign to llong"
 mi_gdb_test "-var-evaluate-expression llong" \
 	"\\^done,value=\"1313\"" \
-	"eval llong $r3080771"
+	"eval llong"
 mi_gdb_test "-var-assign llong 1212L" \
 	"\\^done,value=\"1212\"" \
-	"assign to llong $r3080771"
+	"assign to llong"
 
 mi_gdb_test "-var-assign lplong &llong+4" \
 	"\\^done,value=\"$hex\"" \
@@ -414,12 +428,12 @@ mi_continue_to "2" "subroutine1" \
 # Desc: create variable for locals i,l in subroutine1
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create i  * i" \
-	"\\^done,name=\"i\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"i\",numchild=\"0\",type=\"int\",typecode=\"INT\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create i"
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create l * l" \
-	"\\^done,name=\"l\",numchild=\"1\",type=\"long int \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\"" \
+	"\\^done,name=\"l\",numchild=\"1\",type=\"long int \\*\",typecode=\"PTR\",dynamic_type=\"\",in_scope=\"true\",block_start_addr=\".*\",block_end_addr=\".*\"" \
 	"create l"
 
 # Test: c_variable-2.11
@@ -562,7 +576,7 @@ mi_continue_to {.*} do_special_tests {.*} {.*var-cmd.c} {.*} {stop in do_special
 
 # APPLE LOCAL: [var-create] TYPECODE, DYNAMIC_TYPE, IN_SCOPE fields added.
 mi_gdb_test "-var-create selected_a @ a" \
-  {\^done,name="selected_a",numchild="0",type="int",typecode="INT",dynamic_type="",in_scope="true"} \
+  {\^done,name="selected_a",numchild="0",type="int",typecode="INT",dynamic_type="",in_scope="true",block_start_addr=".*",block_end_addr=".*"} \
   "create selected_a"
 
 mi_gdb_test "-break-insert incr_a" \

@@ -917,7 +917,7 @@ yylex ()
       c = *lexptr++;
       if (c != '\'')
 	{
-	  namelen = skip_quoted (tokstart, gdb_completer_word_break_characters)
+	  namelen = skip_quoted (tokstart)
 	    - tokstart;
 	  if (namelen > 2)
 	    {

@@ -1,5 +1,5 @@
 /* Target-dependent code for the Fujitsu FR-V, for GDB, the GNU Debugger.
-   Copyright 2002 Free Software Foundation, Inc.
+   Copyright 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -793,8 +793,7 @@ frv_saved_pc_after_call (struct frame_info *frame)
 static void
 frv_init_extra_frame_info (int fromleaf, struct frame_info *frame)
 {
-  frame->extra_info = (struct frame_extra_info *)
-    frame_obstack_alloc (sizeof (struct frame_extra_info));
+  frame_extra_info_zalloc (frame, sizeof (struct frame_extra_info));
   frame->extra_info->fp_to_callers_sp_offset = 0;
   frame->extra_info->lr_saved_on_stack = 0;
 }
@@ -904,9 +903,10 @@ frv_store_return_value (struct type *type, char *valbuf)
   int reg8_offset = frv_register_byte (8);
 
   if (length <= 4)
-    write_register_bytes (reg8_offset + (4 - length), valbuf, length);
+    deprecated_write_register_bytes (reg8_offset + (4 - length), valbuf,
+				     length);
   else if (length == 8)
-    write_register_bytes (reg8_offset, valbuf, length);
+    deprecated_write_register_bytes (reg8_offset, valbuf, length);
   else
     internal_error (__FILE__, __LINE__,
                     "Don't know how to return a %d-byte value.", length);
@@ -1044,6 +1044,10 @@ frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   
   gdbarch = gdbarch_alloc (&info, var);
 
+  /* NOTE: cagney/2002-12-06: This can be deleted when this arch is
+     ready to unwind the PC first (see frame.c:get_prev_frame()).  */
+  set_gdbarch_deprecated_init_frame_pc (gdbarch, init_frame_pc_default);
+
   set_gdbarch_short_bit (gdbarch, 16);
   set_gdbarch_int_bit (gdbarch, 32);
   set_gdbarch_long_bit (gdbarch, 32);
@@ -1078,10 +1082,7 @@ frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_saved_pc_after_call (gdbarch, frv_saved_pc_after_call);
 
   set_gdbarch_frame_chain (gdbarch, frv_frame_chain);
-  set_gdbarch_frame_chain_valid (gdbarch, func_frame_chain_valid);
   set_gdbarch_frame_saved_pc (gdbarch, frv_frame_saved_pc);
-  set_gdbarch_frame_args_address (gdbarch, default_frame_address);
-  set_gdbarch_frame_locals_address (gdbarch, default_frame_address);
 
   set_gdbarch_frame_init_saved_regs (gdbarch, frv_frame_init_saved_regs);
 
@@ -1093,10 +1094,7 @@ frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_deprecated_extract_struct_value_address (gdbarch, frv_extract_struct_value_address);
 
   /* Settings for calling functions in the inferior.  */
-  set_gdbarch_use_generic_dummy_frames (gdbarch, 1);
   set_gdbarch_call_dummy_length (gdbarch, 0);
-  set_gdbarch_coerce_float_to_double (gdbarch, 
-				      standard_coerce_float_to_double);
   set_gdbarch_push_arguments (gdbarch, frv_push_arguments);
   set_gdbarch_push_return_address (gdbarch, frv_push_return_address);
   set_gdbarch_pop_frame (gdbarch, frv_pop_frame);
@@ -1116,16 +1114,13 @@ frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_read_sp (gdbarch, generic_target_read_sp);
   set_gdbarch_write_sp (gdbarch, generic_target_write_sp);
 
-  set_gdbarch_call_dummy_location (gdbarch, AT_ENTRY_POINT);
   set_gdbarch_call_dummy_address (gdbarch, entry_point_address);
   set_gdbarch_call_dummy_breakpoint_offset (gdbarch, 0);
   set_gdbarch_call_dummy_start_offset (gdbarch, 0);
-  set_gdbarch_pc_in_call_dummy (gdbarch, pc_in_call_dummy_at_entry_point);
+  set_gdbarch_deprecated_pc_in_call_dummy (gdbarch, deprecated_pc_in_call_dummy_at_entry_point);
   set_gdbarch_call_dummy_stack_adjust_p (gdbarch, 0);
   set_gdbarch_push_dummy_frame (gdbarch, generic_push_dummy_frame);
   set_gdbarch_fix_call_dummy (gdbarch, generic_fix_call_dummy);
-
-  set_gdbarch_get_saved_register (gdbarch, generic_unwind_get_saved_register);
 
   set_gdbarch_decr_pc_after_break (gdbarch, 0);
   set_gdbarch_function_start_offset (gdbarch, 0);

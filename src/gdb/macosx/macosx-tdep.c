@@ -55,14 +55,16 @@ the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 
 #include "macosx-tdep.h"
 
-struct complaint unknown_macho_symtype_complaint =
+#if 0
+struct deprecated_complaint unknown_macho_symtype_complaint =
   {"unknown Mach-O symbol type %s", 0, 0};
 
-struct complaint unknown_macho_section_complaint =
+struct deprecated_complaint unknown_macho_section_complaint =
   {"unknown Mach-O section value %s (assuming DATA)", 0, 0};
 
-struct complaint unsupported_indirect_symtype_complaint =
+struct deprecated_complaint unsupported_indirect_symtype_complaint =
   {"unsupported Mach-O symbol type %s (indirect)", 0, 0};
+#endif
 
 #define BFD_GETB16(addr) ((addr[0] << 8) | addr[1])
 #define BFD_GETB32(addr) ((((((unsigned long) addr[0] << 8) | addr[1]) << 8) | addr[2]) << 8 | addr[3])

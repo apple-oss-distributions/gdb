@@ -1,7 +1,7 @@
 /* Core dump and executable file functions above target vector, for GDB.
-   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1996, 1997, 1998,
-   1999, 2000, 2001
-   Free Software Foundation, Inc.
+
+   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1996, 1997,
+   1998, 1999, 2000, 2001, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -182,11 +182,16 @@ reopen_exec_file (void)
   struct stat st;
   long mtime;
 
+  /* Don't do any of this if we are quitting.  */
+  if (gdb_quitting)
+    return;
+
   /* Don't do anything if the current target isn't exec. */
   if (exec_bfd == NULL || strcmp (target_shortname, "exec") != 0)
     return;
 
-  /* If the timestamp of the exec file has changed, reopen it. */
+  /* If the timestamp of the exec file has changed, reopen it. 
+     The whole world may have changed, so just unset all breakpoints.*/
   filename = xstrdup (bfd_get_filename (exec_bfd));
   make_cleanup (xfree, filename);
   mtime = bfd_get_mtime (exec_bfd);
@@ -195,6 +200,7 @@ reopen_exec_file (void)
   if (mtime && mtime != st.st_mtime)
     {
       exec_open (filename, 0);
+      tell_breakpoints_objfile_changed (NULL);
     }
 #endif
 }
@@ -475,7 +481,7 @@ static void set_gnutarget_command (char *, int, struct cmd_list_element *);
 static void
 set_gnutarget_command (char *ignore, int from_tty, struct cmd_list_element *c)
 {
-  if (STREQ (gnutarget_string, "auto"))
+  if (strcmp (gnutarget_string, "auto") == 0)
     gnutarget = NULL;
   else
     gnutarget = gnutarget_string;

@@ -1,7 +1,7 @@
 /* Intel 386 target-dependent stuff.
 
    Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-   1997, 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+   1997, 1998, 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -37,6 +37,9 @@
 #include "doublest.h"
 #include "value.h"
 #include "gdb_assert.h"
+#include "reggroups.h"
+#include "dummy-frame.h"
+#include "osabi.h"
 
 #include "bfd.h"
 #include "elf-bfd.h"
@@ -73,9 +76,41 @@ static const int mmx_num_regs = (sizeof (i386_mmx_names)
 #define MM0_REGNUM (NUM_REGS)
 
 static int
-mmx_regnum_p (int reg)
+i386_mmx_regnum_p (int reg)
 {
   return (reg >= MM0_REGNUM && reg < MM0_REGNUM + mmx_num_regs);
+}
+
+/* FP register?  */
+
+int
+i386_fp_regnum_p (int regnum)
+{
+  return (regnum < NUM_REGS
+	  && (FP0_REGNUM && FP0_REGNUM <= (regnum) && (regnum) < FPC_REGNUM));
+}
+
+int
+i386_fpc_regnum_p (int regnum)
+{
+  return (regnum < NUM_REGS
+	  && (FPC_REGNUM <= (regnum) && (regnum) < XMM0_REGNUM));
+}
+
+/* SSE register?  */
+
+int
+i386_sse_regnum_p (int regnum)
+{
+  return (regnum < NUM_REGS
+	  && (XMM0_REGNUM <= (regnum) && (regnum) < MXCSR_REGNUM));
+}
+
+int
+i386_mxcsr_regnum_p (int regnum)
+{
+  return (regnum < NUM_REGS
+	  && (regnum == MXCSR_REGNUM));
 }
 
 /* Return the name of register REG.  */
@@ -85,7 +120,7 @@ i386_register_name (int reg)
 {
   if (reg < 0)
     return NULL;
-  if (mmx_regnum_p (reg))
+  if (i386_mmx_regnum_p (reg))
     return i386_mmx_names[reg - MM0_REGNUM];
   if (reg >= sizeof (i386_register_names) / sizeof (*i386_register_names))
     return NULL;
@@ -442,17 +477,16 @@ i386_get_frame_setup (CORE_ADDR pc)
    frame -- that is, the frame which was in progress when the signal
    trampoline was entered.  GDB mostly treats this frame pointer value
    as a magic cookie.  We detect the case of a signal trampoline by
-   looking at the SIGNAL_HANDLER_CALLER field, which is set based on
-   PC_IN_SIGTRAMP.
+   testing for get_frame_type() == SIGTRAMP_FRAME, which is set based
+   on PC_IN_SIGTRAMP.
 
    When a signal trampoline is invoked from a frameless function, we
    essentially have two frameless functions in a row.  In this case,
    we use the same magic cookie for three frames in a row.  We detect
-   this case by seeing whether the next frame has
-   SIGNAL_HANDLER_CALLER set, and, if it does, checking whether the
-   current frame is actually frameless.  In this case, we need to get
-   the PC by looking at the SP register value stored in the signal
-   context.
+   this case by seeing whether the next frame is a SIGTRAMP_FRAME,
+   and, if it does, checking whether the current frame is actually
+   frameless.  In this case, we need to get the PC by looking at the
+   SP register value stored in the signal context.
 
    This should work in most cases except in horrible situations where
    a signal occurs just as we enter a function but before the frame
@@ -465,12 +499,13 @@ i386_get_frame_setup (CORE_ADDR pc)
 /* Return non-zero if we're dealing with a frameless signal, that is,
    a signal trampoline invoked from a frameless function.  */
 
-static int
+int
 i386_frameless_signal_p (struct frame_info *frame)
 {
-  return (frame->next && frame->next->signal_handler_caller
+  return (get_next_frame (frame)
+	  && get_frame_type (get_next_frame (frame)) == SIGTRAMP_FRAME
 	  && (frameless_look_for_prologue (frame)
-	      || frame->pc == get_pc_function_start (frame->pc)));
+	      || get_frame_pc (frame) == get_pc_function_start (get_frame_pc (frame))));
 }
 
 /* Return the chain-pointer for FRAME.  In the case of the i386, the
@@ -480,15 +515,15 @@ i386_frameless_signal_p (struct frame_info *frame)
 static CORE_ADDR
 i386_frame_chain (struct frame_info *frame)
 {
-  if (PC_IN_CALL_DUMMY (frame->pc, 0, 0))
-    return frame->frame;
+  if (pc_in_dummy_frame (get_frame_pc (frame)))
+    return get_frame_base (frame);
 
-  if (frame->signal_handler_caller
+  if (get_frame_type (frame) == SIGTRAMP_FRAME
       || i386_frameless_signal_p (frame))
-    return frame->frame;
+    return get_frame_base (frame);
 
-  if (! inside_entry_file (frame->pc))
-    return read_memory_unsigned_integer (frame->frame, 4);
+  if (! inside_entry_file (get_frame_pc (frame)))
+    return read_memory_unsigned_integer (get_frame_base (frame), 4);
 
   return 0;
 }
@@ -500,7 +535,7 @@ i386_frame_chain (struct frame_info *frame)
 static int
 i386_frameless_function_invocation (struct frame_info *frame)
 {
-  if (frame->signal_handler_caller)
+  if (get_frame_type (frame) == SIGTRAMP_FRAME)
     return 0;
 
   return frameless_look_for_prologue (frame);
@@ -537,20 +572,24 @@ i386_sigtramp_saved_sp (struct frame_info *frame)
 static CORE_ADDR
 i386_frame_saved_pc (struct frame_info *frame)
 {
-  if (PC_IN_CALL_DUMMY (frame->pc, 0, 0))
-    return deprecated_read_register_dummy (frame->pc, frame->frame,
-					   PC_REGNUM);
+  if (pc_in_dummy_frame (get_frame_pc (frame)))
+    {
+      ULONGEST pc;
 
-  if (frame->signal_handler_caller)
+      frame_unwind_unsigned_register (frame, PC_REGNUM, &pc);
+      return pc;
+    }
+
+  if (get_frame_type (frame) == SIGTRAMP_FRAME)
     return i386_sigtramp_saved_pc (frame);
 
   if (i386_frameless_signal_p (frame))
     {
-      CORE_ADDR sp = i386_sigtramp_saved_sp (frame->next);
+      CORE_ADDR sp = i386_sigtramp_saved_sp (get_next_frame (frame));
       return read_memory_unsigned_integer (sp, 4);
     }
 
-  return read_memory_unsigned_integer (frame->frame + 4, 4);
+  return read_memory_unsigned_integer (get_frame_base (frame) + 4, 4);
 }
 
 /* Immediately after a function call, return the saved pc.  */
@@ -558,7 +597,7 @@ i386_frame_saved_pc (struct frame_info *frame)
 static CORE_ADDR
 i386_saved_pc_after_call (struct frame_info *frame)
 {
-  if (frame->signal_handler_caller)
+  if (get_frame_type (frame) == SIGTRAMP_FRAME)
     return i386_sigtramp_saved_pc (frame);
 
   return read_memory_unsigned_integer (read_register (SP_REGNUM), 4);
@@ -673,18 +712,18 @@ i386_frame_init_saved_regs (struct frame_info *fip)
   CORE_ADDR pc;
   int i;
 
-  if (fip->saved_regs)
+  if (get_frame_saved_regs (fip))
     return;
 
   frame_saved_regs_zalloc (fip);
 
-  pc = get_pc_function_start (fip->pc);
+  pc = get_pc_function_start (get_frame_pc (fip));
   if (pc != 0)
     locals = i386_get_frame_setup (pc);
 
   if (locals >= 0)
     {
-      addr = fip->frame - 4 - locals;
+      addr = get_frame_base (fip) - 4 - locals;
       for (i = 0; i < 8; i++)
 	{
 	  op = codestream_get ();
@@ -692,16 +731,16 @@ i386_frame_init_saved_regs (struct frame_info *fip)
 	    break;
 #ifdef I386_REGNO_TO_SYMMETRY
 	  /* Dynix uses different internal numbering.  Ick.  */
-	  fip->saved_regs[I386_REGNO_TO_SYMMETRY (op - 0x50)] = addr;
+	  get_frame_saved_regs (fip)[I386_REGNO_TO_SYMMETRY (op - 0x50)] = addr;
 #else
-	  fip->saved_regs[op - 0x50] = addr;
+	  get_frame_saved_regs (fip)[op - 0x50] = addr;
 #endif
 	  addr -= 4;
 	}
     }
 
-  fip->saved_regs[PC_REGNUM] = fip->frame + 4;
-  fip->saved_regs[FP_REGNUM] = fip->frame;
+  get_frame_saved_regs (fip)[PC_REGNUM] = get_frame_base (fip) + 4;
+  get_frame_saved_regs (fip)[FP_REGNUM] = get_frame_base (fip);
 }
 
 /* Return PC of first real instruction.  */
@@ -827,17 +866,17 @@ i386_do_pop_frame (struct frame_info *frame)
   int regnum;
   char regbuf[I386_MAX_REGISTER_SIZE];
 
-  fp = FRAME_FP (frame);
+  fp = get_frame_base (frame);
   i386_frame_init_saved_regs (frame);
 
   for (regnum = 0; regnum < NUM_REGS; regnum++)
     {
       CORE_ADDR addr;
-      addr = frame->saved_regs[regnum];
+      addr = get_frame_saved_regs (frame)[regnum];
       if (addr)
 	{
 	  read_memory (addr, regbuf, REGISTER_RAW_SIZE (regnum));
-	  write_register_gen (regnum, regbuf);
+	  deprecated_write_register_gen (regnum, regbuf);
 	}
     }
   write_register (FP_REGNUM, read_memory_integer (fp, 4));
@@ -856,15 +895,16 @@ i386_pop_frame (void)
 /* Figure out where the longjmp will land.  Slurp the args out of the
    stack.  We expect the first arg to be a pointer to the jmp_buf
    structure from which we extract the address that we will land at.
-   This address is copied into PC.  This routine returns true on
+   This address is copied into PC.  This routine returns non-zero on
    success.  */
 
 static int
 i386_get_longjmp_target (CORE_ADDR *pc)
 {
-  char buf[4];
+  char buf[8];
   CORE_ADDR sp, jb_addr;
   int jb_pc_offset = gdbarch_tdep (current_gdbarch)->jb_pc_offset;
+  int len = TARGET_PTR_BIT / TARGET_CHAR_BIT;
 
   /* If JB_PC_OFFSET is -1, we have no way to find out where the
      longjmp will land.  */
@@ -872,14 +912,14 @@ i386_get_longjmp_target (CORE_ADDR *pc)
     return 0;
 
   sp = read_register (SP_REGNUM);
-  if (target_read_memory (sp + 4, buf, 4))
+  if (target_read_memory (sp + len, buf, len))
     return 0;
 
-  jb_addr = extract_address (buf, 4);
-  if (target_read_memory (jb_addr + jb_pc_offset, buf, 4))
+  jb_addr = extract_address (buf, len);
+  if (target_read_memory (jb_addr + jb_pc_offset, buf, len))
     return 0;
 
-  *pc = extract_address (buf, 4);
+  *pc = extract_address (buf, len);
   return 1;
 }
 
@@ -1042,25 +1082,17 @@ i386_store_return_value (struct type *type, struct regcache *regcache,
     }
 }
 
-/* Extract from an array REGBUF containing the (raw) register state
-   the address in which a function should return its structure value,
-   as a CORE_ADDR.  */
+/* Extract from REGCACHE, which contains the (raw) register state, the
+   address in which a function should return its structure value, as a
+   CORE_ADDR.  */
 
 static CORE_ADDR
 i386_extract_struct_value_address (struct regcache *regcache)
 {
-  /* NOTE: cagney/2002-08-12: Replaced a call to
-     regcache_raw_read_as_address() with a call to
-     regcache_cooked_read_unsigned().  The old, ...as_address function
-     was eventually calling extract_unsigned_integer (via
-     extract_address) to unpack the registers value.  The below is
-     doing an unsigned extract so that it is functionally equivalent.
-     The read needs to be cooked as, otherwise, it will never
-     correctly return the value of a register in the [NUM_REGS
-     .. NUM_REGS+NUM_PSEUDO_REGS) range.  */
-  ULONGEST val;
-  regcache_cooked_read_unsigned (regcache, LOW_RETURN_REGNUM, &val);
-  return val;
+  ULONGEST addr;
+
+  regcache_raw_read_unsigned (regcache, LOW_RETURN_REGNUM, &addr);
+  return addr;
 }
 
 
@@ -1105,13 +1137,13 @@ i386_register_virtual_type (int regnum)
   if (regnum == PC_REGNUM || regnum == FP_REGNUM || regnum == SP_REGNUM)
     return lookup_pointer_type (builtin_type_void);
 
-  if (FP_REGNUM_P (regnum))
+  if (i386_fp_regnum_p (regnum))
     return builtin_type_i387_ext;
 
-  if (SSE_REGNUM_P (regnum))
+  if (i386_sse_regnum_p (regnum))
     return builtin_type_vec128i;
 
-  if (mmx_regnum_p (regnum))
+  if (i386_mmx_regnum_p (regnum))
     return builtin_type_vec64i;
 
   return builtin_type_int;
@@ -1138,7 +1170,7 @@ static void
 i386_pseudo_register_read (struct gdbarch *gdbarch, struct regcache *regcache,
 			   int regnum, void *buf)
 {
-  if (mmx_regnum_p (regnum))
+  if (i386_mmx_regnum_p (regnum))
     {
       char *mmx_buf = alloca (MAX_REGISTER_RAW_SIZE);
       int fpnum = mmx_regnum_to_fp_regnum (regcache, regnum);
@@ -1154,7 +1186,7 @@ static void
 i386_pseudo_register_write (struct gdbarch *gdbarch, struct regcache *regcache,
 			    int regnum, const void *buf)
 {
-  if (mmx_regnum_p (regnum))
+  if (i386_mmx_regnum_p (regnum))
     {
       char *mmx_buf = alloca (MAX_REGISTER_RAW_SIZE);
       int fpnum = mmx_regnum_to_fp_regnum (regcache, regnum);
@@ -1178,7 +1210,7 @@ i386_pseudo_register_write (struct gdbarch *gdbarch, struct regcache *regcache,
 static int
 i386_register_convertible (int regnum)
 {
-  return FP_REGNUM_P (regnum);
+  return i386_fp_regnum_p (regnum);
 }
 
 /* Convert data from raw format for register REGNUM in buffer FROM to
@@ -1188,7 +1220,7 @@ static void
 i386_register_convert_to_virtual (int regnum, struct type *type,
 				  char *from, char *to)
 {
-  gdb_assert (FP_REGNUM_P (regnum));
+  gdb_assert (i386_fp_regnum_p (regnum));
 
   /* We only support floating-point values.  */
   if (TYPE_CODE (type) != TYPE_CODE_FLT)
@@ -1211,7 +1243,7 @@ static void
 i386_register_convert_to_raw (struct type *type, int regnum,
 			      char *from, char *to)
 {
-  gdb_assert (FP_REGNUM_P (regnum));
+  gdb_assert (i386_fp_regnum_p (regnum));
 
   /* We only support floating-point values.  */
   if (TYPE_CODE (type) != TYPE_CODE_FLT)
@@ -1330,7 +1362,7 @@ i386_svr4_sigcontext_addr (struct frame_info *frame)
   int sigcontext_offset = -1;
   char *name = NULL;
 
-  find_pc_partial_function (frame->pc, &name, NULL, NULL);
+  find_pc_partial_function (get_frame_pc (frame), &name, NULL, NULL);
   if (name)
     {
       if (strcmp (name, "_sigreturn") == 0)
@@ -1343,8 +1375,8 @@ i386_svr4_sigcontext_addr (struct frame_info *frame)
 
   gdb_assert (sigcontext_offset != -1);
 
-  if (frame->next)
-    return frame->next->frame + sigcontext_offset;
+  if (get_next_frame (frame))
+    return get_frame_base (get_next_frame (frame)) + sigcontext_offset;
   return read_register (SP_REGNUM) + sigcontext_offset;
 }
 
@@ -1382,9 +1414,6 @@ i386_svr4_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   set_gdbarch_in_solib_call_trampoline (gdbarch, in_plt_section);
   set_gdbarch_skip_trampoline_code (gdbarch, find_solib_trampoline_target);
 
-  /* FIXME: kettenis/20020511: Why do we override this function here?  */
-  set_gdbarch_frame_chain_valid (gdbarch, generic_func_frame_chain_valid);
-
   set_gdbarch_pc_in_sigtramp (gdbarch, i386_svr4_pc_in_sigtramp);
   tdep->sigcontext_addr = i386_svr4_sigcontext_addr;
   tdep->sc_pc_offset = 14 * 4;
@@ -1412,40 +1441,78 @@ i386_nw_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
 
-  /* FIXME: kettenis/20020511: Why do we override this function here?  */
-  set_gdbarch_frame_chain_valid (gdbarch, generic_func_frame_chain_valid);
-
   tdep->jb_pc_offset = 24;
 }
 
 
+/* i386 register groups.  In addition to the normal groups, add "mmx"
+   and "sse".  */
+
+static struct reggroup *i386_sse_reggroup;
+static struct reggroup *i386_mmx_reggroup;
+
+static void
+i386_init_reggroups (void)
+{
+  i386_sse_reggroup = reggroup_new ("sse", USER_REGGROUP);
+  i386_mmx_reggroup = reggroup_new ("mmx", USER_REGGROUP);
+}
+
+static void
+i386_add_reggroups (struct gdbarch *gdbarch)
+{
+  reggroup_add (gdbarch, i386_sse_reggroup);
+  reggroup_add (gdbarch, i386_mmx_reggroup);
+  reggroup_add (gdbarch, general_reggroup);
+  reggroup_add (gdbarch, float_reggroup);
+  reggroup_add (gdbarch, all_reggroup);
+  reggroup_add (gdbarch, save_reggroup);
+  reggroup_add (gdbarch, restore_reggroup);
+  reggroup_add (gdbarch, vector_reggroup);
+  reggroup_add (gdbarch, system_reggroup);
+}
+
+int
+i386_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
+			  struct reggroup *group)
+{
+  int sse_regnum_p = (i386_sse_regnum_p (regnum)
+		      || i386_mxcsr_regnum_p (regnum));
+  int fp_regnum_p = (i386_fp_regnum_p (regnum)
+		     || i386_fpc_regnum_p (regnum));
+  int mmx_regnum_p = (i386_mmx_regnum_p (regnum));
+  if (group == i386_mmx_reggroup)
+    return mmx_regnum_p;
+  if (group == i386_sse_reggroup)
+    return sse_regnum_p;
+  if (group == vector_reggroup)
+    return (mmx_regnum_p || sse_regnum_p);
+  if (group == float_reggroup)
+    return fp_regnum_p;
+  if (group == general_reggroup)
+    return (!fp_regnum_p && !mmx_regnum_p && !sse_regnum_p);
+  return default_register_reggroup_p (gdbarch, regnum, group);
+}
+
+
 static struct gdbarch *
 i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
   struct gdbarch_tdep *tdep;
   struct gdbarch *gdbarch;
-  enum gdb_osabi osabi = GDB_OSABI_UNKNOWN;
 
-  /* Try to determine the OS ABI of the object we're loading.  */
-  if (info.abfd != NULL)
-    osabi = gdbarch_lookup_osabi (info.abfd);
-
-  /* Find a candidate among extant architectures.  */
-  for (arches = gdbarch_list_lookup_by_info (arches, &info);
-       arches != NULL;
-       arches = gdbarch_list_lookup_by_info (arches->next, &info))
-    {
-      /* Make sure the OS ABI selection matches.  */
-      tdep = gdbarch_tdep (arches->gdbarch);
-      if (tdep && tdep->osabi == osabi)
-        return arches->gdbarch;
-    }
+  /* If there is already a candidate, use it.  */
+  arches = gdbarch_list_lookup_by_info (arches, &info);
+  if (arches != NULL)
+    return arches->gdbarch;
 
   /* Allocate space for the new architecture.  */
   tdep = XMALLOC (struct gdbarch_tdep);
   gdbarch = gdbarch_alloc (&info, tdep);
 
-  tdep->osabi = osabi;
+  /* NOTE: cagney/2002-12-06: This can be deleted when this arch is
+     ready to unwind the PC first (see frame.c:get_prev_frame()).  */
+  set_gdbarch_deprecated_init_frame_pc (gdbarch, init_frame_pc_default);
 
   /* The i386 default settings don't include the SSE registers.
      FIXME: kettenis/20020614: They do include the FPU registers for
@@ -1503,10 +1570,7 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   set_gdbarch_get_longjmp_target (gdbarch, i386_get_longjmp_target);
 
-  set_gdbarch_use_generic_dummy_frames (gdbarch, 1);
-
   /* Call dummy code.  */
-  set_gdbarch_call_dummy_location (gdbarch, AT_ENTRY_POINT);
   set_gdbarch_call_dummy_address (gdbarch, entry_point_address);
   set_gdbarch_call_dummy_start_offset (gdbarch, 0);
   set_gdbarch_call_dummy_breakpoint_offset (gdbarch, 0);
@@ -1522,10 +1586,6 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_register_convert_to_virtual (gdbarch,
 					   i386_register_convert_to_virtual);
   set_gdbarch_register_convert_to_raw (gdbarch, i386_register_convert_to_raw);
-
-  set_gdbarch_get_saved_register (gdbarch, generic_unwind_get_saved_register);
-
-  set_gdbarch_pc_in_call_dummy (gdbarch, pc_in_call_dummy_at_entry_point);
 
   /* "An argument's size is increased, if necessary, to make it a
      multiple of [32-bit] words.  This may require tail padding,
@@ -1562,10 +1622,7 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_frameless_function_invocation (gdbarch,
                                            i386_frameless_function_invocation);
   set_gdbarch_frame_chain (gdbarch, i386_frame_chain);
-  set_gdbarch_frame_chain_valid (gdbarch, generic_file_frame_chain_valid);
   set_gdbarch_frame_saved_pc (gdbarch, i386_frame_saved_pc);
-  set_gdbarch_frame_args_address (gdbarch, default_frame_address);
-  set_gdbarch_frame_locals_address (gdbarch, default_frame_address);
   set_gdbarch_saved_pc_after_call (gdbarch, i386_saved_pc_after_call);
   set_gdbarch_frame_num_args (gdbarch, i386_frame_num_args);
   set_gdbarch_pc_in_sigtramp (gdbarch, i386_pc_in_sigtramp);
@@ -1577,8 +1634,12 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   set_gdbarch_print_insn (gdbarch, i386_print_insn);
 
+  /* Add the i386 register groups.  */
+  i386_add_reggroups (gdbarch);
+  set_gdbarch_register_reggroup_p (gdbarch, i386_register_reggroup_p);
+
   /* Hook in ABI-specific overrides, if they have been registered.  */
-  gdbarch_init_osabi (info, gdbarch, osabi);
+  gdbarch_init_osabi (info, gdbarch);
 
   return gdbarch;
 }
@@ -1641,10 +1702,13 @@ are \"default\", \"pcc\" and \"reg\", and the default value is \"default\".",
   gdbarch_register_osabi_sniffer (bfd_arch_i386, bfd_target_nlm_flavour,
 				  i386_nlm_osabi_sniffer);
 
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_SVR4,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_SVR4,
 			  i386_svr4_init_abi);
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_GO32,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_GO32,
 			  i386_go32_init_abi);
-  gdbarch_register_osabi (bfd_arch_i386, GDB_OSABI_NETWARE,
+  gdbarch_register_osabi (bfd_arch_i386, 0, GDB_OSABI_NETWARE,
 			  i386_nw_init_abi);
+
+  /* Initialize the i386 specific register groups.  */
+  i386_init_reggroups ();
 }

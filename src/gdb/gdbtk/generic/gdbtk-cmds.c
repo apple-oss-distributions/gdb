@@ -39,8 +39,9 @@
    but gdb uses stdarg.h, so make sure HAS_STDARG is defined.  */
 #define HAS_STDARG 1
 
-#include <tix.h>
 #include <itcl.h>
+#include <tcl.h>
+#include <tk.h>
 
 #include "guitcl.h"
 #include "gdbtk.h"
@@ -2261,7 +2262,8 @@ gdb_loc (ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST obj
 
   if (objc == 1)
     {
-      if (selected_frame && (selected_frame->pc != read_pc ()))
+      if (deprecated_selected_frame
+	  && (get_frame_pc (deprecated_selected_frame) != read_pc ()))
         {
           /* Note - this next line is not correct on all architectures.
 	     For a graphical debugger we really want to highlight the 
@@ -2269,11 +2271,8 @@ gdb_loc (ClientData clientData, Tcl_Interp *interp, int objc, Tcl_Obj *CONST obj
 	     Many architectures have the next instruction saved as the
 	     pc on the stack, so what happens is the next instruction 
 	     is highlighted. FIXME */
-	  pc = selected_frame->pc;
-	  sal = find_pc_line (selected_frame->pc,
-			      selected_frame->next != NULL
-			      && !selected_frame->next->signal_handler_caller
-			      && !frame_in_dummy (selected_frame->next));
+	  pc = get_frame_pc (deprecated_selected_frame);
+	  find_frame_sal (deprecated_selected_frame, &sal);
 	}
       else
         {
@@ -2626,7 +2625,7 @@ gdb_update_mem (ClientData clientData, Tcl_Interp *interp,
   for (i = 0; i < nbytes; i += bpr)
     {
       char s[130];
-      sprintf (s, "0x%s", core_addr_to_string (addr + i));
+      sprintf (s, "%s", core_addr_to_string (addr + i));
       INDEX ((int) i/bpr, -1);
       Tcl_SetVar2 (interp, "data", index, s, 0);
 

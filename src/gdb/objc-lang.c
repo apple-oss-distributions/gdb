@@ -75,16 +75,6 @@ struct objc_method {
 /* Should we lookup ObjC Classes as part of ordinary symbol resolution? */
 int lookup_objc_class_p = 1;
 
-/* Complaints about ObjC classes, selectors, etc.  */
-
-static struct complaint noclass_lookup_complaint = {
-  "no way to lookup Objective-C classes", 0, 0
-};
-
-static struct complaint nosel_lookup_complaint = {
-  "no way to lookup Objective-C selectors", 0, 0
-};
-
 /* Lookup a structure type named "struct NAME", visible in lexical
    block BLOCK.  If NOERR is nonzero, return zero if NAME is not
    suitably defined.  */
@@ -138,7 +128,7 @@ lookup_objc_class (char *classname)
 					   builtin_type_voidptrfuncptr);
       else
 	{
-	  complain (&noclass_lookup_complaint, 0);
+	  complaint (&symfile_complaints, "no way to lookup Objective-C classes");
 	  return 0;
 	}
     }
@@ -175,7 +165,7 @@ lookup_child_selector (char *selname)
 					   builtin_type_voidptrfuncptr);
       else
 	{
-	  complain (&nosel_lookup_complaint, 0);
+	  complaint (&symfile_complaints, "no way to lookup Objective-C selectors");
 	  return 0;
 	}
     }
@@ -364,7 +354,7 @@ objc_printchar (int c, struct ui_file *stream)
 
 static void
 objc_printstr (struct ui_file *stream, char *string, 
-	       unsigned int length, int force_ellipses)
+	       unsigned int length, int width, int force_ellipses)
 {
   register unsigned int i;
   unsigned int things_printed = 0;
@@ -818,14 +808,14 @@ int specialcmp(char *a, char *b)
 }
 
 /*
- * Function: compare_selectors (void *, void *)
+ * Function: compare_selectors (const void *, const void *)
  *
  * Comparison function for use with qsort.  Arguments are symbols or
  * msymbols Compares selector part of objc method name alphabetically.
  */
 
 static int
-compare_selectors (void *a, void *b)
+compare_selectors (const void *a, const void *b)
 {
   char *aname, *bname;
 
@@ -976,14 +966,14 @@ selectors_info (char *regexp, int from_tty)
 }
 
 /*
- * Function: compare_classes (void *, void *)
+ * Function: compare_classes (const void *, const void *)
  *
  * Comparison function for use with qsort.  Arguments are symbols or
  * msymbols Compares class part of objc method name alphabetically. 
  */
 
 static int
-compare_classes (void *a, void *b)
+compare_classes (const void *a, const void *b)
 {
   char *aname, *bname;
 
@@ -1337,13 +1327,17 @@ find_methods (struct symtab *symtab, char type,
     {
       QUIT;
 
+      /* APPLE LOCAL fix-and-continue */
+      if (MSYMBOL_OBSOLETED (msymbol))
+        continue;
+
       if ((msymbol->type != mst_text) && (msymbol->type != mst_file_text))
 	/* Not a function or method.  */
 	continue;
 
       if (symtab)
-	if ((SYMBOL_VALUE_ADDRESS (msymbol) <  block->startaddr) ||
-	    (SYMBOL_VALUE_ADDRESS (msymbol) >= block->endaddr))
+	if ((SYMBOL_VALUE_ADDRESS (msymbol) <  BLOCK_START (block)) ||
+	    (SYMBOL_VALUE_ADDRESS (msymbol) >= BLOCK_END (block)))
 	  /* Not in the specified symtab.  */
 	  continue;
 
@@ -1483,7 +1477,7 @@ char *find_imps (struct symtab *symtab, struct block *block,
     if (msym != NULL) 
       {
 	if (syms)
-	  syms[csym] = msym;
+	  syms[csym] = (struct symbol *)msym;
 	csym++;
       }
   }
@@ -1560,7 +1554,9 @@ void
 print_object_command (char *args, int from_tty)
 {
   struct value *object, *function, *description;
-  CORE_ADDR string_addr;
+  struct cleanup *cleanup_chain;
+  int unwind;
+  CORE_ADDR string_addr, object_addr;
   int i = 0;
   char c = -1;
 
@@ -1579,12 +1575,21 @@ print_object_command (char *args, int from_tty)
     do_cleanups (old_chain);
   }
 
+  /* Validate the address for sanity.  */
+  object_addr = value_as_long (object);
+  read_memory (object_addr, &c, 1);
+
   function = find_function_in_inferior ("_NSPrintForDebugger",
 					builtin_type_voidptrfuncptr);
   if (function == NULL)
     error ("Unable to locate _NSPrintForDebugger in child process");
 
+  unwind = set_unwind_on_signal (1);
+  cleanup_chain = make_cleanup (set_unwind_on_signal, unwind);
+
   description = call_function_by_hand (function, 1, &object);
+
+  do_cleanups (cleanup_chain);
 
   string_addr = value_as_long (description);
   if (string_addr == 0)
@@ -1610,8 +1615,8 @@ print_object_command (char *args, int from_tty)
 
 struct objc_methcall {
   char *name;
-  /* Should return instance method to be called.  */
-  CORE_ADDR (*stop_at) (CORE_ADDR);
+  /* Return instance method to be called.  */
+  int (*stop_at) (CORE_ADDR, CORE_ADDR *);
   /* Start of pc range corresponding to method invocation.  */
   CORE_ADDR begin;
   /* End of pc range corresponding to method invocation.  */
@@ -1683,7 +1688,7 @@ find_objc_msgsend (void)
  */
 
 struct objc_submethod_helper_data {
-  CORE_ADDR (*f) (CORE_ADDR, CORE_ADDR *);
+  int (*f) (CORE_ADDR, CORE_ADDR *);
   CORE_ADDR pc;
   CORE_ADDR *new_pc;
 };
@@ -1701,7 +1706,7 @@ find_objc_msgcall_submethod_helper (void * arg)
 }
 
 int 
-find_objc_msgcall_submethod (CORE_ADDR (*f) (CORE_ADDR, CORE_ADDR *),
+find_objc_msgcall_submethod (int (*f) (CORE_ADDR, CORE_ADDR *),
 			     CORE_ADDR pc, 
 			     CORE_ADDR *new_pc)
 {
@@ -1997,6 +2002,87 @@ should_lookup_objc_class ()
   return lookup_objc_class_p;
 }
 
+
+/* If the value VAL points to an objc object, look up its
+   isa pointer, and see if you can find the type for its
+   dynamic class type.  Will resolve typedefs etc...  */
+
+struct type *
+value_objc_target_type (struct value *val)
+{
+  struct type *base_type, *dynamic_type = NULL;
+
+  base_type = check_typedef (VALUE_TYPE (val));
+
+  for (;;)
+    {
+      CHECK_TYPEDEF (base_type);
+      if (TYPE_CODE (base_type) != TYPE_CODE_PTR
+	  && TYPE_CODE (base_type) != TYPE_CODE_REF)
+	break;
+      base_type = TYPE_TARGET_TYPE (base_type);
+    }
+
+  /* Don't try to get the dynamic type of an objc_class object.  This is the
+     class object, not an instance object, so it won't have the fields the
+     instance object has. */
+
+  if (TYPE_TAG_NAME (base_type) != NULL 
+      && (strcmp (TYPE_TAG_NAME (base_type), "objc_class") == 0))
+    return NULL;
+
+  if (TYPE_CODE (base_type) == TYPE_CODE_CLASS)
+    {
+      int i;
+      char *t_field_name;
+      
+      if (TYPE_NFIELDS (base_type) == 0)
+	return NULL;
+
+      /* The first field is the isa field (offset by TYPE_N_BASECLASSES in
+	 case we ever add hierarchy info to the ObjC class types.)  
+         isa points to the dynamic type class object.  The "name" field of
+         that object gives us the dynamic class name.  */
+
+      i = TYPE_N_BASECLASSES (base_type);
+
+      t_field_name = TYPE_FIELD_NAME (base_type, i);
+      if (t_field_name && (strcmp_iw (t_field_name, "isa") == 0))
+	{
+	  struct symbol *class_symbol;
+	  char class_name[256];
+	  CORE_ADDR isa_addr;
+	  CORE_ADDR name_addr;
+
+	  isa_addr = 
+	    read_memory_unsigned_integer (value_as_address (val), 4);
+	  name_addr =  read_memory_unsigned_integer (isa_addr + 8, 4);
+
+	  read_memory_string (name_addr, class_name, 255);
+	  class_symbol = lookup_symbol (class_name, 0, STRUCT_NAMESPACE, 0, 0);
+	  if (! class_symbol)
+	    {
+	      warning ("can't find class named `%s' given by ObjC class object", class_name);
+	      return NULL;
+	    }
+
+	  /* Make sure the type symbol is sane.  (An earlier version of this
+	     code would find constructor functions, who have the same name as
+	     the class.)  */
+	  if (SYMBOL_CLASS (class_symbol) != LOC_TYPEDEF
+	      || TYPE_CODE (SYMBOL_TYPE (class_symbol)) != TYPE_CODE_CLASS)
+	    {
+	      warning ("The \"isa\" pointer gives a class name of `%s', but that isn't a type name",
+		       class_name);
+	      return NULL;
+	    }
+
+	  /* This is the object's run-time type!  */
+	  dynamic_type = SYMBOL_TYPE (class_symbol);
+	}
+    }
+  return dynamic_type;
+}
 void
 _initialize_objc_lang ()
 {

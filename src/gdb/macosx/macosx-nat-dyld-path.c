@@ -362,7 +362,10 @@ char *dyld_resolve_image (const struct dyld_path_info *d, const char *dylib_name
 	      memcpy (final_name, exec_bfd->filename, executable_path_len);
 	      memcpy (final_name + executable_path_len, relative_name, relative_name_len);
 	      final_name[executable_path_len + relative_name_len] = '\0';
-	      return final_name;
+	      if (stat (final_name, &stat_buf) == 0)
+		return final_name;
+	      else
+		xfree (final_name);
 	    }
 	  else
 	    {
@@ -375,7 +378,6 @@ char *dyld_resolve_image (const struct dyld_path_info *d, const char *dylib_name
 	{
 	  warning ("Couldn't find executable filename while trying to"
 		   " resolve \"@executable_path\" load command.");
-	  return NULL;
 	} 
     }
 

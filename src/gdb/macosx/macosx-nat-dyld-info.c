@@ -36,18 +36,61 @@
 
 const char *dyld_reason_string (dyld_objfile_reason r)
 {
-  switch (r) {
-  case dyld_reason_deallocated: return "deallocated";
-  case dyld_reason_user: return "user";
-  case dyld_reason_cached_library: return "cached-lib";
-  case dyld_reason_cached_executable: return "cached-exec";
-  case dyld_reason_init: return "init";
-  case dyld_reason_executable: return "exec";
-  case dyld_reason_dyld: return "dyld";
-  case dyld_reason_cfm: return "cfm";
-  default: return "???";
+  if (r == 0) {
+  return "deallocated";
   }
-}    
+
+  switch (r & dyld_reason_flags_mask) {
+
+  case 0:
+    switch (r) {
+    case dyld_reason_user: return "user";
+    case dyld_reason_init: return "init";
+    case dyld_reason_executable: return "exec";
+    case dyld_reason_dyld: return "dyld";
+    case dyld_reason_cfm: return "cfm";
+    default: return "INVALID";
+    }
+    break;
+
+  case dyld_reason_cached_mask:
+    switch (r & dyld_reason_type_mask) {
+    case dyld_reason_user: return "c-user";
+    case dyld_reason_init: return "c-init";
+    case dyld_reason_executable: return "c-exec";
+    case dyld_reason_dyld: return "c-dyld";
+    case dyld_reason_cfm: return "c-cfm";
+    default: return "INVALID";
+    }
+    break;
+
+  case dyld_reason_weak_mask:
+    switch (r & dyld_reason_type_mask) {
+    case dyld_reason_user: return "w-user";
+    case dyld_reason_init: return "w-init";
+    case dyld_reason_executable: return "w-exec";
+    case dyld_reason_dyld: return "w-dyld";
+    case dyld_reason_cfm: return "w-cfm";
+    default: return "INVALID";
+    }
+    break;
+
+  case dyld_reason_cached_weak_mask:
+    switch (r & dyld_reason_type_mask) {
+    case dyld_reason_user: return "c-w-user";
+    case dyld_reason_init: return "c-w-init";
+    case dyld_reason_executable: return "c-w-exec";
+    case dyld_reason_dyld: return "c-w-dyld";
+    case dyld_reason_cfm: return "c-w-cfm";
+    default: return "INVALID";
+    }
+    break;
+
+  default: return "INVALID";
+  }   
+
+  return "INVALID";
+} 
 
 void dyld_check_entry (struct dyld_objfile_entry *e)
 {
@@ -81,6 +124,7 @@ void dyld_objfile_entry_clear (struct dyld_objfile_entry *e)
 
   e->abfd = NULL;
   e->sym_bfd = NULL;
+
   e->sym_objfile = NULL;
   e->objfile = NULL;
 
@@ -90,7 +134,6 @@ void dyld_objfile_entry_clear (struct dyld_objfile_entry *e)
   e->loaded_offset = 0;
   e->loaded_addrisoffset = 0;
   e->loaded_from_memory = 0;
-
   e->loaded_error = 0;
 
   e->load_flag = -1;
@@ -268,44 +311,51 @@ struct dyld_objfile_entry *dyld_objfile_entry_alloc (struct dyld_objfile_info *i
   return e;
 }
 
-const int dyld_entry_source_filename_is_absolute
-(struct dyld_objfile_entry *e)
+const char *dyld_entry_filename
+(const struct dyld_objfile_entry *e, const struct dyld_path_info *d, int type)
 {
   CHECK_FATAL (e != NULL);
   CHECK_FATAL (e->allocated);
-  if (e->loaded_name != NULL) { 
-    return 1;
-  } else if (e->user_name != NULL) {
-    return 1;
-  } else if (e->dyld_name != NULL) {
-    return 1;
-  } else if (e->image_name != NULL) {
-    return 0;
-  } else if (e->text_name != NULL) {
-    return 0;
-  } else {
-    return 0;
-  }
-}
 
-const char *dyld_entry_source_filename 
-(struct dyld_objfile_entry *e)
-{
-  CHECK_FATAL (e != NULL);
-  CHECK_FATAL (e->allocated);
-  if (e->loaded_name != NULL) { 
-    return e->loaded_name;
+  char *name = NULL;
+  int name_is_absolute = 0;
+
+  if ((type & DYLD_ENTRY_FILENAME_LOADED) && (e->loaded_name != NULL)) {
+    name = e->loaded_name;
+    name_is_absolute = 1;
   } else if (e->user_name != NULL) {
-    return e->user_name;
+    name = e->user_name;
+    name_is_absolute = 1;
   } else if (e->dyld_name != NULL) {
-    return e->dyld_name;
+    name = e->dyld_name;
+    name_is_absolute = 1;
   } else if (e->image_name != NULL) {
-    return e->image_name;
+    name = e->image_name;
+    name_is_absolute = 0;
   } else if (e->text_name != NULL) {
-    return e->text_name;
+    name = e->text_name;
+    name_is_absolute = 0;
   } else {
-    return NULL;
+    name = NULL;
+    name_is_absolute = 0;
   }
+
+  if (name == NULL)
+    return NULL;
+
+  if (d != NULL)
+    {
+      char *resolved = NULL;
+
+      if (name_is_absolute) 
+	resolved = xstrdup (name);
+      else
+	resolved = dyld_resolve_image (d, name);
+      
+      return resolved;
+    }
+  else
+      return name;
 }
 
 char *dyld_offset_string (unsigned long offset)
@@ -322,57 +372,57 @@ char *dyld_offset_string (unsigned long offset)
 char *dyld_entry_string (struct dyld_objfile_entry *e, int print_basenames)
 {
   char *name;
+  char *objname;
+  char *symname;
   char *addr;
   char *slide;
   char *prefix;
 
   char *ret;
-  char *ret2;
+  unsigned int maxlen = 0;
 
-  dyld_entry_info (e, print_basenames, &name, &addr, &slide, &prefix);
+  dyld_entry_info (e, print_basenames, &name, &objname, &symname, &addr, &slide, &prefix);
 
-  if (name == NULL)
-    {
-      if (addr != NULL)
-	{
-	  if (slide != NULL)
-	    xasprintf (&ret, "[memory at %s] (offset %s)", addr, slide);
-	  else
-	    xasprintf (&ret, "[memory at %s]", addr);
-	}
-      else
-	{
-	  if (slide == NULL)
-	    ret = NULL;
-	  else
-	    xasprintf (&ret, "(offset %s)", slide);
-	}     
-    }
-  else
-    {
-      if (slide == NULL)
-	{
-	  if (addr == NULL)
-	    xasprintf (&ret, "\"%s\"", name);
-	  else
-	    xasprintf (&ret, "\"%s\" at %s", name, addr);
-	}
-      else
-	{
-	  if (addr == NULL)
-	    xasprintf (&ret, "\"%s\" (offset %s)", name, slide);
-	  else
-	    xasprintf (&ret, "\"%s\" at %s (offset %s)", name, addr, slide);
-	}
-      if (prefix != NULL)
-	{
-	  xasprintf (&ret2, "%s with prefix \"%s\"", ret, prefix);
-	  xfree (ret);
-	  ret = ret2;
-	}
-    }
+  maxlen = 0;
+  if (name != NULL)
+    maxlen += strlen (name);
+  if (objname != NULL)
+    maxlen += strlen (objname);
+  if (symname != NULL)
+    maxlen += strlen (symname);
+  if (addr != NULL)
+    maxlen += strlen (addr);
+  if (slide != NULL)
+    maxlen += strlen (slide);
+  if (prefix != NULL)
+    maxlen += strlen (prefix);
+  maxlen += 128;
+
+  ret = (char *) xmalloc (maxlen);
+  ret[0] = '\0';
+
+  if (name == NULL) {
+    if (addr == NULL)
+      sprintf (ret + strlen (ret), "[unknown]");
+    else
+      sprintf (ret + strlen (ret), "[memory at %s]", addr);
+  } else {
+    if (addr == NULL)
+      sprintf (ret + strlen (ret), "\"%s\"", name);
+    else
+      sprintf (ret + strlen (ret), "\"%s\" at %s", name, addr);
+  }
+
+  if (symname != NULL)
+    sprintf (ret + strlen (ret), " (symbols from \"%s\")", symname);
+  if (slide != NULL)
+    sprintf (ret + strlen (ret), " (offset %s)", addr);
+  if (prefix != NULL)
+    sprintf (ret + strlen (ret), " (prefix %s)", prefix);
 
   xfree (name);
+  xfree (objname);
+  xfree (symname);
   xfree (addr);
   xfree (slide);
   xfree (prefix);
@@ -383,29 +433,27 @@ char *dyld_entry_string (struct dyld_objfile_entry *e, int print_basenames)
 void dyld_entry_out (struct ui_out *uiout, struct dyld_objfile_entry *e, int print_basenames)
 {
   char *name;
+  char *objname;
+  char *symname;
   char *addr;
   char *slide;
   char *prefix;
 
-  dyld_entry_info (e, print_basenames, &name, &addr, &slide, &prefix);
+  dyld_entry_info (e, print_basenames, &name, &objname, &symname, &addr, &slide, &prefix);
 
   if (name == NULL)
     {
       if (ui_out_is_mi_like_p (uiout))
 	{
-	  const char *name = dyld_entry_source_filename (e);
+	  const char *name = dyld_entry_filename (e, NULL, 0);
 	  if (name != NULL)
 	    {
-	      ui_out_text (uiout, "\"");
 	      ui_out_field_string (uiout, "path", name);
-	      ui_out_text (uiout, "\"");
 	    }
 	  else
 	    {
 	      char *s = dyld_entry_string (e, print_basenames);
-	      ui_out_text (uiout, "\"");
 	      ui_out_field_string (uiout, "path", s);
-	      ui_out_text (uiout, "\"");
 	      xfree (s);
 	    }
 	}
@@ -444,9 +492,7 @@ void dyld_entry_out (struct ui_out *uiout, struct dyld_objfile_entry *e, int pri
     }
   else
     {
-      ui_out_text (uiout, "\"");
       ui_out_field_string (uiout, "path", name);
-      ui_out_text (uiout, "\"");
 
       if (slide == NULL)
 	{
@@ -491,6 +537,8 @@ void dyld_entry_out (struct ui_out *uiout, struct dyld_objfile_entry *e, int pri
     }
 
   xfree (name);
+  xfree (objname);
+  xfree (symname);
   xfree (addr);
   xfree (slide);
   xfree (prefix);
@@ -498,18 +546,19 @@ void dyld_entry_out (struct ui_out *uiout, struct dyld_objfile_entry *e, int pri
 
 void 
 dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames, 
-		 char **name, char **addr, char **slide, char **prefix)
+		 char **name, char **objname, char **symname, char **addr, char **slide, char **prefix)
 {
   CHECK_FATAL (e != NULL);
 
   *name = NULL;
+  *objname = NULL;
+  *symname = NULL;
   *addr = NULL;
   *slide = NULL;
   *prefix = NULL;
 
-  if (e->objfile) {
+  if (e->objfile && e->loaded_from_memory) {
 
-    if (e->loaded_from_memory) {
       CHECK_FATAL (! e->loaded_addrisoffset);
       CHECK_FATAL (e->loaded_addr == e->loaded_memaddr);
       if (e->image_addr_valid) {
@@ -518,28 +567,41 @@ dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames,
       } else {
 	xasprintf (addr, "0x%lx", (unsigned long) e->loaded_memaddr);
       }	      
-    } else {
 
-      const char *loaded_name;
-      if (! print_basenames) {
-        if (e->loaded_name != NULL) {
-	  loaded_name = strrchr (e->loaded_name, '/');
-	  if (loaded_name == NULL) {
-	    loaded_name = e->loaded_name;
-	  } else {
-	    loaded_name++;
-	  }
-	} else {
-	  loaded_name = NULL;
-	}
-      } else {
-	loaded_name = e->loaded_name;
-      }
+  } else if (e->objfile && !e->loaded_from_memory) {
+
+      const char *loaded_name = e->loaded_name;
+      const char *loaded_objname = dyld_entry_filename (e, NULL, 0);
+      const char *loaded_symname = (e->objfile != NULL) ? e->objfile->name : NULL;
+
+      if ((! print_basenames) && (loaded_name != NULL))
+	if (strrchr (loaded_name, '/') != NULL)
+	  loaded_name = strrchr (loaded_name, '/') + 1;
+
+      if ((! print_basenames) && (loaded_objname != NULL))
+	if (strrchr (loaded_objname, '/') != NULL)
+	  loaded_objname = strrchr (loaded_objname, '/') + 1;
+
+      if ((! print_basenames) && (loaded_symname != NULL))
+	if (strrchr (loaded_symname, '/') != NULL)
+	  loaded_symname = strrchr (loaded_symname, '/') + 1;
       
       if (loaded_name != NULL) {
-	  int namelen = strlen (loaded_name) + 1;
-	  *name = (char *) xmalloc (namelen);
-	  memcpy (*name, loaded_name, namelen);
+	int namelen = strlen (loaded_name) + 1;
+	*name = (char *) xmalloc (namelen);
+	memcpy (*name, loaded_name, namelen);
+      }
+      
+      if (loaded_objname != NULL) {
+	int namelen = strlen (loaded_objname) + 1;
+	*objname = (char *) xmalloc (namelen);
+	memcpy (*objname, loaded_objname, namelen);
+      }
+
+      if (loaded_symname != NULL) {
+	int namelen = strlen (loaded_symname) + 1;
+	*symname = (char *) xmalloc (namelen);
+	memcpy (*symname, loaded_symname, namelen);
       }
 
       if (e->loaded_addrisoffset) {
@@ -562,12 +624,13 @@ dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames,
 	  }	      
 	}
       }	  
-    }
+
   } else {
+
     const char *s; 
     const char *tmp;
     int namelen;
-    s = dyld_entry_source_filename (e);
+    s = dyld_entry_filename (e, NULL, 0);
     if (s == NULL) {
       s = "[UNKNOWN]";
     }
@@ -715,7 +778,7 @@ dyld_shlib_info_basename_length
       continue;
     }
 
-    name = dyld_entry_source_filename (j);
+    name = dyld_entry_filename (j, NULL, 0);
     if (name == NULL) {
       if (baselen < 1) {
 	baselen = 1;
@@ -755,7 +818,7 @@ dyld_shlib_info_basename_length
       struct dyld_objfile_entry tentry;
       dyld_convert_entry (objfile, &tentry);
 
-      name = dyld_entry_source_filename (&tentry);
+      name = dyld_entry_filename (&tentry, NULL, 0);
       if (name == NULL) {
 	if (baselen < 1) {
 	  baselen = 1;
@@ -820,7 +883,7 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
   char addrbuf[24];
   const char *ptr;
 
-  name = dyld_entry_source_filename (j);
+  name = dyld_entry_filename (j, NULL, 0);
   if (name == NULL) {
     fname = savestring ("-", strlen ("-"));
     is_framework = 0;
@@ -908,6 +971,40 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
 
   dyld_entry_out (uiout, j, 1);
 
+  { 
+    char *name;
+    char *objname;
+    char *symname;
+    char *addr;
+    char *slide;
+    char *prefix;
+    
+    dyld_entry_info (j, 1, &name, &objname, &symname, &addr, &slide, &prefix);
+      
+    if (objname != NULL)
+      if ((name == NULL) || (strcmp (name, objname) != 0))
+	{
+	  ui_out_text (uiout, "\n");
+	  ui_out_spaces (uiout, baselen + 34);
+	  ui_out_field_string (uiout, "objpath", objname);
+	}
+
+    if (symname != NULL)
+      if ((name == NULL) || (strcmp (name, symname) != 0))
+	{
+	  ui_out_text (uiout, "\n");
+	  ui_out_spaces (uiout, baselen + 34);
+	  ui_out_field_string (uiout, "sympath", symname);
+	}
+    
+    xfree (name);
+    xfree (objname);
+    xfree (symname);
+    xfree (addr);
+    xfree (slide);
+    xfree (prefix);
+  }
+  
   ui_out_list_end (uiout);
 
   ui_out_text (uiout, "\n");

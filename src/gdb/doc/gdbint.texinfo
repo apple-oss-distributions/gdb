@@ -8,7 +8,7 @@
 
 @ifinfo
 This file documents the internals of the GNU debugger @value{GDBN}.
-Copyright 1990,1991,1992,1993,1994,1996,1998,1999,2000,2001,2002
+Copyright 1990,1991,1992,1993,1994,1996,1998,1999,2000,2001,2002,2003
    Free Software Foundation, Inc.
 Contributed by Cygnus Solutions.  Written by John Gilmore.
 Second Edition by Stan Shebs.
@@ -41,7 +41,7 @@ Software Foundation raise funds for GNU development.''
 @page
 @tex
 \def\$#1${{#1}}  % Kluge: collect RCS revision info without $...$
-\xdef\manvers{\1.104}  % For use in headers, footers too
+\xdef\manvers{\1.119}  % For use in headers, footers too
 {\parskip=0pt
 \hfill Cygnus Solutions\par
 \hfill \manvers\par
@@ -50,8 +50,8 @@ Software Foundation raise funds for GNU development.''
 @end tex
 
 @vskip 0pt plus 1filll
-Copyright @copyright{} 1990,1991,1992,1993,1994,1996,1998,1999,2000,2001, 2002
-   Free Software Foundation, Inc.
+Copyright @copyright{} 1990,1991,1992,1993,1994,1996,1998,1999,2000,2001,
+   2002, 2003  Free Software Foundation, Inc.
 
 Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.1 or
@@ -253,9 +253,9 @@ your frames are nonstandard.)
 
 @cindex frame chain
 Given a @value{GDBN} frame, define @code{FRAME_CHAIN} to determine the
-address of the calling function's frame.  This will be used to create
-a new @value{GDBN} frame struct, and then @code{INIT_EXTRA_FRAME_INFO}
-and @code{INIT_FRAME_PC} will be called for the new frame.
+address of the calling function's frame.  This will be used to create a
+new @value{GDBN} frame struct, and then @code{INIT_EXTRA_FRAME_INFO} and
+@code{DEPRECATED_INIT_FRAME_PC} will be called for the new frame.
 
 @section Breakpoint Handling
 
@@ -1841,7 +1841,6 @@ The file @file{mdebugread.c} implements reading for this format.
 DWARF 1 is a debugging format that was originally designed to be
 used with ELF in SVR4 systems.
 
-@c OBSOLETE CHILL_PRODUCER
 @c GCC_PRODUCER
 @c GPLUS_PRODUCER
 @c LCC_PRODUCER
@@ -2245,11 +2244,6 @@ of functions to indicate that they never return.  The default is already
 set correctly if compiling with GCC.  This will almost never need to be
 defined.
 
-@item USE_GENERIC_DUMMY_FRAMES
-@cindex generic dummy frames
-Define this to 1 if the target is using the generic inferior function
-call code.  See @code{blockframe.c} for more information.
-
 @item USE_MMALLOC
 @findex mmalloc
 @value{GDBN} will use the @code{mmalloc} library for memory allocation
@@ -2429,9 +2423,12 @@ Here are the functions that make up the OS ABI framework:
 Return the name of the OS ABI corresponding to @var{osabi}.
 @end deftypefun
 
-@deftypefun void gdbarch_register_osabi (enum bfd_architecture @var{arch}, enum gdb_osabi @var{osabi}, void (*@var{init_osabi})(struct gdbarch_info @var{info}, struct gdbarch *@var{gdbarch}))
+@deftypefun void gdbarch_register_osabi (enum bfd_architecture @var{arch}, unsigned long @var{machine}, enum gdb_osabi @var{osabi}, void (*@var{init_osabi})(struct gdbarch_info @var{info}, struct gdbarch *@var{gdbarch}))
 Register the OS ABI handler specified by @var{init_osabi} for the
-architecture/OS ABI pair specified by @var{arch} and @var{osabi}.
+architecture, machine type and OS ABI specified by @var{arch},
+@var{machine} and @var{osabi}.  In most cases, a value of zero for the
+machine type, which implies the architecture's default machine type,
+will suffice.
 @end deftypefun
 
 @deftypefun void gdbarch_register_osabi_sniffer (enum bfd_architecture @var{arch}, enum bfd_flavour @var{flavour}, enum gdb_osabi (*@var{sniffer})(bfd *@var{abfd}))
@@ -2629,6 +2626,91 @@ Store in @var{buf} a pointer of type @var{type} representing the address
 This function may safely assume that @var{type} is either a pointer or a
 C@t{++} reference type.
 @end deftypefn
+
+@section Address Classes
+@cindex address classes
+@cindex DW_AT_byte_size
+@cindex DW_AT_address_class
+
+Sometimes information about different kinds of addresses is available
+via the debug information.  For example, some programming environments
+define addresses of several different sizes.  If the debug information
+distinguishes these kinds of address classes through either the size
+info (e.g, @code{DW_AT_byte_size} in @w{DWARF 2}) or through an explicit
+address class attribute (e.g, @code{DW_AT_address_class} in @w{DWARF 2}), the
+following macros should be defined in order to disambiguate these
+types within @value{GDBN} as well as provide the added information to
+a @value{GDBN} user when printing type expressions.
+
+@deftypefn {Target Macro} int ADDRESS_CLASS_TYPE_FLAGS (int @var{byte_size}, int @var{dwarf2_addr_class})
+Returns the type flags needed to construct a pointer type whose size
+is @var{byte_size} and whose address class is @var{dwarf2_addr_class}.
+This function is normally called from within a symbol reader.  See
+@file{dwarf2read.c}.
+@end deftypefn
+
+@deftypefn {Target Macro} char *ADDRESS_CLASS_TYPE_FLAGS_TO_NAME (int @var{type_flags})
+Given the type flags representing an address class qualifier, return
+its name.
+@end deftypefn
+@deftypefn {Target Macro} int ADDRESS_CLASS_NAME_to_TYPE_FLAGS (int @var{name}, int *var{type_flags_ptr})
+Given an address qualifier name, set the @code{int} refererenced by @var{type_flags_ptr} to the type flags
+for that address class qualifier.
+@end deftypefn
+
+Since the need for address classes is rather rare, none of
+the address class macros defined by default.  Predicate
+macros are provided to detect when they are defined.
+
+Consider a hypothetical architecture in which addresses are normally
+32-bits wide, but 16-bit addresses are also supported.  Furthermore,
+suppose that the @w{DWARF 2} information for this architecture simply
+uses a @code{DW_AT_byte_size} value of 2 to indicate the use of one
+of these "short" pointers.  The following functions could be defined
+to implement the address class macros:
+
+@smallexample
+somearch_address_class_type_flags (int byte_size,
+                                   int dwarf2_addr_class)
+@{
+  if (byte_size == 2)
+    return TYPE_FLAG_ADDRESS_CLASS_1;
+  else
+    return 0;
+@}
+
+static char *
+somearch_address_class_type_flags_to_name (int type_flags)
+@{
+  if (type_flags & TYPE_FLAG_ADDRESS_CLASS_1)
+    return "short";
+  else
+    return NULL;
+@}
+
+int
+somearch_address_class_name_to_type_flags (char *name,
+                                           int *type_flags_ptr)
+@{
+  if (strcmp (name, "short") == 0)
+    @{
+      *type_flags_ptr = TYPE_FLAG_ADDRESS_CLASS_1;
+      return 1;
+    @}
+  else
+    return 0;
+@}
+@end smallexample
+
+The qualifier @code{@@short} is used in @value{GDBN}'s type expressions
+to indicate the presence of one of these "short" pointers.  E.g, if
+the debug information indicates that @code{short_ptr_var} is one of these
+short pointers, @value{GDBN} might show the following behavior:
+
+@smallexample
+(gdb) ptype short_ptr_var
+type = int * @@short
+@end smallexample
 
 
 @section Raw and Virtual Register Representations
@@ -2857,6 +2939,49 @@ boundaries, the processor masks out these bits to generate the actual
 address of the instruction.  ADDR_BITS_REMOVE should filter out these
 bits with an expression such as @code{((addr) & ~3)}.
 
+@item ADDRESS_CLASS_NAME_TO_TYPE_FLAGS (@var{name}, @var{type_flags_ptr})
+@findex ADDRESS_CLASS_NAME_TO_TYPE_FLAGS
+If @var{name} is a valid address class qualifier name, set the @code{int}
+referenced by @var{type_flags_ptr} to the mask representing the qualifier
+and return 1.  If @var{name} is not a valid address class qualifier name,
+return 0.
+
+The value for @var{type_flags_ptr} should be one of
+@code{TYPE_FLAG_ADDRESS_CLASS_1}, @code{TYPE_FLAG_ADDRESS_CLASS_2}, or
+possibly some combination of these values or'd together.
+@xref{Target Architecture Definition, , Address Classes}.
+
+@item ADDRESS_CLASS_NAME_TO_TYPE_FLAGS_P ()
+@findex ADDRESS_CLASS_NAME_TO_TYPE_FLAGS_P
+Predicate which indicates whether @code{ADDRESS_CLASS_NAME_TO_TYPE_FLAGS}
+has been defined.
+
+@item ADDRESS_CLASS_TYPE_FLAGS (@var{byte_size}, @var{dwarf2_addr_class})
+@findex ADDRESS_CLASS_TYPE_FLAGS (@var{byte_size}, @var{dwarf2_addr_class})
+Given a pointers byte size (as described by the debug information) and
+the possible @code{DW_AT_address_class} value, return the type flags
+used by @value{GDBN} to represent this address class.  The value
+returned should be one of @code{TYPE_FLAG_ADDRESS_CLASS_1},
+@code{TYPE_FLAG_ADDRESS_CLASS_2}, or possibly some combination of these
+values or'd together.
+@xref{Target Architecture Definition, , Address Classes}.
+
+@item ADDRESS_CLASS_TYPE_FLAGS_P ()
+@findex ADDRESS_CLASS_TYPE_FLAGS_P
+Predicate which indicates whether @code{ADDRESS_CLASS_TYPE_FLAGS} has
+been defined.
+
+@item ADDRESS_CLASS_TYPE_FLAGS_TO_NAME (@var{type_flags})
+@findex ADDRESS_CLASS_TYPE_FLAGS_TO_NAME
+Return the name of the address class qualifier associated with the type
+flags given by @var{type_flags}.
+
+@item ADDRESS_CLASS_TYPE_FLAGS_TO_NAME_P ()
+@findex ADDRESS_CLASS_TYPE_FLAGS_TO_NAME_P
+Predicate which indicates whether @code{ADDRESS_CLASS_TYPE_FLAGS_TO_NAME} has
+been defined.
+@xref{Target Architecture Definition, , Address Classes}.
+
 @item ADDRESS_TO_POINTER (@var{type}, @var{buf}, @var{addr})
 @findex ADDRESS_TO_POINTER
 Store in @var{buf} a pointer of type @var{type} representing the address
@@ -3019,50 +3144,6 @@ and to cancel any deferred stores.
 
 Currently only implemented correctly for native Sparc configurations?
 
-@item COERCE_FLOAT_TO_DOUBLE (@var{formal}, @var{actual})
-@findex COERCE_FLOAT_TO_DOUBLE
-@cindex promotion to @code{double}
-@cindex @code{float} arguments
-@cindex prototyped functions, passing arguments to
-@cindex passing arguments to prototyped functions
-Return non-zero if GDB should promote @code{float} values to
-@code{double} when calling a non-prototyped function.  The argument
-@var{actual} is the type of the value we want to pass to the function.
-The argument @var{formal} is the type of this argument, as it appears in
-the function's definition.  Note that @var{formal} may be zero if we
-have no debugging information for the function, or if we're passing more
-arguments than are officially declared (for example, varargs).  This
-macro is never invoked if the function definitely has a prototype.
-
-How you should pass arguments to a function depends on whether it was
-defined in K&R style or prototype style.  If you define a function using
-the K&R syntax that takes a @code{float} argument, then callers must
-pass that argument as a @code{double}.  If you define the function using
-the prototype syntax, then you must pass the argument as a @code{float},
-with no promotion.
-
-Unfortunately, on certain older platforms, the debug info doesn't
-indicate reliably how each function was defined.  A function type's
-@code{TYPE_FLAG_PROTOTYPED} flag may be unset, even if the function was
-defined in prototype style.  When calling a function whose
-@code{TYPE_FLAG_PROTOTYPED} flag is unset, GDB consults the
-@code{COERCE_FLOAT_TO_DOUBLE} macro to decide what to do.
-
-@findex standard_coerce_float_to_double
-For modern targets, it is proper to assume that, if the prototype flag
-is unset, that can be trusted: @code{float} arguments should be promoted
-to @code{double}.  You should use the function
-@code{standard_coerce_float_to_double} to get this behavior.
-
-@findex default_coerce_float_to_double
-For some older targets, if the prototype flag is unset, that doesn't
-tell us anything.  So we guess that, if we don't have a type for the
-formal parameter (@i{i.e.}, the first argument to
-@code{COERCE_FLOAT_TO_DOUBLE} is null), then we should promote it;
-otherwise, we should leave it alone.  The function
-@code{default_coerce_float_to_double} provides this behavior; it is the
-default value, for compatibility with older configurations.
-
 @item int CONVERT_REGISTER_P(@var{regnum})
 @findex CONVERT_REGISTER_P
 Return non-zero if register @var{regnum} can represent data values in a
@@ -3089,12 +3170,6 @@ Similarly, for hardware breakpoints.
 @findex DISABLE_UNSETTABLE_BREAK
 If defined, this should evaluate to 1 if @var{addr} is in a shared
 library in which breakpoints cannot be set and so should be disabled.
-
-@item DO_REGISTERS_INFO
-@findex DO_REGISTERS_INFO
-If defined, use this to print the value of a register or all registers.
-
-This method is deprecated.
 
 @item PRINT_FLOAT_INFO()
 @findex PRINT_FLOAT_INFO
@@ -3202,34 +3277,19 @@ Given @var{frame}, return a pointer to the calling frame.
 
 @item FRAME_CHAIN_VALID(@var{chain}, @var{thisframe})
 @findex FRAME_CHAIN_VALID
-Define this to be an expression that returns zero if the given frame is
-an outermost frame, with no caller, and nonzero otherwise.  Several
-common definitions are available:
-
-@itemize @bullet
-@item
-@code{file_frame_chain_valid} is nonzero if the chain pointer is nonzero
-and given frame's PC is not inside the startup file (such as
-@file{crt0.o}).
-
-@item
-@code{func_frame_chain_valid} is nonzero if the chain
-pointer is nonzero and the given frame's PC is not in @code{main} or a
-known entry point function (such as @code{_start}).
-
-@item
-@code{generic_file_frame_chain_valid} and
-@code{generic_func_frame_chain_valid} are equivalent implementations for
-targets using generic dummy frames.
-@end itemize
+Define this to be an expression that returns zero if the given frame is an
+outermost frame, with no caller, and nonzero otherwise.  Most normal
+situations can be handled without defining this macro, including @code{NULL}
+chain pointers, dummy frames, and frames whose PC values are inside the
+startup file (e.g.@: @file{crt0.o}), inside @code{main}, or inside
+@code{_start}.
 
 @item FRAME_INIT_SAVED_REGS(@var{frame})
 @findex FRAME_INIT_SAVED_REGS
 See @file{frame.h}.  Determines the address of all registers in the
 current stack frame storing each in @code{frame->saved_regs}.  Space for
 @code{frame->saved_regs} shall be allocated by
-@code{FRAME_INIT_SAVED_REGS} using either
-@code{frame_saved_regs_zalloc} or @code{frame_obstack_alloc}.
+@code{FRAME_INIT_SAVED_REGS} using @code{frame_saved_regs_zalloc}.
 
 @code{FRAME_FIND_SAVED_REGS} and @code{EXTRA_FRAME_INFO} are deprecated.
 
@@ -3334,10 +3394,10 @@ routine that handles inter-space procedure calls on PA-RISC.
 @findex INIT_EXTRA_FRAME_INFO
 If additional information about the frame is required this should be
 stored in @code{frame->extra_info}.  Space for @code{frame->extra_info}
-is allocated using @code{frame_obstack_alloc}.
+is allocated using @code{frame_extra_info_zalloc}.
 
-@item INIT_FRAME_PC (@var{fromleaf}, @var{prev})
-@findex INIT_FRAME_PC
+@item DEPRECATED_INIT_FRAME_PC (@var{fromleaf}, @var{prev})
+@findex DEPRECATED_INIT_FRAME_PC
 This is a C statement that sets the pc of the frame pointed to by
 @var{prev}.  [By default...]
 
@@ -3558,10 +3618,6 @@ them.
 @findex PCC_SOL_BROKEN
 (Used only in the Convex target.)
 
-@item PC_IN_CALL_DUMMY
-@findex PC_IN_CALL_DUMMY
-See @file{inferior.h}.
-
 @item PC_IN_SIGTRAMP (@var{pc}, @var{name})
 @findex PC_IN_SIGTRAMP
 @cindex sigtramp
@@ -3595,11 +3651,6 @@ The number of the ``next program counter'' register, if defined.
 @findex PARM_BOUNDARY
 If non-zero, round arguments to a boundary of this many bits before
 pushing them on the stack.
-
-@item PRINT_REGISTER_HOOK (@var{regno})
-@findex PRINT_REGISTER_HOOK
-If defined, this must be a function that prints the contents of the
-given register to standard output.
 
 @item PRINT_TYPELESS_INTEGER
 @findex PRINT_TYPELESS_INTEGER
@@ -3665,10 +3716,6 @@ for parameters/results have been allocated on the stack.
 @findex SDB_REG_TO_REGNUM
 Define this to convert sdb register numbers into @value{GDBN} regnums.  If not
 defined, no conversion will be done.
-
-@c OBSOLETE @item SHIFT_INST_REGS
-@c OBSOLETE @findex SHIFT_INST_REGS
-@c OBSOLETE (Only used for m88k targets.)
 
 @item SKIP_PERMANENT_BREAKPOINT
 @findex SKIP_PERMANENT_BREAKPOINT
@@ -5344,62 +5391,6 @@ target-dependent @file{.h} and @file{.c} files used for your
 configuration.
 @end itemize
 
-@section Configuring @value{GDBN} for Release
-
-@cindex preparing a release
-@cindex making a distribution tarball
-From the top level directory (containing @file{gdb}, @file{bfd},
-@file{libiberty}, and so on):
-
-@smallexample
-make -f Makefile.in gdb.tar.gz
-@end smallexample
-
-@noindent
-This will properly configure, clean, rebuild any files that are
-distributed pre-built (e.g. @file{c-exp.tab.c} or @file{refcard.ps}),
-and will then make a tarfile.  (If the top level directory has already
-been configured, you can just do @code{make gdb.tar.gz} instead.)
-
-This procedure requires:
-
-@itemize @bullet
-
-@item 
-symbolic links;
-
-@item
-@code{makeinfo} (texinfo2 level);
-
-@item
-@TeX{};
-
-@item
-@code{dvips};
-
-@item
-@code{yacc} or @code{bison}.
-@end itemize
-
-@noindent
-@dots{} and the usual slew of utilities (@code{sed}, @code{tar}, etc.).
-
-@subheading TEMPORARY RELEASE PROCEDURE FOR DOCUMENTATION
-
-@file{gdb.texinfo} is currently marked up using the texinfo-2 macros,
-which are not yet a default for anything (but we have to start using
-them sometime).
-
-For making paper, the only thing this implies is the right generation of
-@file{texinfo.tex} needs to be included in the distribution.
-
-For making info files, however, rather than duplicating the texinfo2
-distribution, generate @file{gdb-all.texinfo} locally, and include the
-files @file{gdb.info*} in the distribution.  Note the plural;
-@code{makeinfo} will split the document into one overall file and five
-or so included files.
-
-
 @node Releasing GDB
 
 @chapter Releasing @value{GDBN}
@@ -5931,6 +5922,17 @@ $  ( cd  dejagnu/src/dejagnu && autoconf )
 @subsubheading Do the dirty work
 
 This is identical to the process used to create the daily snapshot.
+
+@smallexample
+$  for m in gdb insight
+do
+( cd $m/src && gmake -f src-release $m.tar )
+done
+$  ( m=dejagnu; cd $m/src && gmake -f src-release $m.tar.bz2 )
+@end smallexample
+
+If the top level source directory does not have @file{src-release}
+(@value{GDBN} version 5.3.1 or earlier), try these commands instead:
 
 @smallexample
 $  for m in gdb insight
