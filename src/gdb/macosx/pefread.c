@@ -148,10 +148,10 @@ pef_symfile_offsets (objfile, addrs)
 {
   unsigned int i;
 
-  objfile->num_sections = SECT_OFF_MAX;
+  objfile->num_sections = addrs->num_sections;
   objfile->section_offsets = (struct section_offsets *)
-    obstack_alloc (&objfile->psymbol_obstack, SIZEOF_SECTION_OFFSETS);
-  memset (objfile->section_offsets, 0, SIZEOF_SECTION_OFFSETS);
+    obstack_alloc (&objfile->objfile_obstack, SIZEOF_N_SECTION_OFFSETS (objfile->num_sections));
+  memset (objfile->section_offsets, 0, SIZEOF_N_SECTION_OFFSETS (objfile->num_sections));
 
   if (addrs->other[0].addr != 0)
     {
@@ -163,7 +163,7 @@ pef_symfile_offsets (objfile, addrs)
       objfile_add_to_ordered_sections (objfile);
     }
 
-  for (i = 0; i < MAX_SECTIONS; i++) {
+  for (i = 0; i < addrs->num_sections; i++) {
     objfile->section_offsets->offsets[i] = (long) addrs->other[0].addr;
   }
 

@@ -43,6 +43,9 @@
 #include "cached-symfile.h"
 #include "macosx-nat-dyld.h"
 
+/* From objfiles.c */
+extern void objfile_alloc_data (struct objfile *objfile);
+
 #ifdef USE_MMALLOC
 #include "mmprivate.h"
 #endif
@@ -66,7 +69,7 @@ static int check_timestamp = 1;
 
 #ifndef FSF_OBJFILES
 
-static unsigned long cached_symfile_version = 6;
+static unsigned long cached_symfile_version = 7;
 
 extern int mapped_symbol_files;
 extern int use_mapped_symbol_files;
@@ -402,11 +405,7 @@ open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *f
   bcache_specify_allocation_with_arg
     (objfile->macro_cache, xmmalloc, xmfree, objfile->md);
   obstack_specify_allocation_with_arg
-    (&objfile->psymbol_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
-  obstack_specify_allocation_with_arg
-    (&objfile->symbol_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
-  obstack_specify_allocation_with_arg
-    (&objfile->type_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
+    (&objfile->objfile_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
 
   link_objfile (objfile);
 
@@ -504,11 +503,7 @@ create_objfile_from_mmalloc_pool (bfd *abfd, PTR md, int fd, CORE_ADDR mapaddr)
   bcache_specify_allocation_with_arg
     (objfile->macro_cache, xmmalloc, xmfree, objfile->md);
   obstack_specify_allocation_with_arg
-    (&objfile->psymbol_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
-  obstack_specify_allocation_with_arg
-    (&objfile->symbol_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
-  obstack_specify_allocation_with_arg
-    (&objfile->type_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
+    (&objfile->objfile_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
 
   return objfile;
 }
@@ -524,7 +519,7 @@ struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
 			   size_t addr, size_t mapaddr, const char *dest)
 {
   unsigned int i;
-  struct section_addr_info addrs;
+  struct section_addr_info *addrs;
   struct objfile *objfile = NULL;
   struct symtab *s = NULL;
   struct partial_symtab *p = NULL;
@@ -577,8 +572,10 @@ struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
       return NULL;
     }
 
+#if 0
   swapout_gdbarch_swap (current_gdbarch);
   clear_gdbarch_swap (current_gdbarch);
+#endif
 
   builtin_type_void =
     init_type (TYPE_CODE_VOID, 1,
@@ -607,12 +604,15 @@ struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
   else
     objfile->prefix = mstrsave (objfile->md, prefix);
 	
-  for (i = 0; i < MAX_SECTIONS; i++) 
+  addrs = NULL;
+  abort ();
+
+  for (i = 0; i < addrs->num_sections; i++) 
     {
-      addrs.other[i].name = NULL;
-      addrs.other[i].addr = addr;
-      addrs.other[i].sectindex = 0;
-      addrs.addrs_are_offsets = 0;
+      addrs->other[i].name = NULL;
+      addrs->other[i].addr = addr;
+      addrs->other[i].sectindex = 0;
+      addrs->addrs_are_offsets = 0;
     }
 
   syms_from_objfile (objfile, &addrs, 0, 0, 0, 0);
@@ -654,7 +654,9 @@ struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
   if (info_verbose)
     printf (" done\n");
 
+#if 0
   swapin_gdbarch_swap (current_gdbarch);
+#endif
 
   return objfile;
 }
@@ -673,9 +675,10 @@ create_objfile (bfd *abfd)
   objfile->macro_cache = bcache_xmalloc (NULL);
   bcache_specify_allocation (objfile->psymbol_cache, xmalloc, xfree);
   bcache_specify_allocation (objfile->macro_cache, xmalloc, xfree);
-  obstack_specify_allocation (&objfile->psymbol_obstack, 0, 0, xmalloc, xfree);
-  obstack_specify_allocation (&objfile->symbol_obstack, 0, 0, xmalloc, xfree);
-  obstack_specify_allocation (&objfile->type_obstack, 0, 0, xmalloc, xfree);
+  obstack_specify_allocation (&objfile->objfile_obstack, 0, 0, xmalloc, xfree);
+
+  /* FIXME: This needs to be converted to use objfile-specific data. */
+  objfile_alloc_data (objfile);
 
   init_objfile (objfile);
 
@@ -918,6 +921,7 @@ move_symbol (struct relocation_context *r, struct symbol *s)
 static void
 move_block (struct relocation_context *r, struct block *b)
 {
+#if 0
   unsigned int i;
 
   if (b == NULL)
@@ -931,11 +935,13 @@ move_block (struct relocation_context *r, struct block *b)
       if (RELOCATE (b->sym[i]))
 	move_symbol (r, LOOKUP (b->sym[i]));
     }
+#endif
 }
 
 void
 move_blockvector (struct relocation_context *r, struct blockvector *b)
 {
+#if 0
   unsigned int i;
 
   if (b == NULL)
@@ -946,6 +952,7 @@ move_blockvector (struct relocation_context *r, struct blockvector *b)
       if (RELOCATE (b->block[i]))
 	move_block (r, LOOKUP (b->block[i]));
     }
+#endif
 }
 
 void
@@ -1001,6 +1008,7 @@ move_obstack (struct relocation_context *r, struct obstack *s)
 void
 move_symtab (struct relocation_context *r, struct symtab *s)
 {
+#if 0
   if (s == NULL)
     return;
 
@@ -1017,6 +1025,7 @@ move_symtab (struct relocation_context *r, struct symtab *s)
   RELOCATE (s->objfile);
   if (r->objfile != NULL)
     s->objfile = r->objfile;
+#endif
 }
 
 static void
@@ -1075,9 +1084,7 @@ move_objfile (struct relocation_context *r, struct objfile *o)
   gdb_assert (o->sections == NULL);
   gdb_assert (o->sections_end == NULL);
 
-  move_obstack (r, &o->psymbol_obstack);
-  move_obstack (r, &o->symbol_obstack);
-  move_obstack (r, &o->type_obstack);
+  move_obstack (r, &o->objfile_obstack);
 
   RELOCATE (o->psymbol_cache);
   RELOCATE (o->macro_cache);

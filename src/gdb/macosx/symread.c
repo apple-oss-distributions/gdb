@@ -21,6 +21,8 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#if 0
+
 #include "defs.h"
 #include "symtab.h"
 #include "gdbtypes.h"
@@ -380,7 +382,7 @@ static void sym_read_type
     SYMBOL_LANGUAGE (symbol) = 0;
     SYMBOL_SECTION (symbol) = 0;
     SYMBOL_BFD_SECTION (symbol) = 0;
-    SYMBOL_NAMESPACE (symbol) = VAR_NAMESPACE;
+    SYMBOL_DOMAIN (symbol) = VAR_DOMAIN;
     SYMBOL_CLASS (symbol) = LOC_TYPEDEF;
     SYMBOL_LINE (symbol) = 0;
     SYMBOL_BASEREG (symbol) = 0;
@@ -538,14 +540,14 @@ static void sym_read_contained_variables
 	switch (cventry.entry.address.scstruct.sca_class) {
 
 	case BFD_SYM_STORAGE_CLASS_REGISTER:
-	  SYMBOL_NAMESPACE (lsym) = VAR_NAMESPACE;
+	  SYMBOL_DOMAIN (lsym) = VAR_DOMAIN;
 	  SYMBOL_CLASS (lsym) = LOC_REGPARM;
 	  SYMBOL_VALUE (lsym) = cventry.entry.address.scstruct.sca_offset;
 	  break;
 
 	case BFD_SYM_STORAGE_CLASS_STACK_RELATIVE:
 	case BFD_SYM_STORAGE_CLASS_FRAME_RELATIVE:
-	  SYMBOL_NAMESPACE (lsym) = VAR_NAMESPACE;
+	  SYMBOL_DOMAIN (lsym) = VAR_DOMAIN;
 	  SYMBOL_CLASS (lsym) = LOC_ARG;
 	  SYMBOL_VALUE (lsym) = cventry.entry.address.scstruct.sca_offset;
 	  break;
@@ -563,13 +565,13 @@ static void sym_read_contained_variables
 
 	case BFD_SYM_STORAGE_CLASS_GLOBAL:
 
-	  SYMBOL_NAMESPACE (lsym) = VAR_NAMESPACE;
+	  SYMBOL_DOMAIN (lsym) = VAR_DOMAIN;
 	  SYMBOL_CLASS (lsym) = LOC_BASEREG;
 	  SYMBOL_VALUE (lsym) = cventry.entry.address.scstruct.sca_offset - 276 ; 
 	  SYMBOL_BASEREG (lsym) = 31;
 
 #if 0
-	  SYMBOL_NAMESPACE (lsym) = VAR_NAMESPACE;
+	  SYMBOL_DOMAIN (lsym) = VAR_DOMAIN;
 	  SYMBOL_CLASS (lsym) = LOC_STATIC;
 	  SYMBOL_VALUE_ADDRESS (lsym) = cventry.entry.address.scstruct.sca_offset; 
 	  SYMBOL_VALUE_ADDRESS (lsym) += ANOFFSET (objfile->section_offsets, SECT_OFF_DATA (obfjile));
@@ -578,14 +580,14 @@ static void sym_read_contained_variables
 	  break;
 
 	case BFD_SYM_STORAGE_CLASS_REGISTER:
-	  SYMBOL_NAMESPACE (lsym) = VAR_NAMESPACE;
+	  SYMBOL_DOMAIN (lsym) = VAR_DOMAIN;
 	  SYMBOL_CLASS (lsym) = LOC_REGISTER;
 	  SYMBOL_VALUE (lsym) = cventry.entry.address.scstruct.sca_offset;
 	  break;
 
 	case BFD_SYM_STORAGE_CLASS_STACK_RELATIVE:
 	case BFD_SYM_STORAGE_CLASS_FRAME_RELATIVE:
-	  SYMBOL_NAMESPACE (lsym) = VAR_NAMESPACE;
+	  SYMBOL_DOMAIN (lsym) = VAR_DOMAIN;
 	  SYMBOL_CLASS (lsym) = LOC_LOCAL;
 	  SYMBOL_VALUE (lsym) = cventry.entry.address.scstruct.sca_offset;
 	  break;
@@ -721,7 +723,7 @@ static void sym_read_functions
     SYMBOL_LANGUAGE (fsymbol) = language_cplus;
     SYMBOL_SECTION (fsymbol) = 0;
     SYMBOL_BFD_SECTION (fsymbol) = 0;
-    SYMBOL_NAMESPACE (fsymbol) = VAR_NAMESPACE;
+    SYMBOL_DOMAIN (fsymbol) = VAR_DOMAIN;
     SYMBOL_CLASS (fsymbol) = LOC_BLOCK;
     SYMBOL_LINE (fsymbol) = 0;
     SYMBOL_BASEREG (fsymbol) = 0;
@@ -1165,3 +1167,4 @@ _initialize_symread ()
 #endif
 }
 
+#endif

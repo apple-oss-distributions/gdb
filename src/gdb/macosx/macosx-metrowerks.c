@@ -39,6 +39,7 @@
 #include "breakpoint.h"
 #include "gdbcore.h"
 #include "event-top.h"
+#include "objfiles.h"
 
 #define IS_BC_x(instruction) \
 ((((instruction) & 0xFC000000) >> 26) == 16)
@@ -176,50 +177,23 @@ metrowerks_step_command (char *args, int from_tty)
   metrowerks_step (range_start, range_stop, step_into);
 }
 
-bfd *FindContainingBFD (CORE_ADDR address)
-{
-  struct target_stack_item *aTarget;
-  bfd *result = NULL;
-
-  for (aTarget = target_stack; (result == NULL) && (aTarget != NULL); aTarget = aTarget->next) {
-    
-    struct section_table* sectionTable;
-
-    if ((NULL == aTarget->target_ops) || (NULL == aTarget->target_ops->to_sections)) {
-      continue;
-    }
-        
-    for (sectionTable = &aTarget->target_ops->to_sections[0];
-	 (result == NULL) && (sectionTable < aTarget->target_ops->to_sections_end);
-	 sectionTable++)
-      {
-	if ((address >= sectionTable->addr) && (address < sectionTable->endaddr)) {
-	  result = sectionTable->bfd;
-	}
-      }
-  }
-  
-  return result;
-}
-
 static void
 metrowerks_address_to_name_command (char* args, int from_tty)
 {
   CORE_ADDR address;
-  bfd *aBFD;
+  struct obj_section *osection;
 
+  errno = 0;
   address = strtoul (args, NULL, 16);
-
-  if (annotation_level > 1) {
-    printf("\n\032\032fragment-name ");
-  }
-
-  aBFD = FindContainingBFD (address);
-  if (aBFD != NULL) {
-    printf_unfiltered ("%s\n", aBFD->filename);
-    return;
-  }
-
+  if (errno == 0)
+    {
+      osection = find_pc_sect_in_ordered_sections (address, NULL);
+      if (osection != NULL)
+        {
+          printf_unfiltered ("%s\n", osection->objfile->name);
+          return;
+        }
+    }
   printf_unfiltered ("[unknown]\n");
 }
 

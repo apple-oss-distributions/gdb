@@ -41,8 +41,9 @@
 #include "gdb_assert.h"
 #include "gdb_stat.h"
 #include "regcache.h"
+#include "bfd.h"
 
-#if USE_MMALLOC
+#ifdef USE_MMALLOC
 #include <mmalloc.h>
 #endif
 
@@ -574,7 +575,7 @@ macosx_solib_add (const char *filename, int from_tty,
   macosx_dyld_init (dyld_status, exec_bfd);
 
   if ((dyld_status->dyld_event_breakpoint != NULL) 
-      && (dyld_status->dyld_event_breakpoint->address == read_pc ()))
+      && (dyld_status->dyld_event_breakpoint->loc->address == read_pc ()))
     {
       CORE_ADDR event_addr = FETCH_ARGUMENT (0);
       int type = read_memory_unsigned_integer (event_addr, 4);
@@ -631,9 +632,10 @@ macosx_solib_add (const char *filename, int from_tty,
 	      
 	      if (ui_out_is_mi_like_p (uiout))
 		{
-		  ui_out_notify_begin (uiout, "shlibs-added");
+		  struct cleanup *notify_cleanup;
+		  notify_cleanup = make_cleanup_ui_out_notify_begin_end (uiout, "shlibs-added");
 		  dyld_print_entry_info (&tentry, shlibnum, 0);
-		  ui_out_notify_end (uiout);
+		  do_cleanups (notify_cleanup);
 		}
 	    }
 	}
@@ -658,7 +660,7 @@ macosx_solib_add (const char *filename, int from_tty,
       }
     }
   else if ((dyld_status->dyld_breakpoint != NULL) 
-	   && (dyld_status->dyld_breakpoint->address == read_pc ()))
+	   && (dyld_status->dyld_breakpoint->loc->address == read_pc ()))
     {
 #if 0
       /* For now, just leave the breakpoint enabled, until we get around
@@ -710,7 +712,7 @@ macosx_solib_add (const char *filename, int from_tty,
 	}
     }
   else if ((cfm_status->cfm_breakpoint != NULL) 
-	   && (cfm_status->cfm_breakpoint->address == read_pc ()))
+	   && (cfm_status->cfm_breakpoint->loc->address == read_pc ()))
     {
       /* no cfm support for incremental update yet */
       libraries_changed = macosx_dyld_update (0);
@@ -1131,8 +1133,9 @@ macosx_dyld_update (int dyldonly)
 
   if (ui_out_is_mi_like_p (uiout) && libraries_changed)
     {
-      ui_out_notify_begin (uiout, "shlibs-updated");
-      ui_out_notify_end (uiout);
+      struct cleanups *notify_cleanup;
+      notify_cleanup = make_cleanup_ui_out_notify_begin_end (uiout, "shlibs-updated");
+      do_cleanups (notify_cleanup);
     }
 
   return libraries_changed;
@@ -1373,8 +1376,8 @@ section_info_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e,
   if (o != NULL) {
     print_section_info_objfile (o);
   } else {
-    ui_out_list_begin (uiout, "section-info");
-    ui_out_list_end (uiout);
+    ui_out_begin (uiout, ui_out_type_list, "section-info");
+    ui_out_end (uiout, ui_out_type_list);
   }
 
   if (e != NULL) {
@@ -1391,7 +1394,7 @@ section_info_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e,
       if (ret != 0)
         return;
 
-      ui_out_list_begin (uiout, "cfm-section-info");
+      ui_out_begin (uiout, ui_out_type_list, "cfm-section-info");
 
       for (section_index = 0; section_index < container.sectionCount; section_index++)
         {
@@ -1402,7 +1405,7 @@ section_info_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e,
           if (ret != 0)
             break;
 
-          ui_out_list_begin (uiout, "section");
+          ui_out_begin (uiout, ui_out_type_list, "section");
 
           ui_out_text (uiout, "\t");
           ui_out_field_core_addr (uiout, "addr", instance.address);
@@ -1424,10 +1427,10 @@ section_info_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e,
 #endif
           ui_out_text (uiout, "\n");
 
-          ui_out_list_end (uiout); /* "section" */
+          ui_out_end (uiout, ui_out_type_list); /* "section" */
         }
 
-      ui_out_list_end (uiout); /* "cfm-section-info" */
+      ui_out_end (uiout, ui_out_type_list); /* "cfm-section-info" */
     }
 #endif /* WITH_CFM */
   }
@@ -1619,7 +1622,7 @@ cache_symfiles_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, s
   if (e != NULL)
     {
       old = e->objfile;
-      abfd =e->abfd;
+      abfd = e->abfd;
       new = cache_bfd (e->abfd, e->prefix, e->load_flag, 0, 0, arg);
     }
   else
@@ -1787,6 +1790,17 @@ update_section_tables_dyld (struct dyld_objfile_info *s)
 #undef ADD_SECTION
 
   gdb_assert (csection == nsections);
+}
+
+/* FIXME: This is used in the test to determine
+   whether to re-enable a shlib breakpoint in
+   re_enable_breakpoints_in_shlibs.  I had to 
+   disable that test.  Re-enable it when this 
+   function works.  */
+
+const char *macosx_pc_solib (CORE_ADDR addr)
+{
+  return NULL;
 }
 
 struct cmd_list_element *dyldlist = NULL;

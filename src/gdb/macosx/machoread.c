@@ -95,12 +95,35 @@ macho_symfile_read (objfile, mainline)
 
   init_minimal_symbol_collection ();
   make_cleanup_discard_minimal_symbols ();
+
+  /* If we are reinitializing, or if we have never loaded syms yet,
+     set table to empty.  MAINLINE is cleared so that *_read_psymtab
+     functions do not all also re-initialize the psymbol table. */
+  if (mainline)
+    {
+      init_psymbol_list (objfile, 0);
+      mainline = 0;
+    }
     
   stabsect_build_psymtabs (objfile, mainline,
 			   "LC_SYMTAB.stabs", "LC_SYMTAB.stabstr",
 			   "LC_SEGMENT.__TEXT.__text",
+			   "LC_SEGMENT.__TEXT.__textcoal_nt",
 			   "LC_SEGMENT.__DATA.__data",
 			   "LC_SEGMENT.__DATA.__bss");
+
+  if (dwarf2_has_info (abfd))
+    {
+      /* DWARF 2 sections */
+      dwarf2_build_psymtabs (objfile, mainline);
+#if 0
+      /* FIXME: This doesn't seem to be right on Mach-O yet.  */
+      /* FIXME: kettenis/20030504: This still needs to be integrated with
+	 dwarf2read.c in a better way.  */
+      dwarf2_build_frame_info (objfile);
+      
+#endif
+    }
 
   if (mach_o_process_exports_flag) {
 
@@ -141,8 +164,6 @@ macho_symfile_read (objfile, mainline)
       }
     }
 
-    /* FIXME: Technically, we should iterate over all the sections and get 
-       all the ones of type SYMBOL_STUB. */
     if (!macho_read_indirect_symbols (abfd, dysymtab, symtab, 
                                       objfile))
       {
@@ -217,7 +238,7 @@ macho_read_indirect_symbols (bfd *abfd,
 	
 	stubaddr += ANOFFSET (objfile->section_offsets, SECT_OFF_TEXT (objfile));
 	prim_record_minimal_symbol_and_info
-	  (nname, stubaddr, mst_solib_trampoline, NULL, SECT_OFF_TEXT (objfile), bfd_get_section (&sym), objfile);
+	  (nname, stubaddr, mst_solib_trampoline, NULL, SECT_OFF_TEXT (objfile), bfdsec, objfile);
       }
     }
 
@@ -238,10 +259,10 @@ macho_symfile_offsets (objfile, addrs)
   unsigned int i;
   unsigned int num_sections;
 
-  objfile->num_sections = SECT_OFF_MAX;
+  objfile->num_sections = addrs->num_sections;
   objfile->section_offsets = (struct section_offsets *)
-    obstack_alloc (&objfile->psymbol_obstack, SIZEOF_SECTION_OFFSETS);
-  memset (objfile->section_offsets, 0, SIZEOF_SECTION_OFFSETS);
+    obstack_alloc (&objfile->objfile_obstack, SIZEOF_N_SECTION_OFFSETS (objfile->num_sections));
+  memset (objfile->section_offsets, 0, SIZEOF_N_SECTION_OFFSETS (objfile->num_sections));
 
   /* I am not quite clear on why we are relocating the objfile
      sections here rather than using relocate_objfile.  Anyway,
@@ -264,7 +285,7 @@ macho_symfile_offsets (objfile, addrs)
       objfile_add_to_ordered_sections (objfile);
     }
 
-  for (i = 0; i < SECT_OFF_MAX; i++) {
+  for (i = 0; i < objfile->num_sections; i++) {
     objfile->section_offsets->offsets[i] = addrs->other[0].addr;
   }
 

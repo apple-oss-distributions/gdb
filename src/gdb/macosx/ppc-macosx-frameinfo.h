@@ -5,8 +5,12 @@
 
 struct frame_info;
 
-typedef struct ppc_function_boundaries_request {
+typedef struct ppc_function_boundaries_request ppc_function_boundaries_request;
+typedef struct ppc_function_boundaries ppc_function_boundaries;
+typedef struct ppc_function_properties ppc_function_properties;
 
+struct ppc_function_boundaries_request
+{
   CORE_ADDR min_start;		/* mininimum start address for the function */
   CORE_ADDR max_end;		/* maximum address for the end */
 
@@ -16,20 +20,18 @@ typedef struct ppc_function_boundaries_request {
   CORE_ADDR body_start;		/* guess start of the function */
   CORE_ADDR epilogue_start;	/* guess start of the function eplogue */
   CORE_ADDR function_end;	/* guess address after last instruction in function */
+};
 
-} ppc_function_boundaries_request;
-
-typedef struct ppc_function_boundaries {
-
+struct ppc_function_boundaries
+{
   CORE_ADDR prologue_start;	/* start of the function prologue */
   CORE_ADDR body_start;		/* start of the function */
   CORE_ADDR epilogue_start;	/* start of the function eplogue */
   CORE_ADDR function_end;	/* address after last instruction in function */
+};
 
-} ppc_function_boundaries;
-
-typedef struct ppc_function_properties {
-
+struct ppc_function_properties
+{
   int offset;			/* This is the stack offset.  The
 				   tricky bit is that on the PPC you
 				   can EITHER move the SP first, and
@@ -44,9 +46,6 @@ typedef struct ppc_function_properties {
   int fpr_offset;		/* offset of saved fprs */
 
   char frameless;		/* true if no stack frame allocated */
-  CORE_ADDR sp_setup_pc;        /* This stores the pc at which the sp
-				   is updated and the value written into
-				   the stack.  */
 
   char frameptr_used;		/* true if frame uses a frame pointer */
   int frameptr_reg;		/* frame pointer register number */
@@ -73,26 +72,50 @@ typedef struct ppc_function_properties {
   int pic_base_reg;             /* Did we see the magic pic base setup code */
 
   CORE_ADDR pic_base_address;   /* What address was the pic base reg set to?  */
+};
 
-} ppc_function_properties;
+struct ppc_frame_cache
+{
+  /* Base address.  */
+  CORE_ADDR stack;
+  CORE_ADDR frame;
+  CORE_ADDR pc;
 
-void ppc_print_boundaries PARAMS ((ppc_function_boundaries *bounds));
-void ppc_print_properties PARAMS ((ppc_function_properties *props));
+  CORE_ADDR prev_pc;
+  CORE_ADDR prev_sp;
+
+  CORE_ADDR *saved_regs;
+  int saved_regs_valid;
+
+  struct ppc_function_properties properties;
+  int properties_valid;
+
+  struct ppc_function_boundaries boundaries;
+  int boundaries_status;
+};
+
+void ppc_print_boundaries PARAMS ((struct ppc_function_boundaries *bounds));
+void ppc_print_properties PARAMS ((struct ppc_function_properties *props));
 
 CORE_ADDR ppc_parse_instructions PARAMS
-  ((CORE_ADDR start, CORE_ADDR end, ppc_function_properties *props));
+  ((CORE_ADDR start, CORE_ADDR end, struct ppc_function_properties *props));
 
-void ppc_clear_function_boundaries_request PARAMS ((ppc_function_boundaries_request *request));
-void ppc_clear_function_boundaries PARAMS ((ppc_function_boundaries *boundaries));
-void ppc_clear_function_properties PARAMS ((ppc_function_properties *properties));
+void ppc_clear_function_boundaries_request PARAMS ((struct ppc_function_boundaries_request *request));
+void ppc_clear_function_boundaries PARAMS ((struct ppc_function_boundaries *boundaries));
+void ppc_clear_function_properties PARAMS ((struct ppc_function_properties *properties));
 
 int ppc_find_function_boundaries PARAMS
-  ((ppc_function_boundaries_request *request, 
-    ppc_function_boundaries *reply));
+  ((struct ppc_function_boundaries_request *request, 
+    struct ppc_function_boundaries *reply));
 
-int ppc_frame_cache_boundaries PARAMS ((struct frame_info *frame, ppc_function_boundaries *bounds));
+struct ppc_function_boundaries *
+ppc_frame_function_boundaries (struct frame_info *frame, void **this_cache);
 
-int ppc_frame_cache_properties PARAMS ((struct frame_info *frame, ppc_function_properties *props));
+struct ppc_function_properties *
+ppc_frame_function_properties (struct frame_info *frame, void **this_cache);
+
+CORE_ADDR *
+ppc_frame_saved_regs (struct frame_info *next_frame, void **this_cache);
 
 int safe_read_memory_unsigned_integer (CORE_ADDR addr, int len, unsigned long *val);
 

@@ -1,7 +1,7 @@
 /* GDB routines for manipulating objfiles.
 
    Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002 Free Software Foundation, Inc.
+   2001, 2002, 2003, 2004 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support, using pieces from other GDB modules.
 
@@ -35,14 +35,17 @@
 #include "gdbcmd.h"
 #include "bcache.h"
 
+#include "gdb_assert.h"
 #include <sys/types.h>
 #include "gdb_stat.h"
 #include <fcntl.h>
 #include "gdb_obstack.h"
 #include "gdb_string.h"
 #include "buildsym.h"
+#include "hashtab.h"
 #include "breakpoint.h"
-#include "objfiles.h"
+#include "block.h"
+#include "dictionary.h"
 
 /* Prototypes for local functions */
 
@@ -66,6 +69,9 @@ static void add_to_objfile_sections (bfd *, sec_ptr, void *);
 
 static void objfile_remove_from_restrict_list (struct objfile *);
 
+void objfile_alloc_data (struct objfile *objfile);
+static void objfile_free_data (struct objfile *objfile);
+
 /* Externally visible variables that are owned by this module.
    See declarations in objfile.h for more info. */
 
@@ -83,7 +89,7 @@ struct objfile *symfile_objfile;	/* Main symbol table loaded from */
 struct objfile *rt_common_objfile;	/* For runtime common symbols */
 
 int mapped_symbol_files = 0;
-int use_mapped_symbol_files = 1;
+int use_mapped_symbol_files = 0;  // Temporarily disable jmolenda 2004-05-13
 
 /* APPLE LOCAL - with the advent of ZeroLink, it is not uncommon for Mac OS X 
    applications to consist of 500+ shared libraries.  At that point searching
@@ -105,7 +111,7 @@ int use_mapped_symbol_files = 1;
 struct ordered_obj_section
 {
   struct obj_section *obj_section;
-  struct sec *the_bfd_section;
+  struct bfd_section *the_bfd_section;
   CORE_ADDR addr;
   CORE_ADDR endaddr;
 };
@@ -123,7 +129,7 @@ static int num_ordered_sections = 0;
 
 static int max_num_ordered_sections = ORDERED_SECTIONS_CHUNK_SIZE;
 
-static int find_in_ordered_sections_index (CORE_ADDR addr, struct sec *bfd_section);
+static int find_in_ordered_sections_index (CORE_ADDR addr, struct bfd_section *bfd_section);
 static int get_insert_index_in_ordered_sections (struct obj_section *section);
 
 /* When we want to add a bunch of obj_sections at a time, we will
@@ -184,6 +190,22 @@ forward_int_compare (const void *left_ptr,
    objfile_add_to_ordered_sections.  */
 
 #define STATIC_DELETE_LIST_SIZE 256
+/* APPLE LOCAL: The difference between the segment names and the section
+   names is the segment names always only have one dot.  Use this to count
+   the dots quickly...  */
+static int
+number_of_dots (const char *s)
+{
+  int numdots = 0;
+  while (*s != '\0')
+    {
+      if (*s == '.')
+	numdots++;
+      s++;
+    }
+
+  return numdots;
+}
 
 void 
 objfile_delete_from_ordered_sections (struct objfile *objfile)
@@ -209,6 +231,14 @@ objfile_delete_from_ordered_sections (struct objfile *objfile)
   ALL_OBJFILE_OSECTIONS (objfile, s)
     {
       int index;
+      /* APPLE LOCAL: Oh, hacky, hacky...  The bfd Mach-O reader makes
+         bfd_sections for both the sections & segments (the container of
+         the sections).  This would make pc->bfd_section lookup non-unique.
+         so we just drop the segments from our list.  */
+      if (s->the_bfd_section && s->the_bfd_section->name &&
+          number_of_dots (s->the_bfd_section->name) == 1)
+        continue;
+
       index = find_in_ordered_sections_index (s->addr, s->the_bfd_section);
       if (index == -1)
 	warning ("Trying to remove a section from"
@@ -325,6 +355,14 @@ objfile_add_to_ordered_sections (struct objfile *objfile)
   total = 0;
   ALL_OBJFILE_OSECTIONS (objfile, s)
     {
+      /* APPLE LOCAL: Oh, hacky, hacky...  The bfd Mach-O reader makes
+         bfd_sections for both the sections & segments (the container of
+         the sections).  This would make pc->bfd_section lookup non-unique.
+         so we just drop the segments from our list.  */
+      if (s->the_bfd_section && s->the_bfd_section->name &&
+          number_of_dots (s->the_bfd_section->name) == 1)
+        continue;
+
       insert_list[total].index = get_insert_index_in_ordered_sections (s);
       insert_list[total].section = s;
       total++;
@@ -396,7 +434,7 @@ objfile_add_to_ordered_sections (struct objfile *objfile)
    to the pair ADDR, BFD_SECTION (can be null), or -1 if not found. */
 
 static int
-find_in_ordered_sections_index (CORE_ADDR addr, struct sec *bfd_section)
+find_in_ordered_sections_index (CORE_ADDR addr, struct bfd_section *bfd_section)
 {
   int bot = 0;
   int top = num_ordered_sections;
@@ -474,7 +512,7 @@ find_in_ordered_sections_index (CORE_ADDR addr, struct sec *bfd_section)
    if not found.  */
 
 struct obj_section *
-find_pc_sect_in_ordered_sections (CORE_ADDR addr, struct sec *bfd_section)
+find_pc_sect_in_ordered_sections (CORE_ADDR addr, struct bfd_section *bfd_section)
 {
   int index = find_in_ordered_sections_index (addr, bfd_section);
   
@@ -499,7 +537,8 @@ find_pc_sect_in_ordered_sections (CORE_ADDR addr, struct sec *bfd_section)
    the end of the table (objfile->sections_end). */
 
 static void
-add_to_objfile_sections (bfd *abfd, sec_ptr asect, void *objfile_p_char)
+add_to_objfile_sections (struct bfd *abfd, struct bfd_section *asect,
+			 void *objfile_p_char)
 {
   struct objfile *objfile = (struct objfile *) objfile_p_char;
   struct obj_section section;
@@ -518,7 +557,7 @@ add_to_objfile_sections (bfd *abfd, sec_ptr asect, void *objfile_p_char)
   section.ovly_mapped = 0;
   section.addr = bfd_section_vma (abfd, asect);
   section.endaddr = section.addr + bfd_section_size (abfd, asect);
-  obstack_grow (&objfile->psymbol_obstack, (char *) &section, sizeof (section));
+  obstack_grow (&objfile->objfile_obstack, (char *) &section, sizeof (section));
   objfile->sections_end = (struct obj_section *) (((unsigned long) objfile->sections_end) + 1);
 }
 
@@ -544,13 +583,13 @@ build_objfile_section_table (struct objfile *objfile)
   /* objfile->sections can be already set when reading a mapped symbol
      file.  I believe that we do need to rebuild the section table in
      this case (we rebuild other things derived from the bfd), but we
-     can't free the old one (it's in the psymbol_obstack).  So we just
+     can't free the old one (it's in the objfile_obstack).  So we just
      waste some memory.  */
 
   objfile->sections_end = 0;
   bfd_map_over_sections (objfile->obfd, add_to_objfile_sections, (char *) objfile);
   objfile->sections = (struct obj_section *)
-    obstack_finish (&objfile->psymbol_obstack);
+    obstack_finish (&objfile->objfile_obstack);
   objfile->sections_end = objfile->sections + (unsigned long) objfile->sections_end;
 
   objfile_add_to_ordered_sections (objfile);
@@ -564,10 +603,17 @@ build_objfile_section_table (struct objfile *objfile)
    new objfile struct.
 
    The FLAGS word contains various bits (OBJF_*) that can be taken as
-   requests for specific operations, like trying to open a mapped
-   version of the objfile (OBJF_MAPPED).  Other bits like
-   OBJF_SHARED are simply copied through to the new objfile flags
-   member. */
+   requests for specific operations.  Other bits like OBJF_SHARED are
+   simply copied through to the new objfile flags member. */
+
+/* NOTE: carlton/2003-02-04: This function is called with args NULL, 0
+   by jv-lang.c, to create an artificial objfile used to hold
+   information about dynamically-loaded Java classes.  Unfortunately,
+   that branch of this function doesn't get tested very frequently, so
+   it's prone to breakage.  (E.g. at one time the name was set to NULL
+   in that situation, which broke a loop over all names in the dynamic
+   library loader.)  If you change this function, please try to leave
+   things in a consistent state even if abfd is NULL.  */
 
 struct objfile *
 allocate_objfile (bfd *abfd, int flags)
@@ -610,6 +656,11 @@ allocate_objfile (bfd *abfd, int flags)
 	      objfile->md = md;
 	      objfile->mmfd = fd;
 	      /* Update pointers to functions to *our* copies */
+	      if (objfile->demangled_names_hash)
+		htab_set_functions_ex
+		  (objfile->demangled_names_hash, htab_hash_string,
+		   (int (*) (const void *, const void *)) streq, NULL,
+		   objfile->md, xmcalloc, xmfree);
 	      obstack_chunkfun (&objfile->psymbol_cache.cache, xmmalloc);
 	      obstack_freefun (&objfile->psymbol_cache.cache, xmfree);
 	      obstack_chunkfun (&objfile->macro_cache.cache, xmmalloc);
@@ -693,14 +744,14 @@ allocate_objfile (bfd *abfd, int flags)
       objfile->md = NULL;
       objfile->psymbol_cache = bcache_xmalloc (NULL);
       objfile->macro_cache = bcache_xmalloc (NULL);
-      obstack_specify_allocation (&objfile->psymbol_obstack, 0, 0, xmalloc,
-				  xfree);
-      obstack_specify_allocation (&objfile->symbol_obstack, 0, 0, xmalloc,
-				  xfree);
-      obstack_specify_allocation (&objfile->type_obstack, 0, 0, xmalloc,
-				  xfree);
+      /* We could use obstack_specify_allocation here instead, but
+	 gdb_obstack.h specifies the alloc/dealloc functions.  */
+      obstack_init (&objfile->objfile_obstack);
+      terminate_minimal_symbol_table (objfile);
       flags &= ~OBJF_MAPPED;
     }
+
+  objfile_alloc_data (objfile);
 
   /* Update the per-objfile information that comes from the bfd, ensuring
      that any data that is reference is saved in the per-objfile data
@@ -724,6 +775,10 @@ allocate_objfile (bfd *abfd, int flags)
 		 objfile->name, bfd_errmsg (bfd_get_error ()));
 	}
     }
+  else
+    {
+      objfile->name = mstrsave (objfile->md, "<<anonymous objfile>>");
+    }
 
   /* Initialize the section indexes for this objfile, so that we can
      later detect if they are used w/o being properly assigned to. */
@@ -732,6 +787,12 @@ allocate_objfile (bfd *abfd, int flags)
     objfile->sect_index_data = -1;
     objfile->sect_index_bss = -1;
     objfile->sect_index_rodata = -1;
+
+  /* We don't yet have a C++-specific namespace symtab.  */
+
+  objfile->cp_namespace_symtab = NULL;
+
+  /* Add this file onto the tail of the linked list of other such files. */
 
   /* Save passed in flag bits. */
   objfile->flags |= flags;
@@ -742,6 +803,65 @@ allocate_objfile (bfd *abfd, int flags)
   return (objfile);
 }
 #endif /* FSF_OBJFILES */
+
+/* Initialize entry point information for this objfile. */
+
+void
+init_entry_point_info (struct objfile *objfile)
+{
+  /* Save startup file's range of PC addresses to help blockframe.c
+     decide where the bottom of the stack is.  */
+
+  if (bfd_get_file_flags (objfile->obfd) & EXEC_P)
+    {
+      /* Executable file -- record its entry point so we'll recognize
+         the startup file because it contains the entry point.  */
+      objfile->ei.entry_point = bfd_get_start_address (objfile->obfd);
+    }
+  else
+    {
+      /* Examination of non-executable.o files.  Short-circuit this stuff.  */
+      objfile->ei.entry_point = INVALID_ENTRY_POINT;
+    }
+  objfile->ei.deprecated_entry_file_lowpc = INVALID_ENTRY_LOWPC;
+  objfile->ei.deprecated_entry_file_highpc = INVALID_ENTRY_HIGHPC;
+  objfile->ei.entry_func_lowpc = INVALID_ENTRY_LOWPC;
+  objfile->ei.entry_func_highpc = INVALID_ENTRY_HIGHPC;
+  objfile->ei.main_func_lowpc = INVALID_ENTRY_LOWPC;
+  objfile->ei.main_func_highpc = INVALID_ENTRY_HIGHPC;
+}
+
+/* Get current entry point address.  */
+
+CORE_ADDR
+entry_point_address (void)
+{
+  return symfile_objfile ? symfile_objfile->ei.entry_point : 0;
+}
+
+/* Create the terminating entry of OBJFILE's minimal symbol table.
+   If OBJFILE->msymbols is zero, allocate a single entry from
+   OBJFILE->objfile_obstack; otherwise, just initialize
+   OBJFILE->msymbols[OBJFILE->minimal_symbol_count].  */
+void
+terminate_minimal_symbol_table (struct objfile *objfile)
+{
+  if (! objfile->msymbols)
+    objfile->msymbols = ((struct minimal_symbol *)
+                         obstack_alloc (&objfile->objfile_obstack,
+                                        sizeof (objfile->msymbols[0])));
+
+  {
+    struct minimal_symbol *m
+      = &objfile->msymbols[objfile->minimal_symbol_count];
+
+    memset (m, 0, sizeof (*m));
+    /* Don't rely on these enumeration values being 0's.  */
+    MSYMBOL_TYPE (m) = mst_unknown;
+    SYMBOL_INIT_LANGUAGE_SPECIFIC (m, language_unknown);
+  }
+}
+
 
 /* Put one object file before a specified on in the global list.
    This can be used to make sure an object file is destroyed before
@@ -844,8 +964,8 @@ unlink_objfile (struct objfile *objfile)
 
 
 /* Destroy an objfile and all the symtabs and psymtabs under it.  Note
-   that as much as possible is allocated on the symbol_obstack and
-   psymbol_obstack, so that the memory can be efficiently freed.
+   that as much as possible is allocated on the objfile_obstack 
+   so that the memory can be efficiently freed.
 
    Things which we do NOT free because they are not in malloc'd memory
    or not in memory specific to the objfile include:
@@ -927,49 +1047,25 @@ free_objfile (struct objfile *objfile)
      to call this here.  */
   clear_pc_function_cache ();
 
-  /* The last thing we do is free the objfile struct itself for the
-     non-reusable case, or detach from the mapped file for the
-     reusable case.  Note that the mmalloc_detach or the xmfree() is
-     the last thing we can do with this objfile. */
+  /* The last thing we do is free the objfile struct itself. */
 
-#if defined(USE_MMALLOC) && defined(HAVE_MMAP)
-
-  if (objfile->flags & OBJF_MAPPED)
+  objfile_free_data (objfile);
+  if (objfile->name != NULL)
     {
-      /* Remember the fd so we can close it.  We can't close it before
-         doing the detach, and after the detach the objfile is gone. */
-      int mmfd;
-
-      mmfd = objfile->mmfd;
-      mmalloc_detach (objfile->md);
-      objfile = NULL;
-      close (mmfd);
+      xmfree (objfile->md, objfile->name);
     }
-
-#endif /* defined(USE_MMALLOC) && defined(HAVE_MMAP) */
-
-  /* If we still have an objfile, then either we don't support reusable
-     objfiles or this one was not reusable.  So free it normally. */
-
-  if (objfile != NULL)
-    {
-      if (objfile->name != NULL)
-	{
-	  xmfree (objfile->md, objfile->name);
-	}
-      if (objfile->global_psymbols.list)
-	xmfree (objfile->md, objfile->global_psymbols.list);
-      if (objfile->static_psymbols.list)
-	xmfree (objfile->md, objfile->static_psymbols.list);
-      /* Free the obstacks for non-reusable objfiles */
-      bcache_xfree (objfile->psymbol_cache);
-      bcache_xfree (objfile->macro_cache);
-      obstack_free (&objfile->psymbol_obstack, 0);
-      obstack_free (&objfile->symbol_obstack, 0);
-      obstack_free (&objfile->type_obstack, 0);
-      xmfree (objfile->md, objfile);
-      objfile = NULL;
-    }
+  if (objfile->global_psymbols.list)
+    xmfree (objfile->md, objfile->global_psymbols.list);
+  if (objfile->static_psymbols.list)
+    xmfree (objfile->md, objfile->static_psymbols.list);
+  /* Free the obstacks for non-reusable objfiles */
+  bcache_xfree (objfile->psymbol_cache);
+  bcache_xfree (objfile->macro_cache);
+  if (objfile->demangled_names_hash)
+    htab_delete (objfile->demangled_names_hash);
+  obstack_free (&objfile->objfile_obstack, 0);
+  xmfree (objfile->md, objfile);
+  objfile = NULL;
 }
 
 static void
@@ -1004,7 +1100,8 @@ void
 objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
 {
   struct section_offsets *delta =
-    (struct section_offsets *) alloca (SIZEOF_SECTION_OFFSETS);
+    ((struct section_offsets *) 
+     alloca (SIZEOF_N_SECTION_OFFSETS (objfile->num_sections)));
 
   {
     int i;
@@ -1085,18 +1182,18 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
 	{
 	  struct block *b;
 	  struct symbol *sym;
-	  int j;
+	  struct dict_iterator iter;
 
 	  b = BLOCKVECTOR_BLOCK (bv, i);
 	  BLOCK_START (b) += ANOFFSET (delta, s->block_line_section);
 	  BLOCK_END (b) += ANOFFSET (delta, s->block_line_section);
 
-	  ALL_BLOCK_SYMBOLS (b, j, sym)
+	  ALL_BLOCK_SYMBOLS (b, iter, sym)
 	    {
 	      fixup_symbol_section (sym, objfile);
 
 	      /* The RS6000 code from which this was taken skipped
-	         any symbols in STRUCT_NAMESPACE or UNDEF_NAMESPACE.
+	         any symbols in STRUCT_DOMAIN or UNDEF_DOMAIN.
 	         But I'm leaving out that test, on the theory that
 	         they can't possibly pass the tests below.  */
 	      if ((SYMBOL_CLASS (sym) == LOC_LABEL
@@ -1111,8 +1208,8 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
 	      /* Relocate Extra Function Info for ecoff.  */
 
 	      else if (SYMBOL_CLASS (sym) == LOC_CONST
-		       && SYMBOL_NAMESPACE (sym) == LABEL_NAMESPACE
-		       && strcmp (SYMBOL_NAME (sym), MIPS_EFI_SYMBOL_NAME) == 0)
+		       && SYMBOL_DOMAIN (sym) == LABEL_DOMAIN
+		       && strcmp (DEPRECATED_SYMBOL_NAME (sym), MIPS_EFI_SYMBOL_NAME) == 0)
 		ecoff_relocate_efi (sym, ANOFFSET (delta,
 						   s->block_line_section));
 #endif
@@ -1207,10 +1304,10 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
       objfile->ei.entry_func_highpc += ANOFFSET (delta, SECT_OFF_TEXT (objfile));
     }
 
-  if (objfile->ei.entry_file_lowpc != INVALID_ENTRY_LOWPC)
+  if (objfile->ei.deprecated_entry_file_lowpc != INVALID_ENTRY_LOWPC)
     {
-      objfile->ei.entry_file_lowpc += ANOFFSET (delta, SECT_OFF_TEXT (objfile));
-      objfile->ei.entry_file_highpc += ANOFFSET (delta, SECT_OFF_TEXT (objfile));
+      objfile->ei.deprecated_entry_file_lowpc += ANOFFSET (delta, SECT_OFF_TEXT (objfile));
+      objfile->ei.deprecated_entry_file_highpc += ANOFFSET (delta, SECT_OFF_TEXT (objfile));
     }
 
   if (objfile->ei.main_func_lowpc != INVALID_ENTRY_LOWPC)
@@ -1297,7 +1394,7 @@ have_minimal_symbols (void)
 
   ALL_OBJFILES (ofp)
   {
-    if (ofp->msymbols != NULL)
+    if (ofp->minimal_symbol_count > 0)
       {
 	return 1;
       }
@@ -1469,14 +1566,14 @@ map_to_file (int fd)
 #endif /* defined(USE_MMALLOC) && defined(HAVE_MMAP) */
 #endif /* FSF_OBJFILES */
 
-/* Returns a section whose range includes PC and SECTION, 
-   or NULL if none found.  Note the distinction between the return type, 
-   struct obj_section (which is defined in gdb), and the input type
-   struct sec (which is a bfd-defined data type).  The obj_section
-   contains a pointer to the bfd struct sec section.  */
+/* Returns a section whose range includes PC and SECTION, or NULL if
+   none found.  Note the distinction between the return type, struct
+   obj_section (which is defined in gdb), and the input type "struct
+   bfd_section" (which is a bfd-defined data type).  The obj_section
+   contains a pointer to the "struct bfd_section".  */
 
 struct obj_section *
-find_pc_sect_section (CORE_ADDR pc, struct sec *section)
+find_pc_sect_section (CORE_ADDR pc, struct bfd_section *section)
 {
   struct obj_section *s;
   struct objfile *objfile;
@@ -1517,7 +1614,7 @@ in_plt_section (CORE_ADDR pc, char *name)
 
   retval = (s != NULL
 	    && s->the_bfd_section->name != NULL
-	    && STREQ (s->the_bfd_section->name, ".plt"));
+	    && strcmp (s->the_bfd_section->name, ".plt") == 0);
   return (retval);
 }
 
@@ -1527,13 +1624,13 @@ in_plt_section (CORE_ADDR pc, char *name)
 int
 is_in_import_list (char *name, struct objfile *objfile)
 {
-  register int i;
+  int i;
 
   if (!objfile || !name || !*name)
     return 0;
 
   for (i = 0; i < objfile->import_list_size; i++)
-    if (objfile->import_list[i] && STREQ (name, objfile->import_list[i]))
+    if (objfile->import_list[i] && DEPRECATED_STREQ (name, objfile->import_list[i]))
       return 1;
   return 0;
 }
@@ -1554,7 +1651,7 @@ struct objfile_list *objfile_list;
 /* Set the flag to tell ALL_OBJFILES whether to restrict the search or
    not.  Returns the old flag value.  */
 
-int 
+int
 objfile_restrict_search (int on)
 {
   int old = restrict_search;
@@ -1636,52 +1733,51 @@ make_cleanup_restrict_to_objfile (struct objfile *objfile)
   return make_cleanup (do_cleanup_restrict_to_objfile, (void *) data);
 }
 
-/* Check whether the OBJFILE matches NAME.  We want to match either the
-   full name, or the base name.  We also want to handle the case where
-   OBJFILE comes from a cached symfile.  In that case, the OBJFILE name
-   will be the cached symfile name, but the real shlib name will be in
-   the OBFD for the OBJFILE.  So in the case of a cached symfile
-   we match against the bfd name instead.  */
+/* Check whether the OBJFILE matches NAME.  The matches are
+   either full match, or basename match, or full match up to
+   the trailing .sym on the objfile name.  */
 
 #define CACHED_SYM_SUFFIX ".syms"
 int
 objfile_matches_name (struct objfile *objfile, char *name)
 {
   const char *filename;
-  int len; 
+  int len, has_suffix = 0;
   static int suffixlen = strlen (CACHED_SYM_SUFFIX);
-  const char *real_name;
 
   if (objfile->name == NULL)
     return 0;
 
-  /* See if this is a cached symfile, in which case we use the bfd name
-     if it exists.  */
-  len = strlen (objfile->name);
-  if (len > suffixlen 
-      && strcmp (objfile->name + len - suffixlen, CACHED_SYM_SUFFIX) == 0
-      && objfile->obfd != NULL && objfile->obfd->filename != NULL)
-    {
-      real_name = objfile->obfd->filename;
-    }
-  else
-    real_name = objfile->name;
-
-  if (strcmp (real_name, name) == 0)
+  if (strcmp (objfile->name, name) == 0)
     return 1;
 
-  filename = lbasename (real_name);
+  len = strlen (objfile->name);
+  if (len > suffixlen
+      && strcmp (objfile->name + len - suffixlen, CACHED_SYM_SUFFIX) == 0)
+    {
+      has_suffix = 1;
+      if (strncmp (objfile->name, name, len - suffixlen) == 0)
+        return 1;
+    }
+
+  filename = lbasename (objfile->name);
   if (filename == NULL)
     return 0;
 
   if (strcmp (filename, name) == 0)
     return 1;
-  
+  if (has_suffix)
+    {
+      len = strlen (filename);
+      if (len > suffixlen && strncmp (filename, name, len - suffixlen) == 0)
+        return 1;
+    }
+
   return 0;
 }
 
 /* Restricts the objfile search to the REQUESTED_SHILB.  Returns
-   a cleanup for the restriction, or NULL if no such shlib is
+   a cleanup for the restriction, or -1 if no such shlib is
    found.  */
 
 struct cleanup *
@@ -1692,25 +1788,25 @@ make_cleanup_restrict_to_shlib (char *requested_shlib)
 
   if (requested_shlib == NULL)
     return NULL;
-  
+
   /* Find the requested_objfile, if it doesn't exist, then throw an error.  Look
      for an exact match on the name, and if that doesn't work, look for a match
      on the filename, in case the user just gave us the library name.  */
   ALL_OBJFILES (tmp_obj)
-  {
-    if (objfile_matches_name (tmp_obj, requested_shlib))
-      {
-	requested_objfile = tmp_obj;
-	break;
-      }
-  }
+    {
+      if (objfile_matches_name (tmp_obj, requested_shlib))
+	{
+	  requested_objfile = tmp_obj;
+	  break;
+	}
+    }
 
   if (requested_objfile == NULL)
     return (void *) -1;
   else
     return make_cleanup_restrict_to_objfile (requested_objfile);
-
 }
+
 
 /* Get the first objfile.  If the restrict_search flag is set,
    this returns the first objfile in the restricted list, otherwise
@@ -1764,7 +1860,8 @@ objfile_get_next (struct objfile *in_objfile)
    generally useful diagnostic to make sure future merges don't hose
    Fix and Continue, so I'm leaving them in.  */
 
-static void sanity_check_symtab_obsoleted_flag (struct symtab *s)
+static void 
+sanity_check_symtab_obsoleted_flag (struct symtab *s)
 {
   if (s != NULL && 
       SYMTAB_OBSOLETED (s) != 51 &&
@@ -1775,7 +1872,11 @@ static void sanity_check_symtab_obsoleted_flag (struct symtab *s)
       const char *objfile_name = "(not found)";
       const char *symtab_name = "(null)";
 
-      ALL_SYMTABS (objfile, symtab)
+      /* Use _INCL_OBSOLETED variant as a tricky/secret way of telling
+	symtab_get_first(), symtab_get_next() that this sanity_check
+        function should not be called (which would cause an inf. loop).  */
+
+      ALL_SYMTABS_INCL_OBSOLETED (objfile, symtab)
         if (symtab == s)
           {
             objfile_name = objfile->name;
@@ -1802,7 +1903,11 @@ static void sanity_check_psymtab_obsoleted_flag (struct partial_symtab *ps)
       const char *objfile_name = "(not found)";
       const char *psymtab_name = "(null)";
 
-      ALL_PSYMTABS (objfile, psymtab)
+      /* Use _INCL_OBSOLETED variant as a tricky/secret way of telling
+	psymtab_get_first(), psymtab_get_next() that this sanity_check
+        function should not be called (which would cause an inf. loop).  */
+
+      ALL_PSYMTABS_INCL_OBSOLETED (objfile, psymtab)
         if (psymtab == ps)
           {
             objfile_name = objfile->name;
@@ -1821,22 +1926,44 @@ static void sanity_check_psymtab_obsoleted_flag (struct partial_symtab *ps)
 /* Return the first objfile that isn't marked as 'obsolete' (i.e. has been
    replaced by a newer version in a fix-and-continue operation.  */
 
+/* APPLE LOCAL: The SKIP_OBSOLETE flag is used to skip over obsoleted
+   symtabs.  When we're doing that -- skipping over obsoleted symtabs --
+   we also perform the sanity_check_symtab_obsoleted_flag ().  
+
+   We DON'T run the sanity check tests when SKIP_OBSOLETED is 0
+   because sanity_check_symtab_obsoleted_flag () can potentially
+   recurse into this function so it sets SKIP_OBSOLETED to 0 to
+   avoid that.  (other parts of the code set SKIP_OBSOLETED to 0
+   just to indicate that they don't want to skip obsoleted symtabs. */
+
 struct symtab *
 symtab_get_first (struct objfile *objfile, int skip_obsolete)
 {
   struct symtab *s;
 
   s = objfile->symtabs;
-  sanity_check_symtab_obsoleted_flag (s);
+  if (skip_obsolete)
+    sanity_check_symtab_obsoleted_flag (s);
 
   while (s != NULL && skip_obsolete && SYMTAB_OBSOLETED (s) == 51)
     {
       s = s->next;
-      sanity_check_symtab_obsoleted_flag (s);
+      if (skip_obsolete)
+        sanity_check_symtab_obsoleted_flag (s);
     }
 
   return (s);
 }
+
+/* APPLE LOCAL: The SKIP_OBSOLETE flag is used to skip over obsoleted
+   symtabs.  When we're doing that -- skipping over obsoleted symtabs --
+   we also perform the sanity_check_symtab_obsoleted_flag ().  
+
+   We DON'T run the sanity check tests when SKIP_OBSOLETED is 0
+   because sanity_check_symtab_obsoleted_flag () can potentially
+   recurse into this function so it sets SKIP_OBSOLETED to 0 to
+   avoid that.  (other parts of the code set SKIP_OBSOLETED to 0
+   just to indicate that they don't want to skip obsoleted symtabs. */
 
 struct symtab *
 symtab_get_next (struct symtab *s, int skip_obsolete)
@@ -1845,16 +1972,28 @@ symtab_get_next (struct symtab *s, int skip_obsolete)
     return NULL;
 
   s = s->next;
-  sanity_check_symtab_obsoleted_flag (s);
+  if (skip_obsolete)
+    sanity_check_symtab_obsoleted_flag (s);
 
   while (s != NULL && skip_obsolete && SYMTAB_OBSOLETED (s) == 51)
     {
       s = s->next;
-      sanity_check_symtab_obsoleted_flag (s);
+      if (skip_obsolete)
+        sanity_check_symtab_obsoleted_flag (s);
     }
 
   return s;
 }
+
+/* APPLE LOCAL: The SKIP_OBSOLETE flag is used to skip over obsoleted
+   psymtabs.  When we're doing that -- skipping over obsoleted psymtabs --
+   we also perform the sanity_check_psymtab_obsoleted_flag ().  
+
+   We DON'T run the sanity check tests when SKIP_OBSOLETED is 0
+   because sanity_check_psymtab_obsoleted_flag () can potentially
+   recurse into this function so it sets SKIP_OBSOLETED to 0 to
+   avoid that.  (other parts of the code set SKIP_OBSOLETED to 0
+   just to indicate that they don't want to skip obsoleted psymtabs. */
 
 struct partial_symtab *
 psymtab_get_first (struct objfile *objfile, int skip_obsolete)
@@ -1862,15 +2001,27 @@ psymtab_get_first (struct objfile *objfile, int skip_obsolete)
   struct partial_symtab *ps;
 
   ps = objfile->psymtabs;
-  sanity_check_psymtab_obsoleted_flag (ps);
+  if (skip_obsolete)
+    sanity_check_psymtab_obsoleted_flag (ps);
   while (ps != NULL && skip_obsolete && PSYMTAB_OBSOLETED (ps) == 51)
     {
-      sanity_check_psymtab_obsoleted_flag (ps);
+      if (skip_obsolete)
+        sanity_check_psymtab_obsoleted_flag (ps);
       ps = ps->next;
     }
 
   return (ps);
 }
+
+/* APPLE LOCAL: The SKIP_OBSOLETE flag is used to skip over obsoleted
+   psymtabs.  When we're doing that -- skipping over obsoleted psymtabs --
+   we also perform the sanity_check_psymtab_obsoleted_flag ().  
+
+   We DON'T run the sanity check tests when SKIP_OBSOLETED is 0
+   because sanity_check_psymtab_obsoleted_flag () can potentially
+   recurse into this function so it sets SKIP_OBSOLETED to 0 to
+   avoid that.  (other parts of the code set SKIP_OBSOLETED to 0
+   just to indicate that they don't want to skip obsoleted psymtabs. */
 
 struct partial_symtab *
 psymtab_get_next (struct partial_symtab *ps, int skip_obsolete)
@@ -1879,17 +2030,100 @@ psymtab_get_next (struct partial_symtab *ps, int skip_obsolete)
     return NULL;
 
   ps = ps->next;
-  sanity_check_psymtab_obsoleted_flag (ps);
+  if (skip_obsolete)
+    sanity_check_psymtab_obsoleted_flag (ps);
 
   while (ps != NULL && skip_obsolete && PSYMTAB_OBSOLETED (ps) == 51)
     {
       ps = ps->next;
-      sanity_check_psymtab_obsoleted_flag (ps);
+      if (skip_obsolete)
+        sanity_check_psymtab_obsoleted_flag (ps);
     }
 
   return ps;
 }
 /* APPLE LOCAL end fix-and-continue */
+
+
+
+/* Keep a registry of per-objfile data-pointers required by other GDB
+   modules.  */
+
+struct objfile_data
+{
+  unsigned index;
+};
+
+struct objfile_data_registration
+{
+  struct objfile_data *data;
+  struct objfile_data_registration *next;
+};
+  
+struct objfile_data_registry
+{
+  struct objfile_data_registration *registrations;
+  unsigned num_registrations;
+};
+
+static struct objfile_data_registry objfile_data_registry = { NULL, 0 };
+
+const struct objfile_data *
+register_objfile_data (void)
+{
+  struct objfile_data_registration **curr;
+
+  /* Append new registration.  */
+  for (curr = &objfile_data_registry.registrations;
+       *curr != NULL; curr = &(*curr)->next);
+
+  *curr = XMALLOC (struct objfile_data_registration);
+  (*curr)->next = NULL;
+  (*curr)->data = XMALLOC (struct objfile_data);
+  (*curr)->data->index = objfile_data_registry.num_registrations++;
+
+  return (*curr)->data;
+}
+
+/* APPLE LOCAL - make non-static, for now we need it in cached-symfile.c.  */
+
+void
+objfile_alloc_data (struct objfile *objfile)
+{
+  gdb_assert (objfile->data == NULL);
+  objfile->num_data = objfile_data_registry.num_registrations;
+  objfile->data = XCALLOC (objfile->num_data, void *);
+}
+
+static void
+objfile_free_data (struct objfile *objfile)
+{
+  gdb_assert (objfile->data != NULL);
+  xfree (objfile->data);
+  objfile->data = NULL;
+}
+
+void
+clear_objfile_data (struct objfile *objfile)
+{
+  gdb_assert (objfile->data != NULL);
+  memset (objfile->data, 0, objfile->num_data * sizeof (void *));
+}
+
+void
+set_objfile_data (struct objfile *objfile, const struct objfile_data *data,
+		  void *value)
+{
+  gdb_assert (data->index < objfile->num_data);
+  objfile->data[data->index] = value;
+}
+
+void *
+objfile_data (struct objfile *objfile, const struct objfile_data *data)
+{
+  gdb_assert (data->index < objfile->num_data);
+  return objfile->data[data->index];
+}
 
 void
 _initialize_objfiles (void)

@@ -1,43 +1,299 @@
-2004-07-15  Klee Dienes  <kdienes@apple.com>
+2004-06-16  Klee Dienes  <kdienes@apple.com>
 
-	* macosx-nat-dyld-info.c (dyld_print_entry_info): Always output
-	the name (as defined by objfile->name) as "path".  Emit the
-	descriptive text (which used to be in "path") as "description".
-	See Radar #3727326.
+	* ppc-macosx-tdep.c (ppc_macosx_init_abi_64): Use the correct
+	bit-sizes for 64-bit types.
 
-2004-07-06  Jason Molenda  (jmolenda@apple.com)
+2004-06-16  Klee Dienes  <kdienes@apple.com>
 
-	* kdp-transactions.c (kdp_transaction): Fix typeo in error message.
+	* macosx-nat-mutils.c: Define MACH64 for 10.4 and above.  Use that
+	to control inclusion of mach_vm.h, and define the new
+	types/sizes/functions to use the 32-bit ones on 10.3 and below.
+	(mach_xfer_memory_remainder): Convert to the 64-bit API.
+	(mach_xfer_memory_block): Convert to the 64-bit API.
+	(mach_xfer_memory):  Convert to the 64-bit API.
 
-2004-06-17  Jim Ingham   <jingham@apple.com>
+2004-06-12  Jim Ingham (jingham@apple.com)
 
-	* macosx-tdep.c (macosx_symbol_type): Check for section number
-	less than 1: the CodeWarrior linker produces symbols that have
-	type N_SECT, but whose n_sect is 0.
+	* ppc-macosx.tdep.c (ppc_frame_this_id): If we're getting the ID
+	of a frame that's invalid -- i.e. we've gone off the end of the
+	stack -- return a null_id so we'll stop backtracing.
+
+2004-06-04  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-frameinfo.c (ppc_frame_function_properties): When looking
+	at a PC where we can't determine the function boundaries, and the PC
+	is not mod 4, set the default props so that backtracing will continue
+	past this frame.
+
+2005-05-27  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c (ppc_frame_saved_regs): Register saves
+	are based on an offset from the previous $sp.  Don't forget to set
+	the saved regs as valid, so they don't get computed over and over
+	again.
+
+	* ppc-macosx-frameinfo.h (struct ppc_frame_cache): Store both the
+	base and the stack value.
+
+	* ppc-macosx-tdep.c (ppc_alloc_frame_cache): Initialize stack,
+	frame, pc to -1, so they can be lazily evaluated.
+	(ppc_frame_cache): Don't need anything fancy here, just set the
+	base to be the unwound $fp, and stack to be the unwound $sp.
+	(ppc_find_frame_pc): Rename to ppc_frame_find_prev_pc, so it's
+	clear that we are unwinding.
+	(ppc_find_frame_sp): Rename to ppc_frame_find_prev_sp, so it's
+	clear that we are unwinding.  Remove check for SIGTRAMP_FRAME, as
+	well as all the get_frame_base (prev_frame) gunk ... this is now
+	just a simple "fetch *$sp, unless the function is frameless."
+	(ppc_find_frame_fp): Rename to ppc_frame_find_prev_fp, so it's
+	clear that we are unwinding.  Enable alloca-detection.
+	(ppc_frame_base_address): Cache and return the previos $fp.
+	(ppc_frame_this_id): Rename cache->base to cache->stack.
+	(ppc_gdbarch_init): Register ppc_print_extra_frame_info.
+
+	* ppc-macosx-tdep.h (ppc_frame_find_fp): Rename to ppc_frame_find_prev_fp.
+	(ppc_frame_find_sp): Rename to ppc_frame_find_prev_sp.
+	(ppc_frame_find_pc): Rename to ppc_frame_find_prev_pc.
 	
-2004-05-11  Jim Ingham   <jingham@apple.com>
+2005-05-26  Jim Ingham  <jingham@apple.com>
 
-	* ppc-macosx-tdep.c (ppc_frame_chain): Only trust the sp_setup_pc
-	value if it is NOT zero, zero means we didn't find the setup, but
-	that gets too many false positives, particularly in optimized code.
-	(ppc_throw_catch_find_typeinfo): Initialize typeinfo_sym to NULL, since
-	we could fail safe_read_memory_unsigned_integer, and then we would still
-	try to access the symbol.
+	* ppc-macosx-tdep.c (ppc_fetch_pointer_argument): New function.
+	(ppc_gdbarch_init): Use this rather than 
+	rs6000_fetch_pointer_argument which gets the bare value of the
+	register, which is wrong...
 	
-2004-04-13  Jim Ingham   <jingham@apple.com>
+2005-05-20  Jim Ingham  <jingham@apple.com>
 
-	* remote-kdp.c (kdp_fetch_registers_i386): Comment out fetching
-	the floating point registers for now, as the kdp side is broken.
+	* machoread.c (macho_symfile_read): Be sure to init symtabs then
+	reset mainline so the stabs & dwarf2 symtab readers don't stomp
+	on each other.
 	
-2004-03-04  Jim Ingham   <jingham@apple.com>
+2004-05-18  Stan Shebs  (shebs@apple.com)
 
-	* ppc-macosx-framinfo.h: Add sp_setup_pc to frame properties.
-	* ppc-macosx-frameinfo.c (ppc_clear_function_properties): zero
-	sp_setup_pc.
-	(ppc_parse_instructions): Set it when we see the stack pointer
-	stored away.
-	* ppc-macosx-tdep.c (ppc_frame_chain): If we are in the 0th frame
-	and we haven't stored away the sp yet, read it out of r1.
+	* machoread.c (macho_symfile_read): Jump to dwarf2 reading if we
+        see some dwarf2 info.
+
+2004-05-17  Jason Molenda  (jmolenda@apple.com)
+ 
+	* i386-macosx-nat-exec.c (i386_sse_regnum_p, i386_mxcsr_regnum_p):
+	Copied from ../i386-tdep.c.
+	(fetch_inferior_registers): IS_SSE_REGNUM() macro no longer exists;
+	use the above two functions.
+
+	* i386-macosx-tdep.c (i386_macosx_fetch_fp_registers): Comment out
+	body of function to get it compiling.
+	(i386_macosx_sigcontext_addr): Don't reference struct frame_info
+	member directly; use accessor function.
+
+2004-05-17  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c: Include "regcache.h".
+
+	* ppc-macosx-tdep.c (ppc_frame_cache): Use SP_REGNUM, not
+	ppc_frame_find_fp (revert change from 5-16, temporarily).
+	(ppc_frame_find_fp): Always return $sp (revert change from 5-16,
+	temporarily).
+
+2004-05-16  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_offset_string): Operate on
+	CORE_ADDR, not unsigned long (offsets are still relative to a
+	32-bit address space).
+	* macosx-nat-dyld-info.h (dyld_offset_string): Operate on a
+	CORE_ADDR, not unsigned long.
+	
+2004-05-16  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c (ppc_frame_saved_regs): Call
+	ppc_frame_find_fp for the frame pointer; use for register offsets.
+	* ppc-macosx-tdep.c (ppc_frame_cache): Use ppc_frame_find_fp to
+	find the frame pointer; use for the "base" field of the frame ID.
+	(ppc_frame_find_fp): New function.
+	* ppc-macosx-tdep.c (ppc_frame_find_fp): Add prototype.	
+	
+2004-05-15  Jim Ingham   <jingham@apple.com>
+
+	* remote-kdp.c (kdp_fetch_registers_i386): #if 0 fetching the
+	i386 FP registers from the remote side.  The kernel doesn't
+	provide them anyway.
+	
+2004-05-14  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-tdep.c: Update comments to reflect new sigtramp
+	layout.
+	(ppc_print_extra_frame_info): Update to new frame-parsing code.
+	(ppc_frame_find_sp): Don't bother reading *$sp if the frame is
+	frameless.  Don't bother checking for DUMMY_FRAME; this function
+	shouldn't be called at all in that case.
+	(ppc_frameless_function_invocation): Remove.
+	(ppc_sigtramp_frame_cache): New function.
+	(ppc_sigtramp_frame_id): New function.
+	(ppc_sigtramp_fame_prev_register): New function.
+	(ppc_sigtramp_frame_unwind): New function.
+	(ppc_sigtramp_frame_sniffer): New function.
+	(ppc_gdbarch_init): Add ppc_sigtramp_frame_sniffer.
+	(ppc_macosx_init_abi_64): Set the word-size to 8.
+	* ppc-macosx-tdep.h (ppc_print_extra_frame_info): Update to new signature.
+
+2004-05-13  Jason Molenda  (jmolenda@apple.com)
+
+	* cached-symfiles.c (cached_symfile_version): Bump version
+	# so we don't accidentally try to read cached symfiles from
+	older gdb's.
+
+2004-05-13  Jim Ingham  <jingham@apple.com>
+
+	* machoread.c (macho_read_indirect_symbols): Give the dyld_stub
+	symbols the correct bfd section.
+	
+2004-05-12  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_gdbarch_init): Properly set PS_REGNUM.
+
+2004-05-10  Jim Ingham  <jingham@apple.com>
+
+	* machoread.c (macho_symfile_read): Pass in the textcoal_nt 
+	name.
+	
+2004-05-06  Klee Dienes <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c (ppc_parse_instructions): Rename
+	LR_REGNUM to PPC_MACOSX_LR_REGNUM.
+
+2004-05-06  Klee Dienes <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c: Add include for ppc-macosx-regnums.h.
+	Prefix macros from ppc-macosx-regnums.h with PPC_MACOSX_.
+	(extract_ds): New function; extracts ds
+	field of a 64-bit memory operation.
+	(GET_SRC_REG): Make inline.
+	(ppc_parse_instructions): Add recognizer for 'stdu'.
+
+	* ppc-macosx-frameinfo.h: Remove include for ppc-macosx-regs.h.
+	Change saved_regs to be dynamically allocated (so it no longer
+	depends on ppc-macosx-regnums.h).
+
+	* ppc-macosx-nat-exec.c: Add include for ppc-macosx-regnums.h.
+	Prefix macros from ppc-macosx-regnums.h with PPC_MACOSX_.
+
+	* ppc-macosx-regs.c: Add include for ppc-macosx-regnums.h.
+	Prefix macros from ppc-macosx-regnums.h with PPC_MACOSX_.
+
+	* ppc-macosx-regs.h: Move register constants to ppc-macosx-regnums.h.
+
+	* ppc-macosx-tdep.c: Add include for ppc-macosx-regnums.h.  Prefix
+	macros from ppc-macosx-regnums.h with PPC_MACOSX_.
+	(ppc_alloc_frame_cache): Allocate saved registers dynamically
+	using NUM_REGS.
+	(ppc_extract_struct_value_address): Remove.
+	(ppc_extract_return_value): Remove.
+	(ppc_store_struct_return): Remove.
+	(ppc_store_return_value): Remove.
+	(ppc_push_return_address): Remove.
+	(ppc_register_convertible): Remove.
+	(ppc_register_convert_to_virtual): Remove.
+	(ppc_register_convert_to_raw): Remove.
+	(ppc_breakpoint_from_pc): Move breakpoint constants from global
+	#defines into static local variables.
+	(ppc_gdbarch_init): Set tdep->ppc_gp0_regnum.
+	(ppc_gdbarch_init): Remove many deprecated functions.
+	(ppc_macosx_init_abi_64): Set push_dummy_call and return_value.
+
+	* remote-kdp.c: Add include for ppc-macosx-regnums.h.
+	Prefix macros from ppc-macosx-regnums.h with PPC_MACOSX_.
+	
+2004-05-05  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-inferior-util.c: Text rearranging; make function
+	names start on a newline for grep goodness.
+
+2004-04-28  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-tdep.c (ppc_gdbarch_init): Initialize
+	gdbarch_fetch_pointer_argument.
+
+2004-04-26  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-frameinfo.c (ppc_parse_instructions): Recognize
+	a fix-and-continue-stomped-on prologue, assume the function was
+	not frameless to allow backtrace to continue up the stack.
+
+2004-04-22  Jim Ingham <jingham@apple.com>
+
+	* macosx/macosx-nat-inferior.c: Changed the macosx C++ exception
+	catching back to use the gnu_v3 mechanism.
+	
+2004-04-21  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-metrowerks.c (metrowerks_address_to_name_command): Change
+	shared library finding mechanism, avoid FindContainingBFD() which
+	would need rewriting to work.  Drop annotations.
+	(FindContainingBFD): Removed.
+
+2004-04-17  Klee Dienes  <kdienes@apple.com>
+
+	* cached-symfile.c (create_objfile): Remove Jim's note to me (he
+	was right).
+
+	* ppc-macosx-frameinfo.c (ppc_frame_saved_regs): Don't bother with
+	SP/PC; these are special cased in the unwind code.  Clear up some
+	this_frame/next_frame confusion.
+	(ppc_frame_initial_stack_address): Remove.
+	(ppc_frame_cache_properties): Remove special-casing for dummy
+	frames.  Add dummy-frame check for the "am I a leaf" section.
+	Clear up this_frame/next_frame confusion.  Return more reasonable
+	results when unable to determine the function boundaries.
+	(ppc_frame_function-boundaries): Remove special-casing for dummy
+	frames.
+
+	* ppc-macosx-tdep.c (ppc_unwind_dummy_id): Extend to be
+	64-bit-happy.
+	(ppc_frame_find_pc): Ditto.
+	(ppc_frame_find_sp): Ditto.
+	(ppc_frame_chain_valid): Remove.
+	(ppc_is_dummy_frame): Remove.
+	(ppc_unwind_pc): Extend to be 64-bit-happy.
+	(ppc_frame_this_id): Return a NULL frame if $sp is 0.
+	(ppc_gdbarch_init): No longer default to Darwin; trust the
+	sniffer.
+	(ppc_macosx_init_abi): Set addr_bit, not deprecated_register_size.
+	(ppc_macosx_init_abi_64): Set addr_bit, not
+	deprecated_register_size.
+	(ppc_mach_o_osabi_sniffer): Select DARWIN64 if the binary has a
+	64-bit entry, otherwise select DARWIN.
+	
+2004-04-12  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-tdep.c (ppc_macosx_skip_trampoline_code): Re-enable
+	F&C trampoline spotting code.
+
+2004-04-09  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-frameinfo.h: Depends on ppc-macosx-regs.h.
+
+2004-04-09  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c: Backtrace-parsing fixes.
+	* ppc-macosx-frameinfo.h: Backtrace-parsing fixes.
+	* ppc-macosx-tdep.c: Backtrace-parsing fixes.
+	* ppc-macosx-tdep.h: Backtrace-parsing fixes.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-tdep.c: Set gdbarch_deprecated_store_return_value.
+
+2004-03-25  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-tdep.c: Set gdbarch_deprecated_extract_return_value.
+
+2004-03-01  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-macosx-frameinfo.c: Convert to new stack-parsing interfaces.
+	* ppc-macosx-frameinfo.h: Convert to new stack-parsing interfaces.
+	* ppc-macosx-frameops.c: Convert to new stack-parsing interfaces.
+	* ppc-macosx-frameops.h: Convert to new stack-parsing interfaces.
+	* ppc-macosx-tdep.c: Convert to new stack-parsing interfaces.
+	* ppc-macosx-tdep.h: Convert to new stack-parsing interfaces.
 	
 2004-02-03  Jim Ingham   <jingham@apple.com>
 
@@ -49,7 +305,7 @@
 	* macosx-nat-dyld.c (map_shlib_numbers): Don't call freeargv
 	explicitly, the memory is managed by make_cleanup_freeargv ().
 
-2003-11-14  Klee Dienes  <kdienes@apple.com>
+2003-11-14  Klee Dienes  <kdienes@platinum.local>
 
 	* macosx-nat-dyld-process.c (dyld_shlibs_updated): Call
 	update_current_target to propagate the section tables up from the
@@ -70,11 +326,11 @@
 	name of the objfile containing that addr.
 	(_initialize_macosx_nat_dyld): Update for new usage.
 
-2003-11-05  Klee Dienes  <kdienes@apple.com>
+2003-11-05  Klee Dienes  <kdienes@platinum.local>
 
 	* macosx-nat-dyld-process.c: Properly define MAPPED_SYMFILES.
 
-2003-10-31  Klee Dienes  <kdienes@apple.com>
+2003-10-31  Klee Dienes  <kdienes@platinum.local>
 
 	* macosx-nat-dyld-process.c: Fix the string-comparison algorithm.
 

@@ -1,57 +1,112 @@
-2004-07-15  Jason Molenda  (jmolenda@apple.com)
+2004-06-14  Jason Molenda  (jmolenda@apple.com)
 
-        * mi-main.c (mi_cmd_thread_set_pc): Split apart filename and line
-        number manually instead of using decode_line_1.  Add appropriate
-        error checking to catch bad filenames/line #'s.  
+        * mi-main.c (mi_cmd_thread_set_pc): Restore call to
+        update_picbase_register().
 
 2004-05-27  Jim Ingham  <jingham@apple.com>
 
-      * mi-cmd-stack.c (mi_cmd_file_list_statics): Not being able to
-      find a symtab for the CURRENT_FRAME_COOKIE, or for a "" filename
-      should just return an empty list, not an error.
-
+	* mi-cmd-stack.c (mi_cmd_file_list_statics): Not being able to
+	find a symtab for the CURRENT_FRAME_COOKIE, or for a "" filename
+	should just return an empty list, not an error.
+	
 2004-05-25  Jim Ingham  <jingham@apple.com>
 
-	* mi-cmd-break.c (mi_cmd_break_catch): Return from unsetting
-	the catchpoints rather than continuing on to set new ones (doh!)
-	
+        * mi-cmd-break.c (mi_cmd_break_catch): Return from unsetting
+        the catchpoints rather than continuing on to set new ones (doh!)
+
 2004-05-18  Jim Ingham  <jingham@apple.com>
 
-	* mi-cmd-stack.c (mi_cmd_file_list_statics): Added the
-	"*CURRENT FRAME*" cookie.
-	
-2004-05-07  Jason Molenda  (jmolenda@apple.com)
+        * mi-cmd-stack.c (mi_cmd_file_list_statics): Added the
+        "*CURRENT FRAME*" cookie.
 
-	* gdbmi.texinfo: Quote curly braces in examples properly.
+2004-05-17  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmd-stack.c (mi_cmd_stack_list_frames_lite): Don't try to use
+	struct frame_info's members directly; use accessor function.
+
+2004-05-15  Jim Ingham  <jingham@apple.com>
+
+        * gdbmi.texinfo: Document new -file-list-statics and -file-list-globals
+        commands.
+        * mi-cmd-stack.c (mi_cmd_file_list_statics): New function.
+        * (print_globals_for_symtab): New function.
+        * (mi_cmd_file_list_globals): New function.
+        * (print_syms_for_block): Handle static block as well.
+        * (mi_decode_print_values): New function.
+        * (list_args_or_locals, print_syms_for_block): Combine the function
+        of values and create_varobj, and use enum print_frame.
+        * (mi_cmd_stack_list_locals): Use mi_decode_print_values instead
+        of decoding by hand.
+        * (mi_cmd_stack_list_args): ditto.
+        * mi-cmds.h: Add the ftype's for the new commands.
+        * mi-cmds.c: And add them to the command array.
 
 2004-05-05  Jason Molenda  (jmolenda@apple.com)
 
-	* mi-cmds.c (mi_cmds): Route -exec-abort MI command to CLI's "kill".
+        * mi-cmds.c (mi_cmds): Route -exec-abort MI command to CLI's "kill".
 
-2004-05-03  Jim Ingham  <jingham@apple.com>
+2004-04-29  Jason Molenda  (jmolenda@apple.com)
 
-	* mi-cmd-stack.c (print_syms_for_block) Take & use the 
-	filter regexp.
-	(mi_cmd_file_list_statics): Add a fourth argument - 
-	a filter to apply to the symbols before printing.
-	(mi_cmd_file_list_globals): Ditto.
-	(print_globals_for_symtab): Pass the regexp filter through.
+	* mi-cmd-var.c (mi_cmd_var_list_children): Rework to integrate
+	our expected var-list-children command behavior with the new
+	FSF command behavior, where we have multiple potential ways to
+	express "show me the values of the child".
 
-2004-03-12  Jim Ingham  <jingham@apple.com>
+2004-04-28  Jason Molenda  (jmolenda@apple.com)
 
-	* gdbmi.texinfo: Document new -file-list-statics and -file-list-globals
-	commands.
-	* mi-cmd-stack.c (mi_cmd_file_list_statics): New function.
-	* (print_globals_for_symtab): New function.
-	* (mi_cmd_file_list_globals): New function.
-	* (print_syms_for_block): Handle static block as well.
-	* mi-cmds.h: Add the ftype's for the new commands.
-	* mi-cmds.c: And add them to the command array.
+	* mi-cmd-stack.c (mi_print_frame_info_lite): Each frame is a 
+	tuple, not a list.
+
+2004-04-28  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmds.c (mi_cmds): Re-add stack-list-frames-lite command.
+
+2004-04-15  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-break.c: Switch from a breakpoint_create event
+	to a breakpoint_resolve event.
+	
+2004-04-14  Jim Ingham <jingham@apple.com>
+	* mi-cmd-break.c (breakpoint_notify): This now gets the
+	parent pended breakpoint if there was one.  Print it...
+	* (mi_async_breakpoint_create_event): Report pending 
+	breakpoint resolution here.
+	* mi-interps.c: Add event hook.
+	
+2004-03-26  Jim Ingham (jingham@apple.com)
+
+	* mi-interp.c (mi_interpreter_resume): Set the 
+	frame_more_info_hook.
+	(mi_command_loop) ditto.
+	
+2004-03-17  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmds.c (mi_cmds): Correct gdb-unset so args are
+	expected & passed.
+
+2004-02-27  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-break.c (mi_cmd_break_commands): New function.
+        * (mi_read_next_line): New function.
+	* mi-cmds.c: mi_cmd_break_commands implements break-commands
+	* mi-cmds.h: declare ftype for mi_cmd_break_commands.
+	
+2004-02-09  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-break.c (mi_interp_create_breakpoint_hook): Don't
+	report internal breakpoints.
+	(mi_interp_modify_breakpoint_hook): ditto
+	(mi_interp_delete_breakpoint_hook): ditto
+	* mi-cmd-stack.c (mi_interp_frame_changed_hook): Don't
+	report frame resetting events.
+	* mi-interp.c (mi_cmd_interpreter_exec): Merge fallout -
+	remember to set mi_interp.
 	
 2004-02-03  Jim Ingham  <jingham@apple.com>
 
 	* mi-cmds.c: Add exec-safe-call.
 	* mi-main.c (mi_cmd_exec_safe_call): New function.
+	
 2003-10-30  Jim Ingham  <jingham@apple.com>
 
 	* mi-main.c (mi_insert_notify_hooks): Add the "stack_changed"

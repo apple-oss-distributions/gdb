@@ -27,12 +27,11 @@
 #include "breakpoint.h"
 #include "gdb_string.h"
 #include "mi-getopt.h"
+#include "mi-main.h"
 #include "gdb-events.h"
-#include "interpreter.h"
+#include "interps.h"
 #include "gdb.h"
-
-/* There really ought to be a global mi .h file for this stuff... */
-extern struct gdb_interpreter *mi_interp;
+#include "gdbcmd.h" /* For print_command_lines.  */
 
 enum
   {
@@ -42,7 +41,7 @@ enum
 /* Output a single breakpoint. */
 
 static void
-breakpoint_notify (int b)
+breakpoint_notify (int b, int pending_bp)
 {
   gdb_breakpoint_query (uiout, b);
 }
@@ -54,7 +53,6 @@ struct gdb_events breakpoint_hooks =
   breakpoint_notify,
   breakpoint_notify,
 };
-
 
 enum bp_type
   {
@@ -72,12 +70,12 @@ enum bp_type
    -break-insert -t -h <location> --> insert a temporary hw bp.
    -break-insert -f <location> --> insert a future breakpoint.  
    -break-insert -r <regexp> --> insert a bp at functions matching
-   <regexp>
-   
+   <regexp> 
+
    You can also specify the shared-library in which to set the breakpoint
    by passing the -s argument, as:
 
-   -break-insert -s <shlib> 
+   -break-insert -s <shlib>
 
    If this is a path, the full path must match, otherwise the base
    filename must match.  This can be given in combination with
@@ -147,9 +145,9 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
 	case THREAD_OPT:
 	  thread = atol (optarg);
 	  break;
-	case SHLIB_OPT:
-	  requested_shlib = optarg;
-	  break;
+        case SHLIB_OPT:
+          requested_shlib = optarg;
+          break;
 	}
     }
 
@@ -166,17 +164,20 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
     case REG_BP:
       rc = gdb_breakpoint (address, condition,
 			   0 /*hardwareflag */ , temp_p,
-			   0 /* futureflag */, thread, ignore_count, requested_shlib);
+			   0 /* futureflag */, thread, 
+			   ignore_count, requested_shlib);
       break;
     case HW_BP:
       rc = gdb_breakpoint (address, condition,
 			   1 /*hardwareflag */ , temp_p,
-			   0 /* futureflag */, thread, ignore_count, requested_shlib);
+			   0 /* futureflag */, thread, 
+			   ignore_count, requested_shlib);
       break;
     case FUT_BP:
       rc = gdb_breakpoint (address, condition,
 			   0, temp_p,
-			   1 /* futureflag */, thread, ignore_count, requested_shlib);
+			   1 /* futureflag */, thread, 
+			   ignore_count, requested_shlib);
       break;
 
 #if 0
@@ -271,6 +272,76 @@ mi_cmd_break_watch (char *command, char **argv, int argc)
   return MI_CMD_DONE;
 }
 
+char **mi_command_line_array;
+int mi_command_line_array_cnt;
+int mi_command_line_array_ptr;
+
+static char *
+mi_read_next_line ()
+{
+
+  if (mi_command_line_array_ptr == mi_command_line_array_cnt)
+    return NULL;
+  else
+    {
+      return mi_command_line_array[mi_command_line_array_ptr++];
+    }
+}
+
+enum mi_cmd_result
+mi_cmd_break_commands (char *command, char **argv, int argc)
+{
+  struct command_line *break_command;
+  char *endptr;
+  int bnum;
+  struct breakpoint *b;
+
+  if (argc < 1)
+    error ("%s: USAGE: %s <BKPT> [<COMMAND> [<COMMAND>...]]", command, command);
+
+  bnum = strtol (argv[0], &endptr, 0);
+  if (endptr == argv[0])
+    {
+      xasprintf (&mi_error_message,
+		 "%s: breakpoint number argument \"%s\" is not a number.",
+		 command, argv[0]);
+      return MI_CMD_ERROR;
+    }
+  else if (*endptr != '\0')
+    {
+      xasprintf (&mi_error_message,
+		 "%s: junk at the end of breakpoint number argument \"%s\".",
+		 command, argv[0]);
+      return MI_CMD_ERROR;
+    }
+
+  b = find_breakpoint (bnum);
+  if (b == NULL)
+    {
+      xasprintf (&mi_error_message,
+		 "%s: breakpoint %d not found.",
+		 command, bnum);
+      return MI_CMD_ERROR;
+    }
+
+  /* With no commands set, just print the current command set. */
+  if (argc == 1)
+    {
+      breakpoint_print_commands (uiout, b);
+      return MI_CMD_DONE;
+    }
+
+  mi_command_line_array = argv;
+  mi_command_line_array_ptr = 1;
+  mi_command_line_array_cnt = argc;
+
+  break_command = read_command_lines_1 (mi_read_next_line);
+  breakpoint_add_commands (b, break_command);
+
+  return MI_CMD_DONE;
+  
+}
+
 enum mi_cmd_result
 mi_cmd_break_catch (char *command, char **argv, int argc)
 {
@@ -312,38 +383,44 @@ mi_cmd_break_catch (char *command, char **argv, int argc)
       return MI_CMD_DONE;
 
   /* See if we can find a callback routine */
+  if (handle_gnu_v3_exceptions (ex_event))
+    {
+      gnu_v3_update_exception_catchpoints (ex_event, 0, NULL);
+      return MI_CMD_DONE;
+    }
 
-  ret_val = target_enable_exception_callback (ex_event, 1);
-
-  if (!ret_val)
+  if (target_enable_exception_callback (ex_event, 1))
     {
       error ("mi_cmd_break_catch: error getting callback routine.");
     }
-  else
-    {
-      /* We have callbacks from the runtime system for exceptions.
-         Now update the catchpoints.  This is the first time we are
-	 calling this, so we don't need to delete old catchpoints.  */
-
-      update_exception_catchpoints (ex_event, 0, NULL, 0, NULL);
-    }
   return MI_CMD_DONE;
 }
+
+/* APPLE LOCAL: The FSF deleted all these hooks.  Supposedly we can
+   get the same information from the gdb_events, but I am not 
+   convinced that when running the console interpreter under the
+   mi the gdb_events will work.  FIXME: see if the gdb_events
+   actually can be made to work.  */
 
 void
 mi_interp_create_breakpoint_hook (struct breakpoint *bpt)
 {
   struct ui_out *saved_ui_out = uiout;
+  struct cleanup *list_cleanup;
 
-  uiout = mi_interp->interpreter_out;
+  /* Don't report internal breakpoints. */
+  if (bpt->number == 0)
+    return;
+
+  uiout = interp_ui_out (mi_interp);
 
   /* This is a little inefficient, but it probably isn't worth adding
      a gdb_breakpoint_query that takes a bpt structure... */
 
-  ui_out_list_begin (uiout, "MI_HOOK_RESULT");
+  list_cleanup = make_cleanup_ui_out_list_begin_end (uiout, "MI_HOOK_RESULT");
   ui_out_field_string (uiout, "HOOK_TYPE", "breakpoint_create");
   gdb_breakpoint_query (uiout, bpt->number);
-  ui_out_list_end (uiout);
+  do_cleanups (list_cleanup);
   uiout = saved_ui_out; 
 }
 
@@ -352,16 +429,21 @@ mi_interp_modify_breakpoint_hook (struct breakpoint *bpt)
 {
 
   struct ui_out *saved_ui_out = uiout;
+  struct cleanup *list_cleanup;
 
-  uiout = mi_interp->interpreter_out;
+  /* Don't report internal breakpoints. */
+  if (bpt->number == 0)
+    return;
+
+  uiout = interp_ui_out (mi_interp);
 
   /* This is a little inefficient, but it probably isn't worth adding
      a gdb_breakpoint_query that takes a bpt structure... */
 
-  ui_out_list_begin (uiout, "MI_HOOK_RESULT");
+  list_cleanup = make_cleanup_ui_out_list_begin_end (uiout, "MI_HOOK_RESULT");
   ui_out_field_string (uiout, "HOOK_TYPE", "breakpoint_modify");
   gdb_breakpoint_query (uiout, bpt->number);
-  ui_out_list_end (uiout);
+  do_cleanups (list_cleanup);
   uiout = saved_ui_out; 
 }
 
@@ -369,16 +451,38 @@ void
 mi_interp_delete_breakpoint_hook (struct breakpoint *bpt)
 {
   struct ui_out *saved_ui_out = uiout;
+  struct cleanup *list_cleanup;
 
-  uiout = mi_interp->interpreter_out;
+  /* Don't report internal breakpoints. */
+  if (bpt->number == 0)
+    return;
+
+  uiout = interp_ui_out (mi_interp);
 
   /* This is a little inefficient, but it probably isn't worth adding
      a gdb_breakpoint_query that takes a bpt structure... */
 
-  ui_out_list_begin (uiout, "MI_HOOK_RESULT");
+  list_cleanup = make_cleanup_ui_out_list_begin_end (uiout, "MI_HOOK_RESULT");
   ui_out_field_string (uiout, "HOOK_TYPE", "breakpoint_delete");
   ui_out_field_int (uiout, "bkptno", bpt->number);
-  ui_out_list_end (uiout);
+  do_cleanups (list_cleanup);
   uiout = saved_ui_out; 
 
 }
+
+void
+mi_async_breakpoint_resolve_event (int b, int pending_b)
+{
+  struct cleanup *old_chain;
+
+  if (pending_b > 0)
+    {
+      old_chain = make_cleanup_ui_out_notify_begin_end (uiout, 
+							"resolve-pending-breakpoint");
+      ui_out_field_int (uiout, "new_bp", b);
+      ui_out_field_int (uiout, "pended_bp", pending_b);
+
+      do_cleanups (old_chain);
+    }
+}
+

@@ -70,6 +70,7 @@ void
 core_file_command (char *args, int from_tty)
 {
   struct cleanup *cleanups;
+  struct target_ops *t;
   char *filename;
   char **argv;
 
@@ -95,16 +96,6 @@ core_file_command (char *args, int from_tty)
 	filename = argv[0];
     }
 
-  core_file_attach (filename, from_tty);
-
-  if (cleanups != NULL)
-    do_cleanups (cleanups);
-}
-
-void core_file_attach (char *filename, int from_tty)
-{
-  struct target_ops *t;
-
   t = find_core_target ();
   if (t == NULL)
     error ("GDB can't read core files on this machine.");
@@ -113,6 +104,9 @@ void core_file_attach (char *filename, int from_tty)
     (t->to_detach) (filename, from_tty);
   else
     (t->to_open) (filename, from_tty);
+
+  if (cleanups != NULL)
+    do_cleanups (cleanups);
 }
 
 
@@ -286,28 +280,6 @@ read_memory (CORE_ADDR memaddr, char *myaddr, int len)
     memory_error (status, memaddr);
 }
 
-/* Like target_read_memory, but slightly different parameters.  */
-int
-dis_asm_read_memory (bfd_vma memaddr, bfd_byte *myaddr, unsigned int len,
-		     disassemble_info *info)
-{
-  return target_read_memory (memaddr, (char *) myaddr, len);
-}
-
-/* Like memory_error with slightly different parameters.  */
-void
-dis_asm_memory_error (int status, bfd_vma memaddr, disassemble_info *info)
-{
-  memory_error (status, memaddr);
-}
-
-/* Like print_address with slightly different parameters.  */
-void
-dis_asm_print_address (bfd_vma addr, struct disassemble_info *info)
-{
-  print_address (addr, info->stream);
-}
-
 /* Argument / return result struct for use with
    do_captured_read_memory_integer().  MEMADDR and LEN are filled in
    by gdb_read_memory_integer().  RESULT is the contents that were
@@ -380,8 +352,8 @@ read_memory_unsigned_integer (CORE_ADDR memaddr, int len)
 void
 read_memory_string (CORE_ADDR memaddr, char *buffer, int max_len)
 {
-  register char *cp;
-  register int i;
+  char *cp;
+  int i;
   int cnt;
 
   cp = buffer;

@@ -1,5 +1,5 @@
 GDB_VERSION = 5.3-20030128
-GDB_RC_VERSION = 330.1
+GDB_RC_VERSION = 355
 
 BINUTILS_VERSION = 2.13-20021117
 BINUTILS_RC_VERSION = 46
@@ -73,10 +73,11 @@ GDB_VERSION_STRING = $(GDB_VERSION) (Apple version gdb-$(GDB_RC_VERSION))
 BINUTILS_VERSION_STRING = "$(BINUTILS_VERSION) (Apple version binutils-$(BINUTILS_RC_VERSION))"
 
 GDB_BINARIES = gdb
-GDB_FRAMEWORKS = gdb
+GDB_FRAMEWORKS = gdb readline
 GDB_MANPAGES = 
 
-BINUTILS_FRAMEWORKS = bfd binutils
+BINUTILS_BINARIES = objdump objcopy addr2line nm-new size strings cxxfilt
+BINUTILS_FRAMEWORKS = mmalloc liberty bfd opcodes binutils
 BINUTILS_MANPAGES = 
 
 FRAMEWORKS = $(GDB_FRAMEWORKS) $(BINUTILS_FRAMEWORKS)
@@ -153,7 +154,7 @@ I386_TARGET=UNKNOWN
 
 CONFIG_VERBOSE=-v
 CONFIG_ENABLE_GDBTK=--enable-gdbtk=no
-CONFIG_ENABLE_GDBMI=--enable-gdbmi=yes
+CONFIG_ENABLE_GDBMI=
 CONFIG_ENABLE_BUILD_WARNINGS=--enable-build-warnings
 CONFIG_ENABLE_TUI=--disable-tui
 CONFIG_ALL_BFD_TARGETS=
@@ -169,7 +170,7 @@ CONFIG_OTHER_OPTIONS=--disable-serial-configure
 ifneq ($(findstring macosx,$(CANONICAL_ARCHS))$(findstring darwin,$(CANONICAL_ARCHS)),)
 CC = cc -arch $(HOST_ARCHITECTURE) -no-cpp-precomp
 CC_FOR_BUILD = NEXT_ROOT= cc -no-cpp-precomp
-CDEBUGFLAGS = -g -Os -mdynamic-no-pic
+CDEBUGFLAGS = -g -Os
 CFLAGS = $(strip $(RC_CFLAGS_NOARCH) $(CDEBUGFLAGS) -Wall -Wimplicit -Wno-long-double)
 HOST_ARCHITECTURE = $(shell echo $* | sed -e 's/--.*//' -e 's/powerpc/ppc/' -e 's/-apple-macosx.*//' -e 's/-apple-macos.*//' -e 's/-apple-darwin.*//')
 endif
@@ -600,7 +601,7 @@ install-binutils-macosx:
 install-chmod-macosx:
 	set -e;	if [ `whoami` = 'root' ]; then \
 		for dstroot in $(SYMROOT) $(DSTROOT); do \
-			chown -R root.wheel $${dstroot}; \
+			chown -R root:wheel $${dstroot}; \
 			chmod -R  u=rwX,g=rX,o=rX $${dstroot}; \
 			chmod a+x $${dstroot}/$(LIBEXEC_GDB_DIR)/*; \
 			chmod a+x $${dstroot}/$(DEVEXEC_DIR)/*; \

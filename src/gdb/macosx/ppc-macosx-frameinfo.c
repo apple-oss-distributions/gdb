@@ -1,5 +1,5 @@
 /* Mac OS X support for GDB, the GNU debugger.
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002
+   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004
    Free Software Foundation, Inc.
 
    Contributed by Apple Computer, Inc.
@@ -22,6 +22,7 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "ppc-macosx-regs.h"
+#include "ppc-macosx-regnums.h"
 #include "ppc-macosx-frameinfo.h"
 #include "ppc-macosx-tdep.h"
 
@@ -34,6 +35,7 @@
 #include "symfile.h"
 #include "objfiles.h"
 #include "command.h"
+#include "regcache.h"
 
 /* Limit the number of skipped non-prologue instructions, as the
    examining of the prologue is expensive.  The current use that
@@ -47,7 +49,12 @@ static int max_skip_non_prologue_insns = 2;
 
 /* utility functions */
 
-inline int SIGNED_SHORT (long x)
+static inline long extract_ds (unsigned long insn)
+{
+  return ((insn & 0xfffc) ^ 0x8000) - 0x8000;
+}
+
+static inline int SIGNED_SHORT (long x)
 {
   if (sizeof (short) == 2) {
     return ((short) x);
@@ -56,7 +63,7 @@ inline int SIGNED_SHORT (long x)
   }
 }
 
-inline int GET_SRC_REG (long x) 
+static inline int GET_SRC_REG (long x) 
 {
   return (x >> 21) & 0x1f;
 }
@@ -311,7 +318,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 	msymbol = lookup_minimal_symbol_by_pc (branch_target);
 	if (msymbol)
 	  {
-	    if (strcmp (SYMBOL_SOURCE_NAME (msymbol), "save_world") == 0)
+	    if (strcmp (SYMBOL_LINKAGE_NAME (msymbol), "save_world") == 0)
 	      {
 		/* save_world currently saves all the volatile registers,
 		   and saves $lr & $cr on the stack in the usual place.
@@ -336,7 +343,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 		
 		recognized_fn_in_prolog = 1;
 	      }
-	    else if (strcmp (SYMBOL_SOURCE_NAME (msymbol), "saveFP") == 0)
+	    else if (strcmp (SYMBOL_LINKAGE_NAME (msymbol), "saveFP") == 0)
 	      {
 		unsigned long store_insn;
 		int reg;
@@ -367,7 +374,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 		
 		recognized_fn_in_prolog = 1;
 	      }
-	    else if (strcmp (SYMBOL_SOURCE_NAME (msymbol), "saveVec") == 0)
+	    else if (strcmp (SYMBOL_LINKAGE_NAME (msymbol), "saveVec") == 0)
 	      {
 		/* FIXME: We can't currently get the AltiVec
 		   registers, but we need to save them away for
@@ -480,12 +487,21 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
       } 
     /* This is moving the stack pointer to the top of the new stack
        when the frame is < 32K */
+    else if ((op & 0xffff0000) == 0xf8210000) 
+      { /* stdu r1,NUM(r1) */
+	props->frameless = 0;
+	props->offset = extract_ds (op);
+	offset2 = props->offset;
+	goto processed_insn;
+	
+      } 
+    /* This is moving the stack pointer to the top of the new stack
+       when the frame is < 32K */
     else if ((op & 0xffff0000) == 0x94210000) 
-      { /* stu r1,NUM(r1) */
+      { /* stwu r1,NUM(r1) */
 	props->frameless = 0;
 	props->offset = SIGNED_SHORT (op);
 	offset2 = props->offset;
-	props->sp_setup_pc = pc;
 	goto processed_insn;
 	
       } 
@@ -552,12 +568,32 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
       {
 	break;
       } 
-    else if ((op & 0xf8000001) == 0x48000000) /* b or ba - we have already
+    else if ((op & 0xf8000001) == 0x48000000) /* b, ba, bctr - we have already
 					       found all the branches that
 					      we are expecting in the 
 					      prologue, any others mean we
 					      have wandered too far afield. */
       {
+        unsigned long peekahead_op;
+        if (props->lr_invalid == 1
+            && (end != INVALID_ADDRESS || pc + 4 < end)
+            && safe_read_memory_unsigned_integer (pc + 4, 4, &peekahead_op)
+            && peekahead_op == 0x0)
+          {
+            /* We've hit a fix-and-continue trampoline sequence, which ends
+               in a .long 0x0 after a bctr.  Let's set up the default non-leaf
+               function values and go with that.  This will be incorrect for
+               a leaf function that doesn't store the caller's PC on the stack,
+               but the failure mode for that will be it skipping a frame in
+               a backtrace.  The failure mode if we do nothing is a duplicated
+               frame and an error without any further backtracing.  */
+            props->lr_offset = 8;
+            props->lr_saved = 1;
+            props->lr_reg = PPC_MACOSX_LR_REGNUM;
+            props->lr_invalid = 0;
+            props->frameless = 0;
+            return pc + 4;
+          }
 	break;
       }
     else if (op == 0x44000002) /* sc - this is not expected in
@@ -748,7 +784,6 @@ ppc_clear_function_properties (ppc_function_properties *properties)
   properties->frameptr_pc = INVALID_ADDRESS;
 
   properties->frameless = 1;
-  properties->sp_setup_pc = 0;
 
   properties->lr_saved = 0;
   properties->lr_offset = -1;
@@ -807,181 +842,196 @@ ppc_find_function_boundaries (ppc_function_boundaries_request *request,
   return 0;
 }
 
-int
-ppc_frame_cache_boundaries (struct frame_info *frame, 
-			    struct ppc_function_boundaries *retbounds)
+/* Put here the code to store, into a struct frame_saved_regs,
+   the addresses of the saved registers of frame described by FRAME_INFO.
+   This includes special registers such as pc and fp saved in special
+   ways in the stack frame.  sp is even more special:
+   the address we return for it IS the sp for the next frame.  */
+
+CORE_ADDR *
+ppc_frame_saved_regs (struct frame_info *next_frame, void **this_cache)
 {
-  if (!frame->extra_info->bounds) {
+  struct ppc_frame_cache *cache;
+  ppc_function_properties *props;
+  CORE_ADDR *saved_regs;
+  CORE_ADDR prev_sp;
+  int i;
 
-    if (ppc_is_dummy_frame (frame)) {
+  cache = ppc_frame_cache (next_frame, this_cache);
 
-      frame->extra_info->bounds = (struct ppc_function_boundaries *)
-	frame_obstack_zalloc (sizeof (ppc_function_boundaries));
-      CHECK_FATAL (frame->extra_info->bounds != NULL);
+  if (cache->saved_regs_valid)
+    return cache->saved_regs;
 
-      ppc_clear_function_boundaries (frame->extra_info->bounds);
+  saved_regs = cache->saved_regs;
 
-      frame->extra_info->bounds->prologue_start = INVALID_ADDRESS;
-      frame->extra_info->bounds->body_start = INVALID_ADDRESS;
-      frame->extra_info->bounds->epilogue_start = INVALID_ADDRESS;
-      frame->extra_info->bounds->function_end = INVALID_ADDRESS;
+  props = ppc_frame_function_properties (next_frame, this_cache);
+  if (props == NULL)
+    return NULL;
 
-    } else {
+  prev_sp = ppc_frame_find_prev_sp (next_frame, this_cache);
 
-      ppc_function_boundaries_request request;
-      ppc_function_boundaries lbounds;
-      int ret;
-  
-      ppc_clear_function_boundaries (&lbounds);
-      ppc_clear_function_boundaries_request (&request);
-
-      request.contains_pc = frame_address_in_block (frame);
-
-      if (request.contains_pc == INVALID_ADDRESS)
-	return -1;
-
-      ret = ppc_find_function_boundaries (&request, &lbounds);
-      if (ret != 0)
-	return ret;
-    
-      frame->extra_info->bounds = (struct ppc_function_boundaries *)
-	frame_obstack_zalloc (sizeof (ppc_function_boundaries));
-      CHECK_FATAL (frame->extra_info->bounds != NULL);
-
-      memcpy (frame->extra_info->bounds, &lbounds,
-	      sizeof (ppc_function_boundaries));
-    }
+  if (props->cr_saved) {
+    saved_regs[PPC_MACOSX_CR_REGNUM] = prev_sp + props->cr_offset;
   }
 
-  if (retbounds != NULL) { 
-    memcpy (retbounds, frame->extra_info->bounds,
-	    sizeof (ppc_function_boundaries));
+  if (props->lr_saved) {
+    saved_regs[PPC_MACOSX_LR_REGNUM] = prev_sp + props->lr_offset;
   }
 
-  return 0;
+  if (props->frameless && ((props->saved_fpr != -1) || (props->saved_gpr != -1))) {
+    ppc_debug ("frame_find_saved_regs: "
+	       "registers marked as saved in frameless function; ignoring\n");
+    return saved_regs;
+  }
+
+  if (props->saved_fpr >= 0) {						
+    for (i = props->saved_fpr; i < 32; i++) {				
+      int fpr = PPC_MACOSX_FIRST_FP_REGNUM + i;
+      long offset = props->fpr_offset + ((i - props->saved_fpr) * register_size (current_gdbarch, PPC_MACOSX_FIRST_FP_REGNUM));
+      saved_regs[fpr] = prev_sp + offset;
+    }									
+  }									
+									
+  if (props->saved_gpr >= 0) {						
+    for (i = props->saved_gpr; i < 32; i++) {				
+      int gpr = PPC_MACOSX_FIRST_GP_REGNUM + i;
+      long offset = props->gpr_offset + ((i - props->saved_gpr) * register_size (current_gdbarch, PPC_MACOSX_FIRST_GP_REGNUM));
+      saved_regs[gpr] = prev_sp + offset;
+    }									
+ }									
+
+  cache->saved_regs_valid = 1;
+
+  return saved_regs;
 }
 
 /* ppc_frame_cache_properties - 
- * This function creates the ppc_function_properties
- * bit of the extra_info structure of FRAME, if it is not already
- * present.  If RETPROPS is not NULL, it copies the properties
- * to retprops (provided by caller).
- * 
- * Returns: 0 on success */
+   This function creates the ppc_function_properties
+   bit of the extra_info structure of FRAME, if it is not already
+   present.  If RETPROPS is not NULL, it copies the properties
+   to retprops (provided by caller).
+  
+   Returns: 0 on success */
 
-int
-ppc_frame_cache_properties (struct frame_info *frame,
-			    struct ppc_function_properties *retprops)
+struct ppc_function_properties *
+ppc_frame_function_properties (struct frame_info *next_frame, void **this_cache)
 {
-  /* FIXME: I have seen a couple of cases where this function gets
-     called with a frame whose extra_info has not been set yet.  It is
-     always when the stack is mauled, and you try to run "up" or some
-     other such command, so I am not sure we can really recover well,
-     but at some point it might be good to look at this more
-     closely. */
+  struct ppc_frame_cache *cache = ppc_frame_cache (next_frame, this_cache);
+  struct ppc_function_properties *props = &cache->properties;
 
-  if (! frame->extra_info)
-    return 1;
+  ppc_function_boundaries *bounds;
+  ppc_function_boundaries lbounds;
 
-  if (! frame->extra_info->props) 
+  struct frame_info *this_frame = get_prev_frame (next_frame);
+
+  ppc_clear_function_properties (props);
+
+  bounds = ppc_frame_function_boundaries (next_frame, this_cache);
+  if (bounds != NULL)
+    lbounds = *bounds;
+  else
     {
-      if (ppc_is_dummy_frame (frame)) 
-	{
-	  ppc_function_properties *props;
-	  
-	  frame->extra_info->props = (struct ppc_function_properties *)
-	    frame_obstack_zalloc (sizeof (ppc_function_properties));
-	  CHECK_FATAL (frame->extra_info->props != NULL);
-	  props = frame->extra_info->props;
+      lbounds.body_start = get_frame_pc (this_frame);
+      lbounds.prologue_start = lbounds.body_start;
+      lbounds.epilogue_start = INVALID_ADDRESS;
+      lbounds.function_end = INVALID_ADDRESS;
+    }
 
-	  ppc_clear_function_properties (props);
-	  
-	  props->offset = 0;
-	  props->saved_gpr = -1;
-	  props->saved_fpr = -1;
-	  props->gpr_offset = -1;
-	  props->fpr_offset = -1;
-	  props->frameless = 0;
-	  props->frameptr_used = 0;
-	  props->frameptr_reg = -1;
-	  props->frameptr_pc = INVALID_ADDRESS;
-	  props->lr_saved = 1;
-	  props->lr_offset = DEFAULT_LR_SAVE;
-	  props->cr_saved = 0;
-	  props->cr_offset = -1;
-	  props->minimal_toc_loaded = 0;
-	} 
-      else 
-	{
-	  int ret;
-	  ppc_function_properties *props;
-	  ppc_function_boundaries *bounds;
-	  
-	  ret = ppc_frame_cache_boundaries (frame, NULL);
-	  if (ret != 0) { return ret; }
-	  bounds = frame->extra_info->bounds;
-	  
-	  if ((bounds->prologue_start % 4) != 0)
-	    return -1;
-	  if ((frame->pc % 4) != 0)
-	    return -1;
-
-	  frame->extra_info->props = (struct ppc_function_properties *)
-	    frame_obstack_zalloc (sizeof (ppc_function_properties));
-	  CHECK_FATAL (frame->extra_info->props != NULL);
-	  props = frame->extra_info->props;
-	  ppc_clear_function_properties (props);
-
-	  /* By the time we get here, ppc_frame_cache_boundaries will
-	     have already called ppc_parse_instructions to find the
-	     body start.  If that is true, use the body start it found
-	     to limit the search. */
-
-	  ppc_parse_instructions (bounds->prologue_start, 
-				  bounds->body_start, props);
-	  
-	  /* ppc_parse_instructions sometimes gets the stored pc location
-	     wrong.  However, we know that for all frames but frame 0
-	     the pc is on the stack.  So force that here. */
-	  
-	  if (get_next_frame (frame) != NULL)
-	    {
-	      props->lr_offset = 8;
-	      /* This is a bogus value, but we need to tell it some value
-		 before the current $pc for the rest of the code to
-		 work properly. */
-	      props->lr_saved = 1;
-	      props->lr_reg = LR_REGNUM;
-	      props->lr_invalid = 0;
-	      ppc_debug ("ppc_frame_cache_properties: %s\n",
-			 "a non-leaf frame appeared not to save $lr;"
-			 "overriding and fetching from link area");
-	    }
+  if ((lbounds.prologue_start % 4) != 0)
+    {
+      if (frame_relative_level (this_frame) == 1)
+	{ 
+	  props->lr_saved = 0;
+	  props->lr_offset = 0;
+	  return props;
 	}
-    } 
-  else if (get_next_frame (frame) != NULL)
-    {
-      /* We tried to correct this error from ppc_parse_instructions above,
-	 but the frame hadn't been fully set yet.  So we will do it again
-	 here. */
-      ppc_function_properties *props = frame->extra_info->props;
+      else
+	{
+          props->lr_offset = 8;
+          props->lr_saved = 1;
+          props->lr_reg = PPC_MACOSX_LR_REGNUM;
+          props->lr_invalid = 0;
+          props->frameless = 0;
+          ppc_debug ("ppc_frame_cache_properties: %s\n",
+                     "Couldn't find function boundaries/parse fn prologue;"
+                     "overriding and fetching $lr from link area");
+	  return props;
+	}
+    }
       
-      props->lr_offset = 8;
+  /* By the time we get here, ppc_frame_cache_boundaries will
+     have already called ppc_parse_instructions to find the
+     body start.  If that is true, use the body start it found
+     to limit the search. */
+
+  ppc_parse_instructions (lbounds.prologue_start, 
+			  lbounds.body_start, props);
+	  
+#if 0
+  /* If a frameless function is interrupted by a signal, no change to
+     the stack pointer.  */
+  if (get_next_frame (frame) != NULL
+      && (get_frame_type (get_next_frame (frame)) == SIGTRAMP_FRAME)
+      && ppc_frameless_function_invocation (frame)) {
+    return sp;
+  }
+#endif
+      
+  /* ppc_parse_instructions sometimes gets the stored pc location
+     wrong.  However, we know that for all frames but frame 0
+     the pc is on the stack.  So force that here. */
+	  
+  if ((frame_relative_level (next_frame) >= 0)
+      && (get_frame_type (next_frame) != DUMMY_FRAME)
+      && (get_frame_type (next_frame) != SIGTRAMP_FRAME)
+      )
+    {
       /* This is a bogus value, but we need to tell it some value
-	 before the current $pc for the rest of the code to work
-	 properly. */
+	 before the current $pc for the rest of the code to
+	 work properly. */
+      props->lr_offset = 8;
       props->lr_saved = 1;
-      props->lr_reg = LR_REGNUM;
+      props->lr_reg = PPC_MACOSX_LR_REGNUM;
       props->lr_invalid = 0;
+      props->frameless = 0;
       ppc_debug ("ppc_frame_cache_properties: %s\n",
 		 "a non-leaf frame appeared not to save $lr;"
 		 "overriding and fetching from link area");
     }
 
-  if (retprops != NULL) {
-    memcpy (retprops, frame->extra_info->props,
-	    sizeof (ppc_function_properties));
-  }
+  return props;    
+}
+
+struct ppc_function_boundaries *
+ppc_frame_function_boundaries (struct frame_info *next_frame, void **this_cache)
+{
+  struct ppc_frame_cache *cache = ppc_frame_cache (next_frame, this_cache);
+  struct ppc_function_boundaries *bounds = &cache->boundaries;
+
+  ppc_function_boundaries_request request;
+  int ret;
   
-  return 0;    
+  if (cache->boundaries_status)
+    return bounds;
+  
+  ppc_clear_function_boundaries (bounds);
+  ppc_clear_function_boundaries_request (&request);
+
+  request.contains_pc = frame_unwind_address_in_block (next_frame);
+
+  if (request.contains_pc == INVALID_ADDRESS)
+    {
+      cache->boundaries_status = -1;
+      return NULL;
+    }
+
+  ret = ppc_find_function_boundaries (&request, bounds);
+  if (ret != 0)
+    {
+      cache->boundaries_status = -1;
+      return NULL;
+    }
+
+  cache->boundaries_status = 1;
+  return bounds;
 }

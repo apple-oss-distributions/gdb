@@ -1,18 +1,275 @@
-2004-07-15  Klee Dienes  <kdienes@apple.com>
+2004-06-01  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.apple/slipnslide.exp: Update to use new "description" field.
+	* gdb.objc/nondebug.exp: Add APPLE LOCAL pattern tweak.
+
+2004-05-26  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/dirname-tab.exp: New test to make sure tab
+	completion works the first time on a directory name.
+
+2004-05-25  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/objc-rbreak.exp:  Try hitting one of our
+	rbreak-set breakpoints and then stepping into an ObjC class.
+	Regexp not tested right now because muon-gdb doesn't do the
+	rbreak right and TOT doesn't do the stepping right, but I
+	think it's correct.
+
+2004-05-21  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/struct-ret-err.exp: New test to look for type
+	name in error message when 'finish' in func that returns
+	structure.  
+	* gdb.apple/struct-ret-err.c: Test file.
+
+2004-05-17  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/info-shared-addr.exp: Change info sharedlibrary address
+	test to use address of printf(); recent change to not store
+	__TEXT segment separately means that the test for 
+	start-address-of-libSystem was failing.
+
+2004-05-10  Jim Ingham  <jingham@apple.com>
+	* gdb/weak.exp: Correct the "continue to weak library bp"
+	test for the changed shared library breakpoint output.
+	
+2004-05-10  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/cfm.exp: Leave the CFM stubs in /tmp for easier
+	by-hand follow-ups.  They're only a couple of MB.
+
+2004-05-07  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/pending.exp: Add site_xfail's for cases where
+	breakpoints on MacOS X won't be pending (because we know
+	about shared libraries linked against an executable) as
+	the testsuite expects.
 
 2004-05-05  Jason Molenda  (jmolenda@apple.com)
+ 
+        * gdb.apple/xcode/exec-abort.exp: New testsuite file for
+        -exec-abort MI command.
+        * gdb.apple/xcode/callfuncs.exp: Arbitrary support program.
 
-	* gdb.apple/xcode/exec-abort.exp: New testsuite file for
-	-exec-abort MI command.	
-	* gdb.apple/xcode/callfuncs.exp: Arbitrary support program.
+2004-04-29  Jason Molenda  (jmolenda@apple.com)
 
-2004-03-15 Igor Likhatchev (igor@apple.com)
+	* gdb.apple/objc-rbreak.exp: New test.
+	* gdb.apple/bp-cond-objc.exp: Correct comments.
 
-	*gdb.apple/cachedsym-1.exp:  at the very end, remove all 
-	directories with cached symfiles created during test.
+2004-04-29  Jason Molenda  (jmolenda@apple.com)
 
+	* gdb.apple/xcode/var-list-children.exp: Add an additional test
+	to examine one of the children varobj's which have values.
+
+2004-04-29  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/xcode/var-list-children.exp: New file, simple test
+	of basic var-list-children behavior that Xcode expects.
+	* gdb.apple/xcode/structs.c: Test prog.
+
+2004-04-28  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/objc-prog.m: Add [MyClass init] function with
+	class to [super init], and call to [super init] in 
+	+[MyClass newWithArg:]
+	* gdb.apple/bp-cond-objc.exp: Clean up explicit line number
+	breakpoint.
+
+2004-04-28  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/xcode/stack-list-frames-lite.exp: regexp tweaks.
+
+2004-04-28  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/xcode/stack-list-frames-lite.exp: Simple test of
+	this MI command that Xcode uses.
+	* gdb.apple/xcode/callfuncs.exp: Simple program that calls a few
+	functions.
+
+2004-04-22  Jim Ingham <jingham@apple.com>
+
+	* gdb.apple/dynaload.exp: Test the -shilb breakpoints.
+	* gdb.apple/libmysecondlib.c: Change the calling of
+	foo to make this easier.
+	
+2004-04-20  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/mi-fix-small-c.exp: Fix
+	regexp.
+
+2004-04-15  Jim Ingham  <jingham@apple.com>
+
+	* gdb.apple/dynaloader.exp: Build a second library so we can test
+	things like not resetting already set breakpoints...
+	* gdb.apple/libmysecondlib.c: New file
+	* gdb.apple/dylib-loader.c: Use functions from second library.
+	
+2004-04-13  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/mi-fix-small-c.exp: Loosen
+	regexp as to where we expect to stop in bar() after stepping into
+	it.
+
+2004-04-02  Jim Ingham (jingham@apple.com)
+
+	* gdb.cp/derivation.exp: Many more additions of void in front of
+	constructors.
+        * gdb.cp/inherit.exp: Ditto
+        * gdb.cp/local.exp: Ditto
+        * gdb.cp/method.exp: Ditto
+        * gdb.cp/overload.exp: Ditto
+        * gdb.cp/templates.exp: Ditto
+        * gdb.cp/virtfunc.exp: Ditto
+	
+2004-04-01  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.cp/gdb1355.exp: Pass -Wno-long-double to suppress warnings.
+	* gdb.cp/templates.exp: Ditto.
+
+2004-03-31  Jim Ingham  (jingham@apple.com)
+
+	* gdb.cp/classes.exp: Add a test for void in front of constructors,
+	since our gcc reports default constructors with return types.
+	
+2004-03-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.java/jv-print.exp: Drop APPLE LOCAL change; we don't need it
+	any more.
+
+2004-03-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.asm/asm-source.exp: Don't run these on MacOS X.
+	* gdb.base/corefile.exp: Grab the current FSF version, add only
+	those changes that are really necessary for our platform..
+
+2004-03-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/dynaload.exp: Update pattern to new pending-breakpoint
+	output style.
+	* gdb.apple/weak.exp: Ditto.
+	* gdb.apple/ivars.exp: Recognize incorrect pending-breakpoint behavior
+	and continue running tests.
+	* gdb.apple/slipnslide.exp: Recognize missing shlib-event support;
+	fail and continue running tests.
+
+2004-03-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/cplus-local-vars.exp: Update to work with new
+	gcc/gdb.  Rename from cplusplus-local-vars.
+
+2004-03-30  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/printcmds.exp: We now print the stock "no
+	registers" message instead of "no stack" when printing a
+	register with inferior not running.
+
+2004-03-30  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/fileio.c: Include <unistd.h>.  Delete a blank line later to
+	make the line numbers match up.
+
+2004-03-29  Jim Ingham  <jingham@apple.com>
+
+	* gdb.mi/mi-cli.exp: Fix various things in the tests
+	to make them work for Apple gdb, including:
+	 1) changelists aren't anonymous
+	 2) variable creation has extra fields in the output
+	 3) use the mi_runto, mi_continue_to, mi_execute_to
+	    rather than coding this each time...
+	And other little random tweaks.
+	* gdb.mi/mi-syn-frame.exp: Ditto
+	* gdb.mi/mi-var-block.exp: Ditto
+	* gdb.mi/mi-var-cmd.exp: Ditto
+	* gdb.mi/mi-var-display.exp: Ditto
+	* gdb.mi/mi2-cli.exp: Ditto
+	* gdb.mi/mi2-simplerun.exp: Ditto
+	* gdb.mi/mi2-syn-frame.exp: Ditto
+	* gdb.mi/mi2-var-block.exp: Ditto
+	* gdb.mi/mi2-var-child.exp: Ditto
+	* gdb.mi/mi2-var-cmd.exp: Ditto
+	* gdb.mi/mi2-var-display.exp: Ditto
+	* gdb.mi/mi2-watch.exp: Ditto
+	
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/watchpoint.exp: Stepping through watchpoint works
+	on OSX; remove the xfail.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/store.exp: OS X cc requires -Wno-long-double
+	* gdb.base/structs.exp: OS X cc requires -Wno-long-double
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/shlib-call.exp: No longer need future-break here;
+	the pending-break stuff handles this case.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/relocate.exp: Allow for section names other than
+	"text" in the output from add-symbol-file.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/gdb1555.exp: Add support for Mac OS X style shared libraries.
+	* gdb.base/pending.exp: Add support for Mac OS X style shared libraries.
+	* gdb.base/shreloc.exp: Add support for Mac OS X style shared libraries.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/1476.exp: Allow EXC_BAD_ACCESS, not just SIGSEGV,
+	for a call to null pointer.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/float.exp: Fix merge snarl on the dispatch for the
+	'info float' output.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/default.exp: Expect the new diagnostic output from 'add-symbol-file'.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/charset.exp: Expect the additional information
+	("allowed values are") from 'set' on a var with enumerated values.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/break.exp: Re-add the calls to the inferior in "hit
+	silent break bp_location1" that were lost in the merge.
+	Re-paramterize the breakpoint line numbers for marker2 (to
+	bp_location8/bp_location9) (the test was duplicated in the merge).
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/attach.exp: Don't call non-existent cleanup script.
+
+2004-03-26  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/bigcore.c: Need to include sys/time.h for this to compile.
+	* gdb.base/bigcore.exp: Skip test on MacOS X for now.
+
+2004-03-26  Jim Ingham (jingham@apple.com)
+
+	* mi-stack.exp: Convert to mi_execute_to, and add fp & dir to 
+	stack return patterns, and variable reporting with only the
+	name field should still be a list...
+	* mi-stepi.exp: Ditto
+	* mi-syn-frame.exp: Ditto
+	* mi2-disassemble.exp: Ditto
+	* mi2-return.exp: Ditto
+	* mi2-simplerun.exp: Ditto
+	* mi2-stack.exp: Ditto
+	* mi2-stepi.exp: Ditto
+	* mi2-until.exp: Ditto
+	
+2004-03-25  Jim Ingham (jingham@apple.com)
+
+	* lib/mi-support.exp (mi_runto): Return -1 from ALL the
+	error branches.
+	
 2003-11-16  Klee Dienes  (kdienes@apple.com)
 
 	* gdb.apple/sections.exp: New test, to ensure that section

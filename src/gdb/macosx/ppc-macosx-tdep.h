@@ -8,20 +8,14 @@
 
 #define INVALID_ADDRESS ((CORE_ADDR) (-1))
 
-struct frame_extra_info
-{
-  CORE_ADDR initial_sp;
-  struct ppc_function_boundaries *bounds;
-  struct ppc_function_properties *props;
-};
-
 const char *ppc_register_name (int regno);
 
 /* core stack frame decoding functions */
 
-void ppc_init_extra_frame_info (int fromleaf, struct frame_info *prev);
+struct ppc_frame_cache *
+ppc_frame_cache (struct frame_info *next_frame, void **this_cache);
 
-void ppc_print_extra_frame_info (struct frame_info *frame);
+void ppc_print_extra_frame_info (struct frame_info *next_frame, void **this_cache);
 
 CORE_ADDR ppc_init_frame_pc_first (int fromleaf, struct frame_info *prev);
 
@@ -40,9 +34,6 @@ int ppc_frame_chain_valid (CORE_ADDR chain, struct frame_info *frame);
 /* more esoteric functions */
 
 int ppc_is_dummy_frame (struct frame_info *frame);
-
-CORE_ADDR ppc_frame_cache_initial_stack_address (struct frame_info *fi);
-CORE_ADDR ppc_frame_initial_stack_address (struct frame_info *fi);
 
 int ppc_is_magic_function_pointer (CORE_ADDR addr);
 
@@ -77,4 +68,14 @@ ppc_fast_show_stack (int show_frames, int get_names,
 		     unsigned int *count,
 		     void (print_fun) (struct ui_out *uiout, int frame_num,
 				       CORE_ADDR pc, CORE_ADDR fp));
+
+CORE_ADDR
+ppc_frame_find_prev_fp (struct frame_info *next_frame, void **this_cache);
+
+CORE_ADDR
+ppc_frame_find_prev_sp (struct frame_info *next_frame, void **this_cache);
+
+CORE_ADDR
+ppc_frame_find_prev_pc (struct frame_info *next_frame, void **this_cache);
+
 #endif /* __GDB_PPC_MACOSX_TDEP_H__ */

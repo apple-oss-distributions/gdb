@@ -24,6 +24,7 @@
 #include "language.h"
 #include "gdbcmd.h"
 #include "gdb_string.h"
+#include "block.h"
 #include <math.h>
 
 #include "varobj.h"
@@ -641,7 +642,7 @@ find_frame_addr_in_frame_chain (CORE_ADDR frame_addr)
       frame = get_prev_frame (frame);
       if (frame == NULL)
 	return NULL;
-      if (get_frame_base (frame) == frame_addr)
+      if (get_frame_base_address (frame) == frame_addr)
 	return frame;
     }
 }
@@ -1858,8 +1859,8 @@ get_type (struct varobj *var)
   else
     type = var->type;
 
-  while (type != NULL && TYPE_CODE (type) == TYPE_CODE_TYPEDEF)
-    type = TYPE_TARGET_TYPE (type);
+  if (type != NULL)
+    type = check_typedef (type);
 
   return type;
 }
@@ -1899,8 +1900,8 @@ get_target_type (struct type *type)
   if (type != NULL)
     {
       type = TYPE_TARGET_TYPE (type);
-      while (type != NULL && TYPE_CODE (type) == TYPE_CODE_TYPEDEF)
-	type = TYPE_TARGET_TYPE (type);
+      if (type != NULL)
+	type = check_typedef (type);
     }
 
   return type;
@@ -2339,7 +2340,7 @@ varobj_pc_in_valid_block_p (struct varobj *var)
   
   /* reinit_frame_cache (); */
   
-  fi = find_frame_addr_in_frame_chain (var->root->frame.base);
+  fi = frame_find_by_id (var->root->frame);
   if (fi != NULL)
     {
       cur_pc = get_frame_pc (fi);

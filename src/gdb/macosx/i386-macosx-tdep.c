@@ -91,12 +91,14 @@ void i386_macosx_store_gp_registers (gdb_i386_thread_state_t *sp_regs)
 
 void i386_macosx_fetch_fp_registers (gdb_i386_thread_fpstate_t *fp_regs)
 {
+#if 0 /* FIXME FIXME FIXME */
   if ((fp_regs->fpkind == GDB_i386_FP_387) && (fp_regs->initialized))
     i387_supply_fsave ((unsigned char *) &fp_regs->hw_state);
   else if ((fp_regs->fpkind == GDB_i386_FP_SSE2) && (fp_regs->initialized))
     i387_supply_fxsave ((unsigned char *) &fp_regs->hw_state);
   else
     i387_supply_fxsave (NULL);
+#endif
 }
 
 void i386_macosx_store_fp_registers (gdb_i386_thread_fpstate_t *fp_regs)
@@ -172,7 +174,7 @@ i386_macosx_sigcontext_addr (struct frame_info *frame)
 {
   int sigcontext_offset = 24;
 
-  return read_memory_unsigned_integer (frame->frame + sigcontext_offset, 4);
+  return read_memory_unsigned_integer (get_frame_base (frame) + sigcontext_offset, 4);
 }
 
 static void

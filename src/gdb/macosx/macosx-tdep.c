@@ -45,6 +45,7 @@ the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 #include "objfiles.h"
 #include "gdbcmd.h"
 #include "language.h"
+#include "block.h"
 
 #include "libaout.h"	 	/* FIXME Secret internal BFD stuff for a.out */
 #include "aout/aout64.h"
@@ -146,7 +147,7 @@ static unsigned char macosx_symbol_type (macho_type, macho_other, abfd)
 	{
 	  ntype |= N_TEXT;
 	}
-      else if (macho_other > 0 && macho_other <= abfd->tdata.mach_o_data->nsects)
+      else if (macho_other <= abfd->tdata.mach_o_data->nsects)
 	{
 	  const char *segname = abfd->tdata.mach_o_data->sections[macho_other - 1]->segname;
 	  const char *sectname = abfd->tdata.mach_o_data->sections[macho_other - 1]->sectname;
@@ -208,9 +209,9 @@ CORE_ADDR dyld_symbol_stub_function_address (CORE_ADDR pc, const char **name)
 
   /* found a name, now find a symbol and address */
 
-  sym = lookup_symbol (lname, 0, VAR_NAMESPACE, 0, 0);
+  sym = lookup_symbol (lname, 0, VAR_DOMAIN, 0, 0);
   if ((sym == NULL) && (lname[0] == '_'))
-    sym = lookup_symbol (lname + 1, 0, VAR_NAMESPACE, 0, 0);
+    sym = lookup_symbol (lname + 1, 0, VAR_DOMAIN, 0, 0);
   if (sym != NULL && SYMBOL_BLOCK_VALUE (sym) != NULL)
     return BLOCK_START (SYMBOL_BLOCK_VALUE (sym));
 
@@ -236,10 +237,10 @@ const char *dyld_symbol_stub_function_name (CORE_ADDR pc)
   if (SYMBOL_VALUE_ADDRESS (msymbol) != pc)
     return NULL;
 
-  if (strncmp (SYMBOL_NAME (msymbol), DYLD_PREFIX, strlen (DYLD_PREFIX)) != 0)
+  if (strncmp (SYMBOL_LINKAGE_NAME (msymbol), DYLD_PREFIX, strlen (DYLD_PREFIX)) != 0)
     return NULL;
 
-  return SYMBOL_NAME (msymbol) + strlen (DYLD_PREFIX);
+  return SYMBOL_LINKAGE_NAME (msymbol) + strlen (DYLD_PREFIX);
 }
 
 static void info_trampoline_command (char *exp, int from_tty)

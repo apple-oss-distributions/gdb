@@ -1,72 +1,470 @@
-2004-07-15  Klee Dienes  <kdienes@platinum.local>
+2004-06-15  Jim Ingham  <jingham@apple.com>
 
-	* corefile.c (core_file_command): Split into core_file_attach.
-	* gdbcore.h (core_file_attach): Add prototype.
-	* main.c (quote_string): Remove (it was unused).
-	Call core_file_attach in place instead of core_file_command.
+       * infrun.c (handle_inferior_event): Adopt Daniel
+       Jacobowitz's patch of 2004-03-09, remove special
+       case code for signals to another thread.
 
-2004-06-13  Jim Ingham  <jingham@apple.com>
+2004-05-28  Jim Ingham  <jingham@apple.com>
 
-	* valops.c (value_cast): Don't coerce a reference argument
-	to the type it refers to if we are planning to cast it to
-	another reference type.
+	* (breakpoint.c): break_command_2: If the interpreter is mi, then
+	just return all the matches, don't set them.
+	* linespec.c (decode_line_2): Add another parameter - the
+	number of symbol-full matches.  Then print the matches from
+	non-debugging symbols more helpfully.
+	(decode_objc): Pass in the new argument to decode_line_2.
+	(find_method): Ditto.
 	
-2004-06-08  Jim Ingham  <jingham@apple.com>
+2004-05-27  Klee Dienes  <kdienes@apple.com>
 
-	* objfiles.c (objfile_matches_name): A better way to
-	handle caches symfiles is to use the bfd name if there
-	is a cached symfile.
+	* frame.c (deprecated_frame_next_hack): New function.
+	(deprecated_frame_cache_hack): New function.
+	(default_print_extra_frame_info): New function.
+	* frame.h (deprecated_frame_next_hack): Add prototype.
+	(deprecated_frame_cache_hack): Add prototype.
+	(default_print_extra_frame_info): Add prototype.
+	* gdbarch.c: Re-generate.	
+	* gdbarch.h: Re-generate.	
+	* gdbarch.sh (DEPRECATED_PRINT_EXTRA_FRAME_INFO): New method.
+	* stack.c (frame_info): Restore call to PRINT_EXTRA_FRAME_INFO.
+	
+2004-05-26  Jason Molenda  (jmolenda@apple.com)
+
+	* completer.c (gdb_completer_command_word_break_characters):
+	Add APPLE LOCAL comment about the change here.
+	* language.c (default_word_break_characters): Update this
+	copy of the gdb_completer_command_word_break_characters
+	strings so that it matches the completer.c version; add
+	APPLE LOCAL marker.
+
+2004-05-26  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c: Add _objc_msgSend_rtp to objc_methcall array.
+	(find_objc_msgsend): If the symbol is the last symbol in the
+	objfile, get its end address from the end address of
+	the section containing the symbol.
 	
 2004-05-21  Jim Ingham  <jingham@apple.com>
 
-	* objfiles.c (objfile_matches_name): Consider the names a 
-	match if the objfile has a ".syms" on the end.
+        * objfiles.c (objfile_matches_name): Consider the names a
+        match if the objfile has a ".syms" on the end.
+
+2004-05-21  Jason Molenda  (jmolenda@apple.com)
+
+	* dwarf2read.c: Change DWARF segment names APPLE LOCAL
+	modification to look for segment name gcc'll be emitting
+	as of this weekend.
+
+2004-05-21  Jason Molenda  (jmolenda@apple.com)
+
+	* infcmd.c (print_return_value): Correct error string printing
+	to include the type in question when struct/unions are used.
+	* typeprint.c (type_sprint): Make comment a bit more explicit;
+	note APPLE LOCALness.
+
+2004-05-19  Klee Dienes  <kdienes@apple.com>  
+
+	* Makefile.in: Re-arrange order of library inclusion, to deal
+	with monolithing libSystem.dylib on Tiger (cribbed from Jim's patch
+	for an earlier Tiger submission).
+
+2004-05-18  Stan Shebs  <shebs@apple.com>
+
+       * dwarf2read.c (dwarf_info_vma, dwarf_abbrev_vma, dwarf_line_vma,
+       dwarf_str_vma): New globals.
+       (INFO_SECTION, ABBREV_SECTION, etc): Set to names reported by BFD.
+       (dwarf2_locate_sections): Set dwarf_info_vma and friends from bfd
+       vmas.
+       (read_comp_unit_head): Adjust abbrev offset by vma, comment out
+       nonstandard extension.
+       (read_file_scope): Adjust offsets by vma.
+
+2004-05-15  Jim Ingham  <jingham@apple.com>
+
+	* varobj.c (varobj_create): Handle static & global varobj's which
+	have no set frame.
+	* varobj.h: Add NO_FRAME_NEEDED to the varobj_type.
+
+2004-05-14  Jim Ingham  <jingham@apple.com>
+
+	These changes are just a scrub of uses of language_cplus to
+	see places where we should also be accepting language_objcplus.
 	
+	* objc-lang.c (objcplus_demangle): New function.
+	Use this for the language demangle for ObjC++.  It tries the
+	ObjC demangler, and if that fails, tries the C++ one.
+	* symtab.c (symbol_find_demangled_name): ObjC++ names can be
+	mangled too...
+	(symbol_natural_name): Ditto.
+	* buildsym.c (add_symbol_to_list): ObjC++ has namespaces...
+	(finish_block): ObjC++ has same scoping rules as C++
+	(start_subfile): Don't demote ObjC++ to C for subfiles.
+	* c-exp.y: ObjC++ & C++ share template true, false & other keywords.
+	(c-typeprint.c): ObjC++ uses void, etc, like C++ does.
+	* objc-exp.y: Ditto.
+	* dbxread.c (read_dbx_symtab): Don't demote ObjC++ to C.
+	* eval.c (evaluate_subexp_standard): Do overload resolution
+	in ObjC++ as well as C++.
+	* language.c (lang_bool_type): ObjC++ has the bool type like 
+	C++ does.
+	* stack.c (print_frame_info): ObjC++ names can be C++ mangled names.
+	(frame_info): Ditto
+	(get_frame_language): Update a comment.
+	* symfile.c (symbol_find_demangled_name): This should work with
+	ObjC++ as well.
+	
+2004-05-14  Jason Molenda  (jmolenda@apple.com)
+
+	* target.c (update_current_target): Remove some unnecessary
+	deltas from the FSF version.  Add APPLE LOCAL comment around
+	remaining diff.
+	(push_target): Don't call setup_target_debug() here; document
+	why.
+
+2004-05-13  Jason Molenda  (jmolenda@apple.com)
+
+	* frame.c (get_prev_frame): Revert the two-identical-frames
+	back to a warning from an error.  It's rarely an unrecoverable
+	error so it's better to try than to give up.
+
+2004-05-13  Jason Molenda  (jmolenda@apple.com)
+
+	* objfiles.c (use_mapped_symbol_files): Set default value
+	to 0 -- don't try to use cached symfiles until Klee has a
+	chance to make it work again with newly merged sources.
+
 2004-05-12  Jim Ingham  <jingham@apple.com>
-  
-         * gdbtypes.c (make_cv_type): We may be resolving an opaque
-       type as well as a stub type.  So include that in the assert 
-       when we are copying over a type from one objfile to another.
+
+        * gdbtypes.c (make_cv_type): We may be resolving an opaque
+	type as well as a stub type.  So include that in the assert 
+	when we are copying over a type from one objfile to another.
 	
 	* frame.c (refine_prologue_limit): Don't reset prev_line
-        to the prologue value every time round the loop!
+	to the prologue value every time round the loop!
+	
+2004-05-11  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (breakpoint_re_set_all): Don't need to call
+	re_enable_breakpoints_in_shlibs.  We will already know to
+	reset them from tell_breakpoints_objfile_changed, so this is
+	not necessary, and as long as PC_SOLIB doesn't work this will
+	end up disabling ALL breakpoints.
+	
+2004-05-10  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (disable_breakpoints_in_shlibs): Comment out the
+	test for PC_SOLIB till it works on Mac OS X.
+	(re_enable_breakpoints_in_shlibs): Ditto.
+
+	* dbxread.c (record_minimal_symbol): Look both in the straight
+	text section and the coalesced text section when assigning a
+	symbol to a section.
+	(dbx_symfile_init): Look up the coalesced text section as well
+	as the straight text section.
+	(stabsect_build_psymtabs): Add a coalesced text section name.
+	* gdb-stabs.h: Change declaration of stabsect_build_psymtabs.
+	Also add coalesced text addresses to the stabs_symfile_info.
+	* nlmread.c (nlm_symfile_read): Mutatis mutandi for above.
+	* config/tm-macosx.h: Add COALESCED_TEXT_SECTION_NAME.
+	
+2004-05-06  Klee Dienes <kdienes@apple.com>
+
+	* ppc-sysv-tdep.c (ppc_darwin_abi_return_value): New function.
+	(ppc64_darwin_abi_push_dummy_call): New function (currently
+	stubbed out, final code to go in later).
+	(ppc64_darwin_abi_return value): New function (currently
+	stubbed out, final code to go in later).
+	* ppc-tdep.h (ppc64_darwin_abi_push_dummy_call): Add prototype.
+	(ppc64_darwin_abi_return_value): Add prototype.
+	(ppc_darwin_abi_return_value): Add prototype.
+
+2004-05-06  Jim Ingham  <jingham@apple.com>
+
+	* dbxread.c (read_dbx_symtab): Strip the leading character
+	right when we read in the symtab.
+	* minsyms.c (lookup_minimal_symbol): The change above meant
+	we successfully demangle minsyms when we read in the symtab,
+	so we don't need to do it here.
+	(objfile_demangle_msymbols): No longer needed.
+	(install_minimal_symbols): Don't strip the leading character
+	here, since we already did it in dbxread.c.
+	* objfiles.h: delete objfile_demangle_msymbols.
+	* symtab.c (search_symbols) Don't need objfile_demangle_msymbols.
+	
+	* maint.c (maintenance_demangle): Revert to the older behavior
+	rather than call language_demangle.  It is stupid that you have
+	to be currently in a C++ file for maint demangle to work.
 
 2004-05-05  Jason Molenda  (jmolenda@apple.com)
 
-	* inflow.c (kill_command): Don't query for confirmation if
-	we're MIish.
+	* stabsread.c: Revert Apple Local changes to support very
+	large non-negative enum values.  We don't have any occurences
+	of this in our libraries any longer and the contemporary gcc 
+	makes it hard to write them.
 
-2004-04-13  Jim Ingham  <jingham@apple.com>
+2004-05-05  Jason Molenda  (jmolenda@apple.com)
 
-	* dbxread.c: Back out the changes from 2004-02-03.  They do more
-	harm than good, and there is no clear way to get this right.
+        * inflow.c (kill_command): Don't query for confirmation if
+        we're MIish.
+
+2004-04-29  Jason Molenda  (jmolenda@apple.com)
+
+	* symtab.c (rbreak_command): Correct the canonicalization of
+	strings so decode_line_1 can spot the ObjC method calls correctly.
+
+2004-04-29  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.c (number_of_dots): New function
+	(objfiles_add_to_ordered_sections): Don't add the bfd sections
+	that correspond to the Mach-O segments to the ordered sections
+	array.
+	(objfile_delete_from_ordered_sections): Don't try to remove them
+	either.
 	
-2004-03-12  Jim Ingham  <jingham@apple.com>
+2004-04-28  Jason Molenda  (jmolenda@apple.com)
 
-	* breakpoint.c (make_cleanup_restrict_search_to_shlib): Moved to
-	objfiles.c where it belonged in the first place.  Also take "search"
-	out of the name.
-	* linespec.c (decode_all_digits): react to name change above.
-	* objfiles.c (make_cleanup_restrict_to_shlib): New function from
-	breakpoint.c.
-	* (objfile_matches_name): New function.
-	* varobj.c (varobj_create): Accept new NO_FRAME_NEEDED type.
-	* varobj.c: Define NO_FRAME_NEEDED varobj_type.
-	
-2004-03-05  Jim Ingham  <jingham@apple.com>
+	* ppc-tdep.h: Add prototype for rs6000_fetch_pointer_argument.
+	* rs6000-tdep.c (rs6000_fetch_pointer_argument): Change to non-static
+	so ppc-macosx-tdep.c can get at it.
 
-	* Makefile.in: Move second LIBIBERTY instance on the build
-	line before the LTERMCAP & LICONV.  This works around a build
-	problem with a monolithic libSystem.
+2004-04-28  Jason Molenda  (jmolenda@apple.com)
 
-	* breakpoint.c (create_breakpoints): Check for osect not null before
-	trying to get its objfile.
+	* blockframe.c (inside_main_func): Don't restrict search for main()
+	to just the main symbol file - not valid if ZeroLink'ed.
+	Short-circuit symbol lookups; new sources will search for main()
+	two times for each frame in a backtrace.
+
+2004-04-28  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c: Refactor break_command_1 so that we
+	could use it in gdb_breakpoints.  Refactor condition_command
+	for the same reason.  Also get create_breakpoints to keep
+	track of the breakpoints that it makes and pass them back
+	to the caller.
+
+	* tui/tui-interp.c (_initialize_tui_interp): Don't force
+	the tui interp in place of the console interp.  The tui
+	interp is not as well tested, and should not be the default!
 	
-        * linespec.c (decode_all_digits): Only look in the objfile that
-	the file:line breakpoint resolved in to move the pc past the prologue.
+2004-04-27  Jason Molenda  (jmolenda@apple.com)
+
+	* objfiles.c (sanity_check_symtab_obsoleted_flag): Use the
+	ALL_SYMTABS_INCL_OBSOLETED iterating macro so we don't
+	re-call this sanity_check function.
+	(sanity_check_psymtab_obsoleted_flag): Ditto.
+	(symtab_get_first, symtab_get_next): Only do the sanity
+	checks on 'obsolete' boolean if we're skipping obsolete
+	symtabs.
+	(psymtab_get_first, psymtab_get_next): Ditto.
+	* symfile.h (ALL_PSYMTABS_INCL_OBSOLETED): Add macro.
+
+2004-04-22  Jim Ingham  <jingham@apple.com>
+
+	This is more merge of our breakpoint changes to the
+	FSF TOT.  This adopts the gnu_v3 exception catching
+	to Mac OS X, adds "break -shlib" and the code to be 
+	more discriminating about when we reset breakpoints
+	in shared libraries.
+
+	* breakpoint.c: Too many to list separately...
+	* breakpoint.h: Add bp_gnu_v3_catch_catch and
+	bp_gnu_b3_catch_throw breakpoint types.
+	* inftarg.c: Change def'n of enable_exception_callback
+	target vector back to the FSF version.
+	* stack.c (catch_info): Ditto.
+	* target.c: Ditto.
+	* mi/mi-cmd-break.c (mi_cmd_break_catch): Ditto.
 	
-	* printcmd.c (print_address_symbolic): Undo the sign extension
-	that we get if CORE_ADDR is bigger than the native pointer size.
+	* linespec.c (decode_all_digits): Renamed 
+	make_cleanup_temporarily_restrict_to_objfile.
+	(minsym_found): Pass the section to find_pc_sect_line
+	if we have it.
+	* objfiles.c (make_cleanup_temporarily_restrict_to_objfile):
+	renamed.
+	(objfile_matches_name): New function.
+
+	* symtab.c (find_pc_sect_psymtab): If you are given a 
+	non-null section, don't look in objfiles that are not
+	in the bfd for that section.
+	(find_pc_sect_symtab): Ditto.
+
+2004-04-19  Klee Dienes  <kdienes@apple.com>
+
+	* symfile.c (symfile_bfd_open): Use current_gdbarch to determine
+	which subfile to load from a fat binary (instead of using
+	#ifdefs).
+
+2004-04-15  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c: More pending breakpoint notification
+	changes.  Decided to make a separate resolve notify
+	event rather than routing it through mention.
+	* gdb-events.sh: Ditto.
+
+2004-04-15  Jason Molenda  (jmolenda@apple.com)
+
+	* infrun.c: Add APPLE LOCAL markers around our changes.
+	A few minor reorgs to make future merges easier.
+	Removal of some old FSF code that slipped in.
+	(process_event_stop_test): Reinstate local mod to use value
+	of SOLIB_ADD.
+
+2004-04-14  Jim Ingham  <jingham@apple.com>
+
+	This is the first set of changes merging our changes to
+	breakpoint.c from the muon branch to TOT.
+	* breakpoint.c: Too many to list individually...
+	* breakpoint.h: ditto
+	* gdb-events.sh: Need to pass the parent pending breakpoint
+	into the notify events, so we can tell clients that the
+	new breakpoints are related to it.
+	* gdb-events.c: regenerate
+	* gdb-events.h: regenerate
+	
+	* symfile.c (reread_symbols): Restore a local mod that
+	bypasses the file pointer cached in the objfile's bfd
+	and goes to the actual file on disk when we want the
+	mtime of the file. 
+	
+2004-04-13  Jason Molenda  (jmolenda@apple.com)
+
+	* infrun.c (follow_fork): Remove unused variable.
+	(handle_step_into_function): Remove some Apple local code that
+	is no longer necessary (and causes a few problems as-is).
+
+	* fix-and-continue.c (struct active_func): Instead of keeping a
+	copy of the frame, let's just save the information we need and print
+	it ourselves.
+	(free_active_threads_struct): Free new struct active_func fields.
+	(create_current_active_funcs_list): Initialize new struct active_func
+	fields.
+	(print_active_functions): Print new struct active_func fields.
+
+2004-04-09  Jason Molenda  (jmolenda@apple.com)
+
+	* top.c (_initialize_fix): Remove stubbed out routine.
+	* symtab.c (lookup_block_symbol): Remove obsolete checks from lookup.
+	* fix-and-continue.c: First set of changes to work in the post-merge
+	world.  Still a bunch of failures to fix.
+
+2004-04-09  Jason Molenda  (jmolenda@apple.com)
+
+	* minsyms.c (lookup_minimal_symbol_by_pc_section_from): Move pc_section
+	variable from here...
+	(lookup_minimal_symbol_by_pc_section): To here.
+
+2004-04-09  Klee Dienes  <kdienes@apple.com>
+
+	* minsyms.c (lookup_minimal_symbol_by_pc): Don't use
+	find_pc_section; trust lookup_minimal_symbol_by_pc_section to do
+	the right thing.
+	(lookup_minimal_symbol_by_pc_section_from_objfile): Remove the
+	find_pc_section check for symbols after the last section.
+	(lookup_minimal_symbol_by_pc_section): Add the check here.
+	
+2004-04-09  Klee Dienes  <kdienes@apple.com>
+
+	* frame.c (frame_unwind_address_in_block): Don't subtract 1 from a
+	0 address.
+	(frame_id_eq): Don't treat a 0 code-address as a wild-card.
+
+2004-04-06  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.1: Update pointer to Apple local documentation.
+
+2004-03-30  Klee Dienes  <kdienes@apple.com>
+
+	* symfile.c (add_symbol_file_command): Update help text.
+	
+2004-03-29  Jim Ingham  <jingham@apple.com>
+
+	* varobj.c (varobj_pc_in_valid_block_p): Don't go through
+	a frame-id to an address to get the frame, just call frame_from_id.
+	
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* breakpoint.c (watchpoint_equal): Re-add.
+	(watchpoint_check): Re-add call to watchpoint_equal.
+
+2004-03-29  Klee Dienes  <kdienes@apple.com>
+
+	* symfile.c (add_symbol_file_command): Add syntax for specifying
+	text address without a -s option.  Update usage string.  Fix crash
+	when passing section offsets.
+
+2004-03-29  Jason Molenda  (jmolenda@apple.com)
+
+	* cli/cli-setshow.c (do_setshow_command): Update error message
+	to match current FSF error message.
+
+2004-03-26  Jason Molenda  (jmolenda@apple.com)
+
+	* breakpoint.c (future_break_command, 
+          restore_saved_pending_break_support): Re-add future-break command,
+	using the new pending_break_support that came with the merge.
+	(_initialize_breakpoint): Register it.
+
+2004-03-26  Jason Molenda  (jmolenda@apple.com)
+
+	* buildsym.c (end_symtab): Move symtab obsolete flag setting from
+	here...
+	* symfile.c (allocate_symtab): ...to here.  So we don't miss any
+	possible symtab allocations.
+
+2004-03-26  Klee Dienes  <kdienes@apple.com>
+
+	* infcall.c (hand_function_call): Don't stomp value_type by
+	calling find_function_addr() twice.
+
+2004-03-26  Jim Ingham (jingham@apple.com)
+
+	* breakpoint.c (print_it_typical): Add back in the printing
+	of the "commands" field for breakpoint hits.
+	
+2004-03-25  Jason Molenda  (jmolenda@apple.com)
+
+	* configure: Regenerated with updated ../gettext.m4.
+	* defs.h: Don't include "tui.h".
+	* main.c: Use ifdef, not if, for USE_MMALLOC.
+	* macosx/macosx-nat-dyld.c: Ditto.
+
+2004-03-01  Jim Ingham   <jingham@apple.com>
+
+	* linespec.c (decode_all_digits): Pass in funfirstline, and
+	move past the prologue if it is set.
+	
+2004-03-01  Klee Dienes  <kdienes@apple.com>
+
+	* ppc-sysv-tdep.c: Move the calls to set $sp and $lr, and call
+	target_store_registers, into the *_push_dummy_call functions
+	themselves.
+	* ppc-tdep.h: Add prototype for ppc_darwin_abi_push_dummy_call.
+
+
+2004-02-27  Jim Ingham  <jingham@apple.com>
+
+        * printcmd.c (print_address_symbolic): If the target
+	address size is greater than the size of a CORE_ADDR,
+	undo the sign extension that might have occured when 
+	we read in the address.
+	
+	These changes are needed to implement the mi command
+	-break-commands.
+	
+	* breakpoint.c (find_breakpoint): New function.
+	(breakpoint_add_commands): New function.
+	(breakpoint_print_commands): New function.
+	(commands_command): refactor to use breakpoint_add_commands.
+	* breakpoint.h: Added new functions.
+	* defs.h: added read_command_lines_1.
+	* cli/cli-script.c: get_command_line: Pass the CLI read_next_line
+	into recurse_read_control_structure.
+	(read_next_line) Now return char * & just read, don't process.
+	(process_next_line): New function, separates reading & processing.
+	(recurse_read_control_structure): take a function pointer to the
+	read function.
+	(read_command_lines): Use read_command_lines_1 and the CLI
+	read_next_line function.
+	(read_command_lines_1): New function.
 	
 2004-02-03  Jim Ingham  <jingham@apple.com>
 
@@ -82,7 +480,6 @@
 	check_call_safe entry.
 	target.h: Add check_call_safe entry.
 	
-
 	* dbxread.c (process_one_symbol): Add a hack to work around the
 	fact that gcc3 doesn't emit LBRAC/RBRAC stabs for functions with
 	no locals at the function scope.

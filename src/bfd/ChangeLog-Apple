@@ -1,3 +1,18 @@
+2004-06-15  Jason Molenda  (jmolenda@apple.com)
+
+        * config.bfd (targ_underscore): Set to 'yes' on Darwin platforms
+        so cxxfilt will properly handle ld's output.
+
+2004-05-06  Klee Dienes <kdienes@apple.com>
+
+	* mach-o.h (bfd_mach_o_cpu_type): Add BFD_MACH_O_CPU_TYPE_POWERPC_64.
+	* mach-o.c (bfd_mach_o_convert_architecture): Add subtype
+	(machine) support for all architectures, including bfd_mach_ppc64.
+
+2004-04-08  Jason Molenda  (jmolenda@apple.com)
+
+	* bfdio.c (_bfd_io_close): Pass the return value up the stack.
+
 2003-08-06  Klee Dienes  <kdienes@apple.com>
 
         * bfdio.c (bfd_get_mtime): When BFD_IN_MEMORY is set, don't try to

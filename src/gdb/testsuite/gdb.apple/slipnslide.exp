@@ -143,10 +143,10 @@ set libsystem_commpage_full_pathname "$libsystem_full_pathname\\\[LC_SEGMENT.__D
 
 send_gdb "10-file-sharedlibrary-info\n" 
 gdb_expect {
-  -re "10\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"-\",reason=\"init\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",description=\"$libsystem_full_pathname\",slide=\"\",loaded_addr=\"$libsystem_load_addr\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname\"\\\].*" {
+  -re "10\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"-\",reason=\"init\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",slide=\"\",loaded_addr=\"$libsystem_load_addr\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname\"\\\].*" {
     pass "verify pre-start libsystem via mi1"
   }
-  -re "10\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"-\",reason=\"init\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",description=\"$libsystem_full_pathname\",slide=\"\",loaded_addr=\"$libsystem_load_addr\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname\",sympath=.*" {
+  -re "10\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"-\",reason=\"init\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",slide=\"\",loaded_addr=\"$libsystem_load_addr\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname\",sympath=.*" {
       fail "verify pre-start libsystem via mi1 - info shlib shows sympath"
   }
   -re "$gdb_prompt $" {
@@ -174,13 +174,16 @@ gdb_expect {
   -re ".*\\\*stopped,reason=\"shlib-event\".*$mi_gdb_prompt$" {
     pass "catch shlib-event during startup"
   }
+  -re ".*\\\*stopped,reason=\"breakpoint-hit\".*$mi_gdb_prompt$" {
+    fail "catch shlib-event during startup (hit breakpoint, missed shlib-event)"
+  }
   timeout {
     fail "(timeout) catch shlib-event during startup in mi1"
   }
 }
 
 
-mi_gdb_test "50-file-sharedlibrary-info" "50\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"$libsystem_load_addr\",reason=\"dyld\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",description=\"$libsystem_full_pathname\",loaded_addr=\"$libsystem_load_addr\",slide=\"0x0\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname.*\"\\\].*" "verify post-start libsystem via mi1"
+mi_gdb_test "50-file-sharedlibrary-info" "50\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"$libsystem_load_addr\",reason=\"dyld\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",loaded_addr=\"$libsystem_load_addr\",slide=\"0x0\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname.*\"\\\].*" "verify post-start libsystem via mi1"
 
 mi_gdb_exit
 

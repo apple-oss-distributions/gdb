@@ -1126,11 +1126,11 @@ static void macosx_child_attach (char *args, int from_tty)
   if (macosx_status->attached_in_ptrace) {
 
     /* read attach notification */
-    stop_soon_quietly = 1;
+    stop_soon = STOP_QUIETLY;
     wait_for_inferior ();
 
     macosx_signal_thread_create (&macosx_status->signal_status, macosx_status->pid);
-    stop_soon_quietly = 1;
+    stop_soon = STOP_QUIETLY;
     wait_for_inferior ();
   }
   
@@ -1633,7 +1633,7 @@ macosx_find_exception_catchpoints (enum exception_event_kind kind,
 	   msymbol != NULL;
 	   msymbol = msymbol->hash_next)
 	if (MSYMBOL_TYPE (msymbol) == mst_text
-	    && SYMBOL_MATCHES_NAME (msymbol, symbol_name))
+	    && (strcmp_iw (SYMBOL_LINKAGE_NAME (msymbol), symbol_name) == 0))
 	  {
 	    /* We found one, add it here... */
 	    CORE_ADDR catchpoint_address;
@@ -1716,7 +1716,7 @@ macosx_get_current_exception_event ()
       if (!fi)
 	return (struct exception_event_record *) NULL;
       
-      exception_event->throw_sal = find_pc_line (fi->pc, 1);
+      exception_event->throw_sal = find_pc_line (get_frame_pc (fi), 1);
       
       /* FIXME: We don't know the catch location when we
 	 have just intercepted the throw.  Can we walk the
@@ -1734,7 +1734,7 @@ macosx_get_current_exception_event ()
       if (!fi)
 	return (struct exception_event_record *) NULL;
       
-      exception_event->catch_sal = find_pc_line (fi->pc, 1);
+      exception_event->catch_sal = find_pc_line (get_frame_pc (fi), 1);
       
       /* By the time we get here, we have totally forgotten
          where we were thrown from... */
@@ -1911,12 +1911,6 @@ _initialize_macosx_inferior ()
   macosx_exec_ops.to_can_async_p = standard_can_async_p;
   macosx_exec_ops.to_is_async_p = standard_is_async_p;
 
-  exec_ops.to_find_exception_catchpoints 
-    = macosx_find_exception_catchpoints;
-  exec_ops.to_enable_exception_callback 
-    = macosx_enable_exception_callback;
-  exec_ops.to_get_current_exception_event 
-    = macosx_get_current_exception_event;
   exec_ops.to_has_thread_control = tc_schedlock | tc_switch;
 
   macosx_child_ops.to_shortname = "macos-child";
@@ -1943,12 +1937,6 @@ _initialize_macosx_inferior ()
   macosx_child_ops.to_async_mask_value = 1;
   macosx_child_ops.to_bind_function = dyld_lookup_and_bind_function;
   macosx_child_ops.to_check_safe_call = macosx_check_safe_call;
-  macosx_child_ops.to_find_exception_catchpoints 
-    = macosx_find_exception_catchpoints;
-  macosx_child_ops.to_enable_exception_callback 
-    = macosx_enable_exception_callback;
-  macosx_child_ops.to_get_current_exception_event 
-    = macosx_get_current_exception_event;
   macosx_child_ops.to_has_thread_control = tc_schedlock | tc_switch;
 
   add_target (&macosx_exec_ops);

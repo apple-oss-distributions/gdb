@@ -72,7 +72,8 @@ macosx_resize_window (int *lines_per_page, int *chars_per_line)
     *chars_per_line = new_chars_per_line;
   }
 
-  update_width ();
+  set_screen_size ();
+  set_width ();
 }
 
 void

@@ -48,6 +48,26 @@
 
 #include <unistd.h>
 
+#include <AvailabilityMacros.h>
+
+#define MACH64 (MAC_OS_X_VERSION_MAX_ALLOWED >= 1040)
+
+#if MACH64
+
+#include <mach/mach_vm.h>
+
+#else /* ! MACH64 */
+
+#define mach_vm_size_t vm_size_t
+#define mach_vm_address_t vm_address_t
+#define mach_vm_read vm_read
+#define mach_vm_write vm_write
+#define mach_vm_region vm_region
+#define VM_REGION_BASIC_INFO_COUNT_64 VM_REGION_BASIC_INFO_COUNT
+#define VM_REGION_BASIC_INFO_64 VM_REGION_BASIC_INFO
+
+#endif /* MACH64 */
+
 #define MAX_INSTRUCTION_CACHE_WARNINGS 0
 
 /* MINUS_INT_MIN is the absolute value of the minimum value that can
@@ -81,6 +101,7 @@ unsigned int child_get_pagesize ()
 
   status = host_page_size (mach_host_self(), &result);
   MACH_CHECK_ERROR (status);
+
   return result;
 }
 
@@ -98,8 +119,8 @@ mach_xfer_memory_remainder (CORE_ADDR memaddr, char *myaddr,
 {
   unsigned int pagesize = child_get_pagesize ();
 
-  unsigned int mempointer;	/* local copy of inferior's memory */
-  unsigned int memcopied;	/* for vm_read to use */
+  vm_offset_t mempointer;	/* local copy of inferior's memory */
+  mach_msg_type_number_t memcopied;	/* for vm_read to use */
 
   CORE_ADDR pageaddr = memaddr - (memaddr % pagesize);
 
@@ -108,8 +129,9 @@ mach_xfer_memory_remainder (CORE_ADDR memaddr, char *myaddr,
   CHECK_FATAL (((memaddr + len - 1) - ((memaddr + len - 1) % pagesize)) 
 	       == pageaddr);
 
-  kret = vm_read (macosx_status->task, pageaddr, pagesize, 
-		  &mempointer, &memcopied);
+  kret = mach_vm_read (macosx_status->task, pageaddr, pagesize, 
+		       &mempointer, &memcopied);
+
   if (kret != KERN_SUCCESS) {
     mutils_debug ("Unable to read page for region at 0x%lx with length %lu from inferior: %s (0x%lx)\n", 
 		  (unsigned long) pageaddr, (unsigned long) len, 
@@ -142,7 +164,7 @@ mach_xfer_memory_remainder (CORE_ADDR memaddr, char *myaddr,
       mutils_debug ("Unable to flush GDB's address space after memcpy prior to vm_write: %s (0x%lx)\n",
 		    MACH_ERROR_STRING (kret), kret);
     }
-    kret = vm_write (macosx_status->task, pageaddr, (pointer_t) mempointer, 
+    kret = mach_vm_write (macosx_status->task, pageaddr, (pointer_t) mempointer, 
 		     pagesize);
     if (kret != KERN_SUCCESS) {
       mutils_debug ("Unable to write region at 0x%lx with length %lu to inferior: %s (0x%lx)\n",
@@ -170,8 +192,8 @@ mach_xfer_memory_block (CORE_ADDR memaddr, char *myaddr,
 {
   unsigned int pagesize = child_get_pagesize ();
 
-  unsigned int mempointer;	/* local copy of inferior's memory */
-  unsigned int memcopied;	/* for vm_read to use */
+  vm_offset_t mempointer;	/* local copy of inferior's memory */
+  mach_msg_type_number_t memcopied;	/* for vm_read to use */
 
   kern_return_t kret;
 
@@ -179,7 +201,7 @@ mach_xfer_memory_block (CORE_ADDR memaddr, char *myaddr,
   CHECK_FATAL ((len % pagesize) == 0);
 
   if (! write) {
-    kret = vm_read (macosx_status->task, memaddr, len, &mempointer, &memcopied);
+    kret = mach_vm_read (macosx_status->task, memaddr, len, &mempointer, &memcopied);
     if (kret != KERN_SUCCESS) {
       mutils_debug ("Unable to read region at 0x%lx with length %lu from inferior: %s (0x%lx)\n", 
 		    (unsigned long) memaddr, (unsigned long) len,
@@ -206,7 +228,7 @@ mach_xfer_memory_block (CORE_ADDR memaddr, char *myaddr,
       return 0;
     }
   } else {
-    kret = vm_write (macosx_status->task, memaddr, (pointer_t) myaddr, len);
+    kret = mach_vm_write (macosx_status->task, memaddr, (pointer_t) myaddr, len);
     if (kret != KERN_SUCCESS) {
       mutils_debug ("Unable to write region at 0x%lx with length %lu from inferior: %s (0x%lx)\n", 
 		    (unsigned long) memaddr, (unsigned long) len,
@@ -224,12 +246,12 @@ mach_xfer_memory (CORE_ADDR memaddr, char *myaddr,
 		  struct mem_attrib *attrib, 
 		  struct target_ops *target)
 {
-  vm_address_t r_start;
-  vm_address_t r_end;
-  vm_size_t r_size;
+  mach_vm_address_t r_start;
+  mach_vm_address_t r_end;
+  mach_vm_size_t r_size;
   port_t r_object_name;
 
-  vm_region_basic_info_data_t r_data;
+  vm_region_basic_info_data_64_t r_data;
   mach_msg_type_number_t r_info_size;
 
   CORE_ADDR cur_memaddr;
@@ -258,10 +280,10 @@ mach_xfer_memory (CORE_ADDR memaddr, char *myaddr,
   /* check for case where memory available only at address greater than address specified */
   {
     r_start = memaddr;
-    r_info_size = VM_REGION_BASIC_INFO_COUNT;
-    kret = vm_region (macosx_status->task, &r_start, &r_size,
-                      VM_REGION_BASIC_INFO, (vm_region_info_t) &r_data,
-		      &r_info_size, &r_object_name);
+    r_info_size = VM_REGION_BASIC_INFO_COUNT_64;
+    kret = mach_vm_region (macosx_status->task, &r_start, &r_size,
+			   VM_REGION_BASIC_INFO_64, (vm_region_info_t) &r_data,
+			   &r_info_size, &r_object_name);
     if (kret != KERN_SUCCESS) {
       return 0;
     }
@@ -290,10 +312,10 @@ mach_xfer_memory (CORE_ADDR memaddr, char *myaddr,
     
     r_start = cur_memaddr;
 
-    r_info_size = VM_REGION_BASIC_INFO_COUNT;
-    kret = vm_region (macosx_status->task, &r_start, &r_size,
-                      VM_REGION_BASIC_INFO, (vm_region_info_t) &r_data,
-                      &r_info_size, &r_object_name);
+    r_info_size = VM_REGION_BASIC_INFO_COUNT_64;
+    kret = mach_vm_region (macosx_status->task, &r_start, &r_size,
+			   VM_REGION_BASIC_INFO_64, (vm_region_info_t) &r_data,
+			   &r_info_size, &r_object_name);
     if (kret != KERN_SUCCESS) {
       mutils_debug ("Unable to read region information for memory at 0x%lx: %s (0x%lx)\n", 
 		    (unsigned long) cur_memaddr, MACH_ERROR_STRING (kret), kret);

@@ -42,6 +42,7 @@
 #include "gdbcore.h"
 #include "gdbthread.h"
 #include "regcache.h"
+#include "bfd.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -52,7 +53,7 @@ struct target_ops macho_core_ops;
 static struct sec *
 lookup_section (bfd *abfd, unsigned int n)
 {
-  struct sec *sect = NULL;
+  struct bfd_section *sect = NULL;
 
   CHECK_FATAL (abfd != NULL);
   CHECK_FATAL (n < bfd_count_sections (abfd));
@@ -135,7 +136,7 @@ core_open (char *filename, int from_tty)
   bfd *temp_bfd;
   int ontop;
   int scratch_chan;
-  struct sec *sect;
+  struct bfd_section *sect;
   unsigned int i;
 
   target_preopen (from_tty);

@@ -38,10 +38,10 @@
 #include "objfiles.h"
 #include "mach-o.h"
 #include "gdbcore.h"
-#include "interpreter.h"
 #include "gdb_regex.h"
 #include "gdb-stabs.h"
 #include "gdb_assert.h"
+#include "interps.h"
 
 #include <mach-o/nlist.h>
 #include <mach-o/loader.h>
@@ -640,7 +640,7 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
 {
   char *name = NULL;
   char *leaf = NULL;
-  struct section_addr_info addrs;
+  struct section_addr_info *addrs;
   unsigned int i;
 
   if (e->loaded_error) { return; }
@@ -669,19 +669,11 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
     e->loaded_addrisoffset = 1;
   }
 
-  for (i = 0; i < MAX_SECTIONS; i++) {
-    addrs.other[i].name = NULL;
-    addrs.other[i].addr = e->dyld_slide;
-    addrs.other[i].sectindex = 0;
-  }
-
-  addrs.addrs_are_offsets = 1;
-
   if (e->objfile != NULL) {
-    struct section_offsets *new_offsets = (struct section_offsets *) xmalloc (SIZEOF_SECTION_OFFSETS);
+    struct section_offsets *new_offsets = (struct section_offsets *) xmalloc (SIZEOF_N_SECTION_OFFSETS (e->objfile->num_sections));
     tell_breakpoints_objfile_changed (e->objfile);
-    for (i = 0; i < SECT_OFF_MAX; i++) {
-      new_offsets->offsets[i] = addrs.other[0].addr;
+    for (i = 0; i < e->objfile->num_sections; i++) {
+      new_offsets->offsets[i] = e->dyld_slide;
     }
     if (info_verbose)
       printf_filtered ("Relocating symbols from %s...", e->objfile->name);
@@ -693,9 +685,20 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
 #if MAPPED_SYMFILES
     mmalloc_protect (e->objfile->md, PROT_READ);
 #endif
+    xfree (new_offsets);
     if (info_verbose)
       printf_filtered ("done\n");
   } else {
+
+    addrs = alloc_section_addr_info (bfd_count_sections (e->abfd));
+
+    for (i = 0; i < addrs->num_sections; i++) {
+      addrs->other[i].name = NULL;
+      addrs->other[i].addr = e->dyld_slide;
+      addrs->other[i].sectindex = 0;
+    }
+
+    addrs->addrs_are_offsets = 1;
 
     /* If we are loading the library for the first time, check to see
        if it has a __DATA.__commpage section, and if so, process the
@@ -707,7 +710,7 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
     const char *segname = "LC_SEGMENT.__DATA.__commpage";
     asection *commsec;
 
-    e->objfile = symbol_file_add_bfd_safe (e->abfd, 0, &addrs, 0, 0, e->load_flag, 0, e->prefix);
+    e->objfile = symbol_file_add_bfd_safe (e->abfd, 0, addrs, 0, 0, e->load_flag, 0, e->prefix);
 
     commsec = bfd_get_section_by_name (e->abfd, segname);
     if (commsec != NULL)

@@ -49,7 +49,8 @@
 
 #include "mach-o.h"
 
-const char *ptrace_request_unparse (int request)
+const char *
+ptrace_request_unparse (int request)
 {
   switch (request) {
   case PTRACE_TRACEME: return "PTRACE_TRACEME";
@@ -71,7 +72,8 @@ const char *ptrace_request_unparse (int request)
   }
 }
 
-int call_ptrace (int request, int pid, int arg3, int arg4)
+int 
+call_ptrace (int request, int pid, int arg3, int arg4)
 {
   int ret;
   errno = 0;
@@ -83,7 +85,8 @@ int call_ptrace (int request, int pid, int arg3, int arg4)
   return ret;
 }
 
-void macosx_inferior_reset (macosx_inferior_status *s)
+void 
+macosx_inferior_reset (macosx_inferior_status *s)
 {
   s->pid = 0;
   s->task = TASK_NULL;
@@ -107,7 +110,8 @@ void macosx_inferior_reset (macosx_inferior_status *s)
 #endif /* WITH_CFM */
 }
 
-void macosx_inferior_destroy (macosx_inferior_status *s)
+void 
+macosx_inferior_destroy (macosx_inferior_status *s)
 {
   macosx_signal_thread_destroy (&s->signal_status);
   macosx_exception_thread_destroy (&s->exception_status);
@@ -121,7 +125,8 @@ void macosx_inferior_destroy (macosx_inferior_status *s)
   macosx_inferior_reset (s);
 }
 
-int macosx_inferior_valid (macosx_inferior_status *s)
+int 
+macosx_inferior_valid (macosx_inferior_status *s)
 {
   kern_return_t kret;
   int ret;
@@ -138,7 +143,8 @@ int macosx_inferior_valid (macosx_inferior_status *s)
   return 1;
 }
 
-void macosx_inferior_check_stopped (macosx_inferior_status *s)
+void 
+macosx_inferior_check_stopped (macosx_inferior_status *s)
 {
   CHECK (s != NULL);
 
@@ -153,7 +159,8 @@ void macosx_inferior_check_stopped (macosx_inferior_status *s)
   CHECK ((s->suspend_count == 0) || (s->suspend_count == 1));
 }  
 
-kern_return_t macosx_inferior_suspend_mach (macosx_inferior_status *s)
+kern_return_t 
+macosx_inferior_suspend_mach (macosx_inferior_status *s)
 {
   kern_return_t kret;
 
@@ -173,7 +180,8 @@ kern_return_t macosx_inferior_suspend_mach (macosx_inferior_status *s)
   return KERN_SUCCESS;
 }
 
-kern_return_t macosx_inferior_resume_mach (macosx_inferior_status *s, int count)
+kern_return_t 
+macosx_inferior_resume_mach (macosx_inferior_status *s, int count)
 {
   kern_return_t kret;
   
@@ -205,7 +213,8 @@ kern_return_t macosx_inferior_resume_mach (macosx_inferior_status *s, int count)
   return KERN_SUCCESS;
 }
 
-void macosx_inferior_suspend_ptrace (macosx_inferior_status *s)
+void 
+macosx_inferior_suspend_ptrace (macosx_inferior_status *s)
 {
   struct target_waitstatus status;
 
@@ -224,7 +233,8 @@ void macosx_inferior_suspend_ptrace (macosx_inferior_status *s)
   CHECK (status.value.sig == TARGET_SIGNAL_STOP);
 }
 
-void macosx_inferior_resume_ptrace (macosx_inferior_status *s, unsigned int thread, int nsignal, int val)
+void 
+macosx_inferior_resume_ptrace (macosx_inferior_status *s, unsigned int thread, int nsignal, int val)
 {
   CHECK (s != NULL);
   CHECK ((val == PTRACE_DETACH) || (val == PTRACE_CONT));
@@ -258,8 +268,8 @@ void macosx_inferior_resume_ptrace (macosx_inferior_status *s, unsigned int thre
     s->attached_in_ptrace = 0;
 }
 
-kern_return_t macosx_save_exception_ports
-(task_t task, struct macosx_exception_info *info)
+kern_return_t 
+macosx_save_exception_ports (task_t task, struct macosx_exception_info *info)
 {
   kern_return_t kret;
 
@@ -274,8 +284,8 @@ kern_return_t macosx_save_exception_ports
   return KERN_SUCCESS;
 }
 
-kern_return_t macosx_restore_exception_ports
-(task_t task, struct macosx_exception_info *info)
+kern_return_t 
+macosx_restore_exception_ports (task_t task, struct macosx_exception_info *info)
 {
   int i;
   kern_return_t kret;

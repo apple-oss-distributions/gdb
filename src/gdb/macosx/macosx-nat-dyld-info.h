@@ -56,10 +56,10 @@ struct dyld_objfile_entry {
   char *text_name;
   int text_name_valid;
 
-  struct _bfd *abfd;
+  struct bfd *abfd;
   struct objfile *objfile;
 
-  struct _bfd *commpage_bfd; /* The BFD corresponding to the commpage symbol information */
+  struct bfd *commpage_bfd; /* The BFD corresponding to the commpage symbol information */
   struct objfile *commpage_objfile; /* The corresponding objfile */
 
   const char *loaded_name;
@@ -93,7 +93,7 @@ const char *dyld_entry_filename
 PARAMS ((const struct dyld_objfile_entry *e, const struct dyld_path_info *d, int type));
 
 char *dyld_offset_string
-PARAMS ((unsigned long offset));
+PARAMS ((CORE_ADDR offset));
 
 char *dyld_entry_string
 PARAMS ((struct dyld_objfile_entry *e, int use_shortnames));

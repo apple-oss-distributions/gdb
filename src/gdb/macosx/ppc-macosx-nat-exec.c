@@ -22,6 +22,7 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "ppc-macosx-regs.h"
+#include "ppc-macosx-regnums.h"
 #include "ppc-macosx-thread-status.h"
 #include "ppc-macosx-regs.h"
 #include "macosx-nat-mutils.h"
@@ -60,7 +61,7 @@ void fetch_inferior_registers (int regno)
 {
   thread_t current_thread = ptid_get_tid (inferior_ptid);
 
-  if ((regno == -1) || IS_GP_REGNUM (regno) || IS_GSP_REGNUM (regno))
+  if ((regno == -1) || PPC_MACOSX_IS_GP_REGNUM (regno) || PPC_MACOSX_IS_GSP_REGNUM (regno))
     {
       if (gdbarch_osabi (current_gdbarch) == GDB_OSABI_DARWIN64)
 	{
@@ -82,7 +83,7 @@ void fetch_inferior_registers (int regno)
 	}
     }
   
-  if ((regno == -1) || IS_FP_REGNUM (regno) || IS_FSP_REGNUM (regno)) {
+  if ((regno == -1) || PPC_MACOSX_IS_FP_REGNUM (regno) || PPC_MACOSX_IS_FSP_REGNUM (regno)) {
     gdb_ppc_thread_fpstate_t fp_regs;
     unsigned int fp_count = GDB_PPC_THREAD_FPSTATE_COUNT;
     kern_return_t ret = thread_get_state
@@ -91,7 +92,7 @@ void fetch_inferior_registers (int regno)
     ppc_macosx_fetch_fp_registers (&fp_regs);
   }
 
-  if ((regno == -1) || IS_VP_REGNUM (regno) || IS_VSP_REGNUM (regno)) {
+  if ((regno == -1) || PPC_MACOSX_IS_VP_REGNUM (regno) || PPC_MACOSX_IS_VSP_REGNUM (regno)) {
     gdb_ppc_thread_vpstate_t vp_regs;
     unsigned int vp_count = GDB_PPC_THREAD_VPSTATE_COUNT;
     kern_return_t ret = thread_get_state
@@ -115,7 +116,7 @@ void store_inferior_registers (int regno)
 
   validate_inferior_registers (regno);
 
-  if ((regno == -1) || IS_GP_REGNUM (regno) || IS_GSP_REGNUM (regno))
+  if ((regno == -1) || PPC_MACOSX_IS_GP_REGNUM (regno) || PPC_MACOSX_IS_GSP_REGNUM (regno))
     {
       if (gdbarch_osabi (current_gdbarch) == GDB_OSABI_DARWIN64)
 	{
@@ -137,7 +138,7 @@ void store_inferior_registers (int regno)
 	}
     }
   
-  if ((regno == -1) || IS_FP_REGNUM (regno) || IS_FSP_REGNUM (regno)) {
+  if ((regno == -1) || PPC_MACOSX_IS_FP_REGNUM (regno) || PPC_MACOSX_IS_FSP_REGNUM (regno)) {
     gdb_ppc_thread_fpstate_t fp_regs;
     kern_return_t ret;
     ppc_macosx_store_fp_registers (&fp_regs);
@@ -146,7 +147,7 @@ void store_inferior_registers (int regno)
     MACH_CHECK_ERROR (ret);
   }
 
-  if ((regno == -1) || IS_VP_REGNUM (regno) || IS_VSP_REGNUM (regno)) {
+  if ((regno == -1) || PPC_MACOSX_IS_VP_REGNUM (regno) || PPC_MACOSX_IS_VSP_REGNUM (regno)) {
     gdb_ppc_thread_vpstate_t vp_regs;
     kern_return_t ret;
     ppc_macosx_store_vp_registers (&vp_regs);

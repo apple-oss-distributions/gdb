@@ -33,6 +33,7 @@
 #include "symtab.h"
 #include "gdbcmd.h"
 #include "objfiles.h"
+#include "ui-out.h"
 
 const char *dyld_reason_string (dyld_objfile_reason r)
 {
@@ -394,11 +395,12 @@ const char *dyld_entry_filename
       return name;
 }
 
-char *dyld_offset_string (unsigned long offset)
+char *dyld_offset_string (CORE_ADDR offset)
 {
+  CORE_ADDR CORE_ADDR_MAX = (CORE_ADDR) -1;
   char *ret = NULL;
   if (offset > LONG_MAX) {
-    xasprintf (&ret, "-0x%lx", ((ULONG_MAX - offset) + 1));
+    xasprintf (&ret, "-0x%lx", (unsigned long) ((CORE_ADDR_MAX - offset) + 1));
   } else {
     xasprintf (&ret, "0x%lx", offset);
   }
@@ -494,7 +496,7 @@ dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames,
       CHECK_FATAL (! e->loaded_addrisoffset);
       CHECK_FATAL (e->loaded_addr == e->loaded_memaddr);
       if (e->image_addr_valid) {
-	*slide = dyld_offset_string ((unsigned long) (e->loaded_memaddr - e->image_addr));
+	*slide = dyld_offset_string (e->loaded_memaddr - e->image_addr);
 	xasprintf (addr, "0x%lx", (unsigned long) e->loaded_memaddr);
       } else {
 	xasprintf (addr, "0x%lx", (unsigned long) e->loaded_memaddr);
@@ -560,18 +562,18 @@ dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames,
 
       if (e->loaded_addrisoffset) {
 	if (e->image_addr_valid) {
-	  *slide = dyld_offset_string ((unsigned long) e->loaded_offset);
+	  *slide = dyld_offset_string (e->loaded_offset);
 	  xasprintf (addr, "0x%lx", (unsigned long) e->image_addr);
 	} else {
-	  *slide = dyld_offset_string ((unsigned long) e->loaded_offset);
+	  *slide = dyld_offset_string (e->loaded_offset);
 	}
       } else {
 	if (e->dyld_valid) {
-	  *slide = dyld_offset_string ((unsigned long) e->dyld_slide);
+	  *slide = dyld_offset_string (e->dyld_slide);
 	  xasprintf (addr, "0x%lx", (unsigned long) e->loaded_addr);
 	} else {
 	  if (e->image_addr_valid) {
-	    *slide = dyld_offset_string ((unsigned long) (e->loaded_addr - e->image_addr));
+	    *slide = dyld_offset_string (e->loaded_addr - e->image_addr);
 	    xasprintf (addr, "0x%lx", (unsigned long) e->loaded_addr);
 	  } else {
 	    xasprintf (addr, "0x%lx", (unsigned long) e->loaded_addr);
@@ -844,6 +846,7 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
   char *fname = NULL;
   char addrbuf[24];
   const char *ptr;
+  struct cleanup *list_cleanup;
 
   dyld_entry_info (j, 1, &name, &objname, &symname, &auxobjname, &auxsymname, &addr, &slide, &prefix);
       
@@ -866,7 +869,7 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
     baselen = strlen (fname);
   }
 
-  ui_out_list_begin (uiout, "shlib-info");
+  list_cleanup = make_cleanup_ui_out_list_begin_end (uiout, "shlib-info");
   if (shlibnum < 10)
     ui_out_text (uiout, "  ");
   else if (shlibnum < 100)
@@ -932,19 +935,16 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
   ui_out_field_string (uiout, "state", ptr);
   ui_out_spaces (uiout, 1);
 
-  if (ui_out_is_mi_like_p (uiout))
-    ui_out_field_string (uiout, "path", (symname != NULL) ? symname : "");
-
   if (name == NULL)
     {
       if (ui_out_is_mi_like_p (uiout))
 	{
 	  char *s = dyld_entry_string (j, 1);
-	  ui_out_field_string (uiout, "description", s);
+	  ui_out_field_string (uiout, "path", s);
 	  xfree (s);
 	}
       else
-	ui_out_field_skip (uiout, "description");
+	ui_out_field_skip (uiout, "path");
 
       if (addr != NULL)
 	{
@@ -978,7 +978,7 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
     }
   else
     {
-      ui_out_field_string (uiout, "description", name);
+      ui_out_field_string (uiout, "path", name);
 
       if (slide == NULL)
 	{
@@ -1065,7 +1065,7 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
 	ui_out_field_string (uiout, "commpage-sympath", auxsymname);
       }
       
-  ui_out_list_end (uiout);
+  do_cleanups (list_cleanup);
 
   ui_out_text (uiout, "\n");
 

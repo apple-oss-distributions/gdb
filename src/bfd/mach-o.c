@@ -1,5 +1,5 @@
 /* Mach-O support for BFD.
-   Copyright 1999, 2000, 2001, 2002
+   Copyright 1999, 2000, 2001, 2002, 2003
    Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -80,7 +80,7 @@ static long bfd_mach_o_count_symbols
   PARAMS ((bfd *));
 static long bfd_mach_o_get_symtab_upper_bound
   PARAMS ((bfd *));
-static long bfd_mach_o_get_symtab
+static long bfd_mach_o_canonicalize_symtab
   PARAMS ((bfd *, asymbol **));
 static void bfd_mach_o_get_symbol_info
   PARAMS ((bfd *, asymbol *, symbol_info *));
@@ -255,7 +255,7 @@ bfd_mach_o_get_symtab_upper_bound (abfd)
 }
 
 static long
-bfd_mach_o_get_symtab (abfd, alocation)
+bfd_mach_o_canonicalize_symtab (abfd, alocation)
      bfd *abfd;
      asymbol **alocation;
 {
@@ -275,7 +275,7 @@ bfd_mach_o_get_symtab (abfd, alocation)
 
 	  if (bfd_mach_o_scan_read_symtab_symbols (abfd, &mdata->commands[i].command.symtab) != 0)
 	    {
-	      fprintf (stderr, "bfd_mach_o_get_symtab: unable to load symbols for section %lu\n", i);
+	      fprintf (stderr, "bfd_mach_o_canonicalize_symtab: unable to load symbols for section %lu\n", i);
 	      return 0;
 	    }
 
@@ -336,25 +336,32 @@ bfd_mach_o_convert_architecture (mtype, msubtype, type, subtype)
     {
     case BFD_MACH_O_CPU_TYPE_VAX: *type = bfd_arch_vax; break;
     case BFD_MACH_O_CPU_TYPE_MC680x0: *type = bfd_arch_m68k; break;
-    case BFD_MACH_O_CPU_TYPE_I386: *type = bfd_arch_i386; break;
+    case BFD_MACH_O_CPU_TYPE_I386:
+      *type = bfd_arch_i386;
+      *subtype = bfd_mach_i386_i386;
+      break;
     case BFD_MACH_O_CPU_TYPE_MIPS: *type = bfd_arch_mips; break;
     case BFD_MACH_O_CPU_TYPE_MC98000: *type = bfd_arch_m98k; break;
     case BFD_MACH_O_CPU_TYPE_HPPA: *type = bfd_arch_hppa; break;
     case BFD_MACH_O_CPU_TYPE_ARM: *type = bfd_arch_arm; break;
     case BFD_MACH_O_CPU_TYPE_MC88000: *type = bfd_arch_m88k; break;
-    case BFD_MACH_O_CPU_TYPE_SPARC: *type = bfd_arch_sparc; break;
+    case BFD_MACH_O_CPU_TYPE_SPARC:
+      *type = bfd_arch_sparc; 
+      *subtype = bfd_mach_sparc; 
+      break;
     case BFD_MACH_O_CPU_TYPE_I860: *type = bfd_arch_i860; break;
     case BFD_MACH_O_CPU_TYPE_ALPHA: *type = bfd_arch_alpha; break;
-    case BFD_MACH_O_CPU_TYPE_POWERPC: *type = bfd_arch_powerpc; break;
-    default: *type = bfd_arch_unknown; break;
-    }
-
-  switch (*type)
-    {
-    case bfd_arch_i386: *subtype = bfd_mach_i386_i386; break;
-    case bfd_arch_sparc: *subtype = bfd_mach_sparc; break;
+    case BFD_MACH_O_CPU_TYPE_POWERPC:
+      *type = bfd_arch_powerpc;
+      *subtype = bfd_mach_ppc; 
+      break;
+    case BFD_MACH_O_CPU_TYPE_POWERPC_64:
+      *type = bfd_arch_powerpc;
+      *subtype = bfd_mach_ppc64; 
+      break;
     default:
-      *subtype = bfd_arch_unknown;
+      *type = bfd_arch_unknown;
+      break;
     }
 }
 
