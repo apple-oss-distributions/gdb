@@ -34,9 +34,9 @@ const struct mem_attrib default_mem_attrib =
 {
   MEM_RW,			/* mode */
   MEM_WIDTH_UNSPECIFIED,
-  false,			/* hwbreak */
-  false,			/* cache */
-  false				/* verify */
+  0,				/* hwbreak */
+  0,				/* cache */
+  0				/* verify */
 };
 
 static struct mem_region *mem_region_chain = NULL;
@@ -48,9 +48,10 @@ create_mem_region (CORE_ADDR lo, CORE_ADDR hi,
 {
   struct mem_region *n, *new;
 
-  if (lo > hi)
+  /* lo == hi is a useless empty region */
+  if (lo >= hi)
     {
-      printf_unfiltered ("invalid memory region\n");
+      printf_unfiltered ("invalid memory region: low >= high\n");
       return NULL;
     }
 
@@ -58,8 +59,8 @@ create_mem_region (CORE_ADDR lo, CORE_ADDR hi,
   while (n)
     {
       /* overlapping node */
-      if ((lo >= n->lo && lo <= n->hi) ||
-	  (hi >= n->lo && hi <= n->hi))
+      if ((lo >= n->lo && lo < n->hi) ||
+	  (hi > n->lo && hi <= n->hi))
 	{
 	  printf_unfiltered ("overlapping memory region\n");
 	  return NULL;
@@ -185,21 +186,21 @@ mem_command (char *args, int from_tty)
 
 #if 0
       else if (strcmp (tok, "hwbreak") == 0)
-	attrib.hwbreak = true;
+	attrib.hwbreak = 1;
       else if (strcmp (tok, "swbreak") == 0)
-	attrib.hwbreak = false;
+	attrib.hwbreak = 0;
 #endif
 
       else if (strcmp (tok, "cache") == 0)
-	attrib.cache = true;
+	attrib.cache = 1;
       else if (strcmp (tok, "nocache") == 0)
-	attrib.cache = false;
+	attrib.cache = 0;
 
 #if 0
       else if (strcmp (tok, "verify") == 0)
-	attrib.verify = true;
+	attrib.verify = 1;
       else if (strcmp (tok, "noverify") == 0)
-	attrib.verify = false;
+	attrib.verify = 0;
 #endif
 
       else
@@ -509,7 +510,10 @@ _initialize_mem ()
 {
   add_com ("mem", class_vars, mem_command,
 	   "Define attributes for memory region.\n\
-Usage: mem <lo addr> <hi addr> [<mode> <width> <cache>]");
+Usage: mem <lo addr> <hi addr> [<mode> <width> <cache>], \n\
+where <mode>  may be rw (read/write), ro (read-only) or wo (write-only), \n\
+      <width> may be 8, 16, 32, or 64, and \n\
+      <cache> may be cache or nocache");
 
   add_cmd ("mem", class_vars, mem_enable_command,
 	   "Enable memory region.\n\

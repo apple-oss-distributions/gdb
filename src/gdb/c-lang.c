@@ -1,5 +1,5 @@
 /* C language support routines for GDB, the GNU debugger.
-   Copyright 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000
+   Copyright 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -338,6 +338,30 @@ c_create_fundamental_type (struct objfile *objfile, int typeid)
 			TARGET_LONG_DOUBLE_BIT / TARGET_CHAR_BIT,
 			0, "long double", objfile);
       break;
+    case FT_COMPLEX:
+      type = init_type (TYPE_CODE_FLT,
+			2 * TARGET_FLOAT_BIT / TARGET_CHAR_BIT,
+			0, "complex float", objfile);
+      TYPE_TARGET_TYPE (type)
+	= init_type (TYPE_CODE_FLT, TARGET_FLOAT_BIT / TARGET_CHAR_BIT,
+		     0, "float", objfile);
+      break;
+    case FT_DBL_PREC_COMPLEX:
+      type = init_type (TYPE_CODE_FLT,
+			2 * TARGET_DOUBLE_BIT / TARGET_CHAR_BIT,
+			0, "complex double", objfile);
+      TYPE_TARGET_TYPE (type)
+	= init_type (TYPE_CODE_FLT, TARGET_DOUBLE_BIT / TARGET_CHAR_BIT,
+		     0, "double", objfile);
+      break;
+    case FT_EXT_PREC_COMPLEX:
+      type = init_type (TYPE_CODE_FLT,
+			2 * TARGET_LONG_DOUBLE_BIT / TARGET_CHAR_BIT,
+			0, "complex long double", objfile);
+      TYPE_TARGET_TYPE (type)
+	= init_type (TYPE_CODE_FLT, TARGET_LONG_DOUBLE_BIT / TARGET_CHAR_BIT,
+		     0, "long double", objfile);
+      break;
     case FT_TEMPLATE_ARG:
       type = init_type (TYPE_CODE_TEMPLATE_ARG,
 			0,
@@ -385,7 +409,7 @@ const struct op_print c_op_print_tab[] =
   {NULL, 0, 0, 0}
 };
 
-struct type **CONST_PTR (c_builtin_types[]) =
+struct type **const (c_builtin_types[]) =
 {
   &builtin_type_int,
   &builtin_type_long,

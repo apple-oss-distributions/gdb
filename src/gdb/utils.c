@@ -20,11 +20,15 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#include "defs.h"
-#include "gdb_assert.h"
-#include <ctype.h>
-#include "gdb_string.h"
-#include "event-top.h"
+/* FIXME: cagney/2002-02-28: The GDB coding standard indicates that
+   "defs.h" should be included first.  Unfortunatly some systems
+   (currently Debian GNU/Linux) include the <stdbool.h> via <curses.h>
+   and they clash with "bfd.h"'s definiton of true/false.  The correct
+   fix is to remove true/false from "bfd.h", however, until that
+   happens, hack around it by including "config.h" and <curses.h>
+   first.  */
+
+#include "config.h"
 
 #ifdef HAVE_CURSES_H
 #include <curses.h>
@@ -32,6 +36,12 @@
 #ifdef HAVE_TERM_H
 #include <term.h>
 #endif
+
+#include "defs.h"
+#include "gdb_assert.h"
+#include <ctype.h>
+#include "gdb_string.h"
+#include "event-top.h"
 
 #ifdef __GO32__
 #include <pc.h>
@@ -51,6 +61,8 @@
 #include "expression.h"
 #include "language.h"
 #include "annotate.h"
+#include "filenames.h"
+
 #include "inferior.h" /* for signed_pointer_to_address */
 
 #include <sys/param.h>		/* For MAXPATHLEN */
@@ -70,9 +82,11 @@ extern PTR realloc ();
 #ifdef NEED_DECLARATION_FREE
 extern void free ();
 #endif
-
-#undef XMALLOC
-#define XMALLOC(TYPE) ((TYPE*) xmalloc (sizeof (TYPE)))
+/* Actually, we'll never have the decl, since we don't define _GNU_SOURCE.  */
+#if defined(HAVE_CANONICALIZE_FILE_NAME) \
+    && defined(NEED_DECLARATION_CANONICALIZE_FILE_NAME)
+extern char *canonicalize_file_name (const char *);
+#endif
 
 /* readline defines this.  */
 #undef savestring
@@ -184,41 +198,31 @@ int pagination_enabled = 1;
    Args are FUNCTION to clean up with, and ARG to pass to it.  */
 
 struct cleanup *
-make_cleanup (function, arg)
-     void (*function) PARAMS ((PTR));
-     PTR arg;
+make_cleanup (make_cleanup_ftype *function, void *arg)
 {
   return make_my_cleanup (&cleanup_chain, function, arg);
 }
 
 struct cleanup *
-make_final_cleanup (function, arg)
-     void (*function) PARAMS ((PTR));
-     PTR arg;
+make_final_cleanup (make_cleanup_ftype *function, void *arg)
 {
   return make_my_cleanup (&final_cleanup_chain, function, arg);
 }
 
 struct cleanup *
-make_run_cleanup (function, arg)
-     void (*function) PARAMS ((PTR));
-     PTR arg;
+make_run_cleanup (make_cleanup_ftype *function, void *arg)
 {
   return make_my_cleanup (&run_cleanup_chain, function, arg);
 }
 
 struct cleanup *
-make_exec_cleanup (function, arg)
-     void (*function) PARAMS ((PTR));
-     PTR arg;
+make_exec_cleanup (make_cleanup_ftype *function, void *arg)
 {
   return make_my_cleanup (&exec_cleanup_chain, function, arg);
 }
 
 struct cleanup *
-make_exec_error_cleanup (function, arg)
-     void (*function) PARAMS ((PTR));
-     PTR arg;
+make_exec_error_cleanup (make_cleanup_ftype *function, void *arg)
 {
   return make_my_cleanup (&exec_error_cleanup_chain, function, arg);
 }
@@ -275,11 +279,21 @@ make_cleanup_ui_file_delete (struct ui_file *arg)
   return make_my_cleanup (&cleanup_chain, do_ui_file_delete, arg);
 }
 
+static void 
+do_ui_out_delete (void *arg) 
+{ 
+  ui_out_delete (arg); 
+} 
+ 
+struct cleanup * 
+make_cleanup_ui_out_delete (struct ui_out *arg) 
+{ 
+  return make_my_cleanup (&cleanup_chain, do_ui_out_delete, arg); 
+} 
+
 struct cleanup *
-make_my_cleanup (pmy_chain, function, arg)
-     struct cleanup **pmy_chain;
-     void (*function) PARAMS ((PTR));
-     PTR arg;
+make_my_cleanup (struct cleanup **pmy_chain, make_cleanup_ftype *function,
+		 void *arg)
 {
   register struct cleanup *new;
   register struct cleanup *old_chain = *pmy_chain;
@@ -579,23 +593,28 @@ discard_all_intermediate_continuations (void)
 
 
 
-/* Print a warning message.  Way to use this is to call warning_begin,
-   output the warning message (use unfiltered output to gdb_stderr),
-   ending in a newline.  There is not currently a warning_end that you
-   call afterwards, but such a thing might be added if it is useful
-   for a GUI to separate warning messages from other output.
-
-   FIXME: Why do warnings use unfiltered output and errors filtered?
-   Is this anything other than a historical accident?  */
+/* Print a warning message.  The first argument STRING is the warning
+   message, used as an fprintf format string, the second is the
+   va_list of arguments for that string.  A warning is unfiltered (not
+   paginated) so that the user does not need to page through each
+   screen full of warnings when there are lots of them.  */
 
 void
-warning_begin (void)
+vwarning (const char *string, va_list args)
 {
-  target_terminal_ours ();
-  wrap_here ("");		/* Force out any buffered output */
-  gdb_flush (gdb_stdout);
-  if (warning_pre_print)
-    fprintf_unfiltered (gdb_stderr, warning_pre_print);
+  if (warning_hook)
+    (*warning_hook) (string, args);
+  else
+    {
+      target_terminal_ours ();
+      wrap_here ("");		/* Force out any buffered output */
+      gdb_flush (gdb_stdout);
+      if (warning_pre_print)
+	fprintf_unfiltered (gdb_stderr, warning_pre_print);
+      vfprintf_unfiltered (gdb_stderr, string, args);
+      fprintf_unfiltered (gdb_stderr, "\n");
+      va_end (args);
+    }
 }
 
 /* Print a warning message.
@@ -609,38 +628,8 @@ warning (const char *string,...)
 {
   va_list args;
   va_start (args, string);
-  if (warning_hook)
-    (*warning_hook) (string, args);
-  else
-    {
-      warning_begin ();
-      vfprintf_unfiltered (gdb_stderr, string, args);
-      fprintf_unfiltered (gdb_stderr, "\n");
-      va_end (args);
-    }
-}
-
-/* Start the printing of an error message.  Way to use this is to call
-   this, output the error message (use filtered output to gdb_stderr
-   (FIXME: Some callers, like memory_error, use gdb_stdout)), ending
-   in a newline, and then call return_to_top_level (RETURN_ERROR).
-   error() provides a convenient way to do this for the special case
-   that the error message can be formatted with a single printf call,
-   but this is more general.  */
-void
-error_begin (void)
-{
-  if (error_begin_hook)
-    error_begin_hook ();
-
-  target_terminal_ours ();
-  wrap_here ("");		/* Force out any buffered output */
-  gdb_flush (gdb_stdout);
-
-  annotate_error_begin ();
-
-  if (error_pre_print)
-    fprintf_filtered (gdb_stderr, error_pre_print);
+  vwarning (string, args);
+  va_end (args);
 }
 
 /* Print an error message and return to command level.
@@ -650,29 +639,10 @@ error_begin (void)
 NORETURN void
 verror (const char *string, va_list args)
 {
-  char *err_string;
-  struct cleanup *err_string_cleanup;
-  /* FIXME: cagney/1999-11-10: All error calls should come here.
-     Unfortunately some code uses the sequence: error_begin(); print
-     error message; return_to_top_level.  That code should be
-     flushed. */
-  error_begin ();
-  /* NOTE: It's tempting to just do the following...
-	vfprintf_filtered (gdb_stderr, string, args);
-     and then follow with a similar looking statement to cause the message
-     to also go to gdb_lasterr.  But if we do this, we'll be traversing the
-     va_list twice which works on some platforms and fails miserably on
-     others. */
-  /* Save it as the last error */
-  ui_file_rewind (gdb_lasterr);
-  vfprintf_filtered (gdb_lasterr, string, args);
-  /* Retrieve the last error and print it to gdb_stderr */
-  err_string = error_last_message ();
-  err_string_cleanup = make_cleanup (xfree, err_string);
-  fputs_filtered (err_string, gdb_stderr);
-  fprintf_filtered (gdb_stderr, "\n");
-  do_cleanups (err_string_cleanup);
-  return_to_top_level (RETURN_ERROR);
+  struct ui_file *tmp_stream = mem_fileopen ();
+  make_cleanup_ui_file_delete (tmp_stream);
+  vfprintf_unfiltered (tmp_stream, string, args);
+  error_stream (tmp_stream);
 }
 
 NORETURN void
@@ -684,13 +654,39 @@ error (const char *string,...)
   va_end (args);
 }
 
+static void
+do_write (void *data, const char *buffer, long length_buffer)
+{
+  ui_file_write (data, buffer, length_buffer);
+}
+
 NORETURN void
 error_stream (struct ui_file *stream)
 {
-  long size;
-  char *msg = ui_file_xstrdup (stream, &size);
-  make_cleanup (xfree, msg);
-  error ("%s", msg);
+  if (error_begin_hook)
+    error_begin_hook ();
+
+  /* Copy the stream into the GDB_LASTERR buffer.  */
+  ui_file_rewind (gdb_lasterr);
+  ui_file_put (stream, do_write, gdb_lasterr);
+
+  /* Write the message plus any error_pre_print to gdb_stderr.  
+     Don't do it for mi like interpreters, however, since
+     the will get the error from ui_file_rewind. */
+
+  if (!ui_out_is_mi_like_p (uiout))
+    {
+      target_terminal_ours ();
+      wrap_here ("");		/* Force out any buffered output */
+      gdb_flush (gdb_stdout);
+      annotate_error_begin ();
+      if (error_pre_print)
+	fprintf_filtered (gdb_stderr, error_pre_print);
+      ui_file_put (stream, do_write, gdb_stderr);
+      fprintf_filtered (gdb_stderr, "\n");
+    }
+ 
+  throw_exception (RETURN_ERROR);
 }
 
 /* Get the last error message issued by gdb */
@@ -780,7 +776,7 @@ Create a core file containing the current state of GDB? ");
     }
 
   dejavu = 0;
-  return_to_top_level (RETURN_ERROR);
+  throw_exception (RETURN_ERROR);
 }
 
 NORETURN void
@@ -816,7 +812,7 @@ safe_strerror (int errnum)
    Then return to command level.  */
 
 NORETURN void
-perror_with_name (char *string)
+perror_with_name (const char *string)
 {
   char *err;
   char *combined;
@@ -840,7 +836,7 @@ perror_with_name (char *string)
    as the file name for which the error was encountered.  */
 
 void
-print_sys_errmsg (char *string, int errcode)
+print_sys_errmsg (const char *string, int errcode)
 {
   char *err;
   char *combined;
@@ -905,7 +901,7 @@ quit (void)
     fprintf_unfiltered (gdb_stderr,
 	       "Quit (expect signal SIGINT when the program is resumed)\n");
 #endif
-  return_to_top_level (RETURN_QUIT);
+  throw_exception (RETURN_QUIT);
 }
 
 /* Control C comes here */
@@ -955,204 +951,39 @@ nomem (long size)
 
 #if !defined (USE_MMALLOC) 
    
-void 
+PTR 
 init_malloc (PTR md) 
 { 
+  return md;
 } 
  
 #else /* Have mmalloc and want corruption checking */ 
  
-#if !defined (NO_MMCHECK) 
- 
-#ifndef MMCHECK_FORCE 
-#define MMCHECK_FORCE 0 
-#endif 
- 
-static void 
-malloc_botch (void) 
-{ 
-  internal_error (__FILE__, __LINE__, "Memory corruption\n"); 
-} 
- 
-#endif /* NO_MMCHECK */ 
-
-void
+PTR
 init_malloc (md)
      PTR md;
 {
-#if !defined (NO_MMCHECK)
- 
-  /* Attempt to install hooks in mmalloc/mrealloc/mfree for the heap specified
-     by MD, to detect memory corruption.  Note that MD may be NULL to specify
-     the default heap that grows via sbrk.
-
-     Note that for freshly created regions, we must call mmcheckf prior to any
-     mallocs in the region.  Otherwise, any region which was allocated prior to
-     installing the checking hooks, which is later reallocated or freed, will
-     fail the checks!  The mmcheck function only allows initial hooks to be
-     installed before the first mmalloc.  However, anytime after we have called
-     mmcheck the first time to install the checking hooks, we can call it again
-     to update the function pointer to the memory corruption handler.
- 
-     Returns zero on failure, non-zero on success. */
-
-  if (!mmcheckf (md, malloc_botch, MMCHECK_FORCE))
-    {
-      /* Don't use warning(), which relies on current_target being set
-         to something other than dummy_target, until after
-         initialize_all_files(). */
-
-      fprintf_unfiltered
-	(gdb_stderr, "warning: failed to install memory consistency checks; ");
-      fprintf_unfiltered
-	(gdb_stderr, "configuration should define NO_MMCHECK or MMCHECK_FORCE\n");
-    }
-
-  mmtrace ();
-#endif
+  return mmalloc_check_create (md);
 }
 
 void
 init_mmalloc_default_pool (PTR md)
 {
-  PTR mbase;
-  
-  mbase = mmalloc_findbase (128 * 1024 * 1024);
-  if (mbase == NULL)
-    internal_error (__FILE__, __LINE__, "unable to locate appropriate memory region for mmalloc");
-  
-  md = mmalloc_attach (-1, mbase);
-  
+  md = mmalloc_malloc_create ();
   if (md == NULL)
     internal_error (__FILE__, __LINE__, "unable to create default mmalloc allocator");
  
+#if 0
+  md = mmalloc_check_create (md);
   if (md == NULL)
-    md = mmalloc_malloc_create ();
- 
-  if (md == NULL)
-    internal_error (__FILE__, __LINE__, "unable to create default mmalloc allocator");
- 
+    internal_error (__FILE__, __LINE__, "unable to add error-checking to default mmalloc allocator");
+#endif
+
   mmalloc_set_default_allocator (md);
 }
  
 #endif /* Have mmalloc and want corruption checking  */
 
-#if 0
-
-/* The xmmalloc() family of memory management routines.
-
-   These are are like the mmalloc() family except that they implement
-   consistent semantics and guard against typical memory management
-   problems: if a malloc fails, an internal error is thrown; if
-   free(NULL) is called, it is ignored; if *alloc(0) is called, NULL
-   is returned.
-
-   All these routines are implemented using the mmalloc() family. */
-
-void *
-xmmalloc (void *md, size_t size)
-{
-  void *val;
-
-  if (size == 0)
-    {
-      val = NULL;
-    }
-  else
-    {
-      val = mmalloc (md, size);
-      if (val == NULL)
-	nomem (size);
-    }
-  return (val);
-}
-
-void *
-xmrealloc (void *md, void *ptr, size_t size)
-{
-  void *val;
-
-  if (size == 0)
-    {
-      if (ptr != NULL)
-	mfree (md, ptr);
-      val = NULL;
-    }
-  else
-    {
-      if (ptr != NULL)
-	{
-	  val = mrealloc (md, ptr, size);
-	}
-      else
-	{
-	  val = mmalloc (md, size);
-	}
-      if (val == NULL)
-	{
-	  nomem (size);
-	}
-    }
-  return (val);
-}
-
-void *
-xmcalloc (void *md, size_t number, size_t size)
-{
-  void *mem;
-  if (number == 0 || size == 0)
-    mem = NULL;
-  else
-    {
-      mem = mcalloc (md, number, size);
-      if (mem == NULL)
-	nomem (number * size);
-    }
-  return mem;
-}
-
-void
-xmfree (void *md, void *ptr)
-{
-  if (ptr != NULL)
-    mfree (md, ptr);
-}
-
-/* The xmalloc() (libiberty.h) family of memory management routines.
-
-   These are like the ISO-C malloc() family except that they implement
-   consistent semantics and guard against typical memory management
-   problems.  See xmmalloc() above for further information.
-
-   All these routines are wrappers to the xmmalloc() family. */
-
-/* NOTE: These are declared using PTR to ensure consistency with
-   "libiberty.h".  xfree() is GDB local.  */
-
-PTR
-xmalloc (size_t size)
-{
-  return xmmalloc (NULL, size);
-}
-
-PTR
-xrealloc (PTR ptr, size_t size)
-{
-  return xmrealloc (NULL, ptr, size);
-}
-
-PTR
-xcalloc (size_t number, size_t size)
-{
-  return xmcalloc (NULL, number, size);
-}
-
-void
-xfree (void *ptr)
-{
-  xmfree (NULL, ptr);
-}
-#endif
 
 
 /* Like asprintf/vasprintf but get an internal_error if the call
@@ -1170,6 +1001,7 @@ xasprintf (char **ret, const char *format, ...)
 void
 xvasprintf (char **ret, const char *format, va_list ap)
 {
+  char *tmp;
   int status = vasprintf (ret, format, ap);
   /* NULL could be returned due to a memory allocation problem; a
      badly format string; or something else. */
@@ -1183,6 +1015,9 @@ xvasprintf (char **ret, const char *format, va_list ap)
     internal_error (__FILE__, __LINE__,
 		    "vasprintf call failed (errno %d)",
 		    errno);
+  tmp = *ret;
+  *ret = xstrdup (tmp);
+  free (tmp);
 }
 
 /* My replacement for the read system call.
@@ -1272,7 +1107,7 @@ gdb_print_host_address (void *addr, struct ui_file *stream)
 
 /* VARARGS */
 int
-query (char *ctlstr,...)
+query (const char *ctlstr,...)
 {
   va_list args;
   register int answer;
@@ -2370,7 +2205,7 @@ initialize_utils (void)
 		   "Set number of characters gdb thinks are in a line.",
 		   &setlist);
   add_show_from_set (c, &showlist);
-  c->function.sfunc = set_width_command;
+  set_cmd_sfunc (c, set_width_command);
 
   add_show_from_set
     (add_set_cmd ("height", class_support,
@@ -2615,6 +2450,15 @@ core_addr_to_string (const CORE_ADDR addr)
 {
   char *str = get_cell ();
   strcpy (str, "0x");
+  strcat (str, phex (addr, sizeof (addr)));
+  return str;
+}
+
+const char *
+core_addr_to_string_nz (const CORE_ADDR addr)
+{
+  char *str = get_cell ();
+  strcpy (str, "0x");
   strcat (str, phex_nz (addr, sizeof (addr)));
   return str;
 }
@@ -2656,17 +2500,76 @@ string_to_core_addr (const char *my_string)
 char *
 gdb_realpath (const char *filename)
 {
-#ifdef HAVE_REALPATH
-#if defined (PATH_MAX)
+#if defined(HAVE_REALPATH)
+# if defined (PATH_MAX)
   char buf[PATH_MAX];
-#elif defined (MAXPATHLEN)
+#  define USE_REALPATH
+# elif defined (MAXPATHLEN)
   char buf[MAXPATHLEN];
-#else
-#error "Neither PATH_MAX nor MAXPATHLEN defined"
-#endif
+#  define USE_REALPATH
+# elif defined (HAVE_UNISTD_H) && defined(HAVE_ALLOCA)
+  char *buf = alloca ((size_t)pathconf ("/", _PC_PATH_MAX));
+#  define USE_REALPATH
+# endif
+#endif /* HAVE_REALPATH */
+
+#if defined(USE_REALPATH)
   char *rp = realpath (filename, buf);
   return xstrdup (rp ? rp : filename);
+#elif defined(HAVE_CANONICALIZE_FILE_NAME)
+  char *rp = canonicalize_file_name (filename);
+  if (rp == NULL)
+    return xstrdup (filename);
+  else
+    return rp;
 #else
   return xstrdup (filename);
 #endif
+}
+
+/* Return a copy of FILENAME, with its directory prefix canonicalized
+   by gdb_realpath.  */
+
+char *
+xfullpath (const char *filename)
+{
+  const char *base_name = lbasename (filename);
+  char *dir_name;
+  char *real_path;
+  char *result;
+
+  /* Extract the basename of filename, and return immediately 
+     a copy of filename if it does not contain any directory prefix. */
+  if (base_name == filename)
+    return xstrdup (filename);
+
+  dir_name = alloca ((size_t) (base_name - filename + 2));
+  /* Allocate enough space to store the dir_name + plus one extra
+     character sometimes needed under Windows (see below), and
+     then the closing \000 character */
+  strncpy (dir_name, filename, base_name - filename);
+  dir_name[base_name - filename] = '\000';
+
+#ifdef HAVE_DOS_BASED_FILE_SYSTEM
+  /* We need to be careful when filename is of the form 'd:foo', which
+     is equivalent of d:./foo, which is totally different from d:/foo.  */
+  if (strlen (dir_name) == 2 &&
+      isalpha (dir_name[0]) && dir_name[1] == ':')
+    {
+      dir_name[2] = '.';
+      dir_name[3] = '\000';
+    }
+#endif
+
+  /* Canonicalize the directory prefix, and build the resulting
+     filename. If the dirname realpath already contains an ending
+     directory separator, avoid doubling it.  */
+  real_path = gdb_realpath (dir_name);
+  if (IS_DIR_SEPARATOR (real_path[strlen (real_path) - 1]))
+    result = concat (real_path, base_name, NULL);
+  else
+    result = concat (real_path, SLASH_STRING, base_name, NULL);
+
+  xfree (real_path);
+  return result;
 }

@@ -960,7 +960,7 @@ maintenance_check_symtabs (char *ignore, int from_tty)
     while (length--)
       {
 	sym = lookup_block_symbol (b, SYMBOL_NAME (*psym),
-				   SYMBOL_NAMESPACE (*psym));
+				   NULL, SYMBOL_NAMESPACE (*psym));
 	if (!sym)
 	  {
 	    printf_filtered ("Static symbol `");
@@ -977,7 +977,7 @@ maintenance_check_symtabs (char *ignore, int from_tty)
     while (length--)
       {
 	sym = lookup_block_symbol (b, SYMBOL_NAME (*psym),
-				   SYMBOL_NAMESPACE (*psym));
+				   NULL, SYMBOL_NAMESPACE (*psym));
 	if (!sym)
 	  {
 	    printf_filtered ("Global symbol `");

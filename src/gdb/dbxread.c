@@ -1,6 +1,6 @@
 /* Read dbx symbol tables and convert to internal format, for GDB.
    Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
-   1996, 1997, 1998, 1999, 2000, 2001
+   1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -51,7 +51,7 @@
 #endif
 
 #if HAVE_MMAP
-static boolean mmap_strtabflag = 1;
+static boolean mmap_strtabflag = 0;
 #endif /* HAVE_MMAP */
 
 static boolean read_type_psym_p = 0;
@@ -1169,7 +1169,7 @@ set_namestring (struct objfile *objfile, struct internal_nlist nlist, const char
       char *s = nlist.n_strx + file_string_table_offset +
 	DBX_STRINGTAB (objfile);
       char l = bfd_get_symbol_leading_char (objfile->obfd);
-      if ((p != NULL) && (p[0] != '0') && (s[0] == l))
+      if ((p != NULL) && (p[0] != '\0') && (s[0] == l))
 	{
 	  size_t req = 1 + strlen (p) + strlen (s) + 1 - 1;
 	  while (namebuf_len < req)
@@ -2853,6 +2853,15 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
      used to relocate these symbol types rather than SECTION_OFFSETS.  */
   static CORE_ADDR function_start_offset;
 
+  /* This holds the address of the start of a function, without the system
+     peculiarities of function_start_offset.  */
+  static CORE_ADDR last_function_start;
+
+  /* If this is nonzero, we've seen an N_SLINE since the start of the current
+     function.  Initialized to nonzero to assure that last_function_start
+     is never used uninitialized.  */
+  static int sline_found_in_function = 1;
+
   /* If this is nonzero, we've seen a non-gcc N_OPT symbol for this source
      file.  Used to detect the SunPRO solaris compiler.  */
   static int n_opt_found;
@@ -2908,6 +2917,7 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
 	    }
 	  
 	  saw_fun_start = 0;
+	  record_line (current_subfile, 0, function_start_offset + valu);
 	  within_function = 0;
 	  new = pop_context ();
 
@@ -2924,11 +2934,13 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
 	  break;
 	}
 
+      sline_found_in_function = 0;
+
       /* Relocate for dynamic loading */
       valu += ANOFFSET (section_offsets, SECT_OFF_TEXT (objfile));
-#ifdef SMASH_TEXT_ADDRESS
-      SMASH_TEXT_ADDRESS (valu);
-#endif
+      valu = SMASH_TEXT_ADDRESS (valu);
+      last_function_start = valu;
+
       goto define_a_symbol;
 
     case N_LBRAC:
@@ -3131,7 +3143,15 @@ process_one_symbol (int type, int desc, CORE_ADDR valu, char *name,
 #ifdef SUN_FIXED_LBRAC_BUG
       last_pc_address = valu;	/* Save for SunOS bug circumcision */
 #endif
-      record_line (current_subfile, desc, valu);
+      /* If this is the first SLINE note in the function, record it at
+	 the start of the function instead of at the listed location.  */
+      if (within_function && sline_found_in_function == 0)
+	{
+	  record_line (current_subfile, desc, last_function_start);
+	  sline_found_in_function = 1;
+	}
+      else
+	record_line (current_subfile, desc, valu);
       break;
 
     case N_BCOMM:

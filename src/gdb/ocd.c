@@ -1,6 +1,7 @@
 /* Target communications support for Macraigor Systems' On-Chip Debugging
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -290,29 +291,9 @@ device the OCD device is attached to (e.g. /dev/ttya).");
 
   unpush_target (current_ops);
 
-  if (strncmp (name, "wiggler", 7) == 0)
-    {
-      ocd_desc = serial_open ("ocd");
-      if (!ocd_desc)
-	perror_with_name (name);
-
-      buf[0] = OCD_LOG_FILE;
-      buf[1] = 1;		/* open new or overwrite existing WIGGLERS.LOG */
-      ocd_put_packet (buf, 2);
-      p = ocd_get_packet (buf[0], &pktlen, remote_timeout);
-
-      buf[0] = OCD_SET_CONNECTION;
-      buf[1] = 0x01;		/* atoi (name[11]); */
-      ocd_put_packet (buf, 2);
-      p = ocd_get_packet (buf[0], &pktlen, remote_timeout);
-    }
-  else
-    /* not using Wigglers.dll */
-    {
-      ocd_desc = serial_open (name);
-      if (!ocd_desc)
-	perror_with_name (name);
-    }
+  ocd_desc = serial_open (name);
+  if (!ocd_desc)
+    perror_with_name (name);
 
   if (baud_rate != -1)
     {
@@ -446,7 +427,7 @@ interrupt_query (void)
 Give up (and stop debugging it)? "))
     {
       target_mourn_inferior ();
-      return_to_top_level (RETURN_QUIT);
+      throw_exception (RETURN_QUIT);
     }
 
   target_terminal_inferior ();

@@ -168,13 +168,13 @@ class SrcBar {
     $Menu add command Other "Source..." \
       "source_file" -underline 0
 
-    set sessions [session_list]
+    set sessions [Session::list_names]
     if {[llength $sessions]} {
       $Menu add separator
       set i 1
       foreach item $sessions {
 	$Menu add command Other "$i $item" \
-	  [list session_load $item] \
+	  [list Session::load $item] \
 	  -underline 0
 	incr i
       }
@@ -533,6 +533,19 @@ class SrcBar {
 
       $Tool add separator
     }
+
+    # Add find in file entry box.
+    $Tool add label findlabel "Find:" "" -anchor e -font global/fixed
+    $Tool add custom searchbox entry "Search in editor" \
+       -bd 3 -font global/fixed -width 10
+
+    set callback [code $source search]
+    $Tool itembind searchbox <Return> \
+	    "$callback forwards \[eval %W get\]"
+    $Tool itembind searchbox <Shift-Return> \
+            "$callback backwards \[eval %W get\]"
+
+    $Tool add separator
 
     $Tool toolbar_button_right_justify
 

@@ -1882,16 +1882,20 @@ yylex ()
     if ((yylval.tsym.type = lookup_primitive_typename (tmp)) != 0)
       return TYPENAME;
 
-    if (!sym)			/* see if it's an ObjC classname */
+    /* see if it's an ObjC classname */
+    if (!sym && should_lookup_objc_class ())  
       {
-	CORE_ADDR Class = lookup_objc_class(tmp);
-	if (Class)
+	extern struct symbol *lookup_struct_typedef ();
+	sym = lookup_struct_typedef (tmp, expression_context_block, 1);
+	if (sym)
 	  {
-	    extern struct symbol *lookup_struct_typedef();
-	    yylval.class.class = Class;
-	    if (sym = lookup_struct_typedef (tmp, expression_context_block, 1))
-	      yylval.class.type = SYMBOL_TYPE (sym);
-	    return CLASSNAME;
+	    CORE_ADDR Class = lookup_objc_class (tmp);
+	    if (Class)
+	      {
+		yylval.class.class = Class;
+		yylval.class.type = SYMBOL_TYPE (sym);
+		return CLASSNAME;
+	      }
 	  }
       }
 

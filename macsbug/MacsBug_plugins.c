@@ -5,7 +5,7 @@
  |                                MacsBug Plugins Command                               |
  |                                                                                      |
  |                                     Ira L. Ruben                                     |
- |                       Copyright Apple Computer, Inc. 2000-2001                       |
+ |                       Copyright Apple Computer, Inc. 2000-2002                       |
  |                                                                                      |
  *--------------------------------------------------------------------------------------*
 
@@ -634,7 +634,7 @@ static void dv(char *arg, int from_tty)
     struct tm *ts;
     long      year;
     
-    gdb_printf("\nGdb/Macsbug " VERSION ", Copyright Apple Computer, Inc. 2000-2001");
+    gdb_printf("\nGdb/Macsbug " VERSION ", Copyright Apple Computer, Inc. 2000-2002");
     
     time(&t);
     ts = localtime(&t);
@@ -687,9 +687,9 @@ static void fb(char *arg, int from_tty)
 #define FB_HELP  \
 "FB addr n expr|\"string\" -- Search from addr to addr+n-1 for the byte.\n"		\
 "\n"											\
-"Note, FB is also an alias for gdb's FUTURE_BREAK command.  The syntax of\n"		\
+"Note, FB is also an alias for gdb's FUTURE-BREAK command.  The syntax of\n"		\
 "the FB parameters determines whether FB is treated as a MacsBug FB or a\n"		\
-"gdb FUTURE_BREAK alias."
+"gdb FUTURE-BREAK alias."
 
 
 /*--------------------------------------------------------------------------*
@@ -1342,10 +1342,8 @@ static void sb_sw_sl_and_sm(char *arg, int from_tty, int size, int cmdNbr, char 
     for (i = 2; i < argc; ++i) {		/* process all the args...		*/
     	isstr = gdb_is_string(argv[i]);
 	
-	if (i == 2) {				/* 1st time around display the title	*/
-	    gdb_printf("Memory set starting at %.8lX\n", addr);
+	if (i == 2)				/* 1st time around display the title	*/
 	    gdb_set_int("$dot", addr);		/* set $dot to initial address		*/
-	}
 	
 	if (isstr) {				/* always write entire strings		*/
 	    gdb_get_string(argv[i], str, 1023);
@@ -1391,6 +1389,7 @@ static void sb_sw_sl_and_sm(char *arg, int from_tty, int size, int cmdNbr, char 
     
     /* Hexdump the results...								*/
     
+    gdb_printf("Memory set starting at %.8lX\n", start);
     sprintf(str, "0x%lX %ld", start, 
     	      ((addr - start + hexdump_width - 1)/hexdump_width)*hexdump_width);
     __hexdump(str, from_tty);			/* __hexdump start N			*/

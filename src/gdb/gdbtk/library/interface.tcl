@@ -118,7 +118,7 @@ proc gdbtk_tcl_preloop { } {
     # arguments and pwd to override what is set in the session.
     set current_args [gdb_get_inferior_args]
     set current_dir $gdb_current_directory
-    session_notice_file_change
+    Session::notice_file_change
     if {[string length $current_args] > 0} {
       gdb_set_inferior_args $current_args
       gdb_cmd "cd $current_dir"
@@ -268,7 +268,7 @@ proc gdbtk_cleanup {} {
 
   # Save the session
   if {$gdb_exe_name != ""} {
-    session_save
+    Session::save
   }
 
   # This is a sign that it is too late to be doing updates, etc...
@@ -512,7 +512,7 @@ proc gdbtk_tcl_trace_find_hook {arg from_tty} {
 # ------------------------------------------------------------------
 proc gdb_run_readline_command {command args} {
   global gdbtk_state
-#  debug "$command $args"
+  debug "$command $args"
   set gdbtk_state(readlineArgs) $args
   set gdbtk_state(readlineShowUser) 1
   gdb_cmd $command
@@ -524,7 +524,7 @@ proc gdb_run_readline_command {command args} {
 # ------------------------------------------------------------------
 proc gdb_run_readline_command_no_output {command args} {
   global gdbtk_state
-#  debug "$command $args"
+  debug "$command $args"
   set gdbtk_state(readlineArgs) $args
   set gdbtk_state(readlineShowUser) 0
   gdb_cmd $command
@@ -535,7 +535,7 @@ proc gdb_run_readline_command_no_output {command args} {
 # ------------------------------------------------------------------
 proc gdbtk_tcl_readline_begin {message} {
   global gdbtk_state
-#  debug "readline begin"
+#  debug
   set gdbtk_state(readline) 0
   if {$gdbtk_state(console) != "" && $gdbtk_state(readlineShowUser)} {
     $gdbtk_state(console) insert $message
@@ -547,12 +547,12 @@ proc gdbtk_tcl_readline_begin {message} {
 # ------------------------------------------------------------------
 proc gdbtk_tcl_readline {prompt} {
   global gdbtk_state
-#  debug "$prompt"
+#  debug "prompt=$prompt"
   if {[info exists gdbtk_state(readlineArgs)]} {
     # Not interactive, so pop the list, and print element.
     set cmd [lvarpop gdbtk_state(readlineArgs)]
-    if {$gdbtk_state(readlineShowUser)} {
-      command::insert_command $cmd
+    if {$gdbtk_state(console) != "" && $gdbtk_state(readlineShowUser)} {
+      $gdbtk_state(console) insert $cmd
     }
   } else {
     # Interactive.
@@ -573,10 +573,9 @@ proc gdbtk_tcl_readline {prompt} {
 # ------------------------------------------------------------------
 proc gdbtk_tcl_readline_end {} {
   global gdbtk_state
-#  debug "readline_end"
+#  debug
   catch {unset gdbtk_state(readlineArgs)}
-  unset gdbtk_state(readlineActive)
-  command::end_multi_line_input
+  catch {unset gdbtk_state(readlineActive)}
 }
 
 # ------------------------------------------------------------------
@@ -970,7 +969,7 @@ proc _close_file {} {
   }
 
   if {$okay} {
-    session_save
+    Session::save
     gdb_clear_file
     gdbtk_tcl_file_changed ""
 

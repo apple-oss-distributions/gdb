@@ -675,7 +675,7 @@ add_packet_config_cmd (struct packet_config *config,
   set_cmd = add_set_auto_boolean_cmd (cmd_name, class_obscure,
 				&config->detect, set_doc,
 				set_remote_list);
-  set_cmd->function.sfunc = set_func;
+  set_cmd_sfunc (set_cmd, set_func);
   show_cmd = add_cmd (cmd_name, class_obscure, show_func, show_doc,
 		      show_remote_list);
   /* set/show remote NAME-packet {auto,on,off} -- legacy */
@@ -2877,7 +2877,7 @@ interrupt_query (void)
 Give up (and stop debugging it)? "))
     {
       target_mourn_inferior ();
-      return_to_top_level (RETURN_QUIT);
+      throw_exception (RETURN_QUIT);
     }
 
   target_terminal_inferior ();
@@ -5013,8 +5013,8 @@ compare_sections_command (char *args, int from_tty)
 
       getpkt (buf, (rs->remote_packet_size), 0);
       if (buf[0] == 'E')
-	error ("target memory fault, section %s, range 0x%08x -- 0x%08x",
-	       sectname, lma, lma + size);
+	error ("target memory fault, section %s, range 0x%s -- 0x%s",
+	       sectname, paddr (lma), paddr (lma + size));
       if (buf[0] != 'C')
 	error ("remote target does not support this operation");
 
@@ -5717,7 +5717,7 @@ minitelnet (void)
 	      if (query ("Interrupt GDB? "))
 		{
 		  printf_filtered ("Interrupted by user.\n");
-		  return_to_top_level (RETURN_QUIT);
+		  throw_exception (RETURN_QUIT);
 		}
 	      quit_count = 0;
 	    }
@@ -6099,6 +6099,10 @@ in a memory packet.\n",
 			 show_remote_protocol_e_packet_cmd,
 			 &remote_set_cmdlist, &remote_show_cmdlist,
 			 0);
+  /* Disable by default.  The ``e'' packet has nasty interactions with
+     the threading code - it relies on global state.  */
+  remote_protocol_e.detect = CMD_AUTO_BOOLEAN_FALSE;
+  update_packet_config (&remote_protocol_e);
 
   add_packet_config_cmd (&remote_protocol_E,
 			 "E", "step-over-range-w-signal",
@@ -6106,6 +6110,10 @@ in a memory packet.\n",
 			 show_remote_protocol_E_packet_cmd,
 			 &remote_set_cmdlist, &remote_show_cmdlist,
 			 0);
+  /* Disable by default.  The ``e'' packet has nasty interactions with
+     the threading code - it relies on global state.  */
+  remote_protocol_E.detect = CMD_AUTO_BOOLEAN_FALSE;
+  update_packet_config (&remote_protocol_E);
 
   add_packet_config_cmd (&remote_protocol_P,
 			 "P", "set-register",
@@ -6154,7 +6162,7 @@ in a memory packet.\n",
 				     &remote_Z_packet_detect,
 				     "\
 Set use of remote protocol `Z' packets", &remote_set_cmdlist);
-  tmpcmd->function.sfunc = set_remote_protocol_Z_packet_cmd;
+  set_cmd_sfunc (tmpcmd, set_remote_protocol_Z_packet_cmd);
   add_cmd ("Z-packet", class_obscure, show_remote_protocol_Z_packet_cmd,
 	   "Show use of remote protocol `Z' packets ",
 	   &remote_show_cmdlist);

@@ -21,10 +21,6 @@
 
 #include "regcache.h"
 
-/* This is also included by tm-ns32km3.h, as well as being used by umax.  */
-
-#define TARGET_BYTE_ORDER BFD_ENDIAN_LITTLE
-
 /* Need to get function ends by adding this to epilogue address from .bf
    record, not using x_fsize field.  */
 #define FUNCTION_EPILOGUE_SIZE 4
@@ -67,21 +63,6 @@ extern CORE_ADDR umax_skip_prologue (CORE_ADDR);
    but not always.  */
 
 #define DECR_PC_AFTER_BREAK 0
-
-#if 0				/* Disable until fixed *correctly*.  */
-#ifndef INVALID_FLOAT
-#ifndef NaN
-#include <nan.h>
-#endif /* NaN */
-
-/* Return 1 if P points to an invalid floating point value.  */
-/* Surely wrong for cross-debugging.  */
-#define INVALID_FLOAT(p, s) \
-	 ((s == sizeof (float))?	\
-		NaF (*(float *) p) :	\
-		NaD (*(double *) p))
-#endif /* INVALID_FLOAT */
-#endif
 
 /* Say how long (ordinary) registers are.  This is a piece of bogosity
    used in push_word and a few other places; REGISTER_RAW_SIZE is the

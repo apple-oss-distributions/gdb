@@ -27,6 +27,7 @@
 #include "cli/cli-cmds.h"
 #include "cli/cli-script.h"
 #include "cli/cli-setshow.h"
+#include "cli/cli-decode.h"
 #include "symtab.h"
 #include "inferior.h"
 #include <signal.h>
@@ -202,7 +203,7 @@ void (*init_ui_hook) (char *argv0);
 int (*ui_loop_hook) (int);
 
 /* Called instead of command_loop at top level.  Can be invoked via
-   return_to_top_level.  */
+   throw_exception().  */
 
 void (*command_loop_hook) (void);
 
@@ -283,29 +284,30 @@ ptid_t (*target_wait_hook) (ptid_t ptid,
 void (*call_command_hook) (struct cmd_list_element * c, char *cmd,
 			   int from_tty);
 
+/* Called after a `set' command has finished.  Is only run if the
+   `set' command succeeded.  */
 
-/* Called after a `set' command has finished.  Is only run if the 
-   `set' command succeeded.  */ 
+void (*set_hook) (struct cmd_list_element * c);
+
+/* called in place of printing a source line */
+
+void (*print_source_lines_hook) (struct symtab * s, int line, int stopline);
+
+/* called when the state of the debugger (i.e. gdb) changes */
+
+void (*state_change_hook) (Debugger_state new_state);
+
+/* called when the frame changes (e.g. as the result of "up") */
+
+void (*frame_changed_hook) (int new_frame_number);
+
+/* called when the stack changes (i.e. a new frame is added) */
+
+void (*stack_changed_hook) (void);
  
-void (*set_hook) PARAMS ((struct cmd_list_element *c)); 
- 
-/* called in place of printing a source line */ 
-void (*print_source_lines_hook) PARAMS ((struct symtab * s, 
-					 int line, int stopline)); 
-  
-void (*set_hook) (struct cmd_list_element * c); 
-/* called when the state of the debugger (i.e. gdb) changes */ 
-void (*state_change_hook) PARAMS ((Debugger_state new_state)); 
- 
-/* called when the frame changes (e.g. as the result of "up") */ 
-void (*frame_changed_hook) PARAMS ((int new_frame_number)); 
- 
-/* called when the stack changes (i.e. a new frame is added) */ 
-void (*stack_changed_hook) PARAMS ((void)); 
- 
-/* called when command line input is needed */ 
-char *(*command_line_input_hook) PARAMS ((char *, int, char *)); 
- 
+/* called when command line input is needed */
+
+char *(*command_line_input_hook) (char *, int, char *);
 
 /* Called when the current thread changes.  Argument is thread id.  */
 
@@ -338,13 +340,13 @@ int (*run_command_hook) (void);
 #define SIGLONGJMP(buf,val)	longjmp((buf), (val))
 #endif
 
-/* Where to go for return_to_top_level.  */
+/* Where to go for throw_exception().  */
 SIGJMP_BUF *catch_return;
 
 /* Return for reason REASON to the nearest containing catch_errors().  */
 
 NORETURN void
-return_to_top_level (enum return_reason reason)
+throw_exception (enum return_reason reason)
 {
   quit_flag = 0;
   immediate_quit = 0;
@@ -380,7 +382,7 @@ return_to_top_level (enum return_reason reason)
 
 /* Call FUNC() with args FUNC_UIOUT and FUNC_ARGS, catching any
    errors.  Set FUNC_CAUGHT to an ``enum return_reason'' if the
-   function is aborted (using return_to_top_level() or zero if the
+   function is aborted (using throw_exception() or zero if the
    function returns normally.  Set FUNC_VAL to the value returned by
    the function or 0 if the function was aborted.
 
@@ -504,7 +506,7 @@ catcher (catch_exceptions_ftype *func,
   /* The caller didn't request that the event be caught, relay the
      event to the next containing catch_errors(). */
 
-  return_to_top_level (caught);
+  throw_exception (caught);
 }
 
 int
@@ -723,10 +725,19 @@ execute_command (char *p, int from_tty)
       /* Pass null arg rather than an empty one.  */
       arg = *p ? p : 0;
 
-      /* Clear off trailing whitespace, except for set and complete command.  */
+      /* FIXME: cagney/2002-02-02: The c->type test is pretty dodgy
+         while the is_complete_command(cfunc) test is just plain
+         bogus.  They should both be replaced by a test of the form
+         c->strip_trailing_white_space_p.  */
+      /* NOTE: cagney/2002-02-02: The function.cfunc in the below
+         can't be replaced with func.  This is because it is the
+         cfunc, and not the func, that has the value that the
+         is_complete_command hack is testing for.  */
+      /* Clear off trailing whitespace, except for set and complete
+         command.  */
       if (arg
 	  && c->type != set_cmd
-	  && !is_complete_command (c->function.cfunc))
+	  && !is_complete_command (c))
 	{
 	  p = arg + strlen (arg) - 1;
 	  while (p >= arg && (*p == ' ' || *p == '\t'))
@@ -735,12 +746,7 @@ execute_command (char *p, int from_tty)
 	}
 
       /* If this command has been pre-hooked, run the hook first. */
-      if ((c->hook_pre) && (!c->hook_in))
-      {
-        c->hook_in = 1; /* Prevent recursive hooking */
-        execute_user_command (c->hook_pre, (char *) 0);
-        c->hook_in = 0; /* Allow hook to work again once it is complete */
-      }
+      execute_cmd_pre_hook (c);
 
       if (c->flags & DEPRECATED_WARN_USER)
 	deprecated_cmd_warning (&line);
@@ -749,20 +755,15 @@ execute_command (char *p, int from_tty)
 	execute_user_command (c, arg);
       else if (c->type == set_cmd || c->type == show_cmd)
 	do_setshow_command (arg, from_tty & caution, c);
-      else if (c->function.cfunc == NO_FUNCTION)
+      else if (c->func == NULL)
 	error ("That is not a command, just a help topic.");
       else if (call_command_hook)
 	call_command_hook (c, arg, from_tty & caution);
       else
-	(*c->function.cfunc) (arg, from_tty & caution);
+	(*c->func) (c, arg, from_tty & caution);
        
       /* If this command has been post-hooked, run the hook last. */
-      if ((c->hook_post) && (!c->hook_in))
-      {
-        c->hook_in = 1; /* Prevent recursive hooking */
-        execute_user_command (c->hook_post, (char *) 0);
-        c->hook_in = 0; /* allow hook to work again once it is complete */
-      }
+      execute_cmd_post_hook (c);
 
     }
 
@@ -2009,7 +2010,7 @@ init_main (void)
 		       (char *) &new_async_prompt, "Set gdb's prompt",
 		       &setlist);
       add_show_from_set (c, &showlist);
-      c->function.sfunc = set_async_prompt;
+      set_cmd_sfunc (c, set_async_prompt);
     }
 
   add_show_from_set
@@ -2045,7 +2046,7 @@ Without an argument, command line editing is enabled.  To edit, use\n\
 EMACS-like or VI-like commands like control-P or ESC.", &setlist);
 
       add_show_from_set (c, &showlist);
-      c->function.sfunc = set_async_editing_command;
+      set_cmd_sfunc (c, set_async_editing_command);
     }
 
   add_show_from_set
@@ -2056,18 +2057,17 @@ Without an argument, saving is enabled.", &sethistlist),
      &showhistlist);
 
   c = add_set_cmd ("size", no_class, var_integer, (char *) &history_size,
-		   "Set the size of the command history, \n\
+		   "Set the size of the command history,\n\
 ie. the number of previous commands to keep a record of.", &sethistlist);
   add_show_from_set (c, &showhistlist);
-  c->function.sfunc = set_history_size_command;
+  set_cmd_sfunc (c, set_history_size_command);
 
   c = add_set_cmd ("filename", no_class, var_filename,
 		   (char *) &history_filename,
 		   "Set the filename in which to record the command history\n\
  (the list of previous commands of which a record is kept).", &sethistlist);
-  c->completer = filename_completer;
-  c->completer_word_break_characters = 
-    gdb_completer_filename_word_break_characters; 
+  set_cmd_completer (c, filename_completer);
+  /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
   add_show_from_set (c, &showhistlist);
 
   add_show_from_set
@@ -2098,7 +2098,7 @@ ie. the number of previous commands to keep a record of.", &sethistlist);
 2 == output annotated suitably for use by programs that control GDB.",
 		       &setlist);
       add_show_from_set (c, &showlist);
-      c->function.sfunc = set_async_annotation_level;
+      set_cmd_sfunc (c, set_async_annotation_level);
     }
   if (event_loop_p)
     {

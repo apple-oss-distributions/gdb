@@ -1,3 +1,206 @@
+2002-04-05  Keith Seitz  <keiths@redhat.com>
+
+	* generic/gdbtk-stack.c (gdb_block_vars): Update get_frame_block to
+	match recent gdb changes.
+	(gdb_get_blocks): Likewise.
+	(gdb_get_vars_command): Likewise.
+	(gdb_selected_block): Likewise.
+
+2002-04-04  Keith Seitz  <keiths@redhat.com>
+
+	* library/download.itb (constructor): Set feedback meter
+	to "0.0".
+	Remove "steps" array.
+	(update_download): Use fractional completions for feedback.
+	(done): Ditto.
+	* library/download.ith (protected variable steps): Remove.
+
+2002-04-04  Daniel Jacobowitz  <drow@mvista.com>
+
+	* generic/gdbtk-cmds.c (gdb_disassemble_driver): Skip
+	end-of-function markers in the line table.
+
+2002-04-01  Keith Seitz  <keiths@redhat.com>
+
+	* generic/gdbtk-cmds.c (gdb_load_disassembly): Use string_to_core_addr
+	instead of parse_and_eval_address.
+	Use xfree instead of free.
+
+2002-03-25  Elena Zannoni  <ezannoni@redhat.com>
+
+        * generic/gdbtk-hooks.c: Include cli/cli-decode.h for
+        cmd_list_element.
+
+2002-03-25  Alexandre Oliva  <aoliva@redhat.com>
+
+	* generic/gdbtk.c (HAS_STDARG): Define.
+	* generic/gdbtk-cmds.c (HAS_STDARG): Likewise.
+	* generic/gdbtk-hooks.c (HAS_STDARG): Likewise.
+
+2002-03-14  Keith Seitz  <keiths@redhat.com>
+
+	* library/bpwin.itb (constructor): Set some sane initial
+	size.
+
+2002-03-07  Martin M. Hunt  <hunt@redhat.com>
+
+	* library/srctextwin.itb (SrcTextWin::showBPBalloon): Put 
+	linefeeds between multiple breakpoints.
+
+2002-03-06  Martin M. Hunt  <hunt@redhat.com>
+
+	* library/srctextwin.itb (SrcTextWin::showBPBalloon):
+	Reformat output. Add conditions, ignore count, commands.
+
+	* library/interface.tcl (gdbtk_tcl_readline): Remove
+	call to "command::insert" and instead insert the command
+	into the console window.
+	(gdbtk_tcl_readline_end): Catch the unsets and do not call
+	non-existent function command::end_multi_line_input.
+
+2002-03-06  Martin M. Hunt  <hunt@redhat.com>
+	
+	* library/bpwin.itb: Left-justify the labels in
+	the table.
+
+2002-03-06  Keith Seitz  <keiths@redhat.com>
+
+	* generic/gdbtk-cmds.c: Include "ctype.h" if available.
+        (gdb_get_mem): Renamed to gdb_update_mem.
+        (gdb_update_mem): Take array as first tcl argument. This
+        array will hold the data for the table, which is now stuffed
+        in C instead of tcl.
+        (gdb_eval): Use our own ui-file instead of gdb_stdout.
+	* library/memwin.ith (_update_address): New method.
+	(update_address): Address expression is no longer optional.
+	* library/memwin.itb (build_win): Use _update_address instead of
+	update_address.
+	(toggle_enabled): Ditto.
+	(newsize): Use _update_address instead of update_addr.
+	(update_address_cb): Use _update_address instead of update_address.
+	(do_popup): Likewise.
+	(goto): Likewise.
+	(incr_addr): Use _update_address instead of update_addr.
+	(edit): Use gdb_update_mem instead of gdb_get_mem.
+	(update_addr): use gdb_update_mem to do all the window updating.
+
+2002-03-06  Martin M. Hunt  <hunt@redhat.com>
+
+	* library/srcwin.itb: Don't try to set balloon help
+	for search widget; it moved to srcbar.
+
+2002-03-05  Martin M. Hunt  <hunt@redhat.com>
+
+	* library/prefs.tcl (pref_read): If a preference specifies
+	"src-font", substitute "global/fixed".
+	(pref_set_defaults): Change defaults from "src-font" to 
+	"global/fixed". Do not create font object "src-font". Do
+	not add hook to trace its changes.
+	(pref_src-font_trace): Remove.
+
+	* library/console.itb (Console::_update_option): Remove 
+	font update because this happens automatically.
+
+	* library/globalpref.itb: No need to set
+	changed flag for fonts; updates happen automatically
+	when prefs are updated.
+
+	* library/bpwin.itb: Replaced src-font with global/fixed.
+	* library/browserwin.itb: Ditto.
+	* library/mempref.itb: Ditto.
+	* library/memwin.itb: Ditto.
+	* library/process.itb: Ditto.
+	* library/regwin.itb: Ditto.
+	* library/srcbar.itcl: Ditto.
+	* library/srcpref.itb: Ditto.
+	* library/srctextwin.itb: Ditto.
+	* library/srcwin.itb: Ditto.
+	* library/stackwin.itb: Ditto.
+	* library/tdump.tcl: Ditto.
+	* library/tracedlg.tcl: Ditto.
+	* library/variables.tcl: Ditto.
+	* library/watch.tcl: Ditto.
+	
+2002-03-01  Keith Seitz  <keiths@redhat.com>
+
+	* generic/gdbtk-register.c (register_changed_p): Don't use REGISTER_BYTES.
+	There is no guarantee anymore that REGISTER_BYTES contains
+	NUM_REGS+NUM_PSEUDO_REGS registers.
+	(setup_architecture_data): Likewise.
+
+2002-02-25  Ian Roxborough  <irox@redhat.com>
+
+	* library/srcbar.itcl (SrcBar::create_buttons): Added
+	"Search in source file" entry box and label to the top
+	row toolbar.
+	* library/srcwin.itb (SrcWin::_build_win): Removed
+	"Search in source file" entry box.
+	(SrcWin::_search): Renamed to "search", add string
+	parameter and cleaned up.
+	* library/srcwin.ith (SrcWin): Removed private
+	method "_search" and added public method "search".
+
+2002-02-17  Tom Tromey  <tromey@redhat.com>
+
+	* library/tclIndex: Updated.
+	* library/srcbar.itcl (SrcBar): Use new Session namespace.
+	* library/main.tcl: Use new Session namespace.
+	* library/interface.tcl (gdbtk_tcl_preloop): Use new Session
+	namespace.
+	(gdbtk_cleanup): Likewise.
+	(_close_file): Likewise.
+	* library/session.tcl: Use a namespace.  Renamed all functions.
+
+2002-02-13  Martin M. Hunt  <hunt@redhat.com>
+
+	* generic/gdbtk-hooks.c (gdbtk_print_frame_info): Don't 
+	set GDB globals current_source_symtab and current_source_line.
+	Let GDB do it. 
+
+2002-02-13  Keith Seitz  <keiths@redhat.com>
+
+	* library/managedwin.itb (_create): If given a transient window,
+	make sure that the SrcWin that is to become its master exists;
+	otherwise, use ".".
+
+2002-02-12  Keith Seitz  <keiths@redhat.com>
+
+	From Don Bowman <don@sandvine.com>:
+	* library/targetselection.itb (init_target_db): Add target
+	vxWorks.
+        Update copyright.
+
+2002-02-10  Daniel Jacobowitz  <drow@mvista.com>
+
+	* generic/gdbtk-cmds.c (gdb_listfuncs): Don't call
+	BLOCK_SHOULD_SORT.
+	* library/browserwin.itb (BrowserWin::_fill_funcs_combo): Sort
+	the output of gdb_listfuncs.
+
+2002-02-07  Martin M. Hunt  <hunt@redhat.com>
+
+	* generic/gdbtk.c, generic/gdbtk-bp.c, generic/gdbtk-cmds.c,
+	generic/gdbtk-hooks.c, generic/gdbtk-stack.c: Cleanup includes.
+
+2002-02-06  Martin M. Hunt  <hunt@redhat.com>
+
+	* generic/gdbtk.c, generic/gdbtk-bp.c, generic/gdbtk-cmds.c,
+	generic/gdbtk-hooks.c, generic/gdbtk-register.c,
+	generic/gdbtk-stack.c, generic/gdbtk-varobj.c,
+	generic/gdbtk-wrapper.c: Cleanup. Fix indentation. Fix
+	function declarations. Remove unused variables. Add 2002
+	copyrights.
+
+2002-02-06  Keith Seitz  <keiths@redhat.com>
+
+	* library/images/cygnus.gif: Remove.
+	* library/images2/cygnus.gif: Remove.
+
+2002-02-05  Elena Zannoni  <ezannoni@redhat.com>
+
+        * generic/gdbtk-cmds.c (gdbtk_load_asm, gdbtk_print_asm): Use
+        TARGET_PRINT_INSN instead of tm_print_insn.
+
 2002-01-18  Keith Seitz  <keiths@redhat.com>
 
 	* library/console.ith (get_text): Delete.

@@ -522,6 +522,8 @@ cleanup_target (struct target_ops *t)
   de_fault (to_pid_to_str,
 	    (char * (*) (ptid_t))
 	    normal_pid_to_str);
+  de_fault (to_bind_function,
+	    (int (*) (char *)) return_one);
 #undef de_fault
 }
 
@@ -622,6 +624,7 @@ update_current_target (void)
       INHERIT (to_async_mask_value, t);
       INHERIT (to_find_memory_regions, t);
       INHERIT (to_make_corefile_notes, t);
+      INHERIT (to_bind_function, t);
       INHERIT (to_magic, t);
 
 #undef INHERIT
@@ -847,6 +850,8 @@ target_write_memory (CORE_ADDR memaddr, char *myaddr, int len)
   return target_xfer_memory (memaddr, myaddr, len, 1);
 }
 
+static int trust_readonly = 0;
+
 /* Move memory to or from the targets.  The top target gets priority;
    if it cannot handle it, it is offered to the next one down, etc.
 
@@ -868,6 +873,26 @@ do_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
   /* to_xfer_memory is not guaranteed to set errno, even when it returns
      0.  */
   errno = 0;
+
+  if (!write && trust_readonly)
+    {
+      /* User-settable option, "trust-readonly".  If true, then
+	 memory from any SEC_READONLY bfd section may be read
+	 directly from the bfd file. */
+
+      struct section_table *secp;
+
+      for (secp = current_target.to_sections;
+	   secp < current_target.to_sections_end;
+	   secp++)
+	{
+	  if (bfd_get_section_flags (secp->bfd, secp->the_bfd_section) 
+	      & SEC_READONLY)
+	    if (memaddr >= secp->addr && memaddr < secp->endaddr)
+	      return xfer_memory (memaddr, myaddr, len, 0, 
+				  attrib, &current_target);
+	}
+    }
 
   /* The quick case is that the top target can handle the transfer.  */
   res = current_target.to_xfer_memory
@@ -939,10 +964,10 @@ target_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write)
       while (reg_len > 0)
 	{
 	  if (region->attrib.cache)
-	    res = dcache_xfer_memory(target_dcache, memaddr, myaddr,
+	    res = dcache_xfer_memory (target_dcache, memaddr, myaddr,
 				     reg_len, write);
 	  else
-	    res = do_xfer_memory(memaddr, myaddr, reg_len, write,
+	    res = do_xfer_memory (memaddr, myaddr, reg_len, write,
 				 &region->attrib);
 	      
 	  if (res <= 0)
@@ -2314,16 +2339,26 @@ initialize_targets (void)
   add_info ("target", target_info, targ_desc);
   add_info ("files", target_info, targ_desc);
 
-  add_show_from_set (
-		add_set_cmd ("target", class_maintenance, var_zinteger,
-			     (char *) &targetdebug,
-			     "Set target debugging.\n\
+  add_show_from_set 
+    (add_set_cmd ("target", class_maintenance, var_zinteger,
+		  (char *) &targetdebug,
+		  "Set target debugging.\n\
 When non-zero, target debugging is enabled.", &setdebuglist),
-		      &showdebuglist);
+     &showdebuglist);
 
+  add_show_from_set 
+    (add_set_boolean_cmd 
+     ("trust-readonly-sections", class_support, 
+      &trust_readonly, 
+      "Set mode for reading from readonly sections.\n\
+When this mode is on, memory reads from readonly sections (such as .text)\n\
+will be read from the object file instead of from the target.  This will\n\
+result in significant performance improvement for remote targets.",
+      &setlist),
+     &showlist);
 
   add_com ("monitor", class_obscure, do_monitor_command,
 	   "Send a command to the remote monitor (remote targets only).");
 
-  target_dcache = dcache_init();
+  target_dcache = dcache_init ();
 }

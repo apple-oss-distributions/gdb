@@ -1,6 +1,6 @@
 /* Target-dependent code for GDB, the GNU debugger.
    Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001
+   1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -35,9 +35,9 @@
 #include "value.h"
 #include "parser-defs.h"
 
-#include "bfd/libbfd.h"		/* for bfd_default_set_arch_mach */
+#include "libbfd.h"		/* for bfd_default_set_arch_mach */
 #include "coff/internal.h"	/* for libcoff.h */
-#include "bfd/libcoff.h"	/* for xcoff_data */
+#include "libcoff.h"		/* for xcoff_data */
 
 #include "elf-bfd.h"
 
@@ -64,13 +64,16 @@ struct rs6000_framedata
 				   the frame */
     int saved_gpr;		/* smallest # of saved gpr */
     int saved_fpr;		/* smallest # of saved fpr */
+    int saved_vr;               /* smallest # of saved vr */
     int alloca_reg;		/* alloca register number (frame ptr) */
     char frameless;		/* true if frameless functions. */
     char nosavedpc;		/* true if pc not saved. */
     int gpr_offset;		/* offset of saved gprs from prev sp */
     int fpr_offset;		/* offset of saved fprs from prev sp */
+    int vr_offset;              /* offset of saved vrs from prev sp */
     int lr_offset;		/* offset of saved lr */
     int cr_offset;		/* offset of saved cr */
+    int vrsave_offset;          /* offset of saved vrsave register */
   };
 
 /* Description of a single register. */
@@ -362,12 +365,15 @@ rs6000_software_single_step (enum target_signal signal,
    which we decrement the sp to allocate the frame.
    - saved_gpr is the number of the first saved gpr.
    - saved_fpr is the number of the first saved fpr.
+   - saved_vr is the number of the first saved vr.
    - alloca_reg is the number of the register used for alloca() handling.
    Otherwise -1.
    - gpr_offset is the offset of the first saved gpr from the previous frame.
    - fpr_offset is the offset of the first saved fpr from the previous frame.
+   - vr_offset is the offset of the first saved vr from the previous frame.
    - lr_offset is the offset of the saved lr
    - cr_offset is the offset of the saved cr
+   - vrsave_offset is the offset of the saved vrsave register
  */
 
 #define SIGNED_SHORT(x) 						\
@@ -434,11 +440,15 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
 {
   CORE_ADDR orig_pc = pc;
   CORE_ADDR last_prologue_pc = pc;
+  CORE_ADDR li_found_pc = 0;
   char buf[4];
   unsigned long op;
   long offset = 0;
+  long vr_saved_offset = 0;
   int lr_reg = -1;
   int cr_reg = -1;
+  int vr_reg = -1;
+  int vrsave_reg = -1;
   int reg;
   int framep = 0;
   int minimal_toc_loaded = 0;
@@ -463,6 +473,7 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
   memset (fdata, 0, sizeof (struct rs6000_framedata));
   fdata->saved_gpr = -1;
   fdata->saved_fpr = -1;
+  fdata->saved_vr = -1;
   fdata->alloca_reg = -1;
   fdata->frameless = 1;
   fdata->nosavedpc = 1;
@@ -581,17 +592,8 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
 	  break;
 
 	}
-      else if (((op & 0xffff0000) == 0x801e0000 ||	/* lwz 0,NUM(r30), used
-							   in V.4 -mrelocatable */
-		op == 0x7fc0f214) &&	/* add r30,r0,r30, used
-					   in V.4 -mrelocatable */
-	       lr_reg == 0x901e0000)
-	{
-	  continue;
-
-	}
-      else if ((op & 0xffff0000) == 0x3fc00000 ||	/* addis 30,0,foo@ha, used
-							   in V.4 -mminimal-toc */
+      else if ((op & 0xffff0000) == 0x3fc00000 ||  /* addis 30,0,foo@ha, used
+						      in V.4 -mminimal-toc */
 	       (op & 0xffff0000) == 0x3bde0000)
 	{			/* addi 30,30,foo@l */
 	  continue;
@@ -602,17 +604,17 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
 				   to save fprs??? */
 
 	  fdata->frameless = 0;
-	  /* Don't skip over the subroutine call if it is not within the first
-	     three instructions of the prologue.  */
+	  /* Don't skip over the subroutine call if it is not within
+	     the first three instructions of the prologue.  */
 	  if ((pc - orig_pc) > 8)
 	    break;
 
 	  op = read_memory_integer (pc + 4, 4);
 
-	  /* At this point, make sure this is not a trampoline function
-	     (a function that simply calls another functions, and nothing else).
-	     If the next is not a nop, this branch was part of the function
-	     prologue. */
+	  /* At this point, make sure this is not a trampoline
+	     function (a function that simply calls another functions,
+	     and nothing else).  If the next is not a nop, this branch
+	     was part of the function prologue. */
 
 	  if (op == 0x4def7b82 || op == 0)	/* crorc 15, 15, 15 */
 	    break;		/* don't skip over 
@@ -658,8 +660,7 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
 
 	  /* store parameters in stack */
 	}
-      else if ((op & 0xfc1f0000) == 0x90010000 ||	/* st rx,NUM(r1) */
-	       (op & 0xfc1f0003) == 0xf8010000 ||	/* std rx,NUM(r1) */
+      else if ((op & 0xfc1f0003) == 0xf8010000 ||	/* std rx,NUM(r1) */
 	       (op & 0xfc1f0000) == 0xd8010000 ||	/* stfd Rx,NUM(r1) */
 	       (op & 0xfc1f0000) == 0xfc010000)		/* frsp, fp?,NUM(r1) */
 	{
@@ -692,8 +693,74 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
 	  framep = 1;
 	  fdata->alloca_reg = (op & ~0x38010000) >> 21;
 	  continue;
-
 	}
+      /* AltiVec related instructions.  */
+      /* Store the vrsave register (spr 256) in another register for
+	 later manipulation, or load a register into the vrsave
+	 register.  2 instructions are used: mfvrsave and
+	 mtvrsave.  They are shorthand notation for mfspr Rn, SPR256
+	 and mtspr SPR256, Rn.  */
+      /* mfspr Rn SPR256 == 011111 nnnnn 0000001000 01010100110
+	 mtspr SPR256 Rn == 011111 nnnnn 0000001000 01110100110  */
+      else if ((op & 0xfc1fffff) == 0x7c0042a6)    /* mfvrsave Rn */
+	{
+          vrsave_reg = GET_SRC_REG (op);
+	  continue;
+	}
+      else if ((op & 0xfc1fffff) == 0x7c0043a6)     /* mtvrsave Rn */
+        {
+          continue;
+        }
+      /* Store the register where vrsave was saved to onto the stack:
+         rS is the register where vrsave was stored in a previous
+	 instruction.  */
+      /* 100100 sssss 00001 dddddddd dddddddd */
+      else if ((op & 0xfc1f0000) == 0x90010000)     /* stw rS, d(r1) */
+        {
+          if (vrsave_reg == GET_SRC_REG (op))
+	    {
+	      fdata->vrsave_offset = SIGNED_SHORT (op) + offset;
+	      vrsave_reg = -1;
+	    }
+          continue;
+        }
+      /* Compute the new value of vrsave, by modifying the register
+         where vrsave was saved to.  */
+      else if (((op & 0xfc000000) == 0x64000000)    /* oris Ra, Rs, UIMM */
+	       || ((op & 0xfc000000) == 0x60000000))/* ori Ra, Rs, UIMM */
+	{
+	  continue;
+	}
+      /* li r0, SIMM (short for addi r0, 0, SIMM).  This is the first
+	 in a pair of insns to save the vector registers on the
+	 stack.  */
+      /* 001110 00000 00000 iiii iiii iiii iiii  */
+      else if ((op & 0xffff0000) == 0x38000000)    /* li r0, SIMM */
+	{
+	  li_found_pc = pc;
+	  vr_saved_offset = SIGNED_SHORT (op);
+	}
+      /* Store vector register S at (r31+r0) aligned to 16 bytes.  */      
+      /* 011111 sssss 11111 00000 00111001110 */
+      else if ((op & 0xfc1fffff) == 0x7c1f01ce)   /* stvx Vs, R31, R0 */
+        {
+	  if (pc == (li_found_pc + 4))
+	    {
+	      vr_reg = GET_SRC_REG (op);
+	      /* If this is the first vector reg to be saved, or if
+		 it has a lower number than others previously seen,
+		 reupdate the frame info.  */
+	      if (fdata->saved_vr == -1 || fdata->saved_vr > vr_reg)
+		{
+		  fdata->saved_vr = vr_reg;
+		  fdata->vr_offset = vr_saved_offset + offset;
+		}
+	      vr_saved_offset = -1;
+	      vr_reg = -1;
+	      li_found_pc = 0;
+	    }
+	}
+      /* End AltiVec related instructions.  */
       else
 	{
 	  /* Not a recognized prologue instruction.
@@ -1304,7 +1371,8 @@ frame_get_saved_regs (struct frame_info *fi, struct rs6000_framedata *fdatap)
 {
   CORE_ADDR frame_addr;
   struct rs6000_framedata work_fdata;
-  int wordsize = TDEP->wordsize;
+  struct gdbarch_tdep * tdep = gdbarch_tdep (current_gdbarch);
+  int wordsize = tdep->wordsize;
 
   if (fi->saved_regs)
     return;
@@ -1322,8 +1390,12 @@ frame_get_saved_regs (struct frame_info *fi, struct rs6000_framedata *fdatap)
   /* The following is true only if the frame doesn't have a call to
      alloca(), FIXME. */
 
-  if (fdatap->saved_fpr == 0 && fdatap->saved_gpr == 0
-      && fdatap->lr_offset == 0 && fdatap->cr_offset == 0)
+  if (fdatap->saved_fpr == 0
+      && fdatap->saved_gpr == 0
+      && fdatap->saved_vr == 0
+      && fdatap->lr_offset == 0
+      && fdatap->cr_offset == 0
+      && fdatap->vr_offset == 0)
     frame_addr = 0;
   else if (fi->prev && fi->prev->frame)
     frame_addr = fi->prev->frame;
@@ -1358,17 +1430,36 @@ frame_get_saved_regs (struct frame_info *fi, struct rs6000_framedata *fdatap)
 	}
     }
 
+  /* if != -1, fdatap->saved_vr is the smallest number of saved_vr.
+     All vr's from saved_vr to vr31 are saved.  */
+  if (tdep->ppc_vr0_regnum != -1 && tdep->ppc_vrsave_regnum != -1)
+    {
+      if (fdatap->saved_vr >= 0)
+	{
+	  int i;
+	  CORE_ADDR vr_addr = frame_addr + fdatap->vr_offset;
+	  for (i = fdatap->saved_vr; i < 32; i++)
+	    {
+	      fi->saved_regs[tdep->ppc_vr0_regnum + i] = vr_addr;
+	      vr_addr += REGISTER_RAW_SIZE (tdep->ppc_vr0_regnum);
+	    }
+	}
+    }
+
   /* If != 0, fdatap->cr_offset is the offset from the frame that holds
      the CR.  */
   if (fdatap->cr_offset != 0)
-    fi->saved_regs[gdbarch_tdep (current_gdbarch)->ppc_cr_regnum] =
-      frame_addr + fdatap->cr_offset;
+    fi->saved_regs[tdep->ppc_cr_regnum] = frame_addr + fdatap->cr_offset;
 
   /* If != 0, fdatap->lr_offset is the offset from the frame that holds
      the LR.  */
   if (fdatap->lr_offset != 0)
-    fi->saved_regs[gdbarch_tdep (current_gdbarch)->ppc_lr_regnum] =
-      frame_addr + fdatap->lr_offset;
+    fi->saved_regs[tdep->ppc_lr_regnum] = frame_addr + fdatap->lr_offset;
+
+  /* If != 0, fdatap->vrsave_offset is the offset from the frame that holds
+     the VRSAVE.  */
+  if (fdatap->vrsave_offset != 0)
+    fi->saved_regs[tdep->ppc_vrsave_regnum] = frame_addr + fdatap->vrsave_offset;
 }
 
 /* Return the address of a frame. This is the inital %sp value when the frame
@@ -1763,13 +1854,8 @@ rs6000_do_registers_info (int regnum, int fpregs)
         {
           register int j;
 
-#ifdef INVALID_FLOAT
-          if (INVALID_FLOAT (virtual_buffer, REGISTER_VIRTUAL_SIZE (i)))
-            printf_filtered ("<invalid float>");
-          else
-#endif
-            val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
-                       gdb_stdout, 0, 1, 0, Val_pretty_default);
+	  val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+		     gdb_stdout, 0, 1, 0, Val_pretty_default);
 
           printf_filtered ("\t(raw 0x");
           for (j = 0; j < REGISTER_RAW_SIZE (i); j++)
@@ -2267,21 +2353,6 @@ static const struct variant variants[] =
 
 #undef num_registers
 
-/* Look up the variant named NAME in the `variants' table.  Return a
-   pointer to the struct variant, or null if we couldn't find it.  */
-
-static const struct variant *
-find_variant_by_name (char *name)
-{
-  const struct variant *v;
-
-  for (v = variants; v->name; v++)
-    if (!strcmp (name, v->name))
-      return v;
-
-  return NULL;
-}
-
 /* Return the variant corresponding to architecture ARCH and machine number
    MACH.  If no such variant exists, return null. */
 
@@ -2476,7 +2547,8 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   /* Choose variant. */
   v = find_variant_by_arch (arch, mach);
   if (!v)
-    v = find_variant_by_name (power ? "power" : "powerpc");
+    return NULL;
+
   tdep->regs = v->regs;
 
   tdep->ppc_gp0_regnum = 0;
@@ -2520,7 +2592,6 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_read_pc (gdbarch, generic_target_read_pc);
   set_gdbarch_write_pc (gdbarch, generic_target_write_pc);
   set_gdbarch_read_fp (gdbarch, generic_target_read_fp);
-  set_gdbarch_write_fp (gdbarch, generic_target_write_fp);
   set_gdbarch_read_sp (gdbarch, generic_target_read_sp);
   set_gdbarch_write_sp (gdbarch, generic_target_write_sp);
 
@@ -2533,9 +2604,9 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_register_bytes (gdbarch, off);
   set_gdbarch_register_byte (gdbarch, rs6000_register_byte);
   set_gdbarch_register_raw_size (gdbarch, rs6000_register_raw_size);
-  set_gdbarch_max_register_raw_size (gdbarch, 8);
+  set_gdbarch_max_register_raw_size (gdbarch, 16);
   set_gdbarch_register_virtual_size (gdbarch, generic_register_virtual_size);
-  set_gdbarch_max_register_virtual_size (gdbarch, 8);
+  set_gdbarch_max_register_virtual_size (gdbarch, 16);
   set_gdbarch_register_virtual_type (gdbarch, rs6000_register_virtual_type);
   set_gdbarch_do_registers_info (gdbarch, rs6000_do_registers_info);
 
@@ -2582,8 +2653,6 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_store_struct_return (gdbarch, rs6000_store_struct_return);
   set_gdbarch_store_return_value (gdbarch, rs6000_store_return_value);
   set_gdbarch_extract_struct_value_address (gdbarch, rs6000_extract_struct_value_address);
-  set_gdbarch_use_struct_convention (gdbarch, generic_use_struct_convention);
-
   set_gdbarch_pop_frame (gdbarch, rs6000_pop_frame);
 
   set_gdbarch_skip_prologue (gdbarch, rs6000_skip_prologue);
@@ -2594,6 +2663,27 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Not sure on this. FIXMEmgo */
   set_gdbarch_frame_args_skip (gdbarch, 8);
+
+  /* Until November 2001, gcc was not complying to the SYSV ABI for
+     returning structures less than or equal to 8 bytes in size. It was
+     returning everything in memory. When this was corrected, it wasn't
+     fixed for native platforms. */
+  if (sysv_abi)
+    {
+      if (osabi == ELFOSABI_LINUX
+          || osabi == ELFOSABI_NETBSD
+          || osabi == ELFOSABI_FREEBSD)
+	set_gdbarch_use_struct_convention (gdbarch,
+					   generic_use_struct_convention);
+      else
+	set_gdbarch_use_struct_convention (gdbarch,
+					   ppc_sysv_abi_use_struct_convention);
+    }
+  else
+    {
+      set_gdbarch_use_struct_convention (gdbarch,
+					 generic_use_struct_convention);
+    }
 
   set_gdbarch_frame_chain_valid (gdbarch, file_frame_chain_valid);
   if (osabi == ELFOSABI_LINUX)

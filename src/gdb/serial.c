@@ -1,7 +1,7 @@
 /* Generic serial interface routines
 
-   Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+   Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
+   2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -58,9 +58,6 @@ static const char logbase_ascii[] = "ascii";
 static const char *logbase_enums[] =
 {logbase_hex, logbase_octal, logbase_ascii, NULL};
 static const char *serial_logbase = logbase_ascii;
-
-#undef XMALLOC
-#define XMALLOC(TYPE) ((TYPE*) xmalloc (sizeof (TYPE)))
 
 
 static int serial_current_type = 0;
@@ -185,9 +182,7 @@ serial_open (const char *name)
 	return scb;
       }
 
-  if (strcmp (name, "ocd") == 0)
-    ops = serial_interface_lookup ("ocd");
-  else if (strcmp (name, "pc") == 0)
+  if (strcmp (name, "pc") == 0)
     ops = serial_interface_lookup ("pc");
   else if (strchr (name, ':'))
     ops = serial_interface_lookup ("tcp");

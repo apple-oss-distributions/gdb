@@ -284,7 +284,6 @@ list_args_or_locals (int locals, int values, struct frame_info *fi,
 {
   struct block *block = NULL;
   int i, nsyms;
-  int print_me = 0;
   static struct ui_stream *stb = NULL;
 
   stb = ui_out_stream_new (uiout);
@@ -294,7 +293,7 @@ list_args_or_locals (int locals, int values, struct frame_info *fi,
   if (all_blocks)
     {
       CORE_ADDR fstart;
-      int endaddr;
+      CORE_ADDR endaddr;
       int index;
       int nblocks;
       struct blockvector *bv;
@@ -335,7 +334,7 @@ list_args_or_locals (int locals, int values, struct frame_info *fi,
     }
   else
     {
-      block = get_frame_block (fi);
+      block = get_frame_block (fi, 0);
 
       while (block != 0)
 	{
@@ -416,16 +415,13 @@ print_syms_for_block (struct block *block,
 	{
 	  struct symbol *sym2;
 
-	  if (create_varobj)
-	    ui_out_list_begin (uiout, "varobj");
-	  else if (values)
-	    ui_out_list_begin (uiout, NULL);
-
-	  if (!create_varobj)
-	    ui_out_field_string (uiout, "name", SYMBOL_NAME (sym));
-
 	  if (!create_varobj && !values)
-	    continue;
+	    {
+	      ui_out_list_begin (uiout, NULL);
+	      ui_out_field_string (uiout, "name", SYMBOL_NAME (sym));
+	      ui_out_list_end (uiout);
+	      continue;
+	    }
 
 	  if (!locals)
 	    sym2 = lookup_symbol (SYMBOL_NAME (sym),
@@ -440,9 +436,18 @@ print_syms_for_block (struct block *block,
 	      struct varobj *new_var;
 	      new_var = varobj_create (varobj_gen_name (), 
 				       SYMBOL_NAME (sym2),
-				       (CORE_ADDR) block,
+				       fi->frame,
+				       block,
 				       USE_BLOCK_IN_FRAME);
 
+	      /* FIXME: There should be a better way to report an error in 
+		 creating a variable here, but I am not sure how to do it,
+	         so I will just bag out for now. */
+
+	      if (new_var == NULL)
+		continue;
+
+	      ui_out_list_begin (uiout, "varobj");
 	      ui_out_field_string (uiout, "exp", SYMBOL_NAME (sym));
 	      if (values)
 		{
@@ -476,6 +481,8 @@ print_syms_for_block (struct block *block,
 	    }	  
 	  else
 	    {
+	      ui_out_list_begin (uiout, NULL);
+	      ui_out_field_string (uiout, "name", SYMBOL_NAME (sym));
 	      print_variable_value (sym2, fi, stb->stream);
 	      ui_out_field_stream (uiout, "value", stb);
 	    }

@@ -43,9 +43,6 @@
 
 #include "solib-svr4.h"
 
-#undef XMALLOC
-#define XMALLOC(TYPE) ((TYPE*) xmalloc (sizeof (TYPE)))
-
 void (*sh_show_regs) (void);
 CORE_ADDR (*skip_prologue_hard_way) (CORE_ADDR);
 void (*do_pseudo_register) (int);
@@ -484,7 +481,7 @@ sh_find_callers_reg (struct frame_info *fi, int regnum)
 static void
 sh_nofp_frame_init_saved_regs (struct frame_info *fi)
 {
-  int where[NUM_REGS];
+  int *where = (int *) alloca (NUM_REGS + NUM_PSEUDO_REGS);
   int rn;
   int have_fp = 0;
   int depth;
@@ -511,7 +508,7 @@ sh_nofp_frame_init_saved_regs (struct frame_info *fi)
   fi->extra_info->leaf_function = 1;
   fi->extra_info->f_offset = 0;
 
-  for (rn = 0; rn < NUM_REGS; rn++)
+  for (rn = 0; rn < NUM_REGS + NUM_PSEUDO_REGS; rn++)
     where[rn] = -1;
 
   depth = 0;
@@ -572,7 +569,7 @@ sh_nofp_frame_init_saved_regs (struct frame_info *fi)
 
   /* Now we know how deep things are, we can work out their addresses */
 
-  for (rn = 0; rn < NUM_REGS; rn++)
+  for (rn = 0; rn < NUM_REGS + NUM_PSEUDO_REGS; rn++)
     {
       if (where[rn] >= 0)
 	{
@@ -626,7 +623,7 @@ dr_reg_base_num (int dr_regnum)
 static void
 sh_fp_frame_init_saved_regs (struct frame_info *fi)
 {
-  int where[NUM_REGS];
+  int *where = (int *) alloca (NUM_REGS + NUM_PSEUDO_REGS);
   int rn;
   int have_fp = 0;
   int depth;
@@ -654,7 +651,7 @@ sh_fp_frame_init_saved_regs (struct frame_info *fi)
   fi->extra_info->leaf_function = 1;
   fi->extra_info->f_offset = 0;
 
-  for (rn = 0; rn < NUM_REGS; rn++)
+  for (rn = 0; rn < NUM_REGS + NUM_PSEUDO_REGS; rn++)
     where[rn] = -1;
 
   depth = 0;
@@ -726,7 +723,7 @@ sh_fp_frame_init_saved_regs (struct frame_info *fi)
 
   /* Now we know how deep things are, we can work out their addresses */
 
-  for (rn = 0; rn < NUM_REGS; rn++)
+  for (rn = 0; rn < NUM_REGS + NUM_PSEUDO_REGS; rn++)
     {
       if (where[rn] >= 0)
 	{
@@ -743,7 +740,8 @@ sh_fp_frame_init_saved_regs (struct frame_info *fi)
 
   if (have_fp)
     {
-      fi->saved_regs[SP_REGNUM] = read_memory_integer (fi->saved_regs[FP_REGNUM], 4);
+      fi->saved_regs[SP_REGNUM] =
+	read_memory_integer (fi->saved_regs[FP_REGNUM], 4);
     }
   else
     {
@@ -772,7 +770,8 @@ sh_init_extra_frame_info (int fromleaf, struct frame_info *fi)
          by assuming it's always FP.  */
       fi->frame = generic_read_register_dummy (fi->pc, fi->frame,
 					       SP_REGNUM);
-      fi->extra_info->return_pc = generic_read_register_dummy (fi->pc, fi->frame,
+      fi->extra_info->return_pc = generic_read_register_dummy (fi->pc,
+							       fi->frame,
 							       PC_REGNUM);
       fi->extra_info->f_offset = -(CALL_DUMMY_LENGTH + 4);
       fi->extra_info->leaf_function = 0;
@@ -781,7 +780,8 @@ sh_init_extra_frame_info (int fromleaf, struct frame_info *fi)
   else
     {
       FRAME_INIT_SAVED_REGS (fi);
-      fi->extra_info->return_pc = sh_find_callers_reg (fi, gdbarch_tdep (current_gdbarch)->PR_REGNUM);
+      fi->extra_info->return_pc = 
+	sh_find_callers_reg (fi, gdbarch_tdep (current_gdbarch)->PR_REGNUM);
     }
 }
 
@@ -817,9 +817,10 @@ sh_pop_frame (void)
       FRAME_INIT_SAVED_REGS (frame);
 
       /* Copy regs from where they were saved in the frame */
-      for (regnum = 0; regnum < NUM_REGS; regnum++)
+      for (regnum = 0; regnum < NUM_REGS + NUM_PSEUDO_REGS; regnum++)
 	if (frame->saved_regs[regnum])
-	  write_register (regnum, read_memory_integer (frame->saved_regs[regnum], 4));
+	  write_register (regnum,
+			  read_memory_integer (frame->saved_regs[regnum], 4));
 
       write_register (PC_REGNUM, frame->extra_info->return_pc);
       write_register (SP_REGNUM, fp + 4);
@@ -2118,7 +2119,6 @@ sh_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_read_pc (gdbarch, generic_target_read_pc);
   set_gdbarch_write_pc (gdbarch, generic_target_write_pc);
   set_gdbarch_read_fp (gdbarch, generic_target_read_fp);
-  set_gdbarch_write_fp (gdbarch, generic_target_write_fp);
   set_gdbarch_read_sp (gdbarch, generic_target_read_sp);
   set_gdbarch_write_sp (gdbarch, generic_target_write_sp);
 

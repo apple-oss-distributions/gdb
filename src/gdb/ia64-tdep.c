@@ -1,6 +1,6 @@
 /* Target-dependent code for the IA-64 for GDB, the GNU debugger.
-   Copyright 1999, 2000, 2001
-   Free Software Foundation, Inc.
+
+   Copyright 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -667,10 +667,9 @@ rse_address_add(CORE_ADDR addr, int nslots)
    even really hard to compute the frame chain, but it can be
    computationally expensive.  So, instead of making life difficult
    (and slow), we pick a more convenient representation of the frame
-   chain, knowing that we'll have to make some small adjustments
-   in other places.  (E.g, note that read_fp() and write_fp() are
-   actually read_sp() and write_sp() below in ia64_gdbarch_init()
-   below.) 
+   chain, knowing that we'll have to make some small adjustments in
+   other places.  (E.g, note that read_fp() is actually read_sp() in
+   ia64_gdbarch_init() below.)
 
    Okay, so what is the frame chain exactly?  It'll be the SP value
    at the time that the function in question was entered.
@@ -1990,7 +1989,7 @@ ia64_pop_frame_regular (struct frame_info *frame)
      size of the frame and the size of the locals (both wrt the
      frame that we're going back to).  This seems kind of strange,
      especially since it seems like we ought to be subtracting the
-     size of the locals... and we should; but the linux kernel
+     size of the locals... and we should; but the Linux kernel
      wants bsp to be set at the end of all used registers.  It's
      likely that this code will need to be revised to accomodate
      other operating systems. */
@@ -2072,10 +2071,11 @@ ia64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     {
       os_ident = elf_elfheader (info.abfd)->e_ident[EI_OSABI];
 
-      /* If os_ident is 0, it is not necessarily the case that we're on a
-         SYSV system.  (ELFOSABI_NONE is defined to be 0.) GNU/Linux uses
-	 a note section to record OS/ABI info, but leaves e_ident[EI_OSABI]
-	 zero.  So we have to check for note sections too. */
+      /* If os_ident is 0, it is not necessarily the case that we're
+         on a SYSV system.  (ELFOSABI_NONE is defined to be 0.)
+         GNU/Linux uses a note section to record OS/ABI info, but
+         leaves e_ident[EI_OSABI] zero.  So we have to check for note
+         sections too. */
       if (os_ident == 0)
 	{
 	  bfd_map_over_sections (info.abfd,
@@ -2090,9 +2090,9 @@ ia64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
        arches != NULL;
        arches = gdbarch_list_lookup_by_info (arches->next, &info))
     {
-      if (gdbarch_tdep (current_gdbarch)->os_ident != os_ident)
-	continue;
-      return arches->gdbarch;
+      tdep = gdbarch_tdep (arches->gdbarch);
+      if (tdep &&tdep->os_ident == os_ident)
+	return arches->gdbarch;
     }
 
   tdep = xmalloc (sizeof (struct gdbarch_tdep));
@@ -2112,12 +2112,13 @@ ia64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   else
     tdep->sigcontext_register_address = 0;
 
-  /* We know that Linux won't have to resort to the native_find_global_pointer
-     hackery.  But that's the only one we know about so far, so if
-     native_find_global_pointer is set to something non-zero, then use
-     it.  Otherwise fall back to using generic_elf_find_global_pointer.  
-     This arrangement should (in theory) allow us to cross debug Linux
-     binaries from an AIX machine.  */
+  /* We know that GNU/Linux won't have to resort to the
+     native_find_global_pointer hackery.  But that's the only one we
+     know about so far, so if native_find_global_pointer is set to
+     something non-zero, then use it.  Otherwise fall back to using
+     generic_elf_find_global_pointer.  This arrangement should (in
+     theory) allow us to cross debug GNU/Linux binaries from an AIX
+     machine.  */
   if (os_ident == ELFOSABI_LINUX)
     tdep->find_global_pointer = generic_elf_find_global_pointer;
   else if (native_find_global_pointer != 0)
@@ -2202,7 +2203,6 @@ ia64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
      is all read_fp() is used for), simply use the stack pointer value
      instead.  */
   set_gdbarch_read_fp (gdbarch, generic_target_read_sp);
-  set_gdbarch_write_fp (gdbarch, generic_target_write_sp);
 
   /* Settings that should be unnecessary.  */
   set_gdbarch_inner_than (gdbarch, core_addr_lessthan);
@@ -2221,6 +2221,7 @@ ia64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   set_gdbarch_decr_pc_after_break (gdbarch, 0);
   set_gdbarch_function_start_offset (gdbarch, 0);
+  set_gdbarch_frame_args_skip (gdbarch, 0);
 
   set_gdbarch_remote_translate_xfer_address (
     gdbarch, ia64_remote_translate_xfer_address);

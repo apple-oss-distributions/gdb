@@ -63,6 +63,8 @@ typedef_print (struct type *type, struct symbol *new, struct ui_file *stream)
 #ifdef _LANG_c
     case language_c:
     case language_cplus:
+    case language_objc:
+    case language_objcplus:
       fprintf_filtered (stream, "typedef ");
       type_print (type, "", stream, 0);
       if (TYPE_NAME ((SYMBOL_TYPE (new))) == 0

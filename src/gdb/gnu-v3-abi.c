@@ -241,22 +241,33 @@ gnuv3_rtti_type (struct value *value,
   vtable_symbol_name = SYMBOL_DEMANGLED_NAME (vtable_symbol);
   if (vtable_symbol_name == NULL
       || strncmp (vtable_symbol_name, "vtable for ", 11))
-    error ("can't find linker symbol for virtual table for `%s' value",
-           TYPE_NAME (value_type));
+    {
+      warning ("can't find linker symbol for virtual table for `%s' value",
+	       TYPE_NAME (value_type));
+      if (vtable_symbol_name)
+	warning ("  found `%s' instead", vtable_symbol_name);
+      return NULL;
+    }
   class_name = vtable_symbol_name + 11;
 
   /* Try to look up the class name as a type name.  */
   class_symbol = lookup_symbol (class_name, 0, STRUCT_NAMESPACE, 0, 0);
   if (! class_symbol)
-    error ("can't find class named `%s', as given by C++ RTTI", class_name);
+    {
+      warning ("can't find class named `%s', as given by C++ RTTI", class_name);
+      return NULL;
+    }
 
   /* Make sure the type symbol is sane.  (An earlier version of this
      code would find constructor functions, who have the same name as
      the class.)  */
   if (SYMBOL_CLASS (class_symbol) != LOC_TYPEDEF
       || TYPE_CODE (SYMBOL_TYPE (class_symbol)) != TYPE_CODE_CLASS)
-    error ("C++ RTTI gives a class name of `%s', but that isn't a type name",
-           class_name);
+    {
+      warning ("C++ RTTI gives a class name of `%s', but that isn't a type name",
+	       class_name);
+      return NULL;
+    }
 
   /* This is the object's run-time type!  */
   run_time_type = SYMBOL_TYPE (class_symbol);
@@ -318,7 +329,9 @@ gnuv3_virtual_fn_field (struct value **value_p,
   /* Now value is an object of the appropriate base type.  Fetch its
      virtual table.  */
   /* It might be possible to do this cast at the same time as the above.
-     Does multiple inheritance affect this?  */
+     Does multiple inheritance affect this?
+     Can this even trigger, or is TYPE_VPTR_BASETYPE idempotent?
+  */
   if (TYPE_VPTR_BASETYPE (vfn_base) != vfn_base)
     value = value_cast (TYPE_VPTR_BASETYPE (vfn_base), value);
   vtable_address
@@ -336,6 +349,10 @@ gnuv3_virtual_fn_field (struct value **value_p,
   /* Cast the function pointer to the appropriate type.  */
   vfn = value_cast (lookup_pointer_type (TYPE_FN_FIELD_TYPE (f, j)),
                     vfn);
+
+  /* Is (type)value always numerically the same as (vfn_base)value?
+     If so we can spare this cast and use one of the ones above.  */
+  *value_p = value_addr (value_cast (type, *value_p));
 
   return vfn;
 }

@@ -30,6 +30,7 @@
 #include "floatformat.h"
 #include "buildsym.h"
 #include "i387-nat.h"
+#include "i386-tdep.h"
 #include "value.h"
 #include "regcache.h"
 #include "gdb_string.h"
@@ -803,7 +804,7 @@ go32_terminal_inferior (void)
   {
     redir_to_debugger (&child_cmd);
     error ("Cannot redirect standard handles for program: %s.",
-	   strerror (errno));
+	   safe_strerror (errno));
   }
   /* set the console device of the inferior to whatever mode
      (raw or cooked) we found it last time */
@@ -837,7 +838,7 @@ go32_terminal_ours (void)
     {
       redir_to_child (&child_cmd);
       error ("Cannot redirect standard handles for debugger: %s.",
-	     strerror (errno));
+	     safe_strerror (errno));
     }
   }
 }
@@ -1904,7 +1905,7 @@ _initialize_go32_nat (void)
   add_target (&go32_ops);
 
   add_prefix_cmd ("dos", class_info, go32_info_dos_command,
-		  "Print information specific to DJGPP (a.k.a. MS-DOS) debugging.",
+		  "Print information specific to DJGPP (aka MS-DOS) debugging.",
 		  &info_dos_cmdlist, "info dos ", 0, &infolist);
 
   add_cmd ("sysinfo", class_info, go32_sysinfo,

@@ -215,7 +215,7 @@ print_subexp (register struct expression *exp, register int *pos,
 	    fprintf_unfiltered (stream, " %s", selector);
 	  }
 	fprintf_unfiltered (stream, "]");
-	free (selector);
+	xfree (selector);
 	return;
       }
 

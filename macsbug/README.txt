@@ -1,5 +1,5 @@
                            MacsBug Interface for GDB
-                                   10/7/01
+                                   1/18/02
 
 1. Introduction
 
@@ -253,7 +253,15 @@
    the proper display.
 
 
-7. Changes in MacsBug 1.2
+7. Changes in MacsBug 1.3
+   
+   * Fixed typeo in the FB help info in the reference to FUTURE-BREAK.
+
+   * Fixed memory write commands (e.g., SB, SW, etc.) to detect when the
+     memory is inaccessible.
+
+
+8. Changes in MacsBug 1.2
    
    * Fixed all commands that potentially bcak up over gdb prompt to produce
      a contiguous display to ensure the line is cleared before writing.
@@ -274,7 +282,7 @@
      the width was fixed at 16 in groups of 2.
 
 
-8. Changes in MacsBug 1.1
+9. Changes in MacsBug 1.1
 
    * Removed all references to the install-MacsBug script which was documented
      but never installed in 1.0.

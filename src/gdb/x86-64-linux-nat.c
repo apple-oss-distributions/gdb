@@ -1,4 +1,4 @@
-/* Native-dependent code for Linux/x86-64.
+/* Native-dependent code for GNU/Linux x86-64.
 
    Copyright 2001, 2002 Free Software Foundation, Inc.
 
@@ -33,6 +33,19 @@
 #include <sys/debugreg.h>
 #include <sys/syscall.h>
 #include <sys/procfs.h>
+#include <sys/reg.h>
+
+/* Mapping between the general-purpose registers in `struct user'
+   format and GDB's register array layout.  */
+
+static int x86_64_regmap[] = {
+  RAX, RBX, RCX, RDX,
+  RSI, RDI, RBP, RSP,
+  R8, R9, R10, R11,
+  R12, R13, R14, R15,
+  RIP, EFLAGS,
+  DS, ES, FS, GS
+};
 
 static unsigned long
 x86_64_linux_dr_get (int regnum)
@@ -74,8 +87,7 @@ x86_64_linux_dr_set (int regnum, unsigned long value)
   tid = PIDGET (inferior_ptid);
 
   errno = 0;
-  ptrace (PT_WRITE_U, tid,
-	  offsetof (struct user, u_debugreg[regnum]), value);
+  ptrace (PT_WRITE_U, tid, offsetof (struct user, u_debugreg[regnum]), value);
   if (errno != 0)
     perror_with_name ("Couldn't write debug register");
 }
@@ -109,11 +121,11 @@ x86_64_linux_dr_get_status (void)
 }
 
 
-/* The register sets used in Linux ELF core-dumps are identical to the
-   register sets used by `ptrace'.  */
+/* The register sets used in GNU/Linux ELF core-dumps are identical to
+   the register sets used by `ptrace'.  */
 
 #define GETREGS_SUPPLIES(regno) \
-  (0 <= (regno) && (regno) <= 17)
+  (0 <= (regno) && (regno) < x86_64_num_gregs)
 #define GETFPREGS_SUPPLIES(regno) \
   (FP0_REGNUM <= (regno) && (regno) <= MXCSR_REGNUM)
 
@@ -132,7 +144,7 @@ supply_gregset (elf_gregset_t * gregsetp)
   elf_greg_t *regp = (elf_greg_t *) gregsetp;
   int i;
 
-  for (i = 0; i < X86_64_NUM_GREGS; i++)
+  for (i = 0; i < x86_64_num_gregs; i++)
     supply_register (i, (char *) (regp + x86_64_regmap[i]));
 }
 
@@ -146,7 +158,7 @@ fill_gregset (elf_gregset_t * gregsetp, int regno)
   elf_greg_t *regp = (elf_greg_t *) gregsetp;
   int i;
 
-  for (i = 0; i < X86_64_NUM_GREGS; i++)
+  for (i = 0; i < x86_64_num_gregs; i++)
     if ((regno == -1 || regno == i))
       read_register_gen (i, regp + x86_64_regmap[i]);
 }
@@ -160,7 +172,7 @@ fetch_regs (int tid)
   elf_gregset_t regs;
 
   if (ptrace (PTRACE_GETREGS, tid, 0, (long) &regs) < 0)
-      perror_with_name ("Couldn't get registers");
+    perror_with_name ("Couldn't get registers");
 
   supply_gregset (&regs);
 }
@@ -247,7 +259,7 @@ fetch_inferior_registers (int regno)
 {
   int tid;
 
-  /* Linux LWP ID's are process ID's.  */
+  /* GNU/Linux LWP ID's are process ID's.  */
   if ((tid = TIDGET (inferior_ptid)) == 0)
     tid = PIDGET (inferior_ptid);	/* Not a threaded program.  */
 
@@ -282,7 +294,7 @@ store_inferior_registers (int regno)
 {
   int tid;
 
-  /* Linux LWP ID's are process ID's.  */
+  /* GNU/Linux LWP ID's are process ID's.  */
   if ((tid = TIDGET (inferior_ptid)) == 0)
     tid = PIDGET (inferior_ptid);	/* Not a threaded program.  */
 
@@ -428,16 +440,17 @@ child_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
       if (addr != memaddr || len < (int) sizeof (PTRACE_XFER_TYPE))
 	{
 	  /* Need part of initial word -- fetch it.  */
-	  ptrace (PT_READ_I, PIDGET (inferior_ptid),
-		  (PTRACE_ARG3_TYPE) addr, buffer);
+	  buffer[0] = ptrace (PT_READ_I, PIDGET (inferior_ptid),
+			      (PTRACE_ARG3_TYPE) addr, 0);
 	}
 
       if (count > 1)		/* FIXME, avoid if even boundary */
 	{
-	  ptrace (PT_READ_I, PIDGET (inferior_ptid),
-		  ((PTRACE_ARG3_TYPE)
-		   (addr + (count - 1) * sizeof (PTRACE_XFER_TYPE))),
-		  buffer + count - 1);
+	  buffer[count - 1] = ptrace (PT_READ_I, PIDGET (inferior_ptid),
+				      ((PTRACE_ARG3_TYPE)
+				       (addr +
+					(count -
+					 1) * sizeof (PTRACE_XFER_TYPE))), 0);
 	}
 
       /* Copy data to be written over corresponding part of buffer */
@@ -473,8 +486,8 @@ child_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
       for (i = 0; i < count; i++, addr += sizeof (PTRACE_XFER_TYPE))
 	{
 	  errno = 0;
-	  ptrace (PT_READ_I, PIDGET (inferior_ptid),
-		  (PTRACE_ARG3_TYPE) addr, buffer + i);
+	  buffer[i] = ptrace (PT_READ_I, PIDGET (inferior_ptid),
+			      (PTRACE_ARG3_TYPE) addr, 0);
 	  if (errno)
 	    return 0;
 	}
@@ -499,7 +512,7 @@ child_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
      0 --- the general-purpose register set, in elf_gregset_t format
      2 --- the floating-point register set, in elf_fpregset_t format
 
-   REG_ADDR isn't used on Linux.  */
+   REG_ADDR isn't used on GNU/Linux.  */
 
 static void
 fetch_core_registers (char *core_reg_sect, unsigned core_reg_size,
@@ -537,7 +550,7 @@ fetch_core_registers (char *core_reg_sect, unsigned core_reg_size,
     }
 }
 
-/* Register that we are able to handle Linux ELF core file formats.  */
+/* Register that we are able to handle GNU/Linux ELF core file formats.  */
 
 static struct core_fns linux_elf_core_fns = {
   bfd_target_elf_flavour,	/* core_flavour */
@@ -567,12 +580,12 @@ x86_64_register_u_addr (CORE_ADDR blockend, int regnum)
   CORE_ADDR fpstate;
   CORE_ADDR ubase;
   ubase = blockend;
-  if (IS_FP_REGNUM(regnum))
+  if (IS_FP_REGNUM (regnum))
     {
       fpstate = ubase + ((char *) &u.i387.st_space - (char *) &u);
       return (fpstate + 16 * (regnum - FP0_REGNUM));
     }
-  else if (IS_SSE_REGNUM(regnum))
+  else if (IS_SSE_REGNUM (regnum))
     {
       fpstate = ubase + ((char *) &u.i387.xmm_space - (char *) &u);
       return (fpstate + 16 * (regnum - XMM0_REGNUM));

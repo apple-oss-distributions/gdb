@@ -46,11 +46,6 @@
 #include <sys/time.h>
 #include <signal.h>            /* for kill() */
 
-/* Convenience macro for allocting typesafe memory. */
-
-#undef XMALLOC
-#define XMALLOC(TYPE) (TYPE*) xmalloc (sizeof (TYPE))
-
 enum
   {
     FROM_TTY = 0
@@ -111,6 +106,7 @@ int mi_interpreter_do_one_event (void *data);
 int mi_interpreter_suspend (void *data);
 int mi_interpreter_delete (void *data); 
 int mi_interpreter_prompt(void *data, char *new_prompt);
+int mi_interpreter_exec(void *data, char *command);
 
 /* There should be a generic mi .h file where these should go... */
 extern void mi_print_frame_more_info (struct ui_out *uiout,
@@ -189,6 +185,13 @@ mi_cmd_exec_step_instruction (char *args, int from_tty)
 }
 
 enum mi_cmd_result
+mi_cmd_exec_metrowerks_step (char *args, int from_tty)
+{
+  /* FIXME: Should call a libgdb function, not a cli wrapper */
+  return mi_execute_async_cli_command ("metrowerks-step", args, from_tty);
+}
+
+enum mi_cmd_result
 mi_cmd_exec_finish (char *args, int from_tty)
 {
   /* FIXME: Should call a libgdb function, not a cli wrapper */
@@ -259,7 +262,10 @@ mi_cmd_exec_interrupt (char *args, int from_tty)
     
   if (last_async_command) {
     fputs_unfiltered (last_async_command, raw_stdout);
+    /* FYI: last_async_command could be on a exec cleanup chain,
+       so NULL it out after free'ing. */
     xfree (last_async_command);
+    last_async_command = NULL;
   }
   fputs_unfiltered ("^done", raw_stdout);
   if (previous_async_command)
@@ -720,19 +726,43 @@ mi_cmd_data_evaluate_expression (char *command, char **argv, int argc)
   struct cleanup *old_chain = NULL;
   struct value *val;
   struct ui_stream *stb = NULL;
+  int unwind = 0;
+  char *expr_string;
 
   stb = ui_out_stream_new (uiout);
 
-  if (argc != 1)
+  if (argc == 1)
     {
-      xasprintf (&mi_error_message,
-		 "mi_cmd_data_evaluate_expression: Usage: -data-evaluate-expression expression");
-      return MI_CMD_ERROR;
+      expr_string = argv[0];
+      unwind = 0;
     }
+  else if (argc == 2)
+    {
+      if (strcmp (argv[0], "-u") != 0)
+	{
+	  xasprintf (&mi_error_message,
+		     "mi_cmd_data_evaluate_expression: Usage: -data-evaluate-expression [-u] expression");
+	  return MI_CMD_ERROR;
+	}
+      else
+	{
+	  unwind = 1;
+	  expr_string = argv[1];
+	}
+    }
+  else
+	{
+	  xasprintf (&mi_error_message,
+		     "mi_cmd_data_evaluate_expression: Usage: -data-evaluate-expression [-u] expression");
+	  return MI_CMD_ERROR;
+	}
 
-  expr = parse_expression (argv[0]);
+  unwind = set_unwind_on_signal (unwind);
+  old_chain = make_cleanup (set_unwind_on_signal, unwind);
 
-  old_chain = make_cleanup (free_current_contents, &expr);
+  expr = parse_expression (expr_string);
+
+  make_cleanup (free_current_contents, &expr);
 
   val = evaluate_expression (expr);
 
@@ -1109,19 +1139,19 @@ mi_cmd_mi_verify_command (char *command, char **argv, int argc)
 
   cmd = mi_lookup (command_name);
 
-  ui_out_list_begin (uiout, "mi_verify_command");
   ui_out_field_string (uiout, "name", command_name);
   if (cmd != NULL) 
     {
        ui_out_field_string (uiout, "defined", "true");
        ui_out_field_string (uiout, "implemented",
-            ((cmd->argv_func != NULL) || (cmd->args_func != NULL)) ? "true" : "false");
+            ((cmd->cli != NULL) ||
+             (cmd->argv_func != NULL) ||
+             (cmd->args_func != NULL)) ? "true" : "false");
     }
   else 
     {
        ui_out_field_string (uiout, "defined", "false");
     }
-  ui_out_list_end (uiout);
   
   return MI_CMD_DONE;
 }
@@ -1647,7 +1677,7 @@ mi_create_interpreter (char *name, int mi_version)
 				    NULL /* do one event proc */,
 				    mi_interpreter_suspend,
 				    mi_interpreter_delete,
-				    NULL /* exec proc */,
+				    mi_interpreter_exec,
 				    mi_interpreter_prompt);
   if (interp == NULL)
     error ("Couldn't allocate a new interpreter for the mi interpreter\n");
@@ -1675,7 +1705,6 @@ _initialize_mi_main (void)
 int 
 mi_interpreter_init (void *data)
 {
-
   /* Why is this a part of the mi architecture? */
   
   setup_architecture_data ();
@@ -1764,6 +1793,14 @@ mi_interpreter_delete (void *data)
 int 
 mi_interpreter_prompt(void *data, char *new_prompt)
 {
+  return 1;
+}
+
+int 
+mi_interpreter_exec(void *data, char *command)
+{
+  mi_execute_command (command, 0);
+
   return 1;
 }
 

@@ -1113,7 +1113,7 @@ address_info (char *exp, int from_tty)
   if (exp == 0)
     error ("Argument required.");
 
-  sym = lookup_symbol (exp, get_selected_block (), VAR_NAMESPACE,
+  sym = lookup_symbol (exp, get_selected_block (0), VAR_NAMESPACE,
 		       &is_a_field_of_this, (struct symtab **) NULL);
   if (sym == NULL)
     {
@@ -1554,7 +1554,7 @@ do_one_display (struct display *d)
     return;
 
   if (d->block)
-    within_current_scope = contained_in (get_selected_block (), d->block);
+    within_current_scope = contained_in (get_selected_block (0), d->block);
   else
     within_current_scope = 1;
   if (!within_current_scope)
@@ -1688,7 +1688,7 @@ Num Enb Expression\n");
       else if (d->format.format)
 	printf_filtered ("/%c ", d->format.format);
       print_expression (d->exp, gdb_stdout);
-      if (d->block && !contained_in (get_selected_block (), d->block))
+      if (d->block && !contained_in (get_selected_block (0), d->block))
 	printf_filtered (" (cannot be evaluated in the current context)");
       printf_filtered ("\n");
       gdb_flush (gdb_stdout);
@@ -2324,20 +2324,6 @@ disassemble_command (char *arg, int from_tty)
       else if (tui_version)
 	low = tuiGetLowDisassemblyAddress (low, pc);
 #endif
-#if 0
-      if (overlay_debugging)
-	{
-	  section = find_pc_overlay (pc);
-	  if (pc_in_unmapped_range (pc, section))
-	    {
-	      /* find_pc_partial_function will have returned low and high
-	         relative to the symbolic (mapped) address range.  Need to
-	         translate them back to the unmapped range where PC is.  */
-	      low = overlay_unmapped_address (low, section);
-	      high = overlay_unmapped_address (high, section);
-	    }
-	}
-#endif
       low += FUNCTION_START_OFFSET;
     }
   else
@@ -2455,7 +2441,7 @@ with this command or \"print\".", NULL));
 Default is the function surrounding the pc of the selected frame.\n\
 With a single argument, the function surrounding that address is dumped.\n\
 Two arguments are taken as a range of memory to dump.");
-  c->completer = location_completer;
+  set_cmd_completer (c, location_completer);
   if (xdb_commands)
     add_com_alias ("va", "disassemble", class_xdb, 0);
 
@@ -2538,7 +2524,7 @@ You can see these environment settings with the \"show\" command.", NULL));
 The argument is the function name and arguments, in the notation of the\n\
 current working language.  The result is printed and saved in the value\n\
 history, if it is not void.");
-  c->completer = location_completer;
+  set_cmd_completer (c, location_completer);
 
   add_cmd ("variable", class_vars, set_command,
 	   "Evaluate expression EXP and assign result to variable VAR, using assignment\n\
@@ -2571,13 +2557,13 @@ resides in memory.\n",
 		   "\n\
 EXP may be preceded with /FMT, where FMT is a format letter\n\
 but no count or size letter (see \"x\" command).", NULL));
-  c->completer = location_completer;
+  set_cmd_completer (c, location_completer);
   add_com_alias ("p", "print", class_vars, 1);
 
   c = add_com ("inspect", class_vars, inspect_command,
 	   "Same as \"print\" command, except that if you are running in the epoch\n\
 environment, the value is printed in its own window.");
-  c->completer = location_completer;
+  set_cmd_completer (c, location_completer);
 
   add_show_from_set (
 		 add_set_cmd ("max-symbolic-offset", no_class, var_uinteger,

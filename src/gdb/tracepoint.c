@@ -1,5 +1,7 @@
 /* Tracing functionality for remote targets in custom GDB protocol
-   Copyright 1997, 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+
+   Copyright 1997, 1998, 1999, 2000, 2001, 2002 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -188,7 +190,7 @@ trace_error (char *buf)
       if (*++buf == '0')	/*   general case: */
 	error ("tracepoint.c: error in outgoing packet.");
       else
-	error ("tracepoint.c: error in outgoing packet at field #%d.",
+	error ("tracepoint.c: error in outgoing packet at field #%ld.",
 	       strtol (buf, NULL, 16));
     case '2':
       error ("trace API error 0x%s.", ++buf);
@@ -937,7 +939,7 @@ validate_actionline (char **line, struct tracepoint *t)
       return BADLINE;
     }
 
-  if (c->function.cfunc == collect_pseudocommand)
+  if (cmd_cfunc_eq (c, collect_pseudocommand))
     {
       struct agent_expr *aexpr;
       struct agent_reqs areqs;
@@ -1004,7 +1006,7 @@ validate_actionline (char **line, struct tracepoint *t)
       while (p && *p++ == ',');
       return GENERIC;
     }
-  else if (c->function.cfunc == while_stepping_pseudocommand)
+  else if (cmd_cfunc_eq (c, while_stepping_pseudocommand))
     {
       char *steparg;		/* in case warning is necessary */
 
@@ -1020,7 +1022,7 @@ validate_actionline (char **line, struct tracepoint *t)
 	}
       return STEPPING;
     }
-  else if (c->function.cfunc == end_actions_pseudocommand)
+  else if (cmd_cfunc_eq (c, end_actions_pseudocommand))
     return END;
   else
     {
@@ -1518,7 +1520,7 @@ encode_actions (struct tracepoint *t, char ***tdp_actions,
       if (cmd == 0)
 	error ("Bad action list item: %s", action_exp);
 
-      if (cmd->function.cfunc == collect_pseudocommand)
+      if (cmd_cfunc_eq (cmd, collect_pseudocommand))
 	{
 	  do
 	    {			/* repeat over a comma-separated list */
@@ -1628,11 +1630,11 @@ encode_actions (struct tracepoint *t, char ***tdp_actions,
 	    }
 	  while (action_exp && *action_exp++ == ',');
 	}			/* if */
-      else if (cmd->function.cfunc == while_stepping_pseudocommand)
+      else if (cmd_cfunc_eq (cmd, while_stepping_pseudocommand))
 	{
 	  collect = &stepping_list;
 	}
-      else if (cmd->function.cfunc == end_actions_pseudocommand)
+      else if (cmd_cfunc_eq (cmd, end_actions_pseudocommand))
 	{
 	  if (collect == &stepping_list)	/* end stepping actions */
 	    collect = &tracepoint_list;
@@ -2278,7 +2280,7 @@ tracepoint_save_command (char *args, int from_tty)
   pathname = tilde_expand (args);
   if (!(fp = fopen (pathname, "w")))
     error ("Unable to open file '%s' for saving tracepoints (%s)",
-	   args, strerror (errno));
+	   args, safe_strerror (errno));
   xfree (pathname);
   
   ALL_TRACEPOINTS (tp)
@@ -2313,9 +2315,9 @@ tracepoint_save_command (char *args, int from_tty)
 		cmd = lookup_cmd (&actionline, cmdlist, "", -1, 1);
 		if (cmd == 0)
 		  error ("Bad action list item: %s", actionline);
-		if (cmd->function.cfunc == while_stepping_pseudocommand)
+		if (cmd_cfunc_eq (cmd, while_stepping_pseudocommand))
 		  indent = i2;
-		else if (cmd->function.cfunc == end_actions_pseudocommand)
+		else if (cmd_cfunc_eq (cmd, end_actions_pseudocommand))
 		  indent = i1;
 	      }
 	  }
@@ -2532,11 +2534,11 @@ trace_dump_command (char *args, int from_tty)
       if (cmd == 0)
 	error ("Bad action list item: %s", action_exp);
 
-      if (cmd->function.cfunc == while_stepping_pseudocommand)
+      if (cmd_cfunc_eq (cmd, while_stepping_pseudocommand))
 	stepping_actions = 1;
-      else if (cmd->function.cfunc == end_actions_pseudocommand)
+      else if (cmd_cfunc_eq (cmd, end_actions_pseudocommand))
 	stepping_actions = 0;
-      else if (cmd->function.cfunc == collect_pseudocommand)
+      else if (cmd_cfunc_eq (cmd, collect_pseudocommand))
 	{
 	  /* Display the collected data.
 	     For the trap frame, display only what was collected at the trap.
@@ -2661,7 +2663,7 @@ _initialize_tracepoint (void)
   add_info ("scope", scope_info,
 	    "List the variables local to a scope");
 
-  add_cmd ("tracepoints", class_trace, NO_FUNCTION,
+  add_cmd ("tracepoints", class_trace, NULL,
 	   "Tracing of program execution without stopping the program.",
 	   &cmdlist);
 
@@ -2675,7 +2677,7 @@ last tracepoint set.");
   c = add_com ("save-tracepoints", class_trace, tracepoint_save_command,
 	       "Save current tracepoint definitions as a script.\n\
 Use the 'source' command in another debug session to restore them.");
-  c->completer = filename_completer;
+  set_cmd_completer (c, filename_completer);
 
   add_com ("tdump", class_trace, trace_dump_command,
 	   "Print everything collected at the current tracepoint.");
@@ -2798,7 +2800,7 @@ Argument may be a line number, function name, or '*' plus an address.\n\
 For a line number or function, trace at the start of its code.\n\
 If an address is specified, trace at that exact address.\n\n\
 Do \"help tracepoints\" for info on other tracepoint commands.");
-  c->completer = location_completer;
+  set_cmd_completer (c, location_completer);
 
   add_com_alias ("tp", "trace", class_alias, 0);
   add_com_alias ("tr", "trace", class_alias, 1);

@@ -1,5 +1,7 @@
 /* Target-dependent code for GDB, the GNU debugger.
-   Copyright 2001 Free Software Foundation, Inc.
+
+   Copyright 2001, 2002 Free Software Foundation, Inc.
+
    Contributed by D.J. Barrow (djbarrow@de.ibm.com,barrow_dj@yahoo.com)
    for IBM Deutschland Entwicklung GmbH, IBM Corporation.
 
@@ -1210,13 +1212,6 @@ s390_read_fp ()
 }
 
 
-void
-s390_write_fp (CORE_ADDR val)
-{
-  write_register (s390_fp_regnum (), val);
-}
-
-
 static void
 s390_pop_frame_regular (struct frame_info *frame)
 {
@@ -1354,7 +1349,7 @@ is_float_like (struct type *type)
 
 /* Return non-zero if TYPE is considered a `DOUBLE_OR_FLOAT', as
    defined by the parameter passing conventions described in the
-   "Linux for S/390 ELF Application Binary Interface Supplement".
+   "GNU/Linux for S/390 ELF Application Binary Interface Supplement".
    Otherwise, return zero.  */
 static int
 is_double_or_float (struct type *type)
@@ -1366,8 +1361,9 @@ is_double_or_float (struct type *type)
 
 
 /* Return non-zero if TYPE is considered a `SIMPLE_ARG', as defined by
-   the parameter passing conventions described in the "Linux for S/390
-   ELF Application Binary Interface Supplement".  Return zero otherwise.  */
+   the parameter passing conventions described in the "GNU/Linux for
+   S/390 ELF Application Binary Interface Supplement".  Return zero
+   otherwise.  */
 static int
 is_simple_arg (struct type *type)
 {
@@ -1415,8 +1411,9 @@ extend_simple_arg (struct value *arg)
 
 
 /* Return non-zero if TYPE is a `DOUBLE_ARG', as defined by the
-   parameter passing conventions described in the "Linux for S/390 ELF
-   Application Binary Interface Supplement".  Return zero otherwise.  */
+   parameter passing conventions described in the "GNU/Linux for S/390
+   ELF Application Binary Interface Supplement".  Return zero
+   otherwise.  */
 static int
 is_double_arg (struct type *type)
 {
@@ -1487,8 +1484,8 @@ alignment_of (struct type *type)
 
 
 /* Put the actual parameter values pointed to by ARGS[0..NARGS-1] in
-   place to be passed to a function, as specified by the "Linux for
-   S/390 ELF Application Binary Interface Supplement".
+   place to be passed to a function, as specified by the "GNU/Linux
+   for S/390 ELF Application Binary Interface Supplement".
 
    SP is the current stack pointer.  We must put arguments, links,
    padding, etc. whereever they belong, and return the new stack
@@ -1797,7 +1794,6 @@ s390_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_init_extra_frame_info (gdbarch, s390_init_extra_frame_info);
   set_gdbarch_init_frame_pc_first (gdbarch, s390_init_frame_pc_first);
   set_gdbarch_read_fp (gdbarch, s390_read_fp);
-  set_gdbarch_write_fp (gdbarch, s390_write_fp);
   /* This function that tells us whether the function invocation represented
      by FI does not have a frame on the stack associated with it.  If it
      does not, FRAMELESS is set to 1, else 0.  */
@@ -1851,7 +1847,7 @@ s390_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   switch (info.bfd_arch_info->mach)
     {
-    case bfd_mach_s390_esa:
+    case bfd_mach_s390_31:
       set_gdbarch_register_size (gdbarch, 4);
       set_gdbarch_register_raw_size (gdbarch, s390_register_raw_size);
       set_gdbarch_register_virtual_size (gdbarch, s390_register_raw_size);
@@ -1860,7 +1856,7 @@ s390_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
       set_gdbarch_addr_bits_remove (gdbarch, s390_addr_bits_remove);
       set_gdbarch_register_bytes (gdbarch, S390_REGISTER_BYTES);
       break;
-    case bfd_mach_s390_esame:
+    case bfd_mach_s390_64:
       set_gdbarch_register_size (gdbarch, 8);
       set_gdbarch_register_raw_size (gdbarch, s390x_register_raw_size);
       set_gdbarch_register_virtual_size (gdbarch, s390x_register_raw_size);

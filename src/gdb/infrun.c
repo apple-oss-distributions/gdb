@@ -1,4 +1,5 @@
-/* Target-struct-independent code to start (run) and stop an inferior process.
+/* Target-struct-independent code to start (run) and stop an inferior
+   process.
 
    Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994,
    1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software
@@ -120,15 +121,6 @@ static ptid_t previous_inferior_ptid;
 
 static int may_follow_exec = MAY_FOLLOW_EXEC;
 
-/* GET_LONGJMP_TARGET returns the PC at which longjmp() will resume the
-   program.  It needs to examine the jmp_buf argument and extract the PC
-   from it.  The return value is non-zero on success, zero otherwise. */
-
-#ifndef GET_LONGJMP_TARGET
-#define GET_LONGJMP_TARGET(PC_ADDR) 0
-#endif
-
-
 /* Dynamic function trampolines are similar to solib trampolines in that they
    are between the caller and the callee.  The difference is that when you
    enter a dynamic trampoline, you can't determine the callee's address.  Some
@@ -157,12 +149,12 @@ static int may_follow_exec = MAY_FOLLOW_EXEC;
    The simple approach is to single-step until control leaves the
    dynamic linker.
 
-   However, on some systems (e.g., Red Hat Linux 5.2) the dynamic
-   linker calls functions in the shared C library, so you can't tell
-   from the PC alone whether the dynamic linker is still running.  In
-   this case, we use a step-resume breakpoint to get us past the
-   dynamic linker, as if we were using "next" to step over a function
-   call.
+   However, on some systems (e.g., Red Hat's 5.2 distribution) the
+   dynamic linker calls functions in the shared C library, so you
+   can't tell from the PC alone whether the dynamic linker is still
+   running.  In this case, we use a step-resume breakpoint to get us
+   past the dynamic linker, as if we were using "next" to step over a
+   function call.
 
    IN_SOLIB_DYNSYM_RESOLVE_CODE says whether we're in the dynamic
    linker code or not.  Normally, this means we single-step.  However,
@@ -238,12 +230,10 @@ static int may_follow_exec = MAY_FOLLOW_EXEC;
 static void
 default_skip_permanent_breakpoint (void)
 {
-  error_begin ();
-  fprintf_filtered (gdb_stderr, "\
+  error ("\
 The program is stopped at a permanent breakpoint, but GDB does not know\n\
 how to step past a permanent breakpoint on this architecture.  Try using\n\
-a command like `return' or `jump' to continue execution.\n");
-  return_to_top_level (RETURN_ERROR);
+a command like `return' or `jump' to continue execution.");
 }
 #endif
    
@@ -774,7 +764,15 @@ static const char *scheduler_enums[] =
 static void
 set_schedlock_func (char *args, int from_tty, struct cmd_list_element *c)
 {
-  if (c->type == set_cmd)
+  /* NOTE: cagney/2002-03-17: The add_show_from_set() function clones
+     the set command passed as a parameter.  The clone operation will
+     include (BUG?) any ``set'' command callback, if present.
+     Commands like ``info set'' call all the ``show'' command
+     callbacks.  Unfortunatly, for ``show'' commands cloned from
+     ``set'', this includes callbacks belonging to ``set'' commands.
+     Making this worse, this only occures if add_show_from_set() is
+     called after add_cmd_sfunc() (BUG?).  */
+  if (cmd_type (c) == set_cmd)
     if (!target_can_lock_scheduler)
       {
 	scheduler_mode = schedlock_off;
@@ -2398,7 +2396,8 @@ handle_inferior_event (struct execution_control_state *ecs)
 	  disable_longjmp_breakpoint ();
 	  remove_breakpoints ();
 	  breakpoints_inserted = 0;
-	  if (!GET_LONGJMP_TARGET (&jmp_buf_pc))
+	  if (!GET_LONGJMP_TARGET_P ()
+	      || !GET_LONGJMP_TARGET (&jmp_buf_pc))
 	    {
 	      keep_going (ecs);
 	      return;
@@ -3745,13 +3744,11 @@ and/or watchpoints.\n");
 
   target_terminal_ours ();
 
-  /* Look up the hook_stop and run it if it exists.  */
-
-  if (stop_command && stop_command->hook_pre)
-    {
-      catch_errors (hook_stop_stub, stop_command->hook_pre,
-		    "Error while running hook_stop:\n", RETURN_MASK_ALL);
-    }
+  /* Look up the hook_stop and run it (CLI internally handles problem
+     of stop_command's pre-hook not existing).  */
+  if (stop_command)
+    catch_errors (hook_stop_stub, stop_command,
+		  "Error while running hook_stop:\n", RETURN_MASK_ALL);
 
   if (!target_has_stack)
     {
@@ -3919,7 +3916,7 @@ done:
 static int
 hook_stop_stub (void *cmd)
 {
-  execute_user_command ((struct cmd_list_element *) cmd, 0);
+  execute_cmd_pre_hook ((struct cmd_list_element *) cmd);
   return (0);
 }
 
@@ -4396,21 +4393,14 @@ restore_selected_frame (void *args)
   struct restore_selected_frame_args *fr =
   (struct restore_selected_frame_args *) args;
   struct frame_info *frame;
+  CORE_ADDR frame_address = fr->frame_address;
   int level = fr->level;
 
-  frame = find_relative_frame (get_current_frame (), &level);
+  frame = find_frame_addr_in_frame_chain (frame_address);
 
   /* If inf_status->selected_frame_address is NULL, there was no
      previously selected frame.  */
-  if (frame == NULL ||
-  /*  FRAME_FP (frame) != fr->frame_address || */
-  /* elz: deleted this check as a quick fix to the problem that
-     for function called by hand gdb creates no internal frame
-     structure and the real stack and gdb's idea of stack are
-     different if nested calls by hands are made.
-
-     mvs: this worries me.  */
-      level != 0)
+  if (frame == NULL)
     {
       warning ("Unable to restore previously selected frame.\n");
       return 0;
@@ -4741,7 +4731,6 @@ A fork or vfork creates a new process.  follow-fork-mode can be:\n\
 For \"parent\" or \"child\", the unfollowed process will run free.\n\
 By default, the debugger will follow the parent process.",
 			&setlist);
-/*  c->function.sfunc = ; */
   add_show_from_set (c, &showlist);
 
   c = add_set_enum_cmd ("scheduler-locking", class_run,
@@ -4755,7 +4744,7 @@ step == scheduler locked during every single-step operation.\n\
 	Other threads may run while stepping over a function call ('next').",
 			&setlist);
 
-  c->function.sfunc = set_schedlock_func;	/* traps on target vector */
+  set_cmd_sfunc (c, set_schedlock_func);	/* traps on target vector */
   add_show_from_set (c, &showlist);
 
   c = add_set_cmd ("step-mode", class_run,

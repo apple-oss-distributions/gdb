@@ -122,6 +122,14 @@ void init_frame_pc_noop (int fromleaf, struct frame_info *prev);
 
 void init_frame_pc_default (int fromleaf, struct frame_info *prev);
 
+/* Do nothing version of elf_make_msymbol_special. */
+
+void default_elf_make_msymbol_special (asymbol *sym, struct minimal_symbol *msym);
+
+/* Do nothing version of coff_make_msymbol_special. */
+
+void default_coff_make_msymbol_special (int val, struct minimal_symbol *msym);
+
 /* Version of cannot_fetch_register() / cannot_store_register() that
    always fails. */
 
@@ -137,6 +145,8 @@ extern CORE_ADDR generic_skip_trampoline_code (CORE_ADDR pc);
 extern int generic_in_solib_call_trampoline (CORE_ADDR pc, char *name);
 
 extern int generic_in_function_epilogue_p (struct gdbarch *gdbarch, CORE_ADDR pc);
+
+extern void default_print_float_info (void);
 
 /* Assume all registers are the same size and a size identical to that
    of the integer type.  */

@@ -1,5 +1,5 @@
 /* Target-dependent code for Motorola 68HC11 & 68HC12
-   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
    Contributed by Stephane Carrez, stcarrez@worldnet.fr
 
 This file is part of GDB.
@@ -1087,7 +1087,6 @@ m68hc11_gdbarch_init (struct gdbarch_info info,
   set_gdbarch_read_pc (gdbarch, generic_target_read_pc);
   set_gdbarch_write_pc (gdbarch, generic_target_write_pc);
   set_gdbarch_read_fp (gdbarch, generic_target_read_fp);
-  set_gdbarch_write_fp (gdbarch, generic_target_write_fp);
   set_gdbarch_read_sp (gdbarch, generic_target_read_sp);
   set_gdbarch_write_sp (gdbarch, generic_target_write_sp);
 
@@ -1155,6 +1154,7 @@ m68hc11_gdbarch_init (struct gdbarch_info info,
   set_gdbarch_function_start_offset (gdbarch, 0);
   set_gdbarch_breakpoint_from_pc (gdbarch, m68hc11_breakpoint_from_pc);
   set_gdbarch_stack_align (gdbarch, m68hc11_stack_align);
+  set_gdbarch_print_insn (gdbarch, gdb_print_insn_m68hc11);
 
   set_gdbarch_believe_pcc_promotion (gdbarch, 1);
 
@@ -1166,8 +1166,6 @@ _initialize_m68hc11_tdep (void)
 {
   register_gdbarch_init (bfd_arch_m68hc11, m68hc11_gdbarch_init);
   register_gdbarch_init (bfd_arch_m68hc12, m68hc11_gdbarch_init);
-  if (!tm_print_insn)		/* Someone may have already set it */
-    tm_print_insn = gdb_print_insn_m68hc11;
 
   add_com ("regs", class_vars, show_regs, "Print all registers");
 } 

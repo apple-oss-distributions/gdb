@@ -41,7 +41,7 @@ static void scm_printstr (struct ui_file * stream, char *string,
 			  unsigned int length, int width,
 			  int force_ellipses);
 
-extern struct type **CONST_PTR (c_builtin_types[]);
+extern struct type **const (c_builtin_types[]);
 
 struct type *builtin_type_scm;
 
@@ -180,7 +180,7 @@ scm_lookup_name (char *str)
 		       (struct symtab **) NULL);
   if (sym)
     return value_of_variable (sym, NULL);
-  error ("No symbol \"%s\" in current context.");
+  error ("No symbol \"%s\" in current context.", str);
 }
 
 struct value *

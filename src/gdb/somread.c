@@ -1,5 +1,5 @@
 /* Read HP PA/Risc object files for GDB.
-   Copyright 1991, 1992, 1994, 1995, 1996, 1998, 1999, 2000, 2001
+   Copyright 1991, 1992, 1994, 1995, 1996, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support.
 
@@ -117,20 +117,13 @@ som_symtab_read (bfd *abfd, struct objfile *objfile,
      can do the right thing for ST_ENTRY vs ST_CODE symbols).
 
      There's nothing in the header which easily allows us to do
-     this.  The only reliable way I know of is to check for the
-     existence of a $SHLIB_INFO$ section with a non-zero size.  */
-  /* The code below is not a reliable way to check whether an
-   * executable is dynamic, so I commented it out - RT
-   * shlib_info = bfd_get_section_by_name (objfile->obfd, "$SHLIB_INFO$");
-   * if (shlib_info)
-   *   dynamic = (bfd_section_size (objfile->obfd, shlib_info) != 0);
-   * else
-   *   dynamic = 0;
-   */
-  /* I replaced the code with a simple check for text offset not being
-   * zero. Still not 100% reliable, but a more reliable way of asking
-   * "is this a dynamic executable?" than the above. RT
-   */
+     this.
+
+     This code used to rely upon the existence of a $SHLIB_INFO$
+     section to make this determination.  HP claims that it is
+     more accurate to check for a nonzero text offset, but they
+     have not provided any information about why that test is
+     more accurate.  */
   dynamic = (text_offset != 0);
 
   endbufp = buf + number_of_symbols;
@@ -157,9 +150,7 @@ som_symtab_read (bfd *abfd, struct objfile *objfile,
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_ENTRY:
@@ -172,18 +163,14 @@ som_symtab_read (bfd *abfd, struct objfile *objfile,
 	      else
 		ms_type = mst_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_STUB:
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_solib_trampoline;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_DATA:
@@ -211,9 +198,7 @@ som_symtab_read (bfd *abfd, struct objfile *objfile,
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_file_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 
 	    check_strange_names:
 	      /* Utah GCC 2.5, FSF GCC 2.6 and later generate correct local
@@ -243,33 +228,25 @@ som_symtab_read (bfd *abfd, struct objfile *objfile,
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_file_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_ENTRY:
 	      symname = bufp->name.n_strx + stringtab;
-	      /* For a dynamic executable, ST_ENTRY symbols are
-	         the stubs, while the ST_CODE symbol is the real
-	         function.  */
-	      if (dynamic)
-		ms_type = mst_solib_trampoline;
-	      else
-		ms_type = mst_file_text;
+	      /* SS_LOCAL symbols in a shared library do not have
+		 export stubs, so we do not have to worry about
+		 using mst_file_text vs mst_solib_trampoline here like
+		 we do for SS_UNIVERSAL and SS_EXTERNAL symbols above.  */
+	      ms_type = mst_file_text;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 	    case ST_STUB:
 	      symname = bufp->name.n_strx + stringtab;
 	      ms_type = mst_solib_trampoline;
 	      bufp->symbol_value += text_offset;
-#ifdef SMASH_TEXT_ADDRESS
-	      SMASH_TEXT_ADDRESS (bufp->symbol_value);
-#endif
+	      bufp->symbol_value = SMASH_TEXT_ADDRESS (bufp->symbol_value);
 	      break;
 
 

@@ -25,14 +25,14 @@
 #include "ui-out.h"
 #include "gdbcmd.h"
 
+static struct cp_abi_ops *find_cp_abi (const char *short_name);
+
 static struct cp_abi_ops current_cp_abi = {"", NULL};
 static struct cp_abi_ops auto_cp_abi = {"auto", NULL};
 
-#define INITIAL_CP_ABI_MAX 8
+#define CP_ABI_MAX 8
 
-static struct cp_abi_ops *orig_cp_abis[INITIAL_CP_ABI_MAX];
-static struct cp_abi_ops **cp_abis = orig_cp_abis;
-static int max_cp_abis = INITIAL_CP_ABI_MAX;
+static struct cp_abi_ops *cp_abis[CP_ABI_MAX];
 
 static int num_cp_abis = 0;
 
@@ -97,20 +97,10 @@ value_rtti_type (struct value *v, int *full, int *top, int *using_enc)
 int
 register_cp_abi (struct cp_abi_ops *abi)
 {
-  if (num_cp_abis == max_cp_abis) 
+  if (num_cp_abis == CP_ABI_MAX) 
     {
-      struct cp_abi_ops **new_abi_list;
-      int i;
-
-      max_cp_abis *= 2;
-      new_abi_list = (struct cp_abi_ops **) xmalloc (max_cp_abis * sizeof (struct cp_abi_ops *));
-      for (i = 0; i < num_cp_abis; i++)
-	new_abi_list[i] = cp_abis[i];
-      
-      if (cp_abis != orig_cp_abis)
-	xfree (cp_abis);
-      
-      cp_abis = new_abi_list;
+      internal_error (__FILE__, __LINE__,
+		      "Too many CP ABIs, please increase CP_ABI_MAX in cp-abi.c");
     }
   
   cp_abis[num_cp_abis++] = abi;
@@ -120,29 +110,33 @@ register_cp_abi (struct cp_abi_ops *abi)
 }
 
 void
-set_cp_abi_as_auto_default (struct cp_abi_ops *abi)
+set_cp_abi_as_auto_default (const char *short_name)
 {
+  struct cp_abi_ops *abi = find_cp_abi (short_name);
+  if (abi == NULL)
+    internal_error (__FILE__, __LINE__,
+		    "Cannot find C++ ABI \"%s\" to set it as auto default.",
+		    short_name);
 
   if (auto_cp_abi.longname != NULL)
     xfree (auto_cp_abi.longname);
-  auto_cp_abi.longname = (char *) xmalloc (11 + strlen (abi->shortname));
-  sprintf (auto_cp_abi.longname, "currently %s", 
-	   abi->shortname);
 
   if (auto_cp_abi.doc != NULL)
     xfree (auto_cp_abi.doc);
-  auto_cp_abi.doc = (char *) xmalloc (11 + strlen (abi->shortname));
+
+  auto_cp_abi = *abi;
+
+  auto_cp_abi.shortname = "auto";
+  auto_cp_abi.longname = (char *) xmalloc (strlen ("currently ")
+					   + strlen (abi->shortname));
+  sprintf (auto_cp_abi.longname, "currently %s", 
+	   abi->shortname);
+  
+  auto_cp_abi.doc = (char *) xmalloc (strlen ("currently ")
+				      + strlen (abi->shortname));
   sprintf (auto_cp_abi.doc, "currently %s", 
 	   abi->shortname);
-
-  auto_cp_abi.is_destructor_name = abi->is_destructor_name;
-  auto_cp_abi.is_constructor_name = abi->is_constructor_name;
-  auto_cp_abi.is_vtable_name = abi->is_vtable_name;
-  auto_cp_abi.is_operator_name = abi->is_operator_name;
-  auto_cp_abi.virtual_fn_field = abi->virtual_fn_field;
-  auto_cp_abi.rtti_type = abi->rtti_type;
-  auto_cp_abi.baseclass_offset = abi->baseclass_offset;
-
+  
   /* Since we copy the current ABI into current_cp_abi instead of using
      a pointer, if auto is currently the default, we need to reset it. */
 									  
@@ -159,19 +153,32 @@ cp_abi_is_auto_p ()
     return 0;
 }
 
-int
-switch_to_cp_abi (const char *short_name)
+static struct cp_abi_ops *
+find_cp_abi (const char *short_name)
 {
   int i;
 
   for (i = 0; i < num_cp_abis; i++)
     if (strcmp (cp_abis[i]->shortname, short_name) == 0)
       {
-	current_cp_abi = *cp_abis[i];
-	return 1;
+	return cp_abis[i];
       }
 
-  return 0;
+  return NULL;
+}
+
+int
+switch_to_cp_abi (const char *short_name)
+{
+  struct cp_abi_ops *abi;
+  
+  abi = find_cp_abi (short_name);
+  if (abi == NULL)
+    return 0;
+
+  current_cp_abi = *abi;
+  return 1;
+  
 }
 
 void
@@ -201,15 +208,17 @@ set_cp_abi_cmd (char *args, int from_tty)
     }
 
   if (!switch_to_cp_abi (args))
-    error ("Could not find ABI: \"%s\" in ABI list\n", args);
+    error ("Could not find \"%s\" in ABI list", args);
 }
 
 void
 show_cp_abi_cmd (char *args, int from_tty)
 {
-  ui_out_text (uiout, "The currently selected C++ abi is: ");
+  ui_out_text (uiout, "The currently selected C++ ABI is: ");
  
   ui_out_field_string (uiout, "cp-abi", current_cp_abi.shortname);
+  ui_out_text (uiout, " - ");
+  ui_out_field_string (uiout, "doc", current_cp_abi.doc);
   ui_out_text (uiout, ".\n");
 }
 
@@ -222,8 +231,10 @@ _initialize_cp_abi (void)
   switch_to_cp_abi ("auto");
 
   cmd = add_cmd ("cp-abi", class_obscure , set_cp_abi_cmd, 
-		 "Set the ABI used for inspecting C++ objects.\n\
-\"set cp-abi\" with no arguments will list the available ABIs.", &setlist);
+		 "Set the ABI used for inspecting C++ objects.\n"
+		 "\"set cp-abi\" with no arguments will list the "
+		 "available ABIs.", 
+		 &setlist);
 
   cmd = add_cmd ("cp-abi", class_obscure, show_cp_abi_cmd, 
 		 "Show the ABI used for inspecting C++ objects.", &showlist);

@@ -1,5 +1,7 @@
 /* Output generating routines for GDB.
-   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
+
+   Copyright 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
+
    Contributed by Cygnus Solutions.
    Written by Fernando Nasser for Cygnus.
 
@@ -26,11 +28,6 @@
 #include "language.h"
 #include "ui-out.h"
 #include "gdb_assert.h"
-
-/* Convenience macro for allocting typesafe memory. */
-
-#undef XMALLOC
-#define XMALLOC(TYPE) (TYPE*) xmalloc (sizeof (TYPE))
 
 /* table header structures */
 
@@ -190,6 +187,8 @@ static void default_message (struct ui_out *uiout, int verbosity,
 			     va_list args);
 static void default_wrap_hint (struct ui_out *uiout, char *identstring);
 static void default_flush (struct ui_out *uiout);
+static void default_notify_begin (struct ui_out *uiout, char *class);
+static void default_notify_end (struct ui_out *uiout);
 
 /* This is the default ui-out implementation functions vector */
 
@@ -211,6 +210,8 @@ struct ui_out_impl default_ui_out_impl =
   default_message,
   default_wrap_hint,
   default_flush,
+  default_notify_begin,
+  default_notify_end,
   0, /* Does not need MI hacks.  */
 };
 
@@ -260,6 +261,8 @@ static void uo_message (struct ui_out *uiout, int verbosity,
 			const char *format, va_list args);
 static void uo_wrap_hint (struct ui_out *uiout, char *identstring);
 static void uo_flush (struct ui_out *uiout);
+static void uo_notify_begin (struct ui_out *uiout, char *class);
+static void uo_notify_end (struct ui_out *uiout);
 
 /* Prototypes for local functions */
 
@@ -711,6 +714,26 @@ ui_out_cleanup_after_error (struct ui_out *uiout)
       }
 }
 
+struct cleanup *
+make_cleanup_ui_out_notify_begin_end (struct ui_out *uiout,
+				  char *class)
+{
+  ui_out_notify_begin (uiout, class);
+  return make_cleanup (ui_out_notify_end, uiout);
+}
+
+void
+ui_out_notify_begin (struct ui_out *uiout, char *class)
+{
+  uo_notify_begin (uiout, class);
+}
+
+void
+ui_out_notify_end (struct ui_out *uiout)
+{
+  uo_notify_end (uiout);
+}
+
 #if 0
 void
 ui_out_result_begin (struct ui_out *uiout, char *class)
@@ -729,16 +752,6 @@ ui_out_info_begin (struct ui_out *uiout, char *class)
 
 void
 ui_out_info_end (struct ui_out *uiout)
-{
-}
-
-void
-ui_out_notify_begin (struct ui_out *uiout, char *class)
-{
-}
-
-void
-ui_out_notify_end (struct ui_out *uiout)
 {
 }
 
@@ -769,7 +782,10 @@ gdb_query (struct ui_out *uiout, int qflags, char *qprompt)
 int
 ui_out_is_mi_like_p (struct ui_out *uiout)
 {
-  return uiout->impl->is_mi_like_p;
+  if (uiout == NULL)
+    return 0;
+  else
+    return uiout->impl->is_mi_like_p;
 }
 
 /* default gdb-out hook functions */
@@ -874,6 +890,16 @@ default_wrap_hint (struct ui_out *uiout, char *identstring)
 
 static void
 default_flush (struct ui_out *uiout)
+{
+}
+
+static void 
+default_notify_begin (struct ui_out *uiout, char *class)
+{
+}
+
+static void 
+default_notify_end (struct ui_out *uiout)
 {
 }
 
@@ -1026,6 +1052,19 @@ uo_flush (struct ui_out *uiout)
   if (!uiout->impl->flush)
     return;
   uiout->impl->flush (uiout);
+}
+
+static void uo_notify_begin (struct ui_out *uiout, char *class)
+{
+  if (!uiout->impl->notify_begin)
+    return;
+  uiout->impl->notify_begin (uiout, class);
+}
+static void uo_notify_end (struct ui_out *uiout)
+{
+  if (!uiout->impl->notify_end)
+    return;
+  uiout->impl->notify_end (uiout);
 }
 
 /* local functions */
@@ -1185,6 +1224,14 @@ ui_out_new (struct ui_out_impl *impl,
   uiout->table.header_next = NULL;
   return uiout;
 }
+
+void 
+ui_out_delete (struct ui_out *uiout) 
+{ 
+  if (uiout->data != NULL) 
+    xfree (uiout->data); 
+  xfree (uiout); 
+} 
 
 /* standard gdb initialization hook */
 

@@ -74,8 +74,6 @@ changequote(,)dnl
 
 . ${srcdir}/configure.tgt
 
-targ=${target} ; . ${srcdir}/../bfd/config.bfd
-
 dnl
 changequote([,])dnl
 
@@ -132,9 +130,10 @@ AC_CHECK_HEADERS(ctype.h nlist.h link.h thread_db.h proc_service.h \
 AC_HEADER_STAT
 
 AC_C_CONST
+AC_C_INLINE
 
-AC_CHECK_FUNCS(bcopy btowc bzero isascii poll realpath sbrk setpgid setpgrp \
-	sigaction sigprocmask sigsetmask)
+AC_CHECK_FUNCS(bcopy btowc bzero canonicalize_file_name isascii poll \
+	realpath sbrk setpgid setpgrp sigaction sigprocmask sigsetmask )
 AC_FUNC_ALLOCA
 AC_FUNC_VFORK
 dnl AC_FUNC_SETPGRP does not work when cross compiling
@@ -243,7 +242,7 @@ BFD_NEED_DECLARATION(free)
 BFD_NEED_DECLARATION(strerror)
 BFD_NEED_DECLARATION(strdup)
 BFD_NEED_DECLARATION(strstr)
-
+BFD_NEED_DECLARATION(canonicalize_file_name)
 
 # The following save_state_t checkery is only necessary for HPUX 
 # versions earlier than 10.20.  When those fade from memory, this 
@@ -322,7 +321,7 @@ if test "$ac_cv_header_sys_procfs_h" = yes; then
   dnl For Linux/i386, glibc 2.1.3 was released with a bogus
   dnl prfpregset_t type (it's a typedef for the pointer to a struct
   dnl instead of the struct itself).  We detect this here, and work
-  dnl around it in lin-thread.c.
+  dnl around it in gdb_proc_service.h.
 
   if test $bfd_cv_have_sys_procfs_type_prfpregset_t = yes; then
     AC_MSG_CHECKING(whether prfpregset_t type is broken)
@@ -532,6 +531,23 @@ fi
 AC_MSG_RESULT($gdb_cv_scanf_has_long_double)
 
 AC_FUNC_MMAP
+
+case ${host_os} in
+aix*)
+  AC_CACHE_CHECK([for -bbigtoc option], [gdb_cv_bigtoc], [
+    SAVE_LDFLAGS=$LDFLAGS
+
+    case $GCC in
+    yes) gdb_cv_bigtoc=-Wl,-bbigtoc ;;
+    *) gdb_cv_bigtoc=-bbigtoc ;;
+    esac
+
+    LDFLAGS=$LDFLAGS\ $gdb_cv_bigtoc
+    AC_TRY_LINK([], [int i;], [], [gdb_cv_bigtoc=])
+  ])
+  CONFIG_LDFLAGS="${CONFIG_LDFLAGS} ${gdb_cv_bigtoc}"
+  ;;
+esac
 
 dnl See if thread_db library is around for Solaris thread debugging.  Note that
 dnl we must explicitly test for version 1 of the library because version 0
@@ -1278,7 +1294,7 @@ s/GDB_MULTI_ARCH[ 	]*=[ 	]*\([^ 	]*\)[ 	]*/\1/p
 
 if test "${native_makefile_frag}" != ""; then
 nativefile=`sed -n '
-s/NAT_FILE[ 	]*=[ 	]*\([^ 	]*\)/\1/p
+s/NAT_FILE[     ]*=[    ]*\([^  ]*\)/\1/p
 ' ${native_makefile_frag}`
 fi
 changequote([,])
@@ -1325,6 +1341,18 @@ esac
 SUBDIRS="doc testsuite nlm"
 if test "${enable_multi_ice}" = "yes"; then
   SUBDIRS="${SUBDIRS} multi-ice"
+fi
+
+# ``gdbserver'' can only be built in a native configuration.
+if test x"${target}" = x"${host}"; then
+    AC_MSG_CHECKING(whether gdbserver is supported on this host)
+    if test x"${build_gdbserver}" = xyes ; then
+	configdirs="${configdirs} gdbserver"
+	SUBDIRS="${SUBDIRS} gdbserver"
+	AC_MSG_RESULT(yes)
+    else
+	AC_MSG_RESULT(no)
+    fi
 fi
 
 AC_SUBST(SUBDIRS)

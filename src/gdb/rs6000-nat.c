@@ -1,6 +1,6 @@
 /* IBM RS/6000 native-dependent code for GDB, the GNU debugger.
    Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001
+   1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -31,6 +31,7 @@
 #include "bfd.h"
 #include "gdb-stabs.h"
 #include "regcache.h"
+#include "arch-utils.h"
 
 #include <sys/ptrace.h>
 #include <sys/reg.h>
@@ -159,11 +160,11 @@ static int special_regs[] =
 /* Call ptrace(REQ, ID, ADDR, DATA, BUF). */
 
 static int
-ptrace32 (int req, int id, int *addr, int data, int *buf)
+rs6000_ptrace32 (int req, int id, int *addr, int data, int *buf)
 {
   int ret = ptrace (req, id, (int *)addr, data, buf);
 #if 0
-  printf ("ptrace32 (%d, %d, 0x%x, %08x, 0x%x) = 0x%x\n",
+  printf ("rs6000_ptrace32 (%d, %d, 0x%x, %08x, 0x%x) = 0x%x\n",
 	  req, id, (unsigned int)addr, data, (unsigned int)buf, ret);
 #endif
   return ret;
@@ -172,7 +173,7 @@ ptrace32 (int req, int id, int *addr, int data, int *buf)
 /* Call ptracex(REQ, ID, ADDR, DATA, BUF). */
 
 static int
-ptrace64 (int req, int id, long long addr, int data, int *buf)
+rs6000_ptrace64 (int req, int id, long long addr, int data, int *buf)
 {
 #ifdef ARCH3264
   int ret = ptracex (req, id, addr, data, buf);
@@ -180,7 +181,7 @@ ptrace64 (int req, int id, long long addr, int data, int *buf)
   int ret = 0;
 #endif
 #if 0
-  printf ("ptrace64 (%d, %d, 0x%llx, %08x, 0x%x) = 0x%x\n",
+  printf ("rs6000_ptrace64 (%d, %d, 0x%llx, %08x, 0x%x) = 0x%x\n",
 	  req, id, addr, data, (unsigned int)buf, ret);
 #endif
   return ret;
@@ -201,7 +202,7 @@ fetch_register (int regno)
   if (regno >= FP0_REGNUM && regno <= FPLAST_REGNUM)
     {
       nr = regno - FP0_REGNUM + FPR0;
-      ptrace32 (PT_READ_FPR, PIDGET (inferior_ptid), addr, nr, 0);
+      rs6000_ptrace32 (PT_READ_FPR, PIDGET (inferior_ptid), addr, nr, 0);
     }
 
   /* Bogus register number. */
@@ -222,13 +223,13 @@ fetch_register (int regno)
 	nr = regno;
 
       if (!ARCH64 ())
-	*addr = ptrace32 (PT_READ_GPR, PIDGET (inferior_ptid), (int *)nr, 0, 0);
+	*addr = rs6000_ptrace32 (PT_READ_GPR, PIDGET (inferior_ptid), (int *)nr, 0, 0);
       else
 	{
 	  /* PT_READ_GPR requires the buffer parameter to point to long long,
 	     even if the register is really only 32 bits. */
 	  long long buf;
-	  ptrace64 (PT_READ_GPR, PIDGET (inferior_ptid), nr, 0, (int *)&buf);
+	  rs6000_ptrace64 (PT_READ_GPR, PIDGET (inferior_ptid), nr, 0, (int *)&buf);
 	  if (REGISTER_RAW_SIZE (regno) == 8)
 	    memcpy (addr, &buf, 8);
 	  else
@@ -263,7 +264,7 @@ store_register (int regno)
   if (regno >= FP0_REGNUM && regno <= FPLAST_REGNUM)
     {
       nr = regno - FP0_REGNUM + FPR0;
-      ptrace32 (PT_WRITE_FPR, PIDGET (inferior_ptid), addr, nr, 0);
+      rs6000_ptrace32 (PT_WRITE_FPR, PIDGET (inferior_ptid), addr, nr, 0);
     }
 
   /* Bogus register number. */
@@ -292,7 +293,7 @@ store_register (int regno)
 	nr = regno;
 
       if (!ARCH64 ())
-	ptrace32 (PT_WRITE_GPR, PIDGET (inferior_ptid), (int *)nr, *addr, 0);
+	rs6000_ptrace32 (PT_WRITE_GPR, PIDGET (inferior_ptid), (int *)nr, *addr, 0);
       else
 	{
 	  /* PT_WRITE_GPR requires the buffer parameter to point to an 8-byte
@@ -302,7 +303,7 @@ store_register (int regno)
 	    memcpy (&buf, addr, 8);
 	  else
 	    buf = *addr;
-	  ptrace64 (PT_WRITE_GPR, PIDGET (inferior_ptid), nr, 0, (int *)&buf);
+	  rs6000_ptrace64 (PT_WRITE_GPR, PIDGET (inferior_ptid), nr, 0, (int *)&buf);
 	}
     }
 
@@ -376,9 +377,9 @@ read_word (CORE_ADDR from, int *to, int arch64)
   errno = 0;
 
   if (arch64)
-    *to = ptrace64 (PT_READ_I, PIDGET (inferior_ptid), from, 0, NULL);
+    *to = rs6000_ptrace64 (PT_READ_I, PIDGET (inferior_ptid), from, 0, NULL);
   else
-    *to = ptrace32 (PT_READ_I, PIDGET (inferior_ptid), (int *)(long) from,
+    *to = rs6000_ptrace32 (PT_READ_I, PIDGET (inferior_ptid), (int *)(long) from,
                     0, NULL);
 
   return !errno;
@@ -448,9 +449,9 @@ child_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len,
       for (i = 0, errno = 0; i < count; i++, addr += sizeof (int))
 	{
 	  if (arch64)
-	    ptrace64 (PT_WRITE_D, PIDGET (inferior_ptid), addr, buf[i], NULL);
+	    rs6000_ptrace64 (PT_WRITE_D, PIDGET (inferior_ptid), addr, buf[i], NULL);
 	  else
-	    ptrace32 (PT_WRITE_D, PIDGET (inferior_ptid), (int *)(long) addr,
+	    rs6000_ptrace32 (PT_WRITE_D, PIDGET (inferior_ptid), (int *)(long) addr,
 		      buf[i], NULL);
 
 	  if (errno)
@@ -489,9 +490,9 @@ exec_one_dummy_insn (void)
   prev_pc = read_pc ();
   write_pc (DUMMY_INSN_ADDR);
   if (ARCH64 ())
-    ret = ptrace64 (PT_CONTINUE, PIDGET (inferior_ptid), 1, 0, NULL);
+    ret = rs6000_ptrace64 (PT_CONTINUE, PIDGET (inferior_ptid), 1, 0, NULL);
   else
-    ret = ptrace32 (PT_CONTINUE, PIDGET (inferior_ptid), (int *)1, 0, NULL);
+    ret = rs6000_ptrace32 (PT_CONTINUE, PIDGET (inferior_ptid), (int *)1, 0, NULL);
 
   if (ret != 0)
     perror ("pt_continue");
@@ -851,14 +852,12 @@ vmap_ldinfo (LdInfo *ldi)
      running a different copy of the same executable.  */
   if (symfile_objfile != NULL && !got_exec_file)
     {
-      warning_begin ();
-      fputs_unfiltered ("Symbol file ", gdb_stderr);
-      fputs_unfiltered (symfile_objfile->name, gdb_stderr);
-      fputs_unfiltered ("\nis not mapped; discarding it.\n\
+      warning ("Symbol file %s\nis not mapped; discarding it.\n\
 If in fact that file has symbols which the mapped files listed by\n\
 \"info files\" lack, you can load symbols with the \"symbol-file\" or\n\
 \"add-symbol-file\" commands (note that you must take care of relocating\n\
-symbols to the proper address).\n", gdb_stderr);
+symbols to the proper address).",
+	       symfile_objfile->name);
       free_objfile (symfile_objfile);
       symfile_objfile = NULL;
     }
@@ -930,6 +929,24 @@ set_host_arch (int pid)
       arch = bfd_arch_powerpc;
       mach = bfd_mach_ppc;
     }
+
+  /* FIXME: schauer/2002-02-25:
+     We don't know if we are executing a 32 or 64 bit executable,
+     and have no way to pass the proper word size to rs6000_gdbarch_init.
+     So we have to avoid switching to a new architecture, if the architecture
+     matches already.
+     Blindly calling rs6000_gdbarch_init used to work in older versions of
+     GDB, as rs6000_gdbarch_init incorrectly used the previous tdep to
+     determine the wordsize.  */
+  if (exec_bfd)
+    {
+      const struct bfd_arch_info *exec_bfd_arch_info;
+
+      exec_bfd_arch_info = bfd_get_arch_info (exec_bfd);
+      if (arch == exec_bfd_arch_info->arch)
+	return;
+    }
+
   bfd_default_set_arch_mach (&abfd, arch, mach);
 
   gdbarch_info_init (&info);
@@ -970,9 +987,9 @@ xcoff_relocate_symtab (unsigned int pid)
 #endif
 
       if (arch64)
-	rc = ptrace64 (PT_LDINFO, pid, (unsigned long) ldi, size, NULL);
+	rc = rs6000_ptrace64 (PT_LDINFO, pid, (unsigned long) ldi, size, NULL);
       else
-	rc = ptrace32 (PT_LDINFO, pid, (int *) ldi, size, NULL);
+	rc = rs6000_ptrace32 (PT_LDINFO, pid, (int *) ldi, size, NULL);
 
       if (rc == -1)
         {

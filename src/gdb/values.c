@@ -742,13 +742,22 @@ unpack_double (struct type *type, char *valaddr, int *invp)
   nosign = TYPE_UNSIGNED (type);
   if (code == TYPE_CODE_FLT)
     {
-#ifdef INVALID_FLOAT
-      if (INVALID_FLOAT (valaddr, len))
-	{
-	  *invp = 1;
-	  return 1.234567891011121314;
-	}
-#endif
+      /* NOTE: cagney/2002-02-19: There was a test here to see if the
+	 floating-point value was valid (using the macro
+	 INVALID_FLOAT).  That test/macro have been removed.
+
+	 It turns out that only the VAX defined this macro and then
+	 only in a non-portable way.  Fixing the portability problem
+	 wouldn't help since the VAX floating-point code is also badly
+	 bit-rotten.  The target needs to add definitions for the
+	 methods TARGET_FLOAT_FORMAT and TARGET_DOUBLE_FORMAT - these
+	 exactly describe the target floating-point format.  The
+	 problem here is that the corresponding floatformat_vax_f and
+	 floatformat_vax_d values these methods should be set to are
+	 also not defined either.  Oops!
+
+         Hopefully someone will add both the missing floatformat
+         definitions and floatformat_is_invalid() function.  */
       return extract_typed_floating (valaddr, type);
     }
   else if (nosign)
@@ -1034,6 +1043,7 @@ value_headof (struct value *in_arg, struct type *btype, struct type *dtype)
   struct symbol *sym;
   char *demangled_name;
   struct minimal_symbol *msymbol;
+  char *tmp;
 
   btype = TYPE_VPTR_BASETYPE (dtype);
   CHECK_TYPEDEF (btype);
@@ -1071,7 +1081,9 @@ value_headof (struct value *in_arg, struct type *btype, struct type *dtype)
 	  return in_arg;
       }
   demangled_name = cplus_demangle(demangled_name,DMGL_ANSI);
-  *(strchr (demangled_name, ' ')) = '\0';
+  tmp = strchr (demangled_name, ' ');
+  if (tmp)
+    *tmp = '\0';
 
   sym = lookup_symbol (demangled_name, 0, VAR_NAMESPACE, 0, 0);
   if (sym == NULL)

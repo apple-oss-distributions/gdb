@@ -1,5 +1,7 @@
 /* Output generating routines for GDB CLI.
-   Copyright 1999, 2000 Free Software Foundation, Inc.
+
+   Copyright 1999, 2000, 2002 Free Software Foundation, Inc.
+
    Contributed by Cygnus Solutions.
    Written by Fernando Nasser for Cygnus.
 
@@ -31,12 +33,6 @@
 #include "event-top.h"
 #include "inferior.h" /* for sync_execution */
 #include "gdb_assert.h"
-
-/* Convenience macro for allocting typesafe memory. */
-
-#ifndef XMALLOC
-#define XMALLOC(TYPE) (TYPE*) xmalloc (sizeof (TYPE))
-#endif
 
 struct ui_out_data
   {
@@ -99,6 +95,8 @@ static struct ui_out_impl cli_ui_out_impl =
   cli_message,
   cli_wrap_hint,
   cli_flush,
+  NULL, /* notify_begin unimplemented for cli */
+  NULL, /* notify_end unimplemented for cli */
   0, /* Does not need MI hacks (i.e. needs CLI hacks).  */
 };
 
@@ -452,7 +450,6 @@ cli_interpreter_display_prompt (void *data, char *new_prompt)
 int 
 cli_interpreter_exec (void *data, char *command_str)
 {
-
   return safe_execute_command (command_str, 0);
 }
 

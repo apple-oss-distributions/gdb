@@ -1,4 +1,5 @@
-/* Linux-specific methods for using the /proc file system.
+/* GNU/Linux specific methods for using the /proc file system.
+
    Copyright 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -24,6 +25,7 @@
 #include <sys/procfs.h>	/* for elf_gregset etc. */
 #include <sys/stat.h>	/* for struct stat */
 #include <ctype.h>	/* for isdigit */
+#include "regcache.h"	/* for registers_changed */
 #include "gregset.h"	/* for gregset */
 #include "gdbcore.h"	/* for get_exec_file */
 #include "gdbthread.h"	/* for struct thread_info etc. */
@@ -75,7 +77,14 @@ read_mapping (FILE *mapfile,
 
   if (ret > 0 && ret != EOF && *inode != 0)
     {
-      ret += fscanf (mapfile, "%s\n", filename);
+      /* Eat everything up to EOL for the filename.  This will prevent
+       weird filenames (such as one with embedded whitespace) from
+       confusing this code.  It also makes this code more robust
+       in respect to annotations the kernel may add after the
+       filename.
+
+       Note the filename is used for informational purposes only.  */
+      ret += fscanf (mapfile, "%[^\n]\n", filename);
     }
   else
     {

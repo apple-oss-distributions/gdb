@@ -22,7 +22,7 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-/* by Steve Chamberlain, sac@cygnus.com */
+/* Originally by Steve Chamberlain, sac@cygnus.com */
 
 /* We assume we're being built with and will be used for cygwin.  */
 
@@ -71,21 +71,25 @@ enum
 #include <psapi.h>
 
 #ifdef HAVE_SSE_REGS
-#define CONTEXT_DEBUGGER_DR CONTEXT_DEBUGGER | CONTEXT_EXTENDED_REGISTERS
+#define CONTEXT_DEBUGGER_DR CONTEXT_DEBUGGER | CONTEXT_DEBUG_REGISTERS \
+	| CONTEXT_EXTENDED_REGISTERS
 #else
-#define CONTEXT_DEBUGGER_DR CONTEXT_DEBUGGER
+#define CONTEXT_DEBUGGER_DR CONTEXT_DEBUGGER | CONTEXT_DEBUG_REGISTERS
 #endif
 
+static unsigned dr[8];
+static int debug_registers_changed = 0;
+static int debug_registers_used = 0;
 
 /* The string sent by cygwin when it processes a signal.
    FIXME: This should be in a cygwin include file. */
 #define CYGWIN_SIGNAL_STRING "cygwin: signal"
 
 #define CHECK(x)	check (x, __FILE__,__LINE__)
-#define DEBUG_EXEC(x)	if (debug_exec)		printf x
-#define DEBUG_EVENTS(x)	if (debug_events)	printf x
-#define DEBUG_MEM(x)	if (debug_memory)	printf x
-#define DEBUG_EXCEPT(x)	if (debug_exceptions)	printf x
+#define DEBUG_EXEC(x)	if (debug_exec)		printf_unfiltered x
+#define DEBUG_EVENTS(x)	if (debug_events)	printf_unfiltered x
+#define DEBUG_MEM(x)	if (debug_memory)	printf_unfiltered x
+#define DEBUG_EXCEPT(x)	if (debug_exceptions)	printf_unfiltered x
 
 /* Forward declaration */
 extern struct target_ops child_ops;
@@ -94,8 +98,9 @@ static void child_stop (void);
 static int win32_child_thread_alive (ptid_t);
 void child_kill_inferior (void);
 
-static int last_sig = 0;	/* Set if a signal was received from the
-				   debugged process */
+static enum target_signal last_sig = TARGET_SIGNAL_0;
+/* Set if a signal was received from the debugged process */
+
 /* Thread information structure used to track information that is
    not available in gdb's thread structure. */
 typedef struct thread_info_struct
@@ -118,19 +123,22 @@ static DEBUG_EVENT current_event;	/* The current debug event from
 					   WaitForDebugEvent */
 static HANDLE current_process_handle;	/* Currently executing process */
 static thread_info *current_thread;	/* Info on currently selected thread */
-static DWORD main_thread_id;	/* Thread ID of the main thread */
+static DWORD main_thread_id;		/* Thread ID of the main thread */
+static pid_t cygwin_pid;		/* pid of cygwin process */
 
 /* Counts of things. */
 static int exception_count = 0;
 static int event_count = 0;
+static int saw_create;
 
 /* User options. */
 static int new_console = 0;
 static int new_group = 1;
-static int debug_exec = 0;	/* show execution */
-static int debug_events = 0;	/* show events from kernel */
-static int debug_memory = 0;	/* show target memory accesses */
+static int debug_exec = 0;		/* show execution */
+static int debug_events = 0;		/* show events from kernel */
+static int debug_memory = 0;		/* show target memory accesses */
 static int debug_exceptions = 0;	/* show target exceptions */
+static int useshell = 0;		/* use shell for subprocesses */
 
 /* This vector maps GDB's idea of a register's number into an address
    in the win32 exception context vector.
@@ -214,7 +222,17 @@ static const struct xlate_exception
   {EXCEPTION_BREAKPOINT, TARGET_SIGNAL_TRAP},
   {DBG_CONTROL_C, TARGET_SIGNAL_INT},
   {EXCEPTION_SINGLE_STEP, TARGET_SIGNAL_TRAP},
+  {STATUS_FLOAT_DIVIDE_BY_ZERO, TARGET_SIGNAL_FPE},
   {-1, -1}};
+
+static void
+check (BOOL ok, const char *file, int line)
+{
+  if (!ok)
+    printf_filtered ("error return %s:%d was %lu\n", file, line,
+		     GetLastError ());
+}
+
 
 /* Find a thread record given a thread id.
    If get_context then also retrieve the context for this
@@ -236,6 +254,16 @@ thread_rec (DWORD id, int get_context)
 
 	    th->context.ContextFlags = CONTEXT_DEBUGGER_DR;
 	    GetThreadContext (th->h, &th->context);
+	    if (id == current_event.dwThreadId)
+	      {
+		/* Copy dr values from that thread.  */
+		dr[0] = th->context.Dr0;
+		dr[1] = th->context.Dr1;
+		dr[2] = th->context.Dr2;
+		dr[3] = th->context.Dr3;
+		dr[6] = th->context.Dr6;
+		dr[7] = th->context.Dr7;
+	      }
 	  }
 	return th;
       }
@@ -259,6 +287,22 @@ child_add_thread (DWORD id, HANDLE h)
   th->next = thread_head.next;
   thread_head.next = th;
   add_thread (pid_to_ptid (id));
+  /* Set the debug registers for the new thread in they are used.  */
+  if (debug_registers_used)
+    {
+      /* Only change the value of the debug registers.  */
+      th->context.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+      CHECK (GetThreadContext (th->h, &th->context));
+      th->context.Dr0 = dr[0];
+      th->context.Dr1 = dr[1];
+      th->context.Dr2 = dr[2];
+      th->context.Dr3 = dr[3];
+      /* th->context.Dr6 = dr[6];
+      FIXME: should we set dr6 also ?? */
+      th->context.Dr7 = dr[7];
+      CHECK (SetThreadContext (th->h, &th->context));
+      th->context.ContextFlags = 0;
+    }
   return th;
 }
 
@@ -302,13 +346,6 @@ child_delete_thread (DWORD id)
       CloseHandle (here->h);
       xfree (here);
     }
-}
-
-static void
-check (BOOL ok, const char *file, int line)
-{
-  if (!ok)
-    printf_filtered ("error return %s:%d was %lu\n", file, line, GetLastError ());
 }
 
 static void
@@ -543,16 +580,21 @@ register_loaded_dll (const char *name, DWORD load_addr)
   HANDLE h = FindFirstFile(name, &w32_fd);
   size_t len;
 
-  FindClose (h);
-  strcpy (buf, name);
-  if (GetCurrentDirectory (MAX_PATH + 1, cwd))
+  if (h == INVALID_HANDLE_VALUE)
+    strcpy (buf, name);
+  else
     {
-      p = strrchr (buf, '\\');
-      if (p)
-	p[1] = '\0';
-      SetCurrentDirectory (buf);
-      GetFullPathName (w32_fd.cFileName, MAX_PATH, buf, &p);
-      SetCurrentDirectory (cwd);
+      FindClose (h);
+      strcpy (buf, name);
+      if (GetCurrentDirectory (MAX_PATH + 1, cwd))
+	{
+	  p = strrchr (buf, '\\');
+	  if (p)
+	    p[1] = '\0';
+	  SetCurrentDirectory (buf);
+	  GetFullPathName (w32_fd.cFileName, MAX_PATH, buf, &p);
+	  SetCurrentDirectory (cwd);
+	}
     }
 
   cygwin_conv_to_posix_path (buf, ppath);
@@ -570,14 +612,58 @@ register_loaded_dll (const char *name, DWORD load_addr)
     max_dll_name_len = len;
 }
 
+char *
+get_image_name (HANDLE h, void *address, int unicode)
+{
+  static char buf[(2 * MAX_PATH) + 1];
+  DWORD size = unicode ? sizeof (WCHAR) : sizeof (char);
+  char *address_ptr;
+  int len = 0;
+  char b[2];
+  DWORD done;
+
+  /* Attempt to read the name of the dll that was detected.
+     This is documented to work only when actively debugging
+     a program.  It will not work for attached processes. */
+  if (address == NULL)
+    return NULL;
+
+  ReadProcessMemory (h, address,  &address_ptr, sizeof (address_ptr), &done);
+
+  /* See if we could read the address of a string, and that the
+     address isn't null. */
+
+  if (done != sizeof (address_ptr) || !address_ptr)
+    return NULL;
+
+  /* Find the length of the string */
+  do
+    {
+      ReadProcessMemory (h, address_ptr + len * size, &b, size, &done);
+      len++;
+    }
+  while ((b[0] != 0 || b[size - 1] != 0) && done == size);
+
+  if (!unicode)
+    ReadProcessMemory (h, address_ptr, buf, len, &done);
+  else
+    {
+      WCHAR *unicode_address = (WCHAR *) alloca (len * sizeof (WCHAR));
+      ReadProcessMemory (h, address_ptr, unicode_address, len * sizeof (WCHAR),
+			 &done);
+
+      WideCharToMultiByte (CP_ACP, 0, unicode_address, len, buf, len, 0, 0);
+    }
+
+  return buf;
+}
+
 /* Wait for child to do something.  Return pid of child, or -1 in case
    of error; store status through argument pointer OURSTATUS.  */
 static int
 handle_load_dll (void *dummy)
 {
   LOAD_DLL_DEBUG_INFO *event = &current_event.u.LoadDll;
-  DWORD dll_name_ptr;
-  DWORD done;
   char dll_buf[MAX_PATH + 1];
   char *dll_name = NULL;
   char *p;
@@ -589,62 +675,8 @@ handle_load_dll (void *dummy)
 
   dll_name = dll_buf;
 
-  /* Attempt to read the name of the dll that was detected.
-     This is documented to work only when actively debugging
-     a program.  It will not work for attached processes. */
-  if (dll_name == NULL || *dll_name == '\0')
-    {
-      DWORD size = event->fUnicode ? sizeof (WCHAR) : sizeof (char);
-      int len = 0;
-      char b[2];
-
-      ReadProcessMemory (current_process_handle,
-			 (LPCVOID) event->lpImageName,
-			 (char *) &dll_name_ptr,
-			 sizeof (dll_name_ptr), &done);
-
-      /* See if we could read the address of a string, and that the
-	 address isn't null. */
-
-      if (done != sizeof (dll_name_ptr) || !dll_name_ptr)
-	return 1;
-
-      do
-	{
-	  ReadProcessMemory (current_process_handle,
-			     (LPCVOID) (dll_name_ptr + len * size),
-			     &b,
-			     size,
-			     &done);
-	  len++;
-	}
-      while ((b[0] != 0 || b[size - 1] != 0) && done == size);
-
-      dll_name = alloca (len);
-
-      if (event->fUnicode)
-	{
-	  WCHAR *unicode_dll_name = (WCHAR *) alloca (len * sizeof (WCHAR));
-	  ReadProcessMemory (current_process_handle,
-			     (LPCVOID) dll_name_ptr,
-			     unicode_dll_name,
-			     len * sizeof (WCHAR),
-			     &done);
-
-	  WideCharToMultiByte (CP_ACP, 0,
-			       unicode_dll_name, len,
-			       dll_name, len, 0, 0);
-	}
-      else
-	{
-	  ReadProcessMemory (current_process_handle,
-			     (LPCVOID) dll_name_ptr,
-			     dll_name,
-			     len,
-			     &done);
-	}
-    }
-
+  if (*dll_name == '\0')
+    dll_name = get_image_name (current_process_handle, event->lpImageName, event->fUnicode);
   if (!dll_name)
     return 1;
 
@@ -751,7 +783,7 @@ info_dll_command (char *ignore, int from_tty)
   if (!so->next)
     return;
 
-  printf ("%*s  Load Address\n", -max_dll_name_len, "DLL Name");
+  printf_filtered ("%*s  Load Address\n", -max_dll_name_len, "DLL Name");
   while ((so = so->next) != NULL)
     printf_filtered ("%*s  %08lx\n", -max_dll_name_len, so->name, so->load_addr);
 
@@ -792,6 +824,130 @@ handle_output_debug_string (struct target_waitstatus *ourstatus)
 }
 
 static int
+display_selector (HANDLE thread, DWORD sel)
+{
+  LDT_ENTRY info;
+  if (GetThreadSelectorEntry (thread, sel, &info))
+    {
+      int base, limit;
+      printf_filtered ("0x%03lx: ", sel);
+      if (!info.HighWord.Bits.Pres)
+        {
+          puts_filtered ("Segment not present\n");
+          return 0;
+        }
+      base = (info.HighWord.Bits.BaseHi << 24) +
+	     (info.HighWord.Bits.BaseMid << 16)
+	     + info.BaseLow;
+      limit = (info.HighWord.Bits.LimitHi << 16) + info.LimitLow;
+      if (info.HighWord.Bits.Granularity)
+       limit = (limit << 12) | 0xfff;
+      printf_filtered ("base=0x%08x limit=0x%08x", base, limit);
+      if (info.HighWord.Bits.Default_Big)
+        puts_filtered(" 32-bit ");
+      else
+        puts_filtered(" 16-bit ");
+      switch ((info.HighWord.Bits.Type & 0xf) >> 1)
+	{
+	case 0:
+          puts_filtered ("Data (Read-Only, Exp-up");
+          break;
+	case 1:
+          puts_filtered ("Data (Read/Write, Exp-up");
+          break;
+	case 2:
+          puts_filtered ("Unused segment (");
+          break;
+	case 3:
+          puts_filtered ("Data (Read/Write, Exp-down");
+          break;
+	case 4:
+          puts_filtered ("Code (Exec-Only, N.Conf");
+          break;
+	case 5:
+          puts_filtered ("Code (Exec/Read, N.Conf");
+	  break;
+	case 6:
+          puts_filtered ("Code (Exec-Only, Conf");
+	  break;
+	case 7:
+          puts_filtered ("Code (Exec/Read, Conf");
+	  break;
+	default:
+	  printf_filtered ("Unknown type 0x%x",info.HighWord.Bits.Type);
+	}
+      if ((info.HighWord.Bits.Type & 0x1) == 0)
+        puts_filtered(", N.Acc");
+      puts_filtered (")\n");
+      if ((info.HighWord.Bits.Type & 0x10) == 0)
+	puts_filtered("System selector ");
+      printf_filtered ("Priviledge level = %d. ", info.HighWord.Bits.Dpl);
+      if (info.HighWord.Bits.Granularity)
+        puts_filtered ("Page granular.\n");
+      else
+	puts_filtered ("Byte granular.\n");
+      return 1;
+    }
+  else
+    {
+      printf_filtered ("Invalid selector 0x%lx.\n",sel);
+      return 0;
+    }
+}
+
+static void
+display_selectors (char * args, int from_tty)
+{
+  if (!current_thread)
+    {
+      puts_filtered ("Impossible to display selectors now.\n");
+      return;
+    }
+  if (!args)
+    {
+
+      puts_filtered ("Selector $cs\n");
+      display_selector (current_thread->h,
+        current_thread->context.SegCs);
+      puts_filtered ("Selector $ds\n");
+      display_selector (current_thread->h,
+        current_thread->context.SegDs);
+      puts_filtered ("Selector $es\n");
+      display_selector (current_thread->h,
+        current_thread->context.SegEs);
+      puts_filtered ("Selector $ss\n");
+      display_selector (current_thread->h,
+        current_thread->context.SegSs);
+      puts_filtered ("Selector $fs\n");
+      display_selector (current_thread->h,
+	current_thread->context.SegFs);
+      puts_filtered ("Selector $gs\n");
+      display_selector (current_thread->h,
+        current_thread->context.SegGs);
+    }
+  else
+    {
+      int sel;
+      sel = parse_and_eval_long (args);
+      printf_filtered ("Selector \"%s\"\n",args);
+      display_selector (current_thread->h, sel);
+    }
+}
+
+static struct cmd_list_element *info_w32_cmdlist = NULL;
+
+static void
+info_w32_command (char *args, int from_tty)
+{
+  help_list (info_w32_cmdlist, "info w32 ", class_info, gdb_stdout);
+}
+
+
+#define DEBUG_EXCEPTION_SIMPLE(x)       if (debug_exceptions) \
+  printf_unfiltered ("gdb: Target exception %s at 0x%08lx\n", x, \
+  (DWORD) current_event.u.Exception.ExceptionRecord.ExceptionAddress)
+
+static int
 handle_exception (struct target_waitstatus *ourstatus)
 {
   thread_info *th;
@@ -805,46 +961,80 @@ handle_exception (struct target_waitstatus *ourstatus)
   switch (code)
     {
     case EXCEPTION_ACCESS_VIOLATION:
-      DEBUG_EXCEPT (("gdb: Target exception ACCESS_VIOLATION at 0x%08lx\n",
-       (DWORD) current_event.u.Exception.ExceptionRecord.ExceptionAddress));
+      DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_ACCESS_VIOLATION");
       ourstatus->value.sig = TARGET_SIGNAL_SEGV;
-      last_sig = SIGSEGV;
-      break;
-    case STATUS_FLOAT_UNDERFLOW:
-    case STATUS_FLOAT_DIVIDE_BY_ZERO:
-    case STATUS_FLOAT_OVERFLOW:
-    case STATUS_INTEGER_DIVIDE_BY_ZERO:
-      DEBUG_EXCEPT (("gdb: Target exception STACK_OVERFLOW at 0x%08lx\n",
-       (DWORD) current_event.u.Exception.ExceptionRecord.ExceptionAddress));
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
-      last_sig = SIGFPE;
       break;
     case STATUS_STACK_OVERFLOW:
-      DEBUG_EXCEPT (("gdb: Target exception STACK_OVERFLOW at 0x%08lx\n",
-       (DWORD) current_event.u.Exception.ExceptionRecord.ExceptionAddress));
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_STACK_OVERFLOW");
       ourstatus->value.sig = TARGET_SIGNAL_SEGV;
       break;
+    case STATUS_FLOAT_DENORMAL_OPERAND:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_DENORMAL_OPERAND");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+      DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_ARRAY_BOUNDS_EXCEEDED");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case STATUS_FLOAT_INEXACT_RESULT:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_INEXACT_RESULT");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case STATUS_FLOAT_INVALID_OPERATION:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_INVALID_OPERATION");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case STATUS_FLOAT_OVERFLOW:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_OVERFLOW");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case STATUS_FLOAT_STACK_CHECK:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_STACK_CHECK");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case STATUS_FLOAT_UNDERFLOW:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_UNDERFLOW");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case STATUS_FLOAT_DIVIDE_BY_ZERO:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_DIVIDE_BY_ZERO");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case STATUS_INTEGER_DIVIDE_BY_ZERO:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_INTEGER_DIVIDE_BY_ZERO");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
+    case STATUS_INTEGER_OVERFLOW:
+      DEBUG_EXCEPTION_SIMPLE ("STATUS_INTEGER_OVERFLOW");
+      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      break;
     case EXCEPTION_BREAKPOINT:
-      DEBUG_EXCEPT (("gdb: Target exception BREAKPOINT at 0x%08lx\n",
-       (DWORD) current_event.u.Exception.ExceptionRecord.ExceptionAddress));
+      DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_BREAKPOINT");
       ourstatus->value.sig = TARGET_SIGNAL_TRAP;
       break;
     case DBG_CONTROL_C:
-      DEBUG_EXCEPT (("gdb: Target exception CONTROL_C at 0x%08lx\n",
-       (DWORD) current_event.u.Exception.ExceptionRecord.ExceptionAddress));
+      DEBUG_EXCEPTION_SIMPLE ("DBG_CONTROL_C");
       ourstatus->value.sig = TARGET_SIGNAL_INT;
-      last_sig = SIGINT;	/* FIXME - should check pass state */
+      break;
+    case DBG_CONTROL_BREAK:
+      DEBUG_EXCEPTION_SIMPLE ("DBG_CONTROL_BREAK");
+      ourstatus->value.sig = TARGET_SIGNAL_INT;
       break;
     case EXCEPTION_SINGLE_STEP:
-      DEBUG_EXCEPT (("gdb: Target exception SINGLE_STEP at 0x%08lx\n",
-       (DWORD) current_event.u.Exception.ExceptionRecord.ExceptionAddress));
+      DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_SINGLE_STEP");
       ourstatus->value.sig = TARGET_SIGNAL_TRAP;
       break;
     case EXCEPTION_ILLEGAL_INSTRUCTION:
-      DEBUG_EXCEPT (("gdb: Target exception SINGLE_ILL at 0x%08lx\n",
-       (DWORD) current_event.u.Exception.ExceptionRecord.ExceptionAddress));
+      DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_ILLEGAL_INSTRUCTION");
       ourstatus->value.sig = TARGET_SIGNAL_ILL;
-      last_sig = SIGILL;
+      break;
+    case EXCEPTION_PRIV_INSTRUCTION:
+      DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_PRIV_INSTRUCTION");
+      ourstatus->value.sig = TARGET_SIGNAL_ILL;
+      break;
+    case EXCEPTION_NONCONTINUABLE_EXCEPTION:
+      DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_NONCONTINUABLE_EXCEPTION");
+      ourstatus->value.sig = TARGET_SIGNAL_ILL;
       break;
     default:
       if (current_event.u.Exception.dwFirstChance)
@@ -856,6 +1046,7 @@ handle_exception (struct target_waitstatus *ourstatus)
       break;
     }
   exception_count++;
+  last_sig = ourstatus->value.sig;
   return 1;
 }
 
@@ -868,8 +1059,10 @@ child_continue (DWORD continue_status, int id)
   thread_info *th;
   BOOL res;
 
-  DEBUG_EVENTS (("ContinueDebugEvent (cpid=%ld, ctid=%ld, DBG_CONTINUE);\n",
-		 current_event.dwProcessId, current_event.dwThreadId));
+  DEBUG_EVENTS (("ContinueDebugEvent (cpid=%ld, ctid=%ld, %s);\n",
+		  current_event.dwProcessId, current_event.dwThreadId,
+		  continue_status == DBG_CONTINUE ?
+		  "DBG_CONTINUE" : "DBG_EXCEPTION_NOT_HANDLED"));
   res = ContinueDebugEvent (current_event.dwProcessId,
 			    current_event.dwThreadId,
 			    continue_status);
@@ -878,11 +1071,27 @@ child_continue (DWORD continue_status, int id)
     for (th = &thread_head; (th = th->next) != NULL;)
       if (((id == -1) || (id == (int) th->id)) && th->suspend_count)
 	{
+
 	  for (i = 0; i < th->suspend_count; i++)
 	    (void) ResumeThread (th->h);
 	  th->suspend_count = 0;
+	  if (debug_registers_changed)
+	    {
+	      /* Only change the value of the debug reisters */
+	      th->context.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+	      th->context.Dr0 = dr[0];
+	      th->context.Dr1 = dr[1];
+	      th->context.Dr2 = dr[2];
+	      th->context.Dr3 = dr[3];
+	      /* th->context.Dr6 = dr[6];
+		 FIXME: should we set dr6 also ?? */
+	      th->context.Dr7 = dr[7];
+	      CHECK (SetThreadContext (th->h, &th->context));
+	      th->context.ContextFlags = 0;
+	    }
 	}
 
+  debug_registers_changed = 0;
   return res;
 }
 
@@ -898,7 +1107,7 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
   static thread_info dummy_thread_info;
   int retval = 0;
 
-  last_sig = 0;
+  last_sig = TARGET_SIGNAL_0;
 
   if (!(debug_event = WaitForDebugEvent (&current_event, 1000)))
     goto out;
@@ -916,6 +1125,8 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "CREATE_THREAD_DEBUG_EVENT"));
+      if (saw_create != 1)
+	break;
       /* Record the existence of this thread */
       th = child_add_thread (current_event.dwThreadId,
 			     current_event.u.CreateThread.hThread);
@@ -931,6 +1142,8 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "EXIT_THREAD_DEBUG_EVENT"));
+      if (saw_create != 1)
+	break;
       child_delete_thread (current_event.dwThreadId);
       th = &dummy_thread_info;
       break;
@@ -941,8 +1154,13 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
 		     (unsigned) current_event.dwThreadId,
 		     "CREATE_PROCESS_DEBUG_EVENT"));
       CloseHandle (current_event.u.CreateProcessInfo.hFile);
-      current_process_handle = current_event.u.CreateProcessInfo.hProcess;
+      if (++saw_create != 1)
+	{
+	  CloseHandle (current_event.u.CreateProcessInfo.hProcess);
+	  break;
+	}
 
+      current_process_handle = current_event.u.CreateProcessInfo.hProcess;
       main_thread_id = current_event.dwThreadId;
       /* Add the main thread */
 #if 0
@@ -959,6 +1177,8 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "EXIT_PROCESS_DEBUG_EVENT"));
+      if (saw_create != 1)
+	break;
       ourstatus->kind = TARGET_WAITKIND_EXITED;
       ourstatus->value.integer = current_event.u.ExitProcess.dwExitCode;
       CloseHandle (current_process_handle);
@@ -971,6 +1191,8 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
 		     (unsigned) current_event.dwThreadId,
 		     "LOAD_DLL_DEBUG_EVENT"));
       CloseHandle (current_event.u.LoadDll.hFile);
+      if (saw_create != 1)
+	break;
       catch_errors (handle_load_dll, NULL, (char *) "", RETURN_MASK_ALL);
       registers_changed ();	/* mark all regs invalid */
       ourstatus->kind = TARGET_WAITKIND_LOADED;
@@ -983,6 +1205,8 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "UNLOAD_DLL_DEBUG_EVENT"));
+      if (saw_create != 1)
+	break;
       catch_errors (handle_unload_dll, NULL, (char *) "", RETURN_MASK_ALL);
       registers_changed ();	/* mark all regs invalid */
       /* ourstatus->kind = TARGET_WAITKIND_UNLOADED;
@@ -994,6 +1218,8 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "EXCEPTION_DEBUG_EVENT"));
+      if (saw_create != 1)
+	break;
       if (handle_exception (ourstatus))
 	retval = current_event.dwThreadId;
       break;
@@ -1003,11 +1229,15 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "OUTPUT_DEBUG_STRING_EVENT"));
+      if (saw_create != 1)
+	break;
       if (handle_output_debug_string (ourstatus))
 	retval = main_thread_id;
       break;
 
     default:
+      if (saw_create != 1)
+	break;
       printf_unfiltered ("gdb: kernel event for pid=%ld tid=%ld\n",
 			 (DWORD) current_event.dwProcessId,
 			 (DWORD) current_event.dwThreadId);
@@ -1016,7 +1246,7 @@ get_child_debug_event (int pid, struct target_waitstatus *ourstatus)
       break;
     }
 
-  if (!retval)
+  if (!retval || saw_create != 1)
     CHECK (child_continue (continue_status, -1));
   else
     {
@@ -1062,10 +1292,15 @@ static void
 do_initial_child_stuff (DWORD pid)
 {
   extern int stop_after_trap;
+  int i;
 
-  last_sig = 0;
+  last_sig = TARGET_SIGNAL_0;
   event_count = 0;
   exception_count = 0;
+  debug_registers_changed = 0;
+  debug_registers_used = 0;
+  for (i = 0; i < sizeof (dr) / sizeof (dr[0]); i++)
+    dr[i] = 0;
   current_event.dwProcessId = pid;
   memset (&current_event, 0, sizeof (current_event));
   push_target (&child_ops);
@@ -1213,7 +1448,6 @@ child_open (char *arg, int from_tty)
 static void
 child_create_inferior (char *exec_file, char *allargs, char **env)
 {
-  char real_path[MAXPATHLEN];
   char *winenv;
   char *temp;
   int envlen;
@@ -1223,6 +1457,10 @@ child_create_inferior (char *exec_file, char *allargs, char **env)
   BOOL ret;
   DWORD flags;
   char *args;
+  char real_path[MAXPATHLEN];
+  char *toexec;
+  char shell[MAX_PATH + 1]; /* Path to shell */
+  const char *sh;
 
   if (!exec_file)
     error ("No executable specified, use `target exec'.\n");
@@ -1230,9 +1468,26 @@ child_create_inferior (char *exec_file, char *allargs, char **env)
   memset (&si, 0, sizeof (si));
   si.cb = sizeof (si);
 
-  cygwin_conv_to_win32_path (exec_file, real_path);
-
-  flags = DEBUG_ONLY_THIS_PROCESS;
+  if (!useshell)
+    {
+      flags = DEBUG_ONLY_THIS_PROCESS;
+      cygwin_conv_to_win32_path (exec_file, real_path);
+      toexec = real_path;
+    }
+  else
+    {
+      char *newallargs;
+      sh = getenv ("SHELL");
+      if (!sh)
+	sh = "/bin/sh";
+      cygwin_conv_to_win32_path (sh, shell);
+      newallargs = alloca (sizeof (" -c 'exec  '") + strlen (exec_file)
+			   + strlen (allargs) + 2);
+      sprintf (newallargs, " -c 'exec %s %s'", exec_file, allargs);
+      allargs = newallargs;
+      toexec = shell;
+      flags = DEBUG_PROCESS;
+    }
 
   if (new_group)
     flags |= CREATE_NEW_PROCESS_GROUP;
@@ -1240,16 +1495,14 @@ child_create_inferior (char *exec_file, char *allargs, char **env)
   if (new_console)
     flags |= CREATE_NEW_CONSOLE;
 
-  args = alloca (strlen (real_path) + strlen (allargs) + 2);
-
-  strcpy (args, real_path);
-
+  args = alloca (strlen (toexec) + strlen (allargs) + 2);
+  strcpy (args, toexec);
   strcat (args, " ");
   strcat (args, allargs);
 
   /* Prepare the environment vars for CreateProcess.  */
   {
-    /* This code use to assume all env vars were file names and would
+    /* This code used to assume all env vars were file names and would
        translate them all to win32 style.  That obviously doesn't work in the
        general case.  The current rule is that we only translate PATH.
        We need to handle PATH because we're about to call CreateProcess and
@@ -1335,6 +1588,12 @@ child_create_inferior (char *exec_file, char *allargs, char **env)
 
   CloseHandle (pi.hThread);
   CloseHandle (pi.hProcess);
+
+  if (useshell && shell[0] != '\0')
+    saw_create = -1;
+  else
+    saw_create = 0;
+
   do_initial_child_stuff (pi.dwProcessId);
 
   /* child_continue (DBG_CONTINUE, -1); */
@@ -1345,6 +1604,7 @@ static void
 child_mourn_inferior (void)
 {
   (void) child_continue (DBG_CONTINUE, -1);
+  i386_cleanup_dregs();
   unpush_target (&child_ops);
   generic_mourn_inferior ();
 }
@@ -1410,11 +1670,45 @@ void
 child_resume (ptid_t ptid, int step, enum target_signal sig)
 {
   thread_info *th;
-  DWORD continue_status = last_sig > 0 && last_sig < NSIG ?
-  DBG_EXCEPTION_NOT_HANDLED : DBG_CONTINUE;
+  DWORD continue_status = DBG_CONTINUE;
+
   int pid = PIDGET (ptid);
 
-  last_sig = 0;
+  if (sig != TARGET_SIGNAL_0)
+    {
+      if (current_event.dwDebugEventCode != EXCEPTION_DEBUG_EVENT)
+	{
+	  DEBUG_EXCEPT(("Cannot continue with signal %d here.\n",sig));
+	}
+      else if (sig == last_sig)
+	continue_status = DBG_EXCEPTION_NOT_HANDLED;
+      else
+#if 0
+/* This code does not seem to work, because
+  the kernel does probably not consider changes in the ExceptionRecord
+  structure when passing the exception to the inferior.
+  Note that this seems possible in the exception handler itself.  */
+	{
+	  int i;
+	  for (i = 0; xlate[i].them != -1; i++)
+	    if (xlate[i].us == sig)
+	      {
+		current_event.u.Exception.ExceptionRecord.ExceptionCode =
+		  xlate[i].them;
+		continue_status = DBG_EXCEPTION_NOT_HANDLED;
+		break;
+	      }
+	  if (continue_status == DBG_CONTINUE)
+	    {
+	      DEBUG_EXCEPT(("Cannot continue with signal %d.\n",sig));
+	    }
+	}
+#endif
+	DEBUG_EXCEPT(("Can only continue with recieved signal %d.\n",
+	  last_sig));
+    }
+
+  last_sig = TARGET_SIGNAL_0;
 
   DEBUG_EXEC (("gdb: child_resume (pid=%d, step=%d, sig=%d);\n",
 	       pid, step, sig));
@@ -1432,6 +1726,16 @@ child_resume (ptid_t ptid, int step, enum target_signal sig)
 
       if (th->context.ContextFlags)
 	{
+     if (debug_registers_changed)
+       {
+	  th->context.Dr0 = dr[0];
+	  th->context.Dr1 = dr[1];
+	  th->context.Dr2 = dr[2];
+	  th->context.Dr3 = dr[3];
+	  /* th->context.Dr6 = dr[6];
+	   FIXME: should we set dr6 also ?? */
+	  th->context.Dr7 = dr[7];
+       }
 	  CHECK (SetThreadContext (th->h, &th->context));
 	  th->context.ContextFlags = 0;
 	}
@@ -1519,9 +1823,15 @@ _initialize_inftarg (void)
 
   c = add_com ("dll-symbols", class_files, dll_symbol_command,
 	       "Load dll library symbols from FILE.");
-  c->completer = filename_completer;
+  set_cmd_completer (c, filename_completer);
 
   add_com_alias ("sharedlibrary", "dll-symbols", class_alias, 1);
+
+  add_show_from_set (add_set_cmd ("shell", class_support, var_boolean,
+				  (char *) &useshell,
+		 "Set use of shell to start subprocess.",
+				  &setlist),
+		     &showlist);
 
   add_show_from_set (add_set_cmd ("new-console", class_support, var_boolean,
 				  (char *) &new_console,
@@ -1562,8 +1872,53 @@ _initialize_inftarg (void)
   add_info ("dll", info_dll_command, "Status of loaded DLLs.");
   add_info_alias ("sharedlibrary", "dll", 1);
 
+  add_prefix_cmd ("w32", class_info, info_w32_command,
+                  "Print information specific to Win32 debugging.",
+                  &info_w32_cmdlist, "info w32 ", 0, &infolist);
+
+  add_cmd ("selector", class_info, display_selectors,
+           "Display selectors infos.",
+	   &info_w32_cmdlist);
+
   add_target (&child_ops);
 }
+
+/* Hardware watchpoint support, adapted from go32-nat.c code.  */
+
+/* Pass the address ADDR to the inferior in the I'th debug register.
+   Here we just store the address in dr array, the registers will be
+   actually set up when child_continue is called.  */
+void
+cygwin_set_dr (int i, CORE_ADDR addr)
+{
+  if (i < 0 || i > 3)
+    internal_error (__FILE__, __LINE__,
+		    "Invalid register %d in cygwin_set_dr.\n", i);
+  dr[i] = (unsigned) addr;
+  debug_registers_changed = 1;
+  debug_registers_used = 1;
+}
+
+/* Pass the value VAL to the inferior in the DR7 debug control
+   register.  Here we just store the address in D_REGS, the watchpoint
+   will be actually set up in child_wait.  */
+void
+cygwin_set_dr7 (unsigned val)
+{
+  dr[7] = val;
+  debug_registers_changed = 1;
+  debug_registers_used = 1;
+}
+
+/* Get the value of the DR6 debug status register from the inferior.
+   Here we just return the value stored in dr[6]
+   by the last call to thread_rec for current_event.dwThreadId id.  */
+unsigned
+cygwin_get_dr6 (void)
+{
+  return dr[6];
+}
+
 
 /* Determine if the thread referenced by "pid" is alive
    by "polling" it.  If WaitForSingleObject returns WAIT_OBJECT_0
@@ -1831,7 +2186,8 @@ _initialize_check_for_gdb_ini (void)
 	{
 	  int len = strlen (oldini);
 	  char *newini = alloca (len + 1);
-	  sprintf (newini, "%.*s.gdbinit", len - (sizeof ("gdb.ini") - 1), oldini);
+	  sprintf (newini, "%.*s.gdbinit",
+	    (int) (len - (sizeof ("gdb.ini") - 1)), oldini);
 	  warning ("obsolete '%s' found. Rename to '%s'.", oldini, newini);
 	}
     }

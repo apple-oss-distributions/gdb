@@ -117,25 +117,8 @@ target_map_name_to_register (char *str, int len)
 {
   int i;
 
-  /* First try target specific aliases. We try these first because on some 
-     systems standard names can be context dependent (eg. $pc on a 
-     multiprocessor can be could be any of several PCs).  */
-#ifdef REGISTER_NAME_ALIAS_HOOK
-  i = REGISTER_NAME_ALIAS_HOOK (str, len);
-  if (i >= 0)
-    return i;
-#endif
-
-  /* Search architectural register name space. */
-  for (i = 0; i < NUM_REGS; i++)
-    if (REGISTER_NAME (i) && len == strlen (REGISTER_NAME (i))
-	&& STREQN (str, REGISTER_NAME (i), len))
-      {
-	return i;
-      }
-
-  /* Try pseudo-registers, if any. */
-  for (i = NUM_REGS; i < NUM_REGS + NUM_PSEUDO_REGS; i++)
+  /* Search register name space. */
+  for (i = 0; i < NUM_REGS + NUM_PSEUDO_REGS; i++)
     if (REGISTER_NAME (i) && len == strlen (REGISTER_NAME (i))
 	&& STREQN (str, REGISTER_NAME (i), len))
       {
@@ -1167,7 +1150,7 @@ parse_exp_1 (char **stringptr, struct block *block, int comma)
   old_chain = make_cleanup (free_funcalls, 0 /*ignore*/);
   funcall_chain = 0;
 
-  expression_context_block = block ? block : get_selected_block ();
+  expression_context_block = block ? block : get_selected_block (0);
 
   namecopy = (char *) alloca (strlen (lexptr) + 1);
   expout_size = 10;

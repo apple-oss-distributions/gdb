@@ -1,3 +1,118 @@
+2002-04-07  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdb.texinfo (Bug Reporting): Document that the web is the
+	prefered way of submitting bug reports.
+	(Bug Reporting): Delete the s-mail address as the last resort.
+
+2002-04-05  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Target Architecture Definition): Delete
+	references to TARGET_WRITE_FP and write_fp.
+
+2002-03-27  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.texinfo: Document new commands dump, append, and restore.
+
+2002-03-27  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Releasing GDB): Revise the section `Before the
+	Branch'.
+
+2002-03-18  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdb.texinfo: Change all examples to @smallexample.
+	* gdbint.texinfo: Ditto.
+	
+2002-03-18  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Releasing GDB): Add section ``Versions and
+	Branches''.
+
+2002-03-18  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Releasing GDB): Add the section``Branch Commit
+	Policy''.
+
+2002-03-04  Fred Fish  <fnf@redhat.com>
+
+	* gdbint.texinfo: Fix a bunch of typos (alsways, mirrorred,
+	expresson, suports, dependant, trhe, perhaphs, situtations,
+	explictily, taged, oportunity, unfortunatly).
+
+2002-02-24  Andrew Cagney  <ac131313@redhat.com>
+
+	* Makefile.in (gdb.info): Add explicit path to gdb.texinfo.
+	Remove reference to 3.12.
+
+2002-02-23  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo: Include fdl.texi.
+	(Top): Add GNU Free Documentation License.
+	* Makefile.in (SFILES_INCLUDED): Add gpl.texi.
+	(gdbint.dvi, gdbint.pdf, gdbint.info): Add dependency on fdl.texi.
+	(gdbint_toc.html): Add dependency on gdb-cfg.texi and fdl.texi.
+	(gdbint.info): Add srcdir to include path.
+	* gdb.texinfo: Include gpl.texi.
+	(Top): Add Copying.
+	* gpl.texi: New file.
+
+2002-02-23  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Debugging GDB): Remove references to cygnus.com.
+
+2002-02-19  Pierre Muller  <muller@ics.u-strasbg.fr>
+
+	* gdb.texinfo: Document Cygwin native specific commands.
+
+2002-02-15  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.texinfo: Document gdbserver ``--attach'' command.
+
+2002-02-07  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.texinfo (overlays): Change @var(_ovly_debug_event)
+	to @code(_ovly_debug_event).
+
+2002-02-07  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdb.texinfo (How Overlays Work): Shrink the overlay diagram.
+
+2002-02-06  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.texinfo (overlays): Mention new magic symbol
+	'_ovly_debug_event', which allows GDB to keep better track
+	of overlays.
+
+2002-02-03  Eli Zaretskii  <eliz@is.elta.co.il>
+
+	* gdb.texinfo (Memory Region Attributes): Fix the wording.
+	Suggested by Dmitry Sivachenko.
+
+	* (<many nodes>): Fix the spelling and punctuation of "i.e.".
+
+2002-02-01  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.texinfo (set trust-readonly): Change value{gdbn} to value{GDBN}.
+
+2002-01-30  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.texinfo: (remote protocol): Gramatical fix-up.
+	(set trust-readonly-sections): Document.
+
+2002-01-29  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Releasing GDB): Revise and update.
+
+2002-01-28  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdbint.texinfo (Target Architecture Definition): Delete
+	description of TARGET_BYTE_ORDER_DEFAULT.
+
+2002-01-27  Eli Zaretskii  <eliz@is.elta.co.il>
+
+	* gdb.texinfo: Fix typos and markup.  From Dmitry Sivachenko
+	<mitya@cavia.pp.ru>.
+
 2002-01-23  Andrew Cagney  <ac131313@redhat.com>
 
 	* libgdb.texinfo: Delete file.

@@ -1,5 +1,5 @@
 /* Tcl/Tk command definitions for Insight - Registers
-   Copyright 2001 Free Software Foundation, Inc.
+   Copyright 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,7 +28,9 @@
 #include "gdbtk-cmds.h"
 
 /* This contains the previous values of the registers, since the last call to
-   gdb_changed_register_list.  */
+   gdb_changed_register_list.
+
+   It is an array of (NUM_REGS+NUM_PSEUDO_REGS)*MAX_REGISTER_RAW_SIZE bytes. */
 
 static char *old_regs = NULL;
 
@@ -107,7 +109,7 @@ static int
 gdb_register_info (ClientData clientData, Tcl_Interp *interp, int objc,
                    Tcl_Obj *CONST objv[])
 {
-  int regnum, index, result;
+  int index;
   void *argp;
   void (*func)(int, void *);
   static char *commands[] = {"changed", "name", "size", "value", NULL};
@@ -188,14 +190,10 @@ get_register_size (int regnum, void *arg)
  *    The value of the pc register.
  */
 static int
-get_pc_register (clientData, interp, objc, objv)
-     ClientData clientData;
-     Tcl_Interp *interp;
-     int objc;
-     Tcl_Obj *CONST objv[];
+get_pc_register (ClientData clientData, Tcl_Interp *interp,
+		 int objc, Tcl_Obj *CONST objv[])
 {
   char *buff;
-
   xasprintf (&buff, "0x%s", paddr_nz (read_register (PC_REGNUM)));
   Tcl_SetStringObj (result_ptr->obj_ptr, buff, -1);
   free(buff);
@@ -203,9 +201,7 @@ get_pc_register (clientData, interp, objc, objv)
 }
 
 static void
-get_register (regnum, fp)
-     int regnum;
-     void *fp;
+get_register (int regnum, void *fp)
 {
   struct type *reg_vtype;
   char raw_buffer[MAX_REGISTER_RAW_SIZE];
@@ -250,7 +246,7 @@ get_register (regnum, fp)
       for (j = 0; j < REGISTER_RAW_SIZE (regnum); j++)
 	{
 	  register int idx = TARGET_BYTE_ORDER == BFD_ENDIAN_BIG ? j
-	  : REGISTER_RAW_SIZE (regnum) - 1 - j;
+	    : REGISTER_RAW_SIZE (regnum) - 1 - j;
 	  sprintf (ptr, "%02x", (unsigned char) raw_buffer[idx]);
 	  ptr += 2;
 	}
@@ -270,9 +266,7 @@ get_register (regnum, fp)
 }
 
 static void
-get_register_name (regnum, argp)
-     int regnum;
-     void *argp;
+get_register_name (int regnum, void *argp)
 {
   /* Non-zero if the caller wants the register numbers, too.  */
   int numbers = (int) argp;
@@ -298,11 +292,9 @@ get_register_name (regnum, argp)
 /* This is a sort of mapcar function for operations on registers */
 
 static int
-map_arg_registers (objc, objv, func, argp)
-     int objc;
-     Tcl_Obj *CONST objv[];
-     void (*func) (int regnum, void *argp);
-     void *argp;
+map_arg_registers (int objc, Tcl_Obj *CONST objv[],
+		   void (*func) (int regnum, void *argp),
+		   void *argp)
 {
   int regnum, numregs;
 
@@ -358,22 +350,20 @@ map_arg_registers (objc, objv, func, argp)
 }
 
 static void
-register_changed_p (regnum, argp)
-     int regnum;
-     void *argp;		/* Ignored */
+register_changed_p (int regnum, void *argp)
 {
   char raw_buffer[MAX_REGISTER_RAW_SIZE];
 
   if (read_relative_register_raw_bytes (regnum, raw_buffer))
     return;
 
-  if (memcmp (&old_regs[REGISTER_BYTE (regnum)], raw_buffer,
+  if (memcmp (&old_regs[regnum * MAX_REGISTER_RAW_SIZE], raw_buffer,
 	      REGISTER_RAW_SIZE (regnum)) == 0)
     return;
 
   /* Found a changed register.  Save new value and return its number. */
 
-  memcpy (&old_regs[REGISTER_BYTE (regnum)], raw_buffer,
+  memcpy (&old_regs[regnum * MAX_REGISTER_RAW_SIZE], raw_buffer,
 	  REGISTER_RAW_SIZE (regnum));
 
   Tcl_ListObjAppendElement (NULL, result_ptr->obj_ptr, Tcl_NewIntObj (regnum));
@@ -382,11 +372,10 @@ register_changed_p (regnum, argp)
 static void
 setup_architecture_data ()
 {
-  /* don't trust REGISTER_BYTES to be zero. */
   if (old_regs != NULL)
     xfree (old_regs);
 
-  old_regs = xmalloc (REGISTER_BYTES + 1);
-  memset (old_regs, 0, REGISTER_BYTES + 1);
+  old_regs = xmalloc ((NUM_REGS + NUM_PSEUDO_REGS) * MAX_REGISTER_RAW_SIZE + 1);
+  memset (old_regs, 0, sizeof  (old_regs));
 }
 

@@ -34,12 +34,6 @@
 #include "symfile.h"		/* for overlay functions */
 #include "regcache.h"
 
-/* This is used to indicate that we don't know the format of the floating point
-   number.  Typically, this is useful for native ports, where the actual format
-   is irrelevant, since no conversions will be taking place.  */
-
-const struct floatformat floatformat_unknown;
-
 /* Basic byte-swapping routines.  GDB has needed these for a long time...
    All extract a target-format integer at ADDR which is LEN bytes long.  */
 
@@ -289,15 +283,15 @@ store_typed_address (void *buf, struct type *type, CORE_ADDR addr)
 
 
 
-/* Return a `value' with the contents of register REGNUM
-   in its virtual format, with the type specified by
-   REGISTER_VIRTUAL_TYPE.  
+/* Return a `value' with the contents of (virtual or cooked) register
+   REGNUM as found in the specified FRAME.  The register's type is
+   determined by REGISTER_VIRTUAL_TYPE.
 
-   NOTE: returns NULL if register value is not available.
-   Caller will check return value or die!  */
+   NOTE: returns NULL if register value is not available.  Caller will
+   check return value or die!  */
 
 struct value *
-value_of_register (int regnum)
+value_of_register (int regnum, struct frame_info *frame)
 {
   CORE_ADDR addr;
   int optim;
@@ -306,7 +300,7 @@ value_of_register (int regnum)
   enum lval_type lval;
 
   get_saved_register (raw_buffer, &optim, &addr,
-		      selected_frame, regnum, &lval);
+		      frame, regnum, &lval);
 
   if (register_cached (regnum) < 0)
     return NULL;		/* register value not available */
@@ -557,7 +551,7 @@ addresses have not been bound by the dynamic loader. Try again when executable i
 
 	if (frame == NULL)
 	  return 0;
-	b = get_frame_block (frame);
+	b = get_frame_block (frame, 0);
 
 	if (SYMBOL_CLASS (var) == LOC_REGPARM_ADDR)
 	  {

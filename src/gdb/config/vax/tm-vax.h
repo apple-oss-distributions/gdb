@@ -21,8 +21,6 @@
 
 #include "regcache.h"
 
-#define TARGET_BYTE_ORDER BFD_ENDIAN_LITTLE
-
 /* Offset from address of function to start of its code.
    Zero on most machines.  */
 
@@ -64,11 +62,6 @@ extern CORE_ADDR vax_skip_prologue (CORE_ADDR);
    but not always.  */
 
 #define DECR_PC_AFTER_BREAK 0
-
-/* Return 1 if P points to an invalid floating point value.
-   LEN is the length in bytes -- not relevant on the Vax.  */
-
-#define INVALID_FLOAT(p, len) ((*(short *) p & 0xff80) == 0x8000)
 
 /* Say how long (ordinary) registers are.  This is a piece of bogosity
    used in push_word and a few other places; REGISTER_RAW_SIZE is the

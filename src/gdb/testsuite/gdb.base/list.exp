@@ -1,4 +1,4 @@
-# Copyright 1992, 1994, 1995, 1996, 1997, 1998, 1999
+# Copyright 1992, 1994, 1995, 1996, 1997, 1998, 1999, 2002
 # Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
@@ -93,9 +93,11 @@ proc test_listsize {} {
     gdb_test "show listsize" "Number of source lines gdb will list by default is 10.*" "show default list size"
     
     # Show the default lines
+    # Note that remote targets that have debugging info for _start available will
+    # list the lines there instead of main, so we skip this test for remote targets.
     # The second case is for optimized code, it is still correct.
     
-    if ![isnative] {
+    if [is_remote target] {
 	runto_main;
 	unsupported "list default lines around main";
     } else {

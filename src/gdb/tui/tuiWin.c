@@ -1,5 +1,8 @@
 /* TUI window generic functions.
-   Copyright 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+
+   Copyright 1998, 1999, 2000, 2001, 2002 Free Software Foundation,
+   Inc.
+
    Contributed by Hewlett-Packard Company.
 
    This file is part of GDB.
@@ -23,6 +26,23 @@
    like resize, scrolling, scrolling, changing focus, etc.
 
    Author: Susan B. Macchia  */
+
+/* FIXME: cagney/2002-02-28: The GDB coding standard indicates that
+   "defs.h" should be included first.  Unfortunatly some systems
+   (currently Debian GNU/Linux) include the <stdbool.h> via <curses.h>
+   and they clash with "bfd.h"'s definiton of true/false.  The correct
+   fix is to remove true/false from "bfd.h", however, until that
+   happens, hack around it by including "config.h" and <curses.h>
+   first.  */
+
+#include "config.h"
+#ifdef HAVE_NCURSES_H       
+#include <ncurses.h>
+#else
+#ifdef HAVE_CURSES_H
+#include <curses.h>
+#endif
+#endif
 
 #include <string.h>
 #include <ctype.h>
@@ -280,7 +300,7 @@ _initialize_tuiWin (void)
 
   /* Define the classes of commands.
      They will appear in the help list in the reverse of this order.  */
-  add_cmd ("tui", class_tui, NO_FUNCTION,
+  add_cmd ("tui", class_tui, NULL,
 	   "Text User Interface commands.",
 	   &cmdlist);
 

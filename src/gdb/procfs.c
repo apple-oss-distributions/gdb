@@ -23,6 +23,7 @@ Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "inferior.h"
 #include "target.h"
 #include "gdbcore.h"
+#include "elf-bfd.h"		/* for elfcore_write_* */
 #include "gdbcmd.h"
 #include "gdbthread.h"
 
@@ -55,7 +56,7 @@ Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
  *   Unixware
  *   AIX5
  *
- * /proc works by immitating a file system: you open a simulated file
+ * /proc works by imitating a file system: you open a simulated file
  * that represents the process you wish to interact with, and
  * perform operations on that "file" in order to examine or change
  * the state of the other process.
@@ -5382,7 +5383,7 @@ find_memory_regions_callback (struct prmap *map,
 					   void *),
 			      void *data)
 {
-  return (*func) (host_pointer_to_address ((void *) map->pr_vaddr),
+  return (*func) ((CORE_ADDR) map->pr_vaddr,
 		  map->pr_size, 
 		  (map->pr_mflags & MA_READ) != 0,
 		  (map->pr_mflags & MA_WRITE) != 0,
@@ -5699,7 +5700,7 @@ Specify keyword 'mappings' for detailed info on memory mappings.");
 
 
 
-/* miscelaneous stubs:                                             */
+/* miscellaneous stubs:                                             */
 /* The following satisfy a few random symbols mostly created by    */
 /* the solaris threads implementation, which I will chase down     */
 /* later.        */
@@ -5716,6 +5717,8 @@ procfs_first_available (void)
 }
 
 /* ===================  GCORE .NOTE "MODULE" =================== */
+#if defined (UNIXWARE) || defined (PIOCOPENLWP) || defined (PCAGENT)
+/* gcore only implemented on solaris and unixware (so far) */
 
 static char *
 procfs_do_thread_registers (bfd *obfd, ptid_t ptid, 
@@ -5728,12 +5731,21 @@ procfs_do_thread_registers (bfd *obfd, ptid_t ptid,
   merged_pid = TIDGET (ptid) << 16 | PIDGET (ptid);
 
   fill_gregset (&gregs, -1);
+#if defined (UNIXWARE)
+  note_data = (char *) elfcore_write_lwpstatus (obfd,
+						note_data,
+						note_size,
+						merged_pid, 
+						stop_signal,
+						&gregs);
+#else
   note_data = (char *) elfcore_write_prstatus (obfd,
-                                               note_data,
-                                               note_size,
+					       note_data,
+					       note_size,
 					       merged_pid, 
 					       stop_signal,
-                                               &gregs);
+					       &gregs);
+#endif
   fill_fpregset (&fpregs, -1);
   note_data = (char *) elfcore_write_prfpreg (obfd,
 					      note_data,
@@ -5750,16 +5762,15 @@ struct procfs_corefile_thread_data {
 };
 
 static int
-procfs_corefile_thread_callback (struct thread_info *ti, void *data)
+procfs_corefile_thread_callback (procinfo *pi, procinfo *thread, void *data)
 {
   struct procfs_corefile_thread_data *args = data;
-  procinfo *pi = find_procinfo (PIDGET (ti->ptid), TIDGET (ti->ptid));
 
-  if (pi != NULL && TIDGET (ti->ptid) != 0)
+  if (pi != NULL && thread->tid != 0)
     {
       ptid_t saved_ptid = inferior_ptid;
-      inferior_ptid = ti->ptid;
-      args->note_data = procfs_do_thread_registers (args->obfd, ti->ptid, 
+      inferior_ptid = MERGEPID (pi->pid, thread->tid);
+      args->note_data = procfs_do_thread_registers (args->obfd, inferior_ptid, 
 						    args->note_data, 
 						    args->note_size);
       inferior_ptid = saved_ptid;
@@ -5777,6 +5788,7 @@ procfs_make_note_section (bfd *obfd, int *note_size)
   char psargs[80] = {'\0'};
   procinfo *pi = find_procinfo_or_die (PIDGET (inferior_ptid), 0);
   char *note_data = NULL;
+  char *inf_args;
   struct procfs_corefile_thread_data thread_args;
 
   if (get_exec_file (0))
@@ -5784,11 +5796,14 @@ procfs_make_note_section (bfd *obfd, int *note_size)
       strncpy (fname, strrchr (get_exec_file (0), '/') + 1, sizeof (fname));
       strncpy (psargs, get_exec_file (0), 
 	       sizeof (psargs));
-      if (get_inferior_args ())
+
+      inf_args = get_inferior_args ();
+      if (inf_args && *inf_args &&
+	  strlen (inf_args) < ((int) sizeof (psargs) - (int) strlen (psargs)))
 	{
 	  strncat (psargs, " ", 
 		   sizeof (psargs) - strlen (psargs));
-	  strncat (psargs, get_inferior_args (), 
+	  strncat (psargs, inf_args, 
 		   sizeof (psargs) - strlen (psargs));
 	}
     }
@@ -5799,10 +5814,18 @@ procfs_make_note_section (bfd *obfd, int *note_size)
 					       fname, 
 					       psargs);
 
+#ifdef UNIXWARE
+  fill_gregset (&gregs, -1);
+  note_data = elfcore_write_pstatus (obfd, note_data, note_size, 
+				     PIDGET (inferior_ptid), 
+				     stop_signal, &gregs);
+#endif
+
   thread_args.obfd = obfd;
   thread_args.note_data = note_data;
   thread_args.note_size = note_size;
-  iterate_over_threads (procfs_corefile_thread_callback, &thread_args);
+  proc_iterate_over_threads (pi, procfs_corefile_thread_callback, &thread_args);
+
   if (thread_args.note_data == note_data)
     {
       /* iterate_over_threads didn't come up with any threads;
@@ -5818,5 +5841,12 @@ procfs_make_note_section (bfd *obfd, int *note_size)
   make_cleanup (xfree, note_data);
   return note_data;
 }
-
+#else /* !(Solaris or Unixware) */
+static char *
+procfs_make_note_section (bfd *obfd, int *note_size)
+{
+  error ("gcore not implemented for this host.");
+  return NULL;	/* lint */
+}
+#endif /* Solaris or Unixware */
 /* ===================  END GCORE .NOTE "MODULE" =================== */

@@ -1,6 +1,6 @@
 /* Evaluate expressions for GDB.
    Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
-   1996, 1997, 1998, 1999, 2000, 2001
+   1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -451,8 +451,7 @@ evaluate_subexp_standard (struct type *expect_type,
     case OP_REGISTER:
       {
 	int regno = longest_to_int (exp->elts[pc + 1].longconst);
-	struct value *val = value_of_register (regno);
-
+	struct value *val = value_of_register (regno, selected_frame);
 	(*pos) += 2;
 	if (val == NULL)
 	  error ("Value of register %s not available.", REGISTER_NAME (regno));
@@ -712,6 +711,7 @@ evaluate_subexp_standard (struct type *expect_type,
 
 	int using_gcc = 0;
 	int struct_return = 0;
+	int sub_no_side = 0;
 
 	static int cached_values = 0;
 	static struct cached_value *msg_send = NULL;
@@ -721,6 +721,8 @@ evaluate_subexp_standard (struct type *expect_type,
 	struct value *target = NULL;
 	struct value *method = NULL;
 	struct value *called_method = NULL; 
+
+	struct type *selector_type = NULL;
 
 	struct value *ret = NULL;
 	struct symbol *sym = NULL;
@@ -732,7 +734,11 @@ evaluate_subexp_standard (struct type *expect_type,
 
 	(*pos) += 3;
 
-	target = evaluate_subexp (0, exp, pos, (noside == EVAL_AVOID_SIDE_EFFECTS) ? EVAL_NORMAL : noside);
+	selector_type = lookup_pointer_type (builtin_type_void);
+	sub_no_side = (noside == EVAL_AVOID_SIDE_EFFECTS) ? EVAL_NORMAL : noside;
+
+	target = evaluate_subexp (selector_type, exp, pos, sub_no_side);
+
 	if (value_as_long (target) == 0)
  	  return value_from_longest (builtin_type_long, 0);
 	
@@ -1124,15 +1130,10 @@ evaluate_subexp_standard (struct type *expect_type,
       if (op == STRUCTOP_STRUCT || op == STRUCTOP_PTR)
 	{
 	  int static_memfuncp;
-	  struct value *temp = arg2;
 	  char tstr[256];
 
 	  /* Method invocation : stuff "this" as first parameter */
-	  /* pai: this used to have lookup_pointer_type for some reason,
-	   * but temp is already a pointer to the object */
-	  argvec[1]
-	    = value_from_pointer (VALUE_TYPE (temp),
-				  VALUE_ADDRESS (temp) + VALUE_OFFSET (temp));
+	  argvec[1] = arg2;
 	  /* Name of method from expression */
 	  strcpy (tstr, &exp->elts[pc2 + 2].string);
 
@@ -1158,11 +1159,17 @@ evaluate_subexp_standard (struct type *expect_type,
 	  else
 	    /* Non-C++ case -- or no overload resolution */
 	    {
-	      temp = arg2;
+	      struct value *temp = arg2;
 	      argvec[0] = value_struct_elt (&temp, argvec + 1, tstr,
 					    &static_memfuncp,
 					    op == STRUCTOP_STRUCT
 				       ? "structure" : "structure pointer");
+	      /* value_struct_elt updates temp with the correct value
+	 	 of the ``this'' pointer if necessary, so modify argvec[1] to
+		 reflect any ``this'' changes.  */
+	      arg2 = value_from_longest (lookup_pointer_type(VALUE_TYPE (temp)),
+			     VALUE_ADDRESS (temp) + VALUE_OFFSET (temp)
+			     + VALUE_EMBEDDED_OFFSET (temp));
 	      argvec[1] = arg2;	/* the ``this'' pointer */
 	    }
 

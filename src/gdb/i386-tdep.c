@@ -1,7 +1,7 @@
 /* Intel 386 target-dependent stuff.
-   Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+
+   Copyright 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
+   1997, 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -40,9 +40,6 @@
 #include "elf-bfd.h"
 
 #include "i386-tdep.h"
-
-#undef XMALLOC
-#define XMALLOC(TYPE) ((TYPE*) xmalloc (sizeof (TYPE)))
 
 /* Names of the registers.  The first 10 registers match the register
    numbering scheme used by GCC for stabs and DWARF.  */
@@ -686,8 +683,8 @@ i386_frame_init_saved_regs (struct frame_info *fip)
 
 /* Return PC of first real instruction.  */
 
-int
-i386_skip_prologue (int pc)
+CORE_ADDR
+i386_skip_prologue (CORE_ADDR pc)
 {
   unsigned char op;
   int i;
@@ -839,6 +836,16 @@ i386_pop_frame (void)
 
 
 #ifdef GET_LONGJMP_TARGET
+
+/* FIXME: Multi-arching does not set JB_PC and JB_ELEMENT_SIZE yet.  
+   Fill in with dummy value to enable compilation.  */
+#ifndef JB_PC
+#define JB_PC 0
+#endif /* JB_PC */
+
+#ifndef JB_ELEMENT_SIZE
+#define JB_ELEMENT_SIZE 4
+#endif /* JB_ELEMENT_SIZE */
 
 /* Figure out where the longjmp will land.  Slurp the args out of the
    stack.  We expect the first arg to be a pointer to the jmp_buf
@@ -1297,9 +1304,9 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
        arches != NULL;
        arches = gdbarch_list_lookup_by_info (arches->next, &info))
     {
-      if (gdbarch_tdep (current_gdbarch)->os_ident != os_ident)
-        continue;
-      return arches->gdbarch;
+      tdep = gdbarch_tdep (arches->gdbarch);
+      if (tdep && tdep->os_ident == os_ident)
+        return arches->gdbarch;
     }
 
   /* Allocate space for the new architecture.  */

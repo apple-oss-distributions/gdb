@@ -111,7 +111,7 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
   static char default_shell_file[] = SHELL_FILE;
   int len;
   /* Set debug_fork then attach to the child while it sleeps, to debug. */
-  static int debug_fork = 0;
+  static int debug_fork = 1;
   /* This is set to the result of setpgrp, which if vforked, will be visible
      to you in the parent process.  It's only used by humans for debugging.  */
   static int debug_setpgrp = 657473;
@@ -204,6 +204,7 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
 	  switch (*p)
 	    {
 	    case '\'':
+	    case '!':
 	    case '"':
 	    case '(':
 	    case ')':
@@ -235,6 +236,8 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
 	    {
 	      if (*p == '\'')
 		strcat (shell_command, "'\\''");
+	      else if (*p == '!')
+		strcat (shell_command, "\\!");
 	      else
 		strncat (shell_command, p, 1);
 	    }

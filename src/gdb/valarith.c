@@ -43,12 +43,50 @@ static struct value *value_subscripted_rvalue (struct value *, struct value *, i
 void _initialize_valarith (void);
 
 
+/* Given a pointer, return the size of its target.
+   If the pointer type is void *, then return 1.
+   If the target type is incomplete, then error out.
+   This isn't a general purpose function, but just a 
+   helper for value_sub & value_add.
+*/
+
+static LONGEST
+find_size_for_pointer_math (struct type *ptr_type)
+{
+  LONGEST sz = -1;
+  struct type *ptr_target;
+
+  ptr_target = check_typedef (TYPE_TARGET_TYPE (ptr_type));
+
+  sz = TYPE_LENGTH (ptr_target);
+  if (sz == 0)
+    {
+      if (TYPE_CODE (ptr_type) == TYPE_CODE_VOID)
+	sz = 1;
+      else
+	{
+	  char *name;
+	  
+	  name = TYPE_NAME (ptr_target);
+	  if (name == NULL)
+	    name = TYPE_TAG_NAME (ptr_target);
+	  if (name == NULL)
+	    error ("Cannot perform pointer math on incomplete types, "
+		   "try casting to a known type, or void *.");
+	  else
+	    error ("Cannot perform pointer math on incomplete type \"%s\", "
+		   "try casting to a known type, or void *.", name);
+	}
+    }
+  return sz;
+}
+
 struct value *
 value_add (struct value *arg1, struct value *arg2)
 {
   struct value *valint;
   struct value *valptr;
-  register int len;
+  LONGEST sz;
   struct type *type1, *type2, *valptrtype;
 
   COERCE_NUMBER (arg1);
@@ -77,12 +115,12 @@ value_add (struct value *arg1, struct value *arg2)
 	  valint = arg1;
 	  valptrtype = type2;
 	}
-      len = TYPE_LENGTH (check_typedef (TYPE_TARGET_TYPE (valptrtype)));
-      if (len == 0)
-	len = 1;		/* For (void *) */
+
+      sz = find_size_for_pointer_math (valptrtype);
+
       retval = value_from_pointer (valptrtype,
 				   value_as_address (valptr)
-				   + (len * value_as_long (valint)));
+				   + (sz * value_as_long (valint)));
       VALUE_BFD_SECTION (retval) = VALUE_BFD_SECTION (valptr);
       return retval;
     }
@@ -104,7 +142,8 @@ value_sub (struct value *arg1, struct value *arg2)
       if (TYPE_CODE (type2) == TYPE_CODE_INT)
 	{
 	  /* pointer - integer.  */
-	  LONGEST sz = TYPE_LENGTH (check_typedef (TYPE_TARGET_TYPE (type1)));
+	  LONGEST sz = find_size_for_pointer_math (type1);
+
 	  return value_from_pointer (type1,
 				     (value_as_address (arg1)
 				      - (sz * value_as_long (arg2))));
@@ -464,7 +503,7 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
   struct value **argvec;
   char *ptr, *mangle_ptr;
   char tstr[13], mangle_tstr[13];
-  int static_memfuncp;
+  int static_memfuncp, nargs;
 
   COERCE_REF (arg1);
   COERCE_ENUM (arg1);
@@ -475,9 +514,11 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
   if (TYPE_CODE (check_typedef (VALUE_TYPE (arg1))) != TYPE_CODE_STRUCT)
     error ("Can't do that unary op on that type");	/* FIXME be explicit */
 
-  argvec = (struct value **) alloca (sizeof (struct value *) * 3);
+  argvec = (struct value **) alloca (sizeof (struct value *) * 4);
   argvec[1] = value_addr (arg1);
   argvec[2] = 0;
+
+  nargs = 1;
 
   /* make the right function name up */
   strcpy (tstr, "operator__");
@@ -490,13 +531,19 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
       strcpy (ptr, "++");
       break;
     case UNOP_PREDECREMENT:
-      strcpy (ptr, "++");
+      strcpy (ptr, "--");
       break;
     case UNOP_POSTINCREMENT:
       strcpy (ptr, "++");
+      argvec[2] = value_from_longest (builtin_type_int, 0);
+      argvec[3] = 0;
+      nargs ++;
       break;
     case UNOP_POSTDECREMENT:
-      strcpy (ptr, "++");
+      strcpy (ptr, "--");
+      argvec[2] = value_from_longest (builtin_type_int, 0);
+      argvec[3] = 0;
+      nargs ++;
       break;
     case UNOP_LOGICAL_NOT:
       strcpy (ptr, "!");
@@ -521,6 +568,7 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
       if (static_memfuncp)
 	{
 	  argvec[1] = argvec[0];
+	  nargs --;
 	  argvec++;
 	}
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
@@ -530,7 +578,7 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
 	    = TYPE_TARGET_TYPE (check_typedef (VALUE_TYPE (argvec[0])));
 	  return value_zero (return_type, VALUE_LVAL (arg1));
 	}
-      return call_function_by_hand (argvec[0], 1 - static_memfuncp, argvec + 1);
+      return call_function_by_hand (argvec[0], nargs, argvec + 1);
     }
   error ("member function %s not found", tstr);
   return 0;			/* For lint -- never reached */
@@ -750,7 +798,7 @@ value_binop (struct value *arg1, struct value *arg2, enum exp_opcode op)
         case BINOP_EXP:
           v = pow (v1, v2);
           if (errno)
-            error ("Cannot perform exponentiation: %s", strerror (errno));
+            error ("Cannot perform exponentiation: %s", safe_strerror (errno));
           break;
 
 	default:
@@ -888,7 +936,7 @@ value_binop (struct value *arg1, struct value *arg2, enum exp_opcode op)
             case BINOP_EXP:
               v = pow (v1, v2);
               if (errno)
-                error ("Cannot perform exponentiation: %s", strerror (errno));
+                error ("Cannot perform exponentiation: %s", safe_strerror (errno));
               break;
 
 	    case BINOP_REM:
@@ -1012,7 +1060,7 @@ value_binop (struct value *arg1, struct value *arg2, enum exp_opcode op)
             case BINOP_EXP:
               v = pow (v1, v2);
               if (errno)
-                error ("Cannot perform exponentiation: %s", strerror (errno));
+                error ("Cannot perform exponentiation: %s", safe_strerror (errno));
 	      break;
 
 	    case BINOP_REM:

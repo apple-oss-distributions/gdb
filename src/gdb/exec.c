@@ -896,9 +896,8 @@ and it is the program executed when you use the `run' command.\n\
 If FILE cannot be found as specified, your execution directory path\n\
 ($PATH) is searched for a command of that name.\n\
 No arg means to have no executable file and no symbols.", &cmdlist);
-      c->completer = filename_completer;
-      c->completer_word_break_characters =
-	gdb_completer_filename_word_break_characters;
+      set_cmd_completer (c, filename_completer);
+      /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
     }
 
   c = add_cmd ("exec-file", class_files, exec_file_command,
@@ -906,9 +905,8 @@ No arg means to have no executable file and no symbols.", &cmdlist);
 If FILE cannot be found as specified, your execution directory path\n\
 is searched for a command of that name.\n\
 No arg means have no executable file.", &cmdlist);
-  c->completer = filename_completer;
-  c->completer_word_break_characters =
-    gdb_completer_filename_word_break_characters;
+  set_cmd_completer (c, filename_completer);
+  /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
 
   add_com ("section", class_files, set_section_command,
 	   "Change the base address of section SECTION of the exec file to ADDR.\n\

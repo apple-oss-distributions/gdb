@@ -61,7 +61,7 @@
 #endif
 
 #ifdef NM_NEXTSTEP
-#include "nextstep-nat-dyld.h"
+#include "macosx-nat-dyld.h"
 #endif
 
 #ifndef O_BINARY
@@ -69,7 +69,7 @@
 #endif
 
 #if HAVE_MMAP
-static boolean mmap_symfiles_flag = 0;
+static boolean mmap_symbol_files_flag = 0;
 #endif /* HAVE_MMAP */
 
 #ifdef HPUXHPPA
@@ -602,6 +602,9 @@ syms_from_objfile (struct objfile *objfile, struct section_addr_info *addrs,
   init_entry_point_info (objfile);
   find_sym_fns (objfile);
 
+  if (objfile->sf == NULL)
+    return;	/* No symbols. */
+
   /* Make sure that partially constructed symbol tables will be cleaned up
      if an error occurs during symbol reading.  */
   old_chain = make_cleanup_free_objfile (objfile);
@@ -951,6 +954,9 @@ symbol_file_add_bfd (abfd, from_tty, addrs, mainline, flags, symflags, mapaddr, 
 	}
     }
 
+  if (objfile->sf == NULL)
+    return objfile;	/* No symbols. */
+
   new_symfile_objfile (objfile, mainline, from_tty);
 
   if (target_new_objfile_hook)
@@ -990,7 +996,7 @@ symbol_file_add_main_1 (char *args, int from_tty, int flags)
 #endif
 
 #ifdef NM_NEXTSTEP
-  next_init_dyld_symfile (symfile_objfile);
+  macosx_init_dyld_symfile (symfile_objfile);
 #endif
 
   /* Getting new symbols may change our opinion about
@@ -1178,17 +1184,12 @@ symfile_bfd_open (const char *name)
     }
   sym_bfd->cacheable = 1;
 
-#if 0 && HAVE_MMAP
-  if (mmap_symfiles_flag)
+#if HAVE_MMAP
+  if (mmap_symbol_files_flag)
     {
-      if (bfd_supports_mmap ())
-	{
-	  if (!bfd_mmap_file (sym_bfd))
-	    {
-	      error ("\"%s\": could not mmap file for read: %s",
-		     name, bfd_errmsg (bfd_get_error ()));
-	    }
-	}
+      if (!bfd_mmap_file (sym_bfd, (void *) -1))
+	error ("\"%s\": could not mmap file for read: %s",
+	       name, bfd_errmsg (bfd_get_error ()));
     }
 #endif /* HAVE_MMAP */
 
@@ -1267,6 +1268,11 @@ find_sym_fns (struct objfile *objfile)
   struct sym_fns *sf;
   enum bfd_flavour our_flavour = bfd_get_flavour (objfile->obfd);
   char *our_target = bfd_get_target (objfile->obfd);
+
+  if (our_flavour == bfd_target_srec_flavour
+      || our_flavour == bfd_target_ihex_flavour
+      || our_flavour == bfd_target_tekhex_flavour)
+    return;	/* No symbols. */
 
   /* Special kludge for apollo.  See dstread.c.  */
   if (STREQN (our_target, "apollo", 6))
@@ -1561,6 +1567,7 @@ static void
 add_symbol_file_command (char *args, int from_tty)
 {
   char *filename = NULL;
+  char *prefix = NULL;
   CORE_ADDR text_addr;
   CORE_ADDR mapaddr = 0;
   int flags = OBJF_USERLOADED;
@@ -1619,14 +1626,6 @@ add_symbol_file_command (char *args, int from_tty)
 	  filename = tilde_expand (arg);
 	  make_cleanup (xfree, filename);
 	}
-      else if (argcnt == 1)
-        {
-          /* The second argument is always the text address at which
-             to load the program. */
-	  sect_opts[section_index].name = ".text";
-	  sect_opts[section_index].value = arg;
-	  section_index++;		  
-        }
       else
 	{
 	  /* It's an option (starting with '-') or it's an argument
@@ -1634,23 +1633,37 @@ add_symbol_file_command (char *args, int from_tty)
 
 	  if (*arg == '-')
 	    {
-#if 0
-	      if (STREQ (arg, "-mapaddr")) {
-		char *atmp = args;
-		if (*atmp == '\000')
-		error ("usage: add-symbol-file -mapaddr <address> ...");
-		while ((*args != '\000') && !isspace (*args))
+	      if (strcmp (arg, "-mapaddr") == 0)
 		{
-		  args++;
+		  char *atmp = args;
+		  if (*atmp == '\000')
+		    error ("usage: map address must be a valid address");
+		  while ((*args != '\000') && !isspace (*args))
+		    {
+		      args++;
+		    }
+		  if (*args != '\000')
+		    {
+		      *args++ = '\000';
+		    }
+		  mapaddr = parse_and_eval_address (atmp);
 		}
-		if (*args != '\000')
+	      if (strcmp (arg, "-prefix") == 0)
 		{
-		  *args++ = '\000';
+		  char *atmp = args;
+		  if (*atmp == '\000')
+		    error ("usage: prefix must be a valid string");
+		  while ((*args != '\000') && !isspace (*args))
+		    {
+		      args++;
+		    }
+		  if (*args != '\000')
+		    {
+		      *args++ = '\000';
+		    }
+		  prefix = xstrdup (atmp);
 		}
-		mapaddr = parse_and_eval_address (atmp);
-	      } else
-#endif
-	      if (strcmp (arg, "-mapped") == 0)
+	      else if (strcmp (arg, "-mapped") == 0)
 		flags |= OBJF_MAPPED;
 	      else if (strcmp (arg, "-readnow") == 0)
 		flags |= OBJF_READNOW;
@@ -1677,7 +1690,7 @@ add_symbol_file_command (char *args, int from_tty)
 		      section_index++;		  
 		    }
 		  else
-		    error ("USAGE: add-symbol-file <filename> <textaddress> [-mapped] [-readnow] [-s <secname> <addr>]*");
+		    error ("USAGE: add-symbol-file <filename> [-mapped] [-readnow] [-s <secname> <addr>]*");
 	      }
 	  }
       argcnt++;
@@ -1721,7 +1734,7 @@ add_symbol_file_command (char *args, int from_tty)
   if (from_tty && (!query ("%s", "")))
     error ("Not confirmed.");
 
-  symbol_file_add (filename, from_tty, &section_addrs, 0, flags, symflags, 0, NULL);
+  symbol_file_add (filename, from_tty, &section_addrs, 0, flags, symflags, mapaddr, prefix);
 
   /* Getting new symbols may change our opinion about what is
      frameless.  */
@@ -1872,12 +1885,10 @@ reread_symbols (void)
 	      objfile->free_psymtabs = NULL;
 	      objfile->msymbols = NULL;
 	      objfile->minimal_symbol_count = 0;
-#if 0
 	      memset (&objfile->msymbol_hash, 0,
 		      sizeof (objfile->msymbol_hash));
 	      memset (&objfile->msymbol_demangled_hash, 0,
 		      sizeof (objfile->msymbol_demangled_hash));
-#endif
 	      objfile->minimal_symbols_demangled = 0;
 	      objfile->fundamental_types = NULL;
 	      if (objfile->sf != NULL)
@@ -2756,7 +2767,7 @@ init_psymbol_list (struct objfile *objfile, int total_symbols)
 
 /* Overlay debugging state: */
 
-int overlay_debugging = 0;	/* 0 == off, 1 == manual, -1 == auto */
+enum overlay_debugging_state overlay_debugging = ovly_off;
 int overlay_cache_invalid = 0;	/* True if need to refresh mapped state */
 
 /* Target vector for refreshing overlay mapped state */
@@ -2813,9 +2824,9 @@ overlay_is_mapped (struct obj_section *osect)
   switch (overlay_debugging)
     {
     default:
-    case 0:
+    case ovly_off:
       return 0;			/* overlay debugging off */
-    case -1:			/* overlay debugging automatic */
+    case ovly_auto:		/* overlay debugging automatic */
       /* Unles there is a target_overlay_update function, 
          there's really nothing useful to do here (can't really go auto)  */
       if (target_overlay_update)
@@ -2829,7 +2840,7 @@ overlay_is_mapped (struct obj_section *osect)
 	    (*target_overlay_update) (osect);
 	}
       /* fall thru to manual case */
-    case 1:			/* overlay debugging manual */
+    case ovly_on:		/* overlay debugging manual */
       return osect->ovly_mapped == 1;
     }
 }
@@ -3143,7 +3154,8 @@ the 'overlay manual' command.");
 static void
 overlay_auto_command (char *args, int from_tty)
 {
-  overlay_debugging = -1;
+  overlay_debugging = ovly_auto;
+  enable_overlay_breakpoints ();
   if (info_verbose)
     printf_filtered ("Automatic overlay debugging enabled.");
 }
@@ -3155,7 +3167,8 @@ overlay_auto_command (char *args, int from_tty)
 static void
 overlay_manual_command (char *args, int from_tty)
 {
-  overlay_debugging = 1;
+  overlay_debugging = ovly_on;
+  disable_overlay_breakpoints ();
   if (info_verbose)
     printf_filtered ("Overlay debugging enabled.");
 }
@@ -3167,7 +3180,8 @@ overlay_manual_command (char *args, int from_tty)
 static void
 overlay_off_command (char *args, int from_tty)
 {
-  overlay_debugging = 0;
+  overlay_debugging = ovly_off;
+  disable_overlay_breakpoints ();
   if (info_verbose)
     printf_filtered ("Overlay debugging disabled.");
 }
@@ -3525,7 +3539,7 @@ _initialize_symfile (void)
 
 #if HAVE_MMAP
   c = add_set_cmd ("mmap-symbol-files", class_obscure, var_boolean,
-		   (char *) &mmap_symfiles_flag,
+		   (char *) &mmap_symbol_files_flag,
 	 "Set if GDB should use mmap() to read from external symbol files.",
 		   &setlist);
   add_show_from_set (c, &showlist);
@@ -3540,17 +3554,15 @@ Re-load the symbols from all known object files.",
 	       "Usage: remove-symbol-file FILE\n\
 Unload the symbols from FILE.",
 	       &cmdlist);
-  c->completer = filename_completer;
-  c->completer_word_break_characters =
-    gdb_completer_filename_word_break_characters;
+  set_cmd_completer (c, filename_completer);
+  /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
 
   c = add_cmd ("symbol-file", class_files, symbol_file_command,
 	       "Load symbol table from executable file FILE.\n\
 The `file' command can also load symbol tables, as well as setting the file\n\
 to execute.", &cmdlist);
-  c->completer = filename_completer;
-  c->completer_word_break_characters =
-    gdb_completer_filename_word_break_characters;
+  set_cmd_completer (c, filename_completer);
+  /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
 
   c = add_cmd ("add-symbol-file", class_files, add_symbol_file_command,
 	       "Usage: add-symbol-file FILE ADDR [-s <SECT> <SECT_ADDR> -s <SECT> <SECT_ADDR> ...]\n\
@@ -3558,11 +3570,10 @@ Load the symbols from FILE, assuming FILE has been dynamically loaded.\n\
 ADDR is the starting address of the file's text.\n\
 The optional arguments are section-name section-address pairs and\n\
 should be specified if the data and bss segments are not contiguous\n\
-with the text. SECT is a section name to be loaded at SECT_ADDR.",
+with the text.  SECT is a section name to be loaded at SECT_ADDR.",
 	       &cmdlist);
-  c->completer = filename_completer;
-  c->completer_word_break_characters =
-    gdb_completer_filename_word_break_characters;
+  set_cmd_completer (c, filename_completer);
+  /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
 
   c = add_cmd ("add-shared-symbol-files", class_files,
 	       add_shared_symbol_files_command,
@@ -3574,9 +3585,8 @@ with the text. SECT is a section name to be loaded at SECT_ADDR.",
   c = add_cmd ("load", class_files, load_command,
 	       "Dynamically load FILE into the running program, and record its symbols\n\
 for access from GDB.", &cmdlist);
-  c->completer = filename_completer;
-  c->completer_word_break_characters =
-    gdb_completer_filename_word_break_characters;
+  set_cmd_completer (c, filename_completer);
+  /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
 
   add_show_from_set
     (add_set_cmd ("symbol-reloading", class_support, var_boolean,
@@ -3617,7 +3627,7 @@ for access from GDB.", &cmdlist);
 		   "Set mapping between filename extension and source language.\n\
 Usage: set extension-language .foo bar",
 		   &setlist);
-  c->function.cfunc = set_ext_lang_command;
+  set_cmd_cfunc (c, set_ext_lang_command);
 
   add_info ("extensions", info_ext_lang_command,
 	    "All filename extensions associated with a source language.");

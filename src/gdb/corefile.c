@@ -100,13 +100,13 @@ core_file_command (char *args, int from_tty)
   if (t == NULL)
     error ("GDB can't read core files on this machine.");
 
-  if (cleanups != NULL)
-    do_cleanups (cleanups);
-
   if (!filename)
     (t->to_detach) (filename, from_tty);
   else
     (t->to_open) (filename, from_tty);
+
+  if (cleanups != NULL)
+    do_cleanups (cleanups);
 }
 
 
@@ -477,16 +477,15 @@ _initialize_core (void)
 	       "Use FILE as core dump for examining memory and registers.\n\
 No arg means have no core file.  This command has been superseded by the\n\
 `target core' and `detach' commands.", &cmdlist);
-  c->completer = filename_completer;
-  c->completer_word_break_characters =
-    gdb_completer_filename_word_break_characters;
+  set_cmd_completer (c, filename_completer);
+  /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
 
   c = add_set_cmd ("gnutarget", class_files, var_string_noescape,
 		   (char *) &gnutarget_string,
 		   "Set the current BFD target.\n\
 Use `set gnutarget auto' to specify automatic detection.",
 		   &setlist);
-  c->function.sfunc = set_gnutarget_command;
+  set_cmd_sfunc (c, set_gnutarget_command);
   add_show_from_set (c, &showlist);
 
   if (getenv ("GNUTARGET"))

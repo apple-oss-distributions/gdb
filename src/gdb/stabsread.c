@@ -242,7 +242,7 @@ static struct complaint const_vol_complaint =
 {"const/volatile indicator missing, got '%c'", 0, 0};
 
 static struct complaint error_type_complaint =
-{"debug info mismatch between compiler and debugger", 0, 0};
+{"couldn't parse type; debugger out of date?", 0, 0};
 
 static struct complaint invalid_member_complaint =
 {"invalid (minimal) member type data format at symtab pos %d.", 0, 0};
@@ -2567,7 +2567,13 @@ again:
 	  }
 	else if (type_size >= 0 || is_string)
 	  {
-	    *type = *xtype;
+	    /* This is the absolute wrong way to construct types.  Every
+	       other debug format has found a way around this problem and
+	       the related problems with unnecessarily stubbed types;
+	       someone motivated should attempt to clean up the issue
+	       here as well.  Once a type pointed to has been created it
+	       should not be modified.  */
+	    replace_type (type, xtype);
 	    TYPE_NAME (type) = NULL;
 	    TYPE_TAG_NAME (type) = NULL;
 	  }
@@ -2615,6 +2621,81 @@ again:
       type1 = read_type (pp, objfile);
       type = make_function_type (type1, dbx_lookup_type (typenums));
       break;
+
+    case 'g':                   /* Prototyped function.  (Sun)  */
+      {
+        /* Unresolved questions:
+
+           - According to Sun's ``STABS Interface Manual'', for 'f'
+           and 'F' symbol descriptors, a `0' in the argument type list
+           indicates a varargs function.  But it doesn't say how 'g'
+           type descriptors represent that info.  Someone with access
+           to Sun's toolchain should try it out.
+
+           - According to the comment in define_symbol (search for
+           `process_prototype_types:'), Sun emits integer arguments as
+           types which ref themselves --- like `void' types.  Do we
+           have to deal with that here, too?  Again, someone with
+           access to Sun's toolchain should try it out and let us
+           know.  */
+
+        const char *type_start = (*pp) - 1;
+        struct type *return_type = read_type (pp, objfile);
+        struct type *func_type
+          = make_function_type (return_type, dbx_lookup_type (typenums));
+        struct type_list {
+          struct type *type;
+          struct type_list *next;
+        } *arg_types = 0;
+        int num_args = 0;
+
+        while (**pp && **pp != '#')
+          {
+            struct type *arg_type = read_type (pp, objfile);
+            struct type_list *new = alloca (sizeof (*new));
+            new->type = arg_type;
+            new->next = arg_types;
+            arg_types = new;
+            num_args++;
+          }
+        if (**pp == '#')
+          ++*pp;
+        else
+          {
+            static struct complaint msg = {
+              "Prototyped function type didn't end arguments with `#':\n%s",
+              0, 0
+            };
+            complain (&msg, type_start);
+          }
+
+        /* If there is just one argument whose type is `void', then
+           that's just an empty argument list.  */
+        if (arg_types
+            && ! arg_types->next
+            && TYPE_CODE (arg_types->type) == TYPE_CODE_VOID)
+          num_args = 0;
+
+        TYPE_FIELDS (func_type)
+          = (struct field *) TYPE_ALLOC (func_type,
+                                         num_args * sizeof (struct field));
+        memset (TYPE_FIELDS (func_type), 0, num_args * sizeof (struct field));
+        {
+          int i;
+          struct type_list *t;
+
+          /* We stuck each argument type onto the front of the list
+             when we read it, so the list is reversed.  Build the
+             fields array right-to-left.  */
+          for (t = arg_types, i = num_args - 1; t; t = t->next, i--)
+            TYPE_FIELD_TYPE (func_type, i) = t->type;
+        }
+        TYPE_NFIELDS (func_type) = num_args;
+        TYPE_FLAGS (func_type) |= TYPE_FLAG_PROTOTYPED;
+
+        type = func_type;
+        break;
+      }
 
     case 'k':			/* Const qualifier on some type (Sun) */
     case 'c':			/* Const qualifier on some type (OS9000) */
@@ -2941,10 +3022,14 @@ rs6000_builtin_type (int typenum)
     case 25:
       /* Complex type consisting of two IEEE single precision values.  */
       rettype = init_type (TYPE_CODE_COMPLEX, 8, 0, "complex", NULL);
+      TYPE_TARGET_TYPE (rettype) = init_type (TYPE_CODE_FLT, 4, 0, "float",
+					      NULL);
       break;
     case 26:
       /* Complex type consisting of two IEEE double precision values.  */
       rettype = init_type (TYPE_CODE_COMPLEX, 16, 0, "double complex", NULL);
+      TYPE_TARGET_TYPE (rettype) = init_type (TYPE_CODE_FLT, 8, 0, "double",
+					      NULL);
       break;
     case 27:
       rettype = init_type (TYPE_CODE_INT, 1, 0, "integer*1", NULL);
@@ -3000,7 +3085,6 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
 {
   int nfn_fields = 0;
   int length = 0;
-  int skip_method;
   /* Total number of member functions defined in this class.  If the class
      defines two `f' functions, and one `g' function, then this will have
      the value 3.  */
@@ -3039,36 +3123,6 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
       sublist = NULL;
       look_ahead_type = NULL;
       length = 0;
-
-      skip_method = 0;
-      if (p - *pp == strlen ("__base_ctor")
-	  && strncmp (*pp, "__base_ctor", strlen ("__base_ctor")) == 0)
-	skip_method = 1;
-      else if (p - *pp == strlen ("__base_dtor")
-	       && strncmp (*pp, "__base_dtor", strlen ("__base_dtor")) == 0)
-	skip_method = 1;
-      else if (p - *pp == strlen ("__deleting_dtor")
-	       && strncmp (*pp, "__deleting_dtor",
-			   strlen ("__deleting_dtor")) == 0)
-	skip_method = 1;
-
-      if (skip_method)
-	{
-	  /* Skip past '::'.  */
-	  *pp = p + 2;
-	  /* Read the type.  */
-	  read_type (pp, objfile);
-	  /* Skip past the colon, mangled name, semicolon, flags, and final
-	     semicolon.  */
-	  while (**pp != ';')
-	    (*pp) ++;
-	  (*pp) ++;
-	  while (**pp != ';')
-	    (*pp) ++;
-	  (*pp) ++;
-
-	  continue;
-	}
 
       new_fnlist = (struct next_fnfieldlist *)
 	xmalloc (sizeof (struct next_fnfieldlist));
@@ -3250,13 +3304,30 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
 	      }
 	    case '?':
 	      /* static member function.  */
-	      new_sublist->fn_field.voffset = VOFFSET_STATIC;
-	      if (strncmp (new_sublist->fn_field.physname,
-			   main_fn_name, strlen (main_fn_name)))
-		{
-		  new_sublist->fn_field.is_stub = 1;
-		}
-	      break;
+	      {
+		int slen = strlen (main_fn_name);
+
+		new_sublist->fn_field.voffset = VOFFSET_STATIC;
+
+		/* For static member functions, we can't tell if they
+		   are stubbed, as they are put out as functions, and not as
+		   methods.
+		   GCC v2 emits the fully mangled name if
+		   dbxout.c:flag_minimal_debug is not set, so we have to
+		   detect a fully mangled physname here and set is_stub
+		   accordingly.  Fully mangled physnames in v2 start with
+		   the member function name, followed by two underscores.
+		   GCC v3 currently always emits stubbed member functions,
+		   but with fully mangled physnames, which start with _Z.  */
+		if (!(strncmp (new_sublist->fn_field.physname,
+			       main_fn_name, slen) == 0
+		      && new_sublist->fn_field.physname[slen] == '_'
+		      && new_sublist->fn_field.physname[slen + 1] == '_'))
+		  {
+		    new_sublist->fn_field.is_stub = 1;
+		  }
+		break;
+	      }
 
 	    default:
 	      /* error */
@@ -3278,23 +3349,34 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
       while (**pp != ';' && **pp != '\0');
 
       (*pp)++;
-
-      new_fnlist->fn_fieldlist.fn_fields = (struct fn_field *)
-	obstack_alloc (&objfile->type_obstack,
-		       sizeof (struct fn_field) * length);
-      memset (new_fnlist->fn_fieldlist.fn_fields, 0,
-	      sizeof (struct fn_field) * length);
-      for (i = length; (i--, sublist); sublist = sublist->next)
-	{
-	  new_fnlist->fn_fieldlist.fn_fields[i] = sublist->fn_field;
-	}
-
-      new_fnlist->fn_fieldlist.length = length;
-      new_fnlist->next = fip->fnlist;
-      fip->fnlist = new_fnlist;
-      nfn_fields++;
-      total_length += length;
       STABS_CONTINUE (pp, objfile);
+
+      /* Skip GCC 3.X member functions which are duplicates of the callable
+	 constructor/destructor.  */
+      if (strcmp (main_fn_name, "__base_ctor") == 0
+	  || strcmp (main_fn_name, "__base_dtor") == 0
+	  || strcmp (main_fn_name, "__deleting_dtor") == 0)
+	{
+	  xfree (main_fn_name);
+	}
+      else
+	{
+	  new_fnlist->fn_fieldlist.fn_fields = (struct fn_field *)
+	    obstack_alloc (&objfile->type_obstack,
+			   sizeof (struct fn_field) * length);
+	  memset (new_fnlist->fn_fieldlist.fn_fields, 0,
+		  sizeof (struct fn_field) * length);
+	  for (i = length; (i--, sublist); sublist = sublist->next)
+	    {
+	      new_fnlist->fn_fieldlist.fn_fields[i] = sublist->fn_field;
+	    }
+
+	  new_fnlist->fn_fieldlist.length = length;
+	  new_fnlist->next = fip->fnlist;
+	  fip->fnlist = new_fnlist;
+	  nfn_fields++;
+	  total_length += length;
+	}
     }
 
   if (nfn_fields)
@@ -4480,6 +4562,7 @@ read_sun_floating_type (char **pp, int typenums[2], struct objfile *objfile)
   int nbits;
   int details;
   int nbytes;
+  struct type *rettype;
 
   /* The first number has more details about the type, for example
      FN_COMPLEX.  */
@@ -4494,9 +4577,12 @@ read_sun_floating_type (char **pp, int typenums[2], struct objfile *objfile)
 
   if (details == NF_COMPLEX || details == NF_COMPLEX16
       || details == NF_COMPLEX32)
-    /* This is a type we can't handle, but we do know the size.
-       We also will be able to give it a name.  */
-    return init_type (TYPE_CODE_COMPLEX, nbytes, 0, NULL, objfile);
+    {
+      rettype = init_type (TYPE_CODE_COMPLEX, nbytes, 0, NULL, objfile);
+      TYPE_TARGET_TYPE (rettype)
+	= init_type (TYPE_CODE_FLT, nbytes / 2, 0, NULL, objfile);
+      return rettype;
+    }
 
   return init_type (TYPE_CODE_FLT, nbytes, 0, NULL, objfile);
 }

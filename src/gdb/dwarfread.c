@@ -1,6 +1,6 @@
 /* DWARF debugging format support for GDB.
    Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001
+   2001, 2002
    Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support.  Portions based on dbxread.c,
    mipsread.c, coffread.c, and dwarfread.c from a Data General SVR4 gdb port.
@@ -238,10 +238,6 @@ typedef unsigned int DIE_REF;	/* Reference to a DIE */
    we define AT_short_element_list for this variant. */
 
 #define	AT_short_element_list	 (0x00f0|FORM_BLOCK2)
-
-/* External variables referenced. */
-
-extern char *warning_pre_print;	/* From utils.c */
 
 /* The DWARF debugging information consists of two major pieces,
    one is a block of DWARF Information Entries (DIE's) and the other
@@ -1956,11 +1952,9 @@ process_dies (char *thisdie, char *enddie, struct objfile *objfile)
 	    {
 	      nextdie = thisdie + di.die_length;
 	    }
-#ifdef SMASH_TEXT_ADDRESS
 	  /* I think that these are always text, not data, addresses.  */
-	  SMASH_TEXT_ADDRESS (di.at_low_pc);
-	  SMASH_TEXT_ADDRESS (di.at_high_pc);
-#endif
+	  di.at_low_pc = SMASH_TEXT_ADDRESS (di.at_low_pc);
+	  di.at_high_pc = SMASH_TEXT_ADDRESS (di.at_high_pc);
 	  switch (di.die_tag)
 	    {
 	    case TAG_compile_unit:

@@ -45,7 +45,7 @@ extern char *operator_chars (char *, char **);
 
 /* Prototypes for local functions */
 
-static void cplusplus_hint (char *name);
+static void cplusplus_error (const char *name, const char *fmt, ...) ATTR_FORMAT (printf, 2, 3);
 
 static int total_number_of_methods (struct type *type);
 
@@ -61,17 +61,31 @@ static struct symtabs_and_lines decode_line_2 (struct symbol *[],
 
 /* Helper functions. */
 
-/* While the C++ support is still in flux, issue a possibly helpful hint on
-   using the new command completion feature on single quoted demangled C++
-   symbols.  Remove when loose ends are cleaned up.   FIXME -fnf */
+/* Issue a helpful hint on using the command completion feature on
+   single quoted demangled C++ symbols as part of the completion
+   error.  */
 
 static void
-cplusplus_hint (char *name)
+cplusplus_error (const char *name, const char *fmt, ...)
 {
+  struct ui_file *tmp_stream;
+  tmp_stream = mem_fileopen ();
+  make_cleanup_ui_file_delete (tmp_stream);
+
+  {
+    va_list args;
+    va_start (args, fmt);
+    vfprintf_unfiltered (tmp_stream, fmt, args);
+    va_end (args);
+  }
+
   while (*name == '\'')
     name++;
-  printf_filtered ("Hint: try '%s<TAB> or '%s<ESC-?>\n", name, name);
-  printf_filtered ("(Note leading single quote.)\n");
+  fprintf_unfiltered (tmp_stream,
+		      ("Hint: try '%s<TAB> or '%s<ESC-?>\n"
+		       "(Note leading single quote.)"),
+		      name, name);
+  error_stream (tmp_stream);
 }
 
 /* Return the number of methods described for TYPE, including the
@@ -192,6 +206,39 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
 		     */
 		  }
 	      }
+	  else if (strcmp_iw (class_name, name) == 0)
+	    {
+	      /* For GCC 3.x and stabs, constructors and destructors have names
+		 like __base_ctor and __complete_dtor.  Check the physname for now
+		 if we're looking for a constructor.  */
+	      for (field_counter
+		     = TYPE_FN_FIELDLIST_LENGTH (t, method_counter) - 1;
+		   field_counter >= 0;
+		   --field_counter)
+		{
+		  struct fn_field *f;
+		  char *phys_name;
+		  
+		  f = TYPE_FN_FIELDLIST1 (t, method_counter);
+
+		  /* GCC 3.x will never produce stabs stub methods, so we don't need
+		     to handle this case.  */
+		  if (TYPE_FN_FIELD_STUB (f, field_counter))
+		    continue;
+		  phys_name = TYPE_FN_FIELD_PHYSNAME (f, field_counter);
+		  if (! is_constructor_name (phys_name))
+		    continue;
+
+		  /* If this method is actually defined, include it in the
+		     list.  */
+		  sym_arr[i1] = lookup_symbol (phys_name,
+					       NULL, VAR_NAMESPACE,
+					       (int *) NULL,
+					       (struct symtab **) NULL);
+		  if (sym_arr[i1])
+		    i1++;
+		}
+	    }
 	}
     }
 
@@ -240,13 +287,17 @@ build_canonical_line_spec (struct symtab_and_line *sal, char *symname,
   filename = s->filename;
   if (symname != NULL)
     {
-      if (strstr (symname, "::") == NULL) {
-	canonical_name = xmalloc (strlen (filename) + strlen (symname) + 2);
-	sprintf (canonical_name, "%s:%s", filename, symname);
-      } else {
-	canonical_name = xmalloc (strlen (filename) + strlen (symname) + 2);
-	sprintf (canonical_name, "%s", symname);
-      }
+      if ((strstr (symname, "::") != NULL)
+          || (((symname[0] == '-') || (symname[0] == '+')) && (symname[1] == '[')))
+        {
+          canonical_name = xmalloc (strlen (symname) + 1);
+          sprintf (canonical_name, "%s", symname);
+        }
+      else
+        {
+          canonical_name = xmalloc (strlen (filename) + strlen (symname) + 2);
+          sprintf (canonical_name, "%s:%s", filename, symname);
+        }
     }
   else
     {
@@ -711,7 +762,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
       if (s)
 	block = BLOCKVECTOR_BLOCK (BLOCKVECTOR (s), STATIC_BLOCK);
       else
-	block = get_selected_block ();
+	block = get_selected_block (0);
     
     
       copy = find_imps (s, block, *argptr, NULL, &i1, &i2); 
@@ -854,39 +905,36 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 		      while (*p && *p != ' ' && *p != '\t' && *p != ',' && *p != ':')
 			p++;
 		    }
-#if 0
-		  q = operator_chars (*argptr, &q1);
-		  if (q1 - q)
-		    {
-		      char *opname;
-		      char *tmp = alloca (q1 - q + 1);
-		      memcpy (tmp, q, q1 - q);
-		      tmp[q1 - q] = '\0';
-		      opname = cplus_mangle_opname (tmp, DMGL_ANSI);
-		      if (opname == NULL)
-			{
-			  error_begin ();
-			  printf_filtered ("no mangling for \"%s\"\n", tmp);
-			  cplusplus_hint (saved_arg);
-			  return_to_top_level (RETURN_ERROR);
-			}
-		      copy = (char *) alloca (3 + strlen (opname));
-		      sprintf (copy, "__%s", opname);
-		      p = q1;
-		    }
-		  else
-#endif /* 0 */
 
-		    {
-		      copy = (char *) alloca (p - *argptr + 1);
-		      memcpy (copy, *argptr, p - *argptr);
-		      copy[p - *argptr] = '\0';
-		      if (p != *argptr
-			  && copy[p - *argptr - 1]
-			  && strchr (get_gdb_completer_quote_characters (),
-				     copy[p - *argptr - 1]) != NULL)
-			copy[p - *argptr - 1] = '\0';
-		    }
+/*
+   q = operator_chars (*argptr, &q1);
+   if (q1 - q)
+   {
+   char *opname;
+   char *tmp = alloca (q1 - q + 1);
+   memcpy (tmp, q, q1 - q);
+   tmp[q1 - q] = '\0';
+   opname = cplus_mangle_opname (tmp, DMGL_ANSI);
+   if (opname == NULL)
+   {
+   cplusplus_error (saved_arg, "no mangling for \"%s\"\n", tmp);
+   }
+   copy = (char*) alloca (3 + strlen(opname));
+   sprintf (copy, "__%s", opname);
+   p = q1;
+   }
+   else
+ */
+		  {
+		    copy = (char *) alloca (p - *argptr + 1);
+		    memcpy (copy, *argptr, p - *argptr);
+		    copy[p - *argptr] = '\0';
+		    if (p != *argptr
+			&& copy[p - *argptr - 1]
+			&& strchr (get_gdb_completer_quote_characters (),
+				   copy[p - *argptr - 1]) != NULL)
+		      copy[p - *argptr - 1] = '\0';
+		  }
 
 		  /* no line number may be specified */
 		  while (*p == ' ' || *p == '\t')
@@ -954,17 +1002,14 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 			}
 		      else
 			tmp = copy;
-		      error_begin ();
 		      if (tmp[0] == '~')
-			printf_filtered
-			  ("the class `%s' does not have destructor defined\n",
-			   SYMBOL_SOURCE_NAME (sym_class));
+			cplusplus_error (saved_arg,
+					 "the class `%s' does not have destructor defined\n",
+					 SYMBOL_SOURCE_NAME (sym_class));
 		      else
-			printf_filtered
-			  ("the class %s does not have any method named %s\n",
-			   SYMBOL_SOURCE_NAME (sym_class), tmp);
-		      cplusplus_hint (saved_arg);
-		      return_to_top_level (RETURN_ERROR);
+			cplusplus_error (saved_arg,
+					 "the class %s does not have any method named %s\n",
+					 SYMBOL_SOURCE_NAME (sym_class), tmp);
 		    }
 		}
 
@@ -1017,12 +1062,10 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 	    goto symbol_found;
 
 	  /* Couldn't find any interpretation as classes/namespaces, so give up */
-	  error_begin ();
 	  /* The quotes are important if copy is empty.  */
-	  printf_filtered
-	    ("Can't find member of namespace, class, struct, or union named \"%s\"\n", copy);
-	  cplusplus_hint (saved_arg);
-	  return_to_top_level (RETURN_ERROR);
+	  cplusplus_error (saved_arg,
+			   "Can't find member of namespace, class, struct, or union named \"%s\"\n",
+			   copy);
 	}
       /*  end of C++  */
 
@@ -1175,7 +1218,31 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
       if (val.symtab == 0)
 	val.symtab = s;
 
+      /* If funfirstline is set, we need to look up the function
+	 containing the line, and move past the prologue. */
+
       val.pc = 0;
+      if (funfirstline)
+	{
+	  CORE_ADDR pc = 0;
+
+	  if (find_line_pc (val.symtab, val.line, &pc))
+	    {
+	      struct symbol *func_sym;
+	      struct symtab_and_line sal;
+	      
+	      func_sym = find_pc_function (pc);
+	      if (func_sym)
+		{
+		  sal = find_function_start_sal (func_sym, 1);
+		  /* Don't move the line, just set the pc
+		     to the right place. */
+		  if (val.line <= sal.line)
+		    val.pc = sal.pc;
+		}
+	    }
+	}
+
       values.sals = (struct symtab_and_line *)
 	xmalloc (sizeof (struct symtab_and_line));
       values.sals[0] = val;
@@ -1197,7 +1264,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
   else if (is_quoted)
     {
       /* allow word separators in function names for Obj-C */
-      p = skip_quoted (*argptr, gdb_completer_word_break_characters);
+      p = skip_quoted (*argptr, "");
       if (p[-1] != '\'')
 	error ("Unmatched single quote.");
     }
@@ -1205,12 +1272,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
     {
       p = pp + 1;
     }
-  else if (allow_objc_selectors_flag)
-    {
-      /* allow word separators in function names for Obj-C */
-      p = skip_quoted (*argptr, gdb_completer_word_break_characters);
-    }
-  else
+  else 
     {
       /* allow word separators in function names for Obj-C */
       p = skip_quoted (*argptr, "");
@@ -1303,7 +1365,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 
   sym = lookup_symbol (copy,
 		       (s ? BLOCKVECTOR_BLOCK (BLOCKVECTOR (s), STATIC_BLOCK)
-			: get_selected_block ()),
+			: get_selected_block (0)),
 		       VAR_NAMESPACE, 0, &sym_symtab);
 
 symbol_found:			/* We also jump here from inside the C++ class/namespace 
@@ -1329,7 +1391,7 @@ symbol_found:			/* We also jump here from inside the C++ class/namespace
 	    {
 	      struct blockvector *bv = BLOCKVECTOR (sym_symtab);
 	      struct block *b = BLOCKVECTOR_BLOCK (bv, STATIC_BLOCK);
-	      if (lookup_block_symbol (b, copy, VAR_NAMESPACE) != NULL)
+	      if (lookup_block_symbol (b, copy, NULL, VAR_NAMESPACE) != NULL)
 		build_canonical_line_spec (values.sals, copy, canonical);
 	    }
 	  return values;
@@ -1389,7 +1451,7 @@ minimal_symbol_found:		/* We also jump here from the case for variables
 
   if (metrowerks_ignore_breakpoint_errors_flag)
     {
-      /* free (values.sals); */
+      /* xfree (values.sals); */
       values.sals = NULL;
       return values;
     }

@@ -1,6 +1,7 @@
 /* Target-dependent code for Mitsubishi D10V, for GDB.
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001
-   Free Software Foundation, Inc.
+
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -40,9 +41,6 @@
 
 #include "floatformat.h"
 #include "sim-d10v.h"
-
-#undef XMALLOC
-#define XMALLOC(TYPE) ((TYPE*) xmalloc (sizeof (TYPE)))
 
 struct frame_extra_info
   {
@@ -402,16 +400,6 @@ d10v_address_to_pointer (struct type *type, void *buf, CORE_ADDR addr)
   if (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_FUNC
       || TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_METHOD)
     {
-#if 0
-      if (! d10v_iaddr_p (addr))
-        {
-          warning_begin ();
-          fprintf_unfiltered (gdb_stderr, "address `");
-          print_address_numeric (addr, 1, gdb_stderr);
-          fprintf_unfiltered (gdb_stderr, "' is not a code address\n");
-        }
-#endif
-
       store_unsigned_integer (buf, TYPE_LENGTH (type), 
                               d10v_convert_iaddr_to_raw (addr));
     }
@@ -978,12 +966,6 @@ d10v_write_sp (CORE_ADDR val)
   write_register (SP_REGNUM, d10v_convert_daddr_to_raw (val));
 }
 
-static void
-d10v_write_fp (CORE_ADDR val)
-{
-  write_register (FP_REGNUM, d10v_convert_daddr_to_raw (val));
-}
-
 static CORE_ADDR
 d10v_read_fp (void)
 {
@@ -1489,7 +1471,6 @@ d10v_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_read_pc (gdbarch, d10v_read_pc);
   set_gdbarch_write_pc (gdbarch, d10v_write_pc);
   set_gdbarch_read_fp (gdbarch, d10v_read_fp);
-  set_gdbarch_write_fp (gdbarch, d10v_write_fp);
   set_gdbarch_read_sp (gdbarch, d10v_read_sp);
   set_gdbarch_write_sp (gdbarch, d10v_write_sp);
 

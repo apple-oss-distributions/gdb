@@ -57,52 +57,6 @@ static void c_type_print_modifier (struct type *, struct ui_file *,
 				   int, int);
 
 
-void
-c_typedef_print (struct type *type, struct symbol *new, struct ui_file *stream)
-{
-  CHECK_TYPEDEF (type);
-  switch (current_language->la_language)
-    {
-#ifdef _LANG_c
-    case language_c:
-    case language_cplus:
-    case language_objc:
-    case language_objcplus:
-      fprintf_filtered (stream, "typedef ");
-      type_print (type, "", stream, 0);
-      if (TYPE_NAME ((SYMBOL_TYPE (new))) == 0
-	  || !STREQ (TYPE_NAME ((SYMBOL_TYPE (new))), SYMBOL_NAME (new)))
-	fprintf_filtered (stream, " %s", SYMBOL_SOURCE_NAME (new));
-      break;
-#endif
-#ifdef _LANG_m2
-    case language_m2:
-      fprintf_filtered (stream, "TYPE ");
-      if (!TYPE_NAME (SYMBOL_TYPE (new)) ||
-	  !STREQ (TYPE_NAME (SYMBOL_TYPE (new)), SYMBOL_NAME (new)))
-	fprintf_filtered (stream, "%s = ", SYMBOL_SOURCE_NAME (new));
-      else
-	fprintf_filtered (stream, "<builtin> = ");
-      type_print (type, "", stream, 0);
-      break;
-#endif
-#ifdef _LANG_chill
-    case language_chill:
-      fprintf_filtered (stream, "SYNMODE ");
-      if (!TYPE_NAME (SYMBOL_TYPE (new)) ||
-	  !STREQ (TYPE_NAME (SYMBOL_TYPE (new)), SYMBOL_NAME (new)))
-	fprintf_filtered (stream, "%s = ", SYMBOL_SOURCE_NAME (new));
-      else
-	fprintf_filtered (stream, "<builtin> = ");
-      type_print (type, "", stream, 0);
-      break;
-#endif
-    default:
-      error ("Language not supported.");
-    }
-  fprintf_filtered (stream, ";\n");
-}
-
 /* LEVEL is the depth to indent lines by.  */
 
 void
@@ -620,7 +574,9 @@ c_type_print_varspec_suffix (struct type *type, struct ui_file *stream,
 	{
 	  int i, len = TYPE_NFIELDS (type);
 	  fprintf_filtered (stream, "(");
-	  if ((len == 0) && (current_language->la_language == language_cplus))
+	  if (len == 0
+              && (TYPE_PROTOTYPED (type)
+                  || current_language->la_language == language_cplus))
 	    {
 	      fprintf_filtered (stream, "void");
 	    }

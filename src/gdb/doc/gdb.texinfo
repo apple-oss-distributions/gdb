@@ -154,6 +154,8 @@ Copyright (C) 1988-2002 Free Software Foundation, Inc.
 * Installing GDB::              Installing GDB
 * Maintenance Commands::        Maintenance Commands
 * Remote Protocol::             GDB Remote Serial Protocol
+* Copying::			GNU General Public License says
+                                how you can copy and share GDB
 * GNU Free Documentation License::  The license for this documentation
 * Index::                       Index
 @end menu
@@ -771,24 +773,24 @@ options may effectively be unavailable.
 The most usual way to start @value{GDBN} is with one argument,
 specifying an executable program:
 
-@example
+@smallexample
 @value{GDBP} @var{program}
-@end example
+@end smallexample
 
 @noindent
 You can also start with both an executable program and a core file
 specified:
 
-@example
+@smallexample
 @value{GDBP} @var{program} @var{core}
-@end example
+@end smallexample
 
 You can, instead, specify a process ID as a second argument, if you want
 to debug a running process:
 
-@example
+@smallexample
 @value{GDBP} @var{program} 1234
-@end example
+@end smallexample
 
 @noindent
 would attach @value{GDBN} to process @code{1234} (unless you also have a file
@@ -803,9 +805,9 @@ will warn you if it is unable to attach or to read core dumps.
 You can optionally have @code{@value{GDBP}} pass any arguments after the
 executable file to the inferior using @code{--args}.  This option stops
 option processing.
-@example
+@smallexample
 gdb --args gcc -O2 -c foo.c
-@end example
+@end smallexample
 This will cause @code{@value{GDBP}} to debug @code{gcc}, and to set
 @code{gcc}'s command-line arguments (@pxref{Arguments}) to @samp{-O2 -c foo.c}.
 
@@ -823,9 +825,9 @@ options.  @value{GDBN} itself can remind you of the options available.
 @noindent
 Type
 
-@example
+@smallexample
 @value{GDBP} -help
-@end example
+@end smallexample
 
 @noindent
 to display all available options and briefly describe their use
@@ -954,9 +956,9 @@ information.  (@xref{Files,,Commands to specify files}, for information
 on @file{.syms} files.)  A simple @value{GDBN} invocation to do nothing
 but build a @file{.syms} file for future use is:
 
-@example
+@smallexample
 gdb -batch -nx -mapped -readnow programname
-@end example
+@end smallexample
 
 @node Mode Options
 @subsection Choosing modes
@@ -995,9 +997,9 @@ Batch mode may be useful for running @value{GDBN} as a filter, for
 example to download and run a program on another computer; in order to
 make this more useful, the message
 
-@example
+@smallexample
 Program exited normally.
-@end example
+@end smallexample
 
 @noindent
 (which is ordinarily issued whenever a program running under
@@ -1287,17 +1289,17 @@ enter it).  For example, if you type
 @c complete accuracy in these examples; space introduced for clarity.
 @c If texinfo enhancements make it unnecessary, it would be nice to
 @c replace " @key" by "@key" in the following...
-@example
+@smallexample
 (@value{GDBP}) info bre @key{TAB}
-@end example
+@end smallexample
 
 @noindent
 @value{GDBN} fills in the rest of the word @samp{breakpoints}, since that is
 the only @code{info} subcommand beginning with @samp{bre}:
 
-@example
+@smallexample
 (@value{GDBP}) info breakpoints
-@end example
+@end smallexample
 
 @noindent
 You can either press @key{RET} at this point, to run the @code{info
@@ -1317,7 +1319,7 @@ just sounds the bell.  Typing @key{TAB} again displays all the
 function names in your program that begin with those characters, for
 example:
 
-@example
+@smallexample
 (@value{GDBP}) b make_ @key{TAB}
 @exdent @value{GDBN} sounds bell; press @key{TAB} again, to see:
 make_a_section_from_file     make_environ
@@ -1326,7 +1328,7 @@ make_blockvector             make_pointer_type
 make_cleanup                 make_reference_type
 make_command                 make_symbol_completion_list
 (@value{GDBP}) b make_
-@end example
+@end smallexample
 
 @noindent
 After displaying the available possibilities, @value{GDBN} copies your
@@ -1359,22 +1361,22 @@ word-completion facilities in this situation, type a single quote
 @value{GDBN} that it may need to consider more information than usual
 when you press @key{TAB} or @kbd{M-?} to request word completion:
 
-@example
+@smallexample
 (@value{GDBP}) b 'bubble( @kbd{M-?}
 bubble(double,double)    bubble(int,int)
 (@value{GDBP}) b 'bubble(
-@end example
+@end smallexample
 
 In some cases, @value{GDBN} can tell that completing a name requires using
 quotes.  When this happens, @value{GDBN} inserts the quote for you (while
 completing as much as it can) if you do not type the quote in the first
 place:
 
-@example
+@smallexample
 (@value{GDBP}) b bub @key{TAB}
 @exdent @value{GDBN} alters your input line to the following, and rings a bell:
 (@value{GDBP}) b 'bubble(
-@end example
+@end smallexample
 
 @noindent
 In general, @value{GDBN} can tell that a quote is needed (and inserts it) if
@@ -1810,9 +1812,9 @@ null value.
 
 For example, this command:
 
-@example
+@smallexample
 set env USER = foo
-@end example
+@end smallexample
 
 @noindent
 tells the debugged program, when subsequently run, that its user is named
@@ -1883,9 +1885,9 @@ program is using.
 You can redirect your program's input and/or output using shell
 redirection with the @code{run} command.  For example,
 
-@example
+@smallexample
 run > outfile
-@end example
+@end smallexample
 
 @noindent
 starts your program, diverting its output to the file @file{outfile}.
@@ -1898,9 +1900,9 @@ argument, and causes this file to be the default for future @code{run}
 commands.  It also resets the controlling terminal for the child
 process, for future @code{run} commands.  For example,
 
-@example
+@smallexample
 tty /dev/ttyb
-@end example
+@end smallexample
 
 @noindent
 directs that processes started with subsequent @code{run} commands
@@ -2059,9 +2061,9 @@ form @samp{[New @var{systag}]}.  @var{systag} is a thread identifier
 whose form varies depending on the particular system.  For example, on
 LynxOS, you might see
 
-@example
+@smallexample
 [New process 35 thread 27]
-@end example
+@end smallexample
 
 @noindent
 when @value{GDBN} notices a new thread.  In contrast, on an SGI system,
@@ -2070,7 +2072,7 @@ further qualifier.
 
 @c FIXME!! (1) Does the [New...] message appear even for the very first
 @c         thread of a program, or does it only appear for the
-@c         second---i.e., when it becomes obvious we have a multithread
+@c         second---i.e.@: when it becomes obvious we have a multithread
 @c         program?
 @c         (2) *Is* there necessarily a first thread always?  Or do some
 @c         multithread systems permit starting a program with multiple
@@ -2130,9 +2132,9 @@ form @samp{[New @var{systag}]}.  @var{systag} is a thread identifier
 whose form varies depending on the particular system.  For example, on
 HP-UX, you see
 
-@example
+@smallexample
 [New thread 2 (system thread 26594)]
-@end example
+@end smallexample
 
 @noindent
 when @value{GDBN} notices a new thread.
@@ -2159,7 +2161,7 @@ For example,
 @end table
 @c end table here to get a little more width for example
 
-@example
+@smallexample
 (@value{GDBP}) info threads
     * 3 system thread 26607  worker (wptr=0x7b09c318 "@@") \@*
                                at quicksort.c:137
@@ -2167,7 +2169,7 @@ For example,
                                from /usr/lib/libc.2
       1 system thread 27905  0x7b003498 in _brk () \@*
                                from /usr/lib/libc.2
-@end example
+@end smallexample
 
 @table @code
 @kindex thread @var{threadno}
@@ -2644,9 +2646,9 @@ statement, not the instruction, after the change occurs.
 
 When you issue the @code{watch} command, @value{GDBN} reports
 
-@example
+@smallexample
 Hardware watchpoint @var{num}: @var{expr}
-@end example
+@end smallexample
 
 @noindent
 if it was able to set a hardware watchpoint.
@@ -2825,11 +2827,11 @@ knowledge of the implementation.  In the case of @sc{gnu} C@t{++}, exceptions ar
 raised by calling a library function named @code{__raise_exception}
 which has the following ANSI C interface:
 
-@example
+@smallexample
     /* @var{addr} is where the exception identifier is stored.
        @var{id} is the exception identifier.  */
     void __raise_exception (void **addr, void *id);
-@end example
+@end smallexample
 
 @noindent
 To make the debugger catch all exceptions before any stack
@@ -3022,9 +3024,9 @@ referents in the context of your breakpoint.  If @var{expression} uses
 symbols not referenced in the context of the breakpoint, @value{GDBN}
 prints an error message:
 
-@example
+@smallexample
 No symbol "foo" in current context.
-@end example
+@end smallexample
 
 @noindent
 @value{GDBN} does
@@ -3133,14 +3135,14 @@ breakpoints.  @xref{Output, ,Commands for controlled output}.
 For example, here is how you could use breakpoint commands to print the
 value of @code{x} at entry to @code{foo} whenever @code{x} is positive.
 
-@example
+@smallexample
 break foo if x>0
 commands
 silent
 printf "x is %d\n",x
 cont
 end
-@end example
+@end smallexample
 
 One application for breakpoint commands is to compensate for one bug so
 you can test for another.  Put a breakpoint just after the erroneous line
@@ -3150,14 +3152,14 @@ to any variables that need them.  End with the @code{continue} command
 so that your program does not stop, and start with the @code{silent}
 command so that no output is produced.  Here is an example:
 
-@example
+@smallexample
 break 403
 commands
 silent
 set x = y + 4
 cont
 end
-@end example
+@end smallexample
 
 @node Breakpoint Menus
 @subsection Breakpoint menus
@@ -3217,10 +3219,10 @@ any other process is running that program.  In this situation,
 attempting to run or continue a program with a breakpoint causes
 @value{GDBN} to print an error message:
 
-@example
+@smallexample
 Cannot insert breakpoints.
 The same program may be running in another process.
-@end example
+@end smallexample
 
 When this happens, you have three ways to proceed:
 
@@ -3425,13 +3427,13 @@ example, in the following excerpt from a debugging session, the @code{f}
 (@code{frame}) command shows that execution is stopped at line
 @code{206}; yet when we use @code{until}, we get to line @code{195}:
 
-@example
+@smallexample
 (@value{GDBP}) f
 #0  main (argc=4, argv=0xf7fffae8) at m4.c:206
 206                 expand_input();
 (@value{GDBP}) until
 195             for ( ; argc > 0; NEXTARG) @{
-@end example
+@end smallexample
 
 This happened because, for execution efficiency, the compiler had
 generated code for the loop closure test at the end, rather than the
@@ -3753,9 +3755,9 @@ frames in @value{GDBN} commands.
 @cindex frameless execution
 Some compilers provide a way to compile functions so that they operate
 without stack frames.  (For example, the @value{GCC} option
-@example
+@smallexample
 @samp{-fomit-frame-pointer}
-@end example
+@end smallexample
 generates functions without a frame.)
 This is occasionally done with heavily used library functions to save
 the frame setup time.  @value{GDBN} has limited facilities for dealing
@@ -4410,6 +4412,7 @@ Table}.
 * Registers::                   Registers
 * Floating Point Hardware::     Floating point hardware
 * Memory Region Attributes::    Memory region attributes
+* Dump/Restore Files::          Copy between memory and a file
 @end menu
 
 @node Expressions
@@ -4489,7 +4492,7 @@ programming language from the point of execution in that frame
 
 @noindent This means that in the function
 
-@example
+@smallexample
 foo (a)
      int a;
 @{
@@ -4499,7 +4502,7 @@ foo (a)
     bar (b);
   @}
 @}
-@end example
+@end smallexample
 
 @noindent
 you can examine and use the variable @code{a} whenever your program is
@@ -4521,10 +4524,10 @@ using the colon-colon notation:
 @c info cannot cope with a :: index entry, but why deprive hard copy readers?
 @cindex @code{::}, context for variables/functions
 @end iftex
-@example
+@smallexample
 @var{file}::@var{variable}
 @var{function}::@var{variable}
-@end example
+@end smallexample
 
 @noindent
 Here @var{file} or @var{function} is the name of the context for the
@@ -4532,9 +4535,9 @@ static @var{variable}.  In the case of file names, you can use quotes to
 make sure @value{GDBN} parses the file name as a single word---for example,
 to print a global value of @code{x} defined in @file{f2.c}:
 
-@example
+@smallexample
 (@value{GDBP}) p 'f2.c'::x
-@end example
+@end smallexample
 
 @cindex C@t{++} scope resolution
 This use of @samp{::} is very rarely in conflict with the very similar
@@ -4571,9 +4574,9 @@ offered by the debug info format used by the compiler, @value{GDBN}
 might not be able to display values for such local variables.  If that
 happens, @value{GDBN} will print a message like this:
 
-@example
+@smallexample
 No symbol "foo" in current context.
-@end example
+@end smallexample
 
 To solve such problems, either recompile without optimizations, or use a
 different debug info format, if the compiler supports several such
@@ -4606,16 +4609,16 @@ argument; the second element comes from bytes of memory immediately
 following those that hold the first element, and so on.  Here is an
 example.  If a program says
 
-@example
+@smallexample
 int *array = (int *) malloc (len * sizeof (int));
-@end example
+@end smallexample
 
 @noindent
 you can print the contents of @code{array} with
 
-@example
+@smallexample
 p *array@@len
-@end example
+@end smallexample
 
 The left operand of @samp{@@} must reside in memory.  Array values made
 with @samp{@@} in this way behave just like other arrays in terms of
@@ -4626,18 +4629,18 @@ Artificial arrays most often appear in expressions via the value history
 Another way to create an artificial array is to use a cast.
 This re-interprets a value as if it were an array.
 The value need not be in memory:
-@example
+@smallexample
 (@value{GDBP}) p/x (short[2])0x12345678
 $1 = @{0x1234, 0x5678@}
-@end example
+@end smallexample
 
 As a convenience, if you leave the array length out (as in
 @samp{(@var{type}[])@var{value}}) @value{GDBN} calculates the size to fill
 the value (as @samp{sizeof(@var{value})/sizeof(@var{type})}:
-@example
+@smallexample
 (@value{GDBP}) p/x (short[])0x12345678
 $2 = @{0x1234, 0x5678@}
-@end example
+@end smallexample
 
 Sometimes the artificial array mechanism is not quite enough; in
 moderately complex data structures, the elements of interest may not
@@ -4650,13 +4653,13 @@ instance, suppose you have an array @code{dtab} of pointers to
 structures, and you are interested in the values of a field @code{fv}
 in each structure.  Here is an example of what you might type:
 
-@example
+@smallexample
 set $i = 0
 p dtab[$i++]->fv
 @key{RET}
 @key{RET}
 @dots{}
-@end example
+@end smallexample
 
 @node Output Formats
 @section Output formats
@@ -4701,10 +4704,10 @@ Print as an address, both absolute in hexadecimal and as an offset from
 the nearest preceding symbol.  You can use this format used to discover
 where (in what function) an unknown address is located:
 
-@example
+@smallexample
 (@value{GDBP}) p/a 0x54320
 $3 = 0x54320 <_initialize_vx+396>
-@end example
+@end smallexample
 
 @noindent
 The command @code{info symbol 0x54320} yields similar results.
@@ -4720,9 +4723,9 @@ using typical floating point syntax.
 
 For example, to print the program counter in hex (@pxref{Registers}), type
 
-@example
+@smallexample
 p/x $pc
-@end example
+@end smallexample
 
 @noindent
 Note that no space is required before the slash; this is because command
@@ -4849,10 +4852,10 @@ Each expression added to the list is given a number to identify it;
 to remove an expression from the list, you specify that number.
 The automatic display looks like this:
 
-@example
+@smallexample
 2: foo = 38
 3: bar[5] = (struct hack *) 0x3804
-@end example
+@end smallexample
 
 @noindent
 This display shows item numbers, expressions and their current values.  As with
@@ -5040,11 +5043,11 @@ and source file location of the variable where it points, using
 For example, here @value{GDBN} shows that a variable @code{ptt} points
 at another variable @code{t}, defined in @file{hi2.c}:
 
-@example
+@smallexample
 (@value{GDBP}) set print symbol-filename on
 (@value{GDBP}) p/a ptt
 $4 = 0xe008 <t in hi2.c>
-@end example
+@end smallexample
 
 @quotation
 @emph{Warning:} For pointers that point to a local variable, @samp{p/a}
@@ -5326,16 +5329,16 @@ is the value just prior to @code{$$}, @code{$$1} is equivalent to
 For example, suppose you have just printed a pointer to a structure and
 want to see the contents of the structure.  It suffices to type
 
-@example
+@smallexample
 p *$
-@end example
+@end smallexample
 
 If you have a chain of structures where the component @code{next} points
 to the next one, you can print the contents of the next one with this:
 
-@example
+@smallexample
 p *$.next
-@end example
+@end smallexample
 
 @noindent
 You can print successive links in the chain by repeating this
@@ -5344,10 +5347,10 @@ command---which you can do by just typing @key{RET}.
 Note that the history records values, not expressions.  If the value of
 @code{x} is 4 and you type these commands:
 
-@example
+@smallexample
 print x
 set x=5
-@end example
+@end smallexample
 
 @noindent
 then the value recorded in the value history by the @code{print} command
@@ -5391,9 +5394,9 @@ You can save a value in a convenience variable with an assignment
 expression, just as you would set a variable in your program.
 For example:
 
-@example
+@smallexample
 set $foo = *object_ptr
-@end example
+@end smallexample
 
 @noindent
 would save in @code{$foo} the value contained in the object pointed to by
@@ -5419,10 +5422,10 @@ One of the ways to use a convenience variable is as a counter to be
 incremented or a pointer to be advanced.  For example, to print
 a field from successive elements of an array of structures:
 
-@example
+@smallexample
 set $i = 0
 print bar[$i++]->contents
-@end example
+@end smallexample
 
 @noindent
 Repeat that command by typing @key{RET}.
@@ -5494,16 +5497,16 @@ pointer to the current stack frame, and @code{$ps} is used for a
 register that contains the processor status.  For example,
 you could print the program counter in hex with
 
-@example
+@smallexample
 p/x $pc
-@end example
+@end smallexample
 
 @noindent
 or print the instruction to be executed next with
 
-@example
+@smallexample
 x/i $pc
-@end example
+@end smallexample
 
 @noindent
 or add four to the stack pointer@footnote{This is a way of removing
@@ -5514,9 +5517,9 @@ stack frames are selected.  To pop entire frames off the stack,
 regardless of machine architecture, use @code{return};
 see @ref{Returning, ,Returning from a function}.} with
 
-@example
+@smallexample
 set $sp += 4
-@end example
+@end smallexample
 
 Whenever possible, these four standard register names are available on
 your machine even though the machine has different canonical mnemonics,
@@ -5573,7 +5576,7 @@ the ARM and x86 machines.
 @end table
 
 @node Memory Region Attributes
-@section Memory Region Attributes 
+@section Memory region attributes 
 @cindex memory region attributes
 
 @dfn{Memory region attributes} allow you to describe special handling 
@@ -5592,23 +5595,23 @@ to enable, disable, or remove a memory region, you specify that number.
 
 @table @code
 @kindex mem
-@item mem @var{address1} @var{address1} @var{attributes}@dots{}
+@item mem @var{address1} @var{address2} @var{attributes}@dots{}
 Define memory region bounded by @var{address1} and @var{address2}
 with attributes @var{attributes}@dots{}.
 
 @kindex delete mem
 @item delete mem @var{nums}@dots{}
-Remove memory region numbers @var{nums}.
+Remove memory regions @var{nums}@dots{}.
 
 @kindex disable mem
 @item disable mem @var{nums}@dots{}
-Disable memory region numbers @var{nums}.
+Disable memory regions @var{nums}@dots{}.
 A disabled memory region is not forgotten.  
 It may be enabled again later.
 
 @kindex enable mem
 @item enable mem @var{nums}@dots{}
-Enable memory region numbers @var{nums}.
+Enable memory regions @var{nums}@dots{}.
 
 @kindex info mem
 @item info mem
@@ -5649,7 +5652,7 @@ Memory is read only.
 @item wo
 Memory is write only.
 @item rw
-Memory is read/write (default).
+Memory is read/write.  This is the default.
 @end table
 
 @subsubsection Memory Access Size
@@ -5690,8 +5693,8 @@ registers.
 @table @code
 @item cache
 Enable @value{GDBN} to cache target memory. 
-@item nocache (default)
-Disable @value{GDBN} from caching target memory.
+@item nocache
+Disable @value{GDBN} from caching target memory.  This is the default.
 @end table
 
 @c @subsubsection Memory Write Verification
@@ -5702,6 +5705,82 @@ Disable @value{GDBN} from caching target memory.
 @c @item verify
 @c @item noverify (default)
 @c @end table
+
+@node Dump/Restore Files
+@section Copy between memory and a file
+@cindex dump/restore files
+@cindex append data to a file
+@cindex dump data to a file
+@cindex restore data from a file
+@kindex dump
+@kindex append
+@kindex restore
+
+The commands @code{dump}, @code{append}, and @code{restore} are used
+for copying data between target memory and a file.  Data is written
+into a file using @code{dump} or @code{append}, and restored from a 
+file into memory by using @code{restore}.  Files may be binary, srec,
+intel hex, or tekhex (but only binary files can be appended).
+
+@table @code
+@kindex dump binary 
+@kindex append binary 
+@item dump binary memory @var{filename} @var{start_addr} @var{end_addr}
+Dump contents of memory from @var{start_addr} to @var{end_addr} into 
+raw binary format file @var{filename}.
+
+@item append binary memory @var{filename} @var{start_addr} @var{end_addr}
+Append contents of memory from @var{start_addr} to @var{end_addr} to
+raw binary format file @var{filename}.
+
+@item dump binary value @var{filename} @var{expression}
+Dump value of @var{expression} into raw binary format file @var{filename}.
+
+@item append binary memory @var{filename} @var{expression}
+Append value of @var{expression} to raw binary format file @var{filename}.
+
+@kindex dump ihex 
+@item dump ihex memory @var{filename} @var{start_addr} @var{end_addr}
+Dump contents of memory from @var{start_addr} to @var{end_addr} into 
+intel hex format file @var{filename}.
+
+@item dump ihex value @var{filename} @var{expression}
+Dump value of @var{expression} into intel hex format file @var{filename}.
+
+@kindex dump srec 
+@item dump srec memory @var{filename} @var{start_addr} @var{end_addr}
+Dump contents of memory from @var{start_addr} to @var{end_addr} into 
+srec format file @var{filename}.
+
+@item dump srec value @var{filename} @var{expression}
+Dump value of @var{expression} into srec format file @var{filename}.
+
+@kindex dump tekhex 
+@item dump tekhex memory @var{filename} @var{start_addr} @var{end_addr}
+Dump contents of memory from @var{start_addr} to @var{end_addr} into 
+tekhex format file @var{filename}.
+
+@item dump tekhex value @var{filename} @var{expression}
+Dump value of @var{expression} into tekhex format file @var{filename}.
+
+@item restore @var{filename} @var{[binary]} @var{bias} @var{start} @var{end}
+Restore the contents of file @var{filename} into memory.  The @code{restore}
+command can automatically recognize any known bfd file format, except for
+raw binary.  To restore a raw binary file you must use the optional argument
+@var{binary} after the filename.
+
+If @var{bias} is non-zero, its value will be added to the addresses 
+contained in the file.  Binary files always start at address zero, so
+they will be restored at address @var{bias}.  Other bfd files have
+a built-in location; they will be restored at offset @var{bias}
+from that location.
+
+If @var{start} and/or @var{end} are non-zero, then only data between
+file offset @var{start} and file offset @var{end} will be restored.
+These offsets are relative to the addresses in the file, before 
+the @var{bias} argument is applied.
+
+@end table
 
 @node Tracepoints
 @chapter Tracepoints
@@ -6370,44 +6449,48 @@ overlay's machine code from the large memory into the space set aside
 for it in the instruction memory, and then jump to its entry point
 there.
 
-@example
+@c NB:  In the below the mapped area's size is greater or equal to the
+@c size of all overlays.  This is intentional to remind the developer
+@c that overlays don't necessarily need to be the same size.
+
+@smallexample
 @group
-    Data                   Instruction            Larger
-Address Space             Address Space        Address Space
-+-----------+             +-----------+        +-----------+
-|           |             |           |        |           |
-+-----------+             +-----------+        +-----------+<-- overlay 1
-| program   |             |   main    |        |           | load address
-| variables |             |  program  |        | overlay 1 |
-| and heap  |             |           |    ,---|           |
-+-----------+             |           |    |   |           |
-|           |             +-----------+    |   +-----------+
-+-----------+             |           |    |   |           |
-               mapped --->+-----------+    /   +-----------+<-- overlay 2
-               address    |  overlay  | <-'    | overlay 2 | load address
-                          |   area    |  <-----|           |
-                          |           | <---.  +-----------+
-                          |           |     |  |           |
-                          +-----------+     |  |           |
-                          |           |     |  +-----------+<-- overlay 3
-                          +-----------+     `--|           | load address
-                                               | overlay 3 |
-                                               |           |
-                                               +-----------+
-                                               |           |
-                                               +-----------+
+    Data             Instruction            Larger
+Address Space       Address Space        Address Space
++-----------+       +-----------+        +-----------+
+|           |       |           |        |           |
++-----------+       +-----------+        +-----------+<-- overlay 1
+| program   |       |   main    |   .----| overlay 1 | load address
+| variables |       |  program  |   |    +-----------+
+| and heap  |       |           |   |    |           |
++-----------+       |           |   |    +-----------+<-- overlay 2
+|           |       +-----------+   |    |           | load address
++-----------+       |           |   |  .-| overlay 2 |
+                    |           |   |  | |           |
+         mapped --->+-----------+   |  | +-----------+
+         address    |           |   |  | |           |
+                    |  overlay  | <-'  | |           |
+                    |   area    |  <---' +-----------+<-- overlay 3
+                    |           | <---.  |           | load address
+                    +-----------+     `--| overlay 3 |
+                    |           |        |           |
+                    +-----------+        |           |
+                                         +-----------+
+                                         |           |
+                                         +-----------+
 
-    To map an overlay, copy its code from the larger address space
-    to the instruction address space.  Since the overlays shown here
-    all use the same mapped address, only one may be mapped at a time.
+                    @anchor{A code overlay}A code overlay
 @end group
-@end example
+@end smallexample
 
-This diagram shows a system with separate data and instruction address
-spaces.  For a system with a single address space for data and
-instructions, the diagram would be similar, except that the program
-variables and heap would share an address space with the main program
-and the overlay area.
+The diagram (@pxref{A code overlay}) shows a system with separate data
+and instruction address spaces.  To map an overlay, the program copies
+its code from the larger address space to the instruction address space.
+Since the overlays shown here all use the same mapped address, only one
+may be mapped at a time.  For a system with a single address space for
+data and instructions, the diagram would be similar, except that the
+program variables and heap would share an address space with the main
+program and the overlay area.
 
 An overlay loaded into instruction memory and ready for use is called a
 @dfn{mapped} overlay; its @dfn{mapped address} is its address in the
@@ -6555,33 +6638,33 @@ addresses, load addresses, and sizes.
 Normally, when @value{GDBN} prints a code address, it includes the name
 of the function the address falls in:
 
-@example
+@smallexample
 (gdb) print main
 $3 = @{int ()@} 0x11a0 <main>
-@end example
+@end smallexample
 @noindent
 When overlay debugging is enabled, @value{GDBN} recognizes code in
 unmapped overlays, and prints the names of unmapped functions with
 asterisks around them.  For example, if @code{foo} is a function in an
 unmapped overlay, @value{GDBN} prints it this way:
 
-@example
+@smallexample
 (gdb) overlay list
 No sections are mapped.
 (gdb) print foo
 $5 = @{int (int)@} 0x100000 <*foo*>
-@end example
+@end smallexample
 @noindent
 When @code{foo}'s overlay is mapped, @value{GDBN} prints the function's
 name normally:
 
-@example
+@smallexample
 (gdb) overlay list
 Section .ov.foo.text, loaded at 0x100000 - 0x100034, 
         mapped at 0x1016 - 0x104a
 (gdb) print foo
 $6 = @{int (int)@} 0x1016 <foo>
-@end example
+@end smallexample
 
 When overlay debugging is enabled, @value{GDBN} can find the correct
 address for functions and variables in an overlay, whether or not the
@@ -6623,7 +6706,7 @@ Here are the variables your overlay manager must define to support
 @item @code{_ovly_table}:
 This variable must be an array of the following structures:
 
-@example
+@smallexample
 struct
 @{
   /* The overlay's mapped address.  */
@@ -6639,7 +6722,7 @@ struct
      zero otherwise.  */
   unsigned long mapped;
 @}
-@end example
+@end smallexample
 
 @item @code{_novlys}:
 This variable must be a four-byte signed integer, holding the total
@@ -6654,6 +6737,15 @@ executable file.  When @value{GDBN} finds a matching entry, it consults
 the entry's @code{mapped} member to determine whether the overlay is
 currently mapped.
 
+In addition, your overlay manager may define a function called
+@code{_ovly_debug_event}.  If this function is defined, @value{GDBN}
+will silently set a breakpoint there.  If the overlay manager then
+calls this function whenever it has changed the overlay table, this
+will enable @value{GDBN} to accurately keep track of which overlays
+are in program memory, and update any breakpoints that may be set
+in overlays.  This will allow breakpoints to work even if the 
+overlays are kept in ROM or other non-writable memory while they
+are not being executed.
 
 @node Overlay Sample Program
 @section Overlay Sample Program
@@ -6691,7 +6783,7 @@ and @code{m32r-elf} targets.
 You can build the test program using the @code{d10v-elf} GCC
 cross-compiler like this:
 
-@example
+@smallexample
 $ d10v-elf-gcc -g -c overlays.c
 $ d10v-elf-gcc -g -c ovlymgr.c
 $ d10v-elf-gcc -g -c foo.c
@@ -6700,7 +6792,7 @@ $ d10v-elf-gcc -g -c baz.c
 $ d10v-elf-gcc -g -c grbx.c
 $ d10v-elf-gcc -g overlays.o ovlymgr.o foo.o bar.o \
                   baz.o grbx.o -Wl,-Td10v.ld -o overlays
-@end example
+@end smallexample
 
 The build process is identical for any other architecture, except that
 you must substitute the appropriate compiler and linker script for the
@@ -6835,9 +6927,9 @@ languages---but means different things.  For instance, if the current
 source file were written in C, and @value{GDBN} was parsing Modula-2, a
 command such as:
 
-@example
+@smallexample
 print a = b + c
-@end example
+@end smallexample
 
 @noindent
 might not have the effect you intended.  In C, this means to add
@@ -7031,9 +7123,9 @@ error.  In many implementations of C, mathematical overflow causes the
 result to ``wrap around'' to lower values---for example, if @var{m} is
 the largest integer value, and @var{s} is the smallest, then
 
-@example
+@smallexample
 @var{m} + 1 @result{} @var{s}
-@end example
+@end smallexample
 
 This, too, is specific to individual languages, and in some cases
 specific to individual compilers or machines.  @xref{Support, ,
@@ -7300,8 +7392,8 @@ following ways:
 @itemize @bullet
 @item
 Integer constants are a sequence of digits.  Octal constants are
-specified by a leading @samp{0} (i.e. zero), and hexadecimal constants by
-a leading @samp{0x} or @samp{0X}.  Constants may also end with a letter
+specified by a leading @samp{0} (i.e.@: zero), and hexadecimal constants
+by a leading @samp{0x} or @samp{0X}.  Constants may also end with a letter
 @samp{l}, specifying that the constant should be treated as a
 @code{long} value.
 
@@ -7393,9 +7485,9 @@ support in @value{GDBN} does @emph{not} work.
 @item
 Member function calls are allowed; you can use expressions like
 
-@example
+@smallexample
 count = aml->GetOriginal(x, y)
-@end example
+@end smallexample
 
 @vindex this@r{, inside C@t{++} member functions}
 @cindex namespace in C@t{++}
@@ -8135,11 +8227,11 @@ There are a few subtle differences between the Modula-2 scope operator
 (@code{.}) and the @value{GDBN} scope operator (@code{::}).  The two have
 similar syntax:
 
-@example
+@smallexample
 
 @var{module} . @var{id}
 @var{scope} :: @var{id}
-@end example
+@end smallexample
 
 @noindent
 where @var{scope} is the name of a module or a procedure,
@@ -8701,9 +8793,9 @@ ordinarily parse a typical file name, like @file{foo.c}, as the three words
 @samp{foo} @samp{.} @samp{c}.  To allow @value{GDBN} to recognize
 @samp{foo.c} as a single symbol, enclose it in single quotes; for example,
 
-@example
+@smallexample
 p 'foo.c'::x
-@end example
+@end smallexample
 
 @noindent
 looks up the value of @code{x} in the scope of the file @file{foo.c}.
@@ -8728,10 +8820,10 @@ Print the name of a symbol which is stored at the address @var{addr}.
 If no symbol is stored exactly at @var{addr}, @value{GDBN} prints the
 nearest symbol and an offset from it:
 
-@example
+@smallexample
 (@value{GDBP}) info symbol 0x54320
 _initialize_vx + 396 in section .text
-@end example
+@end smallexample
 
 @noindent
 This is the opposite of the @code{info address} command.  You can use
@@ -8762,14 +8854,14 @@ of just the name of the type.
 
 For example, for this variable declaration:
 
-@example
+@smallexample
 struct complex @{double real; double imag;@} v;
-@end example
+@end smallexample
 
 @noindent
 the two commands give this output:
 
-@example
+@smallexample
 @group
 (@value{GDBP}) whatis v
 type = struct complex
@@ -8779,7 +8871,7 @@ type = struct complex @{
     double imag;
 @}
 @end group
-@end example
+@end smallexample
 
 @noindent
 As with @code{whatis}, using @code{ptype} without an argument refers to
@@ -8852,7 +8944,7 @@ that conflict with the regular expression language (eg.
 @kindex info variables
 @item info variables
 Print the names and data types of all variables that are declared
-outside of functions (i.e., excluding local variables).
+outside of functions (i.e.@: excluding local variables).
 
 @item info variables @var{regexp}
 Print the names and data types of all variables (except for local
@@ -8999,9 +9091,9 @@ address, or even return prematurely from a function.
 To alter the value of a variable, evaluate an assignment expression.
 @xref{Expressions, ,Expressions}.  For example,
 
-@example
+@smallexample
 print x=4
-@end example
+@end smallexample
 
 @noindent
 stores the value 4 into the variable @code{x}, and then prints the
@@ -9025,22 +9117,22 @@ program has a variable @code{width}, you get an error if you try to set
 a new value with just @samp{set width=13}, because @value{GDBN} has the
 command @code{set width}:
 
-@example
+@smallexample
 (@value{GDBP}) whatis width
 type = double
 (@value{GDBP}) p width
 $4 = 13
 (@value{GDBP}) set width=47
 Invalid syntax in expression.
-@end example
+@end smallexample
 
 @noindent
 The invalid expression, of course, is @samp{=47}.  In
 order to actually set the program's variable @code{width}, use
 
-@example
+@smallexample
 (@value{GDBP}) set var width=47
-@end example
+@end smallexample
 
 Because the @code{set} command has many subcommands that can conflict
 with the names of program variables, it is a good idea to use the
@@ -9049,7 +9141,7 @@ your program has a variable @code{g}, you run into problems if you try
 to set a new value with just @samp{set g=4}, because @value{GDBN} has
 the command @code{set gnutarget}, abbreviated @code{set g}:
 
-@example
+@smallexample
 @group
 (@value{GDBP}) whatis g
 type = double
@@ -9067,16 +9159,16 @@ Starting program: /home/smith/cc_progs/a.out
 (@value{GDBP}) show g
 The current BFD target is "=4".
 @end group
-@end example
+@end smallexample
 
 @noindent
 The program variable @code{g} did not change, and you silently set the
 @code{gnutarget} to an invalid value.  In order to set the variable
 @code{g}, use
 
-@example
+@smallexample
 (@value{GDBP}) set var g=4
-@end example
+@end smallexample
 
 @value{GDBN} allows more implicit conversions in assignments than C; you can
 freely store an integer value into a pointer variable or vice versa,
@@ -9091,9 +9183,9 @@ construct to generate a value of specified type at a specified address
 to memory location @code{0x83040} as an integer (which implies a certain size
 and representation in memory), and
 
-@example
+@smallexample
 set @{int@}0x83040 = 4
-@end example
+@end smallexample
 
 @noindent
 stores the value 4 into that memory location.
@@ -9136,9 +9228,9 @@ difference is that this does not start your program running; it only
 changes the address of where it @emph{will} run when you continue.  For
 example,
 
-@example
+@smallexample
 set $pc = 0x485
-@end example
+@end smallexample
 
 @noindent
 makes the next @code{continue} command or stepping command execute at
@@ -9570,6 +9662,21 @@ COFF shared library information.
 Section contains common symbols.
 @end table
 @end table
+@kindex set trust-readonly-sections
+@item set trust-readonly-sections on
+Tell @value{GDBN} that readonly sections in your object file
+really are read-only (i.e.@: that their contents will not change).
+In that case, @value{GDBN} can fetch values from these sections
+out of the object file, rather than from the target program.
+For some targets (notably embedded ones), this can be a significant
+enhancement to debugging performance.
+
+The default is off.
+
+@item set trust-readonly-sections off
+Tell @value{GDBN} not to trust readonly sections.  This means that
+the contents of the section might change while the program is running,
+and must therefore be fetched from the target when needed.
 @end table
 
 All file-specifying commands allow both absolute and relative file names
@@ -9659,7 +9766,7 @@ If @var{threshold} is nonzero and shared library autoloading is enabled,
 symbols from all shared object libraries will be loaded until the total
 size of the loaded shared library symbols exceeds this threshold.
 Otherwise, symbols must be loaded manually, using the
-@code{sharedlibrary} command.  The default threshold is 100 (i.e. 100
+@code{sharedlibrary} command.  The default threshold is 100 (i.e.@: 100
 Mb).
 
 @kindex show auto-solib-limit
@@ -9895,11 +10002,11 @@ it somewhere in memory where it won't get clobbered by the download.
 @item target sim
 Builtin CPU simulator.  @value{GDBN} includes simulators for most architectures.
 In general,
-@example
+@smallexample
         target sim
         load
         run
-@end example
+@end smallexample
 @noindent
 works; however, you cannot assume that a specific memory map, device
 drivers, or even basic I/O is available, although some simulators do
@@ -10021,21 +10128,21 @@ displayed is determined on a per-OS basis.
 Use the @code{set os} command to set the operating system.  This tells
 @value{GDBN} which kernel object display module to initialize:
 
-@example
+@smallexample
 (@value{GDBP}) set os cisco
-@end example
+@end smallexample
 
 If @code{set os} succeeds, @value{GDBN} will display some information
 about the operating system, and will create a new @code{info} command
 which can be used to query the target.  The @code{info} command is named
 after the operating system:
 
-@example
+@smallexample
 (@value{GDBP}) info cisco
 List of Cisco Kernel Objects
 Object     Description
 any        Any and all objects
-@end example
+@end smallexample
 
 Further subcommands can be used to query about particular objects known
 by the kernel.
@@ -10088,7 +10195,7 @@ strip the program if necessary to save space.  @value{GDBN} on the host
 system does all the symbol handling.
 
 To use the server, you must tell it how to communicate with @value{GDBN};
-the name of your program; and the arguments for your program.  The
+the name of your program; and the arguments for your program.  The usual
 syntax is:
 
 @smallexample
@@ -10124,6 +10231,16 @@ reserved for @code{telnet}).@footnote{If you choose a port number that
 conflicts with another service, @code{gdbserver} prints an error message
 and exits.}  You must use the same port number with the host @value{GDBN}
 @code{target remote} command.
+
+On some targets, @code{gdbserver} can also attach to running programs.
+This is accomplished via the @code{--attach} argument.  The syntax is:
+
+@smallexample
+target> gdbserver @var{comm} --attach @var{pid}
+@end smallexample
+
+@var{pid} is the process ID of a currently running process.  It isn't necessary
+to point @code{gdbserver} at a binary for the running process.
 
 @item On the @value{GDBN} host machine,
 you need an unstripped copy of your program, since @value{GDBN} needs
@@ -10479,18 +10596,18 @@ Make sure you have defined the supporting low-level routines
 @item
 Insert these lines near the top of your program:
 
-@example
+@smallexample
 set_debug_traps();
 breakpoint();
-@end example
+@end smallexample
 
 @item
 For the 680x0 stub only, you need to provide a variable called
 @code{exceptionHook}.  Normally you just use:
 
-@example
+@smallexample
 void (*exceptionHook)() = 0;
-@end example
+@end smallexample
 
 @noindent
 but if before calling @code{set_debug_traps}, you set it to point to a
@@ -10528,27 +10645,27 @@ TCP port (usually to a terminal server which in turn has a serial line
 to the target).  For example, to use a serial line connected to the
 device named @file{/dev/ttyb}:
 
-@example
+@smallexample
 target remote /dev/ttyb
-@end example
+@end smallexample
 
 @cindex TCP port, @code{target remote}
 To use a TCP connection, use an argument of the form
 @code{@var{host}:port}.  For example, to connect to port 2828 on a
 terminal server named @code{manyfarms}:
 
-@example
+@smallexample
 target remote manyfarms:2828
-@end example
+@end smallexample
 
 If your remote target is actually running on the same machine as
 your debugger session (e.g.@: a simulator of your target running on
 the same host), you can omit the hostname.  For example, to connect
 to port 1234 on your local machine:
 
-@example
+@smallexample
 target remote :1234
-@end example
+@end smallexample
 @noindent
 
 Note that the colon is still required here.
@@ -10568,10 +10685,10 @@ program.  This may or may not succeed, depending in part on the hardware
 and the serial drivers the remote system uses.  If you type the
 interrupt character once again, @value{GDBN} displays this prompt:
 
-@example
+@smallexample
 Interrupted while waiting for the program.
 Give up (and stop debugging it)?  (y or n)
-@end example
+@end smallexample
 
 If you type @kbd{y}, @value{GDBN} abandons the remote debugging session.
 (If you decide you want to try again later, you can use @samp{target
@@ -10609,6 +10726,7 @@ configurations.
 * HP-UX::                       HP-UX
 * SVR4 Process Information::    SVR4 process information
 * DJGPP Native::                Features specific to the DJGPP port
+* Cygwin Native::		Features specific to the Cygwin port
 @end menu
 
 @node HP-UX
@@ -10807,6 +10925,92 @@ mapped 1:1, i.e.@: the physical and linear addresses are identical.
 This command is supported only with some DPMI servers.
 @end table
 
+@node Cygwin Native
+@subsection Features for Debugging MS Windows PE executables
+@cindex MS Windows debugging
+@cindex native Cygwin debugging
+@cindex Cygwin-specific commands
+
+@value{GDBN} supports native debugging of MS Windows programs, and
+defines a few commands specific to the Cygwin port.  This
+subsection describes those commands.
+
+@table @code
+@kindex info w32
+@item info w32
+This is a prefix of MS Windows specific commands which print
+information about the target system and important OS structures.
+
+@item info w32 selector
+This command displays information returned by
+the Win32 API @code{GetThreadSelectorEntry} function.
+It takes an optional argument that is evaluated to
+a long value to give the information about this given selector.
+Without argument, this command displays information
+about the the six segment registers.
+
+@kindex info dll
+@item info dll
+This is a Cygwin specific alias of info shared.
+
+@kindex dll-symbols
+@item dll-symbols
+This command loads symbols from a dll similarly to
+add-sym command but without the need to specify a base address.
+
+@kindex set new-console 
+@item set new-console @var{mode}
+If @var{mode} is @code{on} the debuggee will 
+be started in a new console on next start.
+If @var{mode} is @code{off}i, the debuggee will
+be started in the same console as the debugger.
+
+@kindex show new-console
+@item show new-console
+Displays whether a new console is used
+when the debuggee is started.
+
+@kindex set new-group
+@item set new-group @var{mode}
+This boolean value controls whether the debuggee should
+start a new group or stay in the same group as the debugger.
+This affects the way the Windows OS handles
+Ctrl-C.
+
+@kindex show new-group
+@item show new-group
+Displays current value of new-group boolean.
+
+@kindex set debugevents
+@item set debugevents
+This boolean value adds debug output concerning events seen by the debugger.
+
+@kindex set debugexec
+@item set debugexec
+This boolean value adds debug output concerning execute events 
+seen by the debugger.
+
+@kindex set debugexceptions
+@item set debugexceptions
+This boolean value adds debug ouptut concerning exception events 
+seen by the debugger.
+
+@kindex set debugmemory
+@item set debugmemory
+This boolean value adds debug ouptut concerning memory events 
+seen by the debugger.
+
+@kindex set shell
+@item set shell
+This boolean values specifies whether the debuggee is called
+via a shell or directly (default value is on).
+
+@kindex show shell
+@item show shell
+Displays if the debuggee will be started with a shell.
+
+@end table
+
 @node Embedded OS
 @section Embedded Operating Systems
 
@@ -10878,9 +11082,9 @@ run @value{GDBN}.  From your Unix host, run @code{@value{GDBP}} (or
 
 @value{GDBN} comes up showing the prompt:
 
-@example
+@smallexample
 (vxgdb)
-@end example
+@end smallexample
 
 @menu
 * VxWorks Connection::          Connecting to VxWorks
@@ -10894,9 +11098,9 @@ run @value{GDBN}.  From your Unix host, run @code{@value{GDBP}} (or
 The @value{GDBN} command @code{target} lets you connect to a VxWorks target on the
 network.  To connect to a target whose host name is ``@code{tt}'', type:
 
-@example
+@smallexample
 (vxgdb) target vxworks tt
-@end example
+@end smallexample
 
 @need 750
 @value{GDBN} displays messages like these:
@@ -10913,9 +11117,9 @@ these files by searching the directories listed in the command search
 path (@pxref{Environment, ,Your program's environment}); if it fails
 to find an object file, it displays a message such as:
 
-@example
+@smallexample
 prog.o: No such file or directory.
-@end example
+@end smallexample
 
 When this happens, add the appropriate directory to the search path with
 the @value{GDBN} command @code{path}, and execute the @code{target}
@@ -10941,17 +11145,17 @@ the file by its name, without any path.  For instance, a program
 and in @file{@var{hostpath}/vw/demo/rdb} on the host.  To load this
 program, type this on VxWorks:
 
-@example
+@smallexample
 -> cd "@var{vxpath}/vw/demo/rdb"
-@end example
+@end smallexample
 
 @noindent
 Then, in @value{GDBN}, type:
 
-@example
+@smallexample
 (vxgdb) cd @var{hostpath}/vw/demo/rdb
 (vxgdb) load prog.o
-@end example
+@end smallexample
 
 @value{GDBN} displays a response similar to this:
 
@@ -10974,9 +11178,9 @@ table.)
 You can also attach to an existing task using the @code{attach} command as
 follows:
 
-@example
+@smallexample
 (vxgdb) attach @var{task}
-@end example
+@end smallexample
 
 @noindent
 where @var{task} is the VxWorks hexadecimal task ID.  The task can be running
@@ -11082,9 +11286,9 @@ configurations.
 @c OBSOLETE The next step is to set up the PC's port, by doing something like this
 @c OBSOLETE in DOS on the PC:
 @c OBSOLETE 
-@c OBSOLETE @example
+@c OBSOLETE @smallexample
 @c OBSOLETE C:\> MODE com1:9600,n,8,1,none
-@c OBSOLETE @end example
+@c OBSOLETE @end smallexample
 @c OBSOLETE 
 @c OBSOLETE @noindent
 @c OBSOLETE This example---run on an MS DOS 4.0 system---sets the PC port to 9600
@@ -11103,9 +11307,9 @@ configurations.
 @c OBSOLETE To give control of the PC to the Unix side of the serial line, type
 @c OBSOLETE the following at the DOS console:
 @c OBSOLETE 
-@c OBSOLETE @example
+@c OBSOLETE @smallexample
 @c OBSOLETE C:\> CTTY com1
-@c OBSOLETE @end example
+@c OBSOLETE @end smallexample
 @c OBSOLETE 
 @c OBSOLETE @noindent
 @c OBSOLETE (Later, if you wish to return control to the DOS console, you can use
@@ -11115,18 +11319,18 @@ configurations.
 @c OBSOLETE From the Unix host, use a communications program such as @code{tip} or
 @c OBSOLETE @code{cu} to communicate with the PC; for example,
 @c OBSOLETE 
-@c OBSOLETE @example
+@c OBSOLETE @smallexample
 @c OBSOLETE cu -s 9600 -l /dev/ttya
-@c OBSOLETE @end example
+@c OBSOLETE @end smallexample
 @c OBSOLETE 
 @c OBSOLETE @noindent
 @c OBSOLETE The @code{cu} options shown specify, respectively, the linespeed and the
 @c OBSOLETE serial port to use.  If you use @code{tip} instead, your command line
 @c OBSOLETE may look something like the following:
 @c OBSOLETE 
-@c OBSOLETE @example
+@c OBSOLETE @smallexample
 @c OBSOLETE tip -9600 /dev/ttya
-@c OBSOLETE @end example
+@c OBSOLETE @end smallexample
 @c OBSOLETE 
 @c OBSOLETE @noindent
 @c OBSOLETE Your system may require a different name where we show
@@ -11154,7 +11358,7 @@ configurations.
 @c OBSOLETE @code{EBMON} similar to the one that follows, ending with the
 @c OBSOLETE @code{EBMON} prompt @samp{#}---
 @c OBSOLETE 
-@c OBSOLETE @example
+@c OBSOLETE @smallexample
 @c OBSOLETE C:\> G:
 @c OBSOLETE 
 @c OBSOLETE G:\> CD \usr\joe\work29k
@@ -11183,7 +11387,7 @@ configurations.
 @c OBSOLETE Byte Write Available  = Yes
 @c OBSOLETE 
 @c OBSOLETE # ~.
-@c OBSOLETE @end example
+@c OBSOLETE @end smallexample
 @c OBSOLETE 
 @c OBSOLETE Then exit the @code{cu} or @code{tip} program (done in the example by
 @c OBSOLETE typing @code{~.} at the @code{EBMON} prompt).  @code{EBMON} keeps
@@ -11205,20 +11409,20 @@ configurations.
 @c OBSOLETE program on the Unix system, and start @value{GDBN}---specifying as argument the
 @c OBSOLETE name of your 29K program:
 @c OBSOLETE 
-@c OBSOLETE @example
+@c OBSOLETE @smallexample
 @c OBSOLETE cd /usr/joe/work29k
 @c OBSOLETE @value{GDBP} myfoo
-@c OBSOLETE @end example
+@c OBSOLETE @end smallexample
 @c OBSOLETE 
 @c OBSOLETE @need 500
 @c OBSOLETE Now you can use the @code{target} command:
 @c OBSOLETE 
-@c OBSOLETE @example
+@c OBSOLETE @smallexample
 @c OBSOLETE target amd-eb /dev/ttya 9600 MYFOO
 @c OBSOLETE @c FIXME: test above 'target amd-eb' as spelled, with caps!  caps are meant to
 @c OBSOLETE @c emphasize that this is the name as seen by DOS (since I think DOS is
 @c OBSOLETE @c single-minded about case of letters).  ---doc@cygnus.com, 25feb91
-@c OBSOLETE @end example
+@c OBSOLETE @end smallexample
 @c OBSOLETE 
 @c OBSOLETE @noindent
 @c OBSOLETE In this example, we've assumed your program is in a file called
@@ -11596,7 +11800,7 @@ debugger, you give it just the numeric part of the serial port's name;
 for example, @samp{asyncstr 2} below runs @code{asyncstr} on
 @code{COM2}.
 
-@example
+@smallexample
 C:\H8300\TEST> asynctsr 2
 C:\H8300\TEST> mode com2:9600,n,8,1,p
 
@@ -11604,7 +11808,7 @@ Resident portion of MODE loaded
 
 COM2: 9600, n, 8, 1, p
 
-@end example
+@end smallexample
 
 @quotation
 @emph{Warning:} We have noticed a bug in PC-NFS that conflicts with
@@ -11777,9 +11981,9 @@ If you simply start @code{@value{GDBP}} without using any command-line
 options, you are prompted for what serial port to use, @emph{before} you
 reach the ordinary @value{GDBN} prompt:
 
-@example
+@smallexample
 Attach /dev/ttyNN -- specify NN, or "quit" to quit:
-@end example
+@end smallexample
 
 @noindent
 Respond to the prompt with whatever suffix (after @samp{/dev/tty})
@@ -11942,13 +12146,13 @@ For example, this sequence connects to the target board through a serial
 port, and loads and runs a program called @var{prog} through the
 debugger:
 
-@example
+@smallexample
 host$ @value{GDBP} @var{prog}
 @value{GDBN} is free software and @dots{}
 (@value{GDBP}) target mips /dev/ttyb
 (@value{GDBP}) load @var{prog}
 (@value{GDBP}) run
-@end example
+@end smallexample
 
 @item target mips @var{hostname}:@var{portnumber}
 On some @value{GDBN} host configurations, you can specify a TCP
@@ -12145,15 +12349,15 @@ information and @samp{-Ttext} to relocate the program to where you wish to
 load it on the target.  You may also want to add the options @samp{-n} or
 @samp{-N} in order to reduce the size of the sections.  Example:
 
-@example
+@smallexample
 sparclet-aout-gcc prog.c -Ttext 0x12010000 -g -o prog -N
-@end example
+@end smallexample
 
 You can use @code{objdump} to verify that the addresses are what you intended:
 
-@example
+@smallexample
 sparclet-aout-objdump --headers --syms prog
-@end example
+@end smallexample
 
 @cindex running, on Sparclet
 Once you have set
@@ -12163,9 +12367,9 @@ run @value{GDBN}.  From your Unix host, run @code{@value{GDBP}}
 
 @value{GDBN} comes up showing the prompt:
 
-@example
+@smallexample
 (gdbslet)
-@end example
+@end smallexample
 
 @menu
 * Sparclet File::                Setting the file to debug
@@ -12179,9 +12383,9 @@ run @value{GDBN}.  From your Unix host, run @code{@value{GDBP}}
 
 The @value{GDBN} command @code{file} lets you choose with program to debug.
 
-@example
+@smallexample
 (gdbslet) file prog
-@end example
+@end smallexample
 
 @need 1000
 @value{GDBN} then attempts to read the symbol table of @file{prog}.
@@ -12196,9 +12400,9 @@ path (@pxref{Environment, ,Your program's environment}).
 If it fails
 to find a file, it displays a message such as:
 
-@example
+@smallexample
 prog: No such file or directory.
-@end example
+@end smallexample
 
 When this happens, add the appropriate directories to the search paths with
 the @value{GDBN} commands @code{path} and @code{dir}, and execute the
@@ -12210,18 +12414,18 @@ the @value{GDBN} commands @code{path} and @code{dir}, and execute the
 The @value{GDBN} command @code{target} lets you connect to a Sparclet target.
 To connect to a target on serial port ``@code{ttya}'', type:
 
-@example
+@smallexample
 (gdbslet) target sparclet /dev/ttya
 Remote target sparclet connected to /dev/ttya
 main () at ../prog.c:3
-@end example
+@end smallexample
 
 @need 750
 @value{GDBN} displays messages like these:
 
-@example
+@smallexample
 Connected to ttya.
-@end example
+@end smallexample
 
 @node Sparclet Download
 @subsubsection Sparclet download
@@ -12240,10 +12444,10 @@ For instance, if the program
 @file{prog} was linked to text address 0x1201000, with data at 0x12010160
 and bss at 0x12010170, in @value{GDBN}, type:
 
-@example
+@smallexample
 (gdbslet) load prog 0x12010000
 Loading section .text, size 0xdb0 vma 0x12010000
-@end example
+@end smallexample
 
 If the code is loaded at a different address then what the program was linked
 to, you may need to use the @code{section} and @code{add-symbol-file} commands
@@ -12257,7 +12461,7 @@ You can now begin debugging the task using @value{GDBN}'s execution control
 commands, @code{b}, @code{step}, @code{run}, etc.  See the @value{GDBN}
 manual for the list of commands.
 
-@example
+@smallexample
 (gdbslet) b main
 Breakpoint 1 at 0x12010000: file prog.c, line 3.
 (gdbslet) run
@@ -12267,7 +12471,7 @@ Breakpoint 1, main (argc=1, argv=0xeffff21c) at prog.c:3
 (gdbslet) step
 4        char *execarg = "hello!";
 (gdbslet)
-@end example
+@end smallexample
 
 @node Sparclite
 @subsection Fujitsu Sparclite
@@ -12292,9 +12496,9 @@ STDBUG protocol.
 To connect your ST2000 to the host system, see the manufacturer's
 manual.  Once the ST2000 is physically attached, you can run:
 
-@example
+@smallexample
 target st2000 @var{dev} @var{speed}
-@end example
+@end smallexample
 
 @noindent
 to establish it as your debugging environment.  @var{dev} is normally
@@ -12770,11 +12974,11 @@ By default, @value{GDBN} is cautious, and asks what sometimes seems to be a
 lot of stupid questions to confirm certain commands.  For example, if
 you try to run a program which is already running:
 
-@example
+@smallexample
 (@value{GDBP}) run
 The program being debugged has been started already.
 Start it from the beginning? (y or n)
-@end example
+@end smallexample
 
 If you are willing to unflinchingly face the consequences of your own
 commands, you can disable this ``feature'':
@@ -13014,7 +13218,7 @@ For example, to ignore @code{SIGALRM} signals while
 single-stepping, but treat them normally during normal execution,
 you could define:
 
-@example
+@smallexample
 define hook-stop
 handle SIGALRM nopass
 end
@@ -13026,13 +13230,13 @@ end
 define hook-continue
 handle SIGLARM pass
 end
-@end example
+@end smallexample
 
 As a further example, to hook at the begining and end of the @code{echo}
 command, and to add extra text to the beginning and end of the message, 
 you could define:
 
-@example
+@smallexample
 define hook-echo
 echo <<<---
 end
@@ -13045,7 +13249,7 @@ end
 <<<---Hello World--->>>
 (@value{GDBP})
 
-@end example
+@end smallexample
 
 You can define a hook for any single-word command in @value{GDBN}, but
 not for command aliases; you should define a hook for the basic command
@@ -13143,9 +13347,9 @@ standard error.  Errors in a command file supplied on standard input do
 not terminate execution of the command file --- execution continues with
 the next command.
 
-@example
+@smallexample
 gdb < cmds > log 2>&1
-@end example
+@end smallexample
 
 (The syntax above will vary depending on the shell used.) This example
 will execute commands from the file @file{cmds}. All output and errors
@@ -13178,19 +13382,19 @@ To print @samp{@w{ }and foo =@w{ }}, use the command
 A backslash at the end of @var{text} can be used, as in C, to continue
 the command onto subsequent lines.  For example,
 
-@example
+@smallexample
 echo This is some text\n\
 which is continued\n\
 onto several lines.\n
-@end example
+@end smallexample
 
 produces the same output as
 
-@example
+@smallexample
 echo This is some text\n
 echo which is continued\n
 echo onto several lines.\n
-@end example
+@end smallexample
 
 @kindex output
 @item output @var{expression}
@@ -13216,9 +13420,9 @@ subroutine
 @c Either this is a bug, or the manual should document what formats are
 @c supported.
 
-@example
+@smallexample
 printf (@var{string}, @var{expressions}@dots{});
-@end example
+@end smallexample
 
 For example, you can print two values in hex like this:
 
@@ -13586,9 +13790,9 @@ you need to call @value{GDBN} by a different name (for example, if you keep
 several configurations around, with different names) you can set the
 Emacs variable @code{gdb-command-name}; for example,
 
-@example
+@smallexample
 (setq gdb-command-name "mygdb")
-@end example
+@end smallexample
 
 @noindent
 (preceded by @kbd{M-:} or @kbd{ESC :}, or typed in the @code{*scratch*} buffer, or
@@ -13758,12 +13962,11 @@ individuals in the file @file{etc/SERVICE} in the @sc{gnu} Emacs
 distribution.
 @c should add a web page ref...
 
-In any event, we also recommend that you send bug reports for
-@value{GDBN} to this addresses:
-
-@example
-bug-gdb@@gnu.org
-@end example
+In any event, we also recommend that you submit bug reports for
+@value{GDBN}.  The prefered method is to submit them directly using
+@uref{http://www.gnu.org/software/gdb/bugs/, @value{GDBN}'s Bugs web
+page}.  Alternatively, the @email{bug-gdb@@gnu.org, e-mail gateway} can
+be used.
 
 @strong{Do not send bug reports to @samp{info-gdb}, or to
 @samp{help-gdb}, or to any newsgroups.}  Most users of @value{GDBN} do
@@ -13778,16 +13981,6 @@ problem which can be crucial: a newsgroup posting often lacks a mail
 path back to the sender.  Thus, if we need to ask for more information,
 we may be unable to reach you.  For this reason, it is better to send
 bug reports to the mailing list.
-
-As a last resort, send bug reports on paper to:
-
-@example
-@sc{gnu} Debugger Bugs
-Free Software Foundation Inc.
-59 Temple Place - Suite 330
-Boston, MA 02111-1307
-USA
-@end example
 
 The fundamental principle of reporting bugs usefully is this:
 @strong{report all the facts}.  If you are not sure whether to state a
@@ -13952,9 +14145,9 @@ you can print the reference card immediately with @file{refcard.ps}.
 The release also includes the source for the reference card.  You
 can format it, using @TeX{}, by typing:
 
-@example
+@smallexample
 make refcard.dvi
-@end example
+@end smallexample
 
 The @value{GDBN} reference card is designed to print in @dfn{landscape}
 mode on US ``letter'' size paper;
@@ -13988,10 +14181,10 @@ If you have @code{makeinfo} installed, and are in the top level
 @value{GDBN} source directory (@file{gdb-@value{GDBVN}}, in the case of
 version @value{GDBVN}), you can make the Info file by typing:
 
-@example
+@smallexample
 cd gdb
 make gdb.info
-@end example
+@end smallexample
 
 If you want to typeset and print copies of this manual, you need @TeX{},
 a program to print its @sc{dvi} output files, and @file{texinfo.tex}, the
@@ -14017,9 +14210,9 @@ typeset and print this manual.  First switch to the the @file{gdb}
 subdirectory of the main source directory (for example, to
 @file{gdb-@value{GDBVN}/gdb}) and type:
 
-@example
+@smallexample
 make gdb.dvi
-@end example
+@end smallexample
 
 Then give @file{gdb.dvi} to your @sc{dvi} printing program.
 
@@ -14085,11 +14278,11 @@ argument.
 
 For example:
 
-@example
+@smallexample
 cd gdb-@value{GDBVN}
 ./configure @var{host}
 make
-@end example
+@end smallexample
 
 @noindent
 where @var{host} is an identifier such as @samp{sun4} or
@@ -14107,9 +14300,9 @@ binaries, are left in the corresponding source directories.
 system does not recognize this automatically when you run a different
 shell, you may need to run @code{sh} on it explicitly:
 
-@example
+@smallexample
 sh configure @var{host}
-@end example
+@end smallexample
 
 If you run @code{configure} from a directory that contains source
 directories for multiple libraries or programs, such as the
@@ -14124,12 +14317,12 @@ configure that subdirectory, but be sure to specify a path to it.
 For example, with version @value{GDBVN}, type the following to configure only
 the @code{bfd} subdirectory:
 
-@example
+@smallexample
 @group
 cd gdb-@value{GDBVN}/bfd
 ../configure @var{host}
 @end group
-@end example
+@end smallexample
 
 You can install @code{@value{GDBP}} anywhere; it has no hardwired paths.
 However, you should make sure that the shell on your path (named by
@@ -14165,7 +14358,7 @@ the @samp{--srcdir} option; it is assumed.)
 For example, with version @value{GDBVN}, you can build @value{GDBN} in a
 separate directory for a Sun 4 like this:
 
-@example
+@smallexample
 @group
 cd gdb-@value{GDBVN}
 mkdir ../gdb-sun4
@@ -14173,7 +14366,7 @@ cd ../gdb-sun4
 ../gdb-@value{GDBVN}/configure sun4
 make
 @end group
-@end example
+@end smallexample
 
 When @code{configure} builds a configuration using a remote source
 directory, it creates a tree for the binaries with the same structure
@@ -14212,9 +14405,9 @@ script are based on a three-part naming scheme, but some short predefined
 aliases are also supported.  The full naming scheme encodes three pieces
 of information in the following pattern:
 
-@example
+@smallexample
 @var{architecture}-@var{vendor}-@var{os}
-@end example
+@end smallexample
 
 For example, you can use the alias @code{sun4} as a @var{host} argument,
 or as the value for @var{target} in a @code{--target=@var{target}}
@@ -14254,7 +14447,7 @@ are most often useful for building @value{GDBN}.  @code{configure} also has
 several other options not listed here.  @inforef{What Configure
 Does,,configure.info}, for a full explanation of @code{configure}.
 
-@example
+@smallexample
 configure @r{[}--help@r{]}
           @r{[}--prefix=@var{dir}@r{]}
           @r{[}--exec-prefix=@var{dir}@r{]}
@@ -14262,7 +14455,7 @@ configure @r{[}--help@r{]}
           @r{[}--norecursion@r{]} @r{[}--rm@r{]}
           @r{[}--target=@var{target}@r{]}
           @var{host}
-@end example
+@end smallexample
 
 @noindent
 You may introduce options with a single @samp{-} rather than
@@ -14379,9 +14572,9 @@ sent as a @var{packet}.  A @var{packet} is introduced with the character
 @samp{$}, the actual @var{packet-data}, and the terminating character
 @samp{#} followed by a two-digit @var{checksum}:
 
-@example
+@smallexample
 @code{$}@var{packet-data}@code{#}@var{checksum}
-@end example
+@end smallexample
 @noindent
 
 @cindex checksum, for @value{GDBN} remote
@@ -14393,9 +14586,9 @@ eight bit unsigned checksum).
 Implementors should note that prior to @value{GDBN} 5.0 the protocol
 specification also included an optional two-digit @var{sequence-id}:
 
-@example
+@smallexample
 @code{$}@var{sequence-id}@code{:}@var{packet-data}@code{#}@var{checksum}
-@end example
+@end smallexample
 
 @cindex sequence-id, for @value{GDBN} remote
 @noindent
@@ -14409,10 +14602,10 @@ response expected is an acknowledgment: either @samp{+} (to indicate
 the package was received correctly) or @samp{-} (to request
 retransmission):
 
-@example
+@smallexample
 <- @code{$}@var{packet-data}@code{#}@var{checksum}
 -> @code{+}
-@end example
+@end smallexample
 @noindent
 
 The host (@value{GDBN}) sends @var{command}s, and the target (the
@@ -14445,9 +14638,9 @@ loosely refered to as the cisco encoding.  Following the @samp{*}
 character are two hex digits that indicate the size of the packet.
 
 So:
-@example
+@smallexample
 "@code{0* }"
-@end example
+@end smallexample
 @noindent
 means the same as "0000".
 
@@ -14662,8 +14855,8 @@ See @samp{i} and @samp{S} for likely syntax and semantics.
 @item kill request
 @tab @code{k}
 @tab
-FIXME: @emph{There is no description of how operate when a specific
-thread context has been selected (ie. does 'k' kill only that thread?)}.
+FIXME: @emph{There is no description of how to operate when a specific
+thread context has been selected (i.e.@: does 'k' kill only that thread?)}.
 
 @item reserved
 @tab @code{l}
@@ -15183,7 +15376,7 @@ as @code{MIPS32}.
 Example sequence of a target being re-started.  Notice how the restart
 does not get any direct output:
 
-@example
+@smallexample
 <- @code{R00}
 -> @code{+}
 @emph{target restarts}
@@ -15191,11 +15384,11 @@ does not get any direct output:
 -> @code{+}
 -> @code{T001:1234123412341234}
 <- @code{+}
-@end example
+@end smallexample
 
 Example sequence of a target being stepped by a single instruction:
 
-@example
+@smallexample
 <- @code{G1445...}
 -> @code{+}
 <- @code{s}
@@ -15207,7 +15400,9 @@ Example sequence of a target being stepped by a single instruction:
 -> @code{+}
 -> @code{1455...}
 <- @code{+}
-@end example
+@end smallexample
+
+@include gpl.texi
 
 @include fdl.texi
 

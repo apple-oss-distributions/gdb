@@ -646,9 +646,8 @@ floatformat_from_type (const struct type *type)
 }
 
 /* If the host doesn't define NAN, use zero instead.  */
-#ifndef NAN
+#undef NAN
 #define NAN 0.0
-#endif
 
 /* Extract a floating-point number of length LEN from a target-order
    byte-stream at ADDR.  Returns the value as type DOUBLEST.  */
@@ -732,9 +731,9 @@ store_typed_floating (void *addr, const struct type *type, DOUBLEST val)
   memset (addr, 0, TYPE_LENGTH (type));
 
   if (TYPE_FLOATFORMAT (type) == NULL)
-    return store_floating (addr, TYPE_LENGTH (type), val);
-
-  floatformat_from_doublest (TYPE_FLOATFORMAT (type), &val, addr);
+    store_floating (addr, TYPE_LENGTH (type), val);
+  else
+    floatformat_from_doublest (TYPE_FLOATFORMAT (type), &val, addr);
 }
 
 /* Convert a floating-point number of type FROM_TYPE from a

@@ -1,7 +1,7 @@
 #!/bin/sh -u
 
 # Architecture commands for GDB, the GNU debugger.
-# Copyright 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+# Copyright 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 #
 # This file is part of GDB.
 #
@@ -25,7 +25,7 @@ compare_new ()
     if test ! -r ${file}
     then
 	echo "${file} missing? cp new-${file} ${file}" 1>&2
-    elif diff -c ${file} new-${file}
+    elif diff -u ${file} new-${file}
     then
 	echo "${file} unchanged" 1>&2
     else
@@ -75,6 +75,13 @@ EOF
 		    eval ${r}=""
 		fi
 	    done
+
+	    case "${level}" in
+		1 ) gt_level=">= GDB_MULTI_ARCH_PARTIAL" ;;
+		2 ) gt_level="> GDB_MULTI_ARCH_PARTIAL" ;;
+		"" ) ;;
+		* ) error "Error: bad level for ${function}" 1>&2 ; kill $$ ; exit 1 ;;
+	    esac
 
 	    case "${class}" in
 		m ) staticdefault="${predefault}" ;;
@@ -354,7 +361,9 @@ do
 
 	# Currently unused.
 
-    *) exit 1;;
+    *)
+	echo "Bad field ${field}"
+	exit 1;;
   esac
 done
 
@@ -384,7 +393,7 @@ v::TARGET_FLOAT_BIT:int:float_bit::::8 * sizeof (float):4*TARGET_CHAR_BIT::0
 # Number of bits in a double for the target machine.
 v::TARGET_DOUBLE_BIT:int:double_bit::::8 * sizeof (double):8*TARGET_CHAR_BIT::0
 # Number of bits in a long double for the target machine.
-v::TARGET_LONG_DOUBLE_BIT:int:long_double_bit::::8 * sizeof (long double):2*TARGET_DOUBLE_BIT::0
+v::TARGET_LONG_DOUBLE_BIT:int:long_double_bit::::8 * sizeof (long double):8*TARGET_CHAR_BIT::0
 # For most targets, a pointer on the target and its representation as an
 # address in GDB have the same size and "look the same".  For such a
 # target, you need only set TARGET_PTR_BIT / ptr_bit and TARGET_ADDR_BIT
@@ -406,7 +415,6 @@ v::TARGET_CHAR_SIGNED:int:char_signed::::1:-1:1::::
 f::TARGET_READ_PC:CORE_ADDR:read_pc:ptid_t ptid:ptid::0:generic_target_read_pc::0
 f::TARGET_WRITE_PC:void:write_pc:CORE_ADDR val, ptid_t ptid:val, ptid::0:generic_target_write_pc::0
 f::TARGET_READ_FP:CORE_ADDR:read_fp:void:::0:generic_target_read_fp::0
-f::TARGET_WRITE_FP:void:write_fp:CORE_ADDR val:val::0:generic_target_write_fp::0
 f::TARGET_READ_SP:CORE_ADDR:read_sp:void:::0:generic_target_read_sp::0
 f::TARGET_WRITE_SP:void:write_sp:CORE_ADDR val:val::0:generic_target_write_sp::0
 # Function for getting target's idea of a frame pointer.  FIXME: GDB's
@@ -423,9 +431,14 @@ v:2:NUM_REGS:int:num_regs::::0:-1
 # These pseudo-registers may be aliases for other registers,
 # combinations of other registers, or they may be computed by GDB.
 v:2:NUM_PSEUDO_REGS:int:num_pseudo_regs::::0:0::0:::
-v:2:SP_REGNUM:int:sp_regnum::::0:-1
-v:2:FP_REGNUM:int:fp_regnum::::0:-1
-v:2:PC_REGNUM:int:pc_regnum::::0:-1
+
+# GDB's standard (or well known) register numbers.  These can map onto
+# a real register or a pseudo (computed) register or not be defined at
+# all (-1).
+v:2:SP_REGNUM:int:sp_regnum::::-1:-1::0
+v:2:FP_REGNUM:int:fp_regnum::::-1:-1::0
+v:2:PC_REGNUM:int:pc_regnum::::-1:-1::0
+v:2:PS_REGNUM:int:ps_regnum::::-1:-1::0
 v:2:FP0_REGNUM:int:fp0_regnum::::0:-1::0
 v:2:NPC_REGNUM:int:npc_regnum::::0:-1::0
 v:2:NNPC_REGNUM:int:nnpc_regnum::::0:-1::0
@@ -450,13 +463,23 @@ f:2:REGISTER_VIRTUAL_SIZE:int:register_virtual_size:int reg_nr:reg_nr::generic_r
 v:2:MAX_REGISTER_VIRTUAL_SIZE:int:max_register_virtual_size::::0:-1
 f:2:REGISTER_VIRTUAL_TYPE:struct type *:register_virtual_type:int reg_nr:reg_nr::0:0
 f:2:DO_REGISTERS_INFO:void:do_registers_info:int reg_nr, int fpregs:reg_nr, fpregs:::do_registers_info::0
+f:2:PRINT_FLOAT_INFO:void:print_float_info:void::::default_print_float_info::0
 # MAP a GDB RAW register number onto a simulator register number.  See
 # also include/...-sim.h.
 f:2:REGISTER_SIM_REGNO:int:register_sim_regno:int reg_nr:reg_nr:::default_register_sim_regno::0
 F:2:REGISTER_BYTES_OK:int:register_bytes_ok:long nr_bytes:nr_bytes::0:0
 f:2:CANNOT_FETCH_REGISTER:int:cannot_fetch_register:int regnum:regnum:::cannot_register_not::0
 f:2:CANNOT_STORE_REGISTER:int:cannot_store_register:int regnum:regnum:::cannot_register_not::0
+# setjmp/longjmp support.
+F:2:GET_LONGJMP_TARGET:int:get_longjmp_target:CORE_ADDR *pc:pc::0:0
 #
+# Non multi-arch DUMMY_FRAMES are a mess (multi-arch ones are not that
+# much better but at least they are vaguely consistent).  The headers
+# and body contain convoluted #if/#else sequences for determine how
+# things should be compiled.  Instead of trying to mimic that
+# behaviour here (and hence entrench it further) gdbarch simply
+# reqires that these methods be set up from the word go.  This also
+# avoids any potential problems with moving beyond multi-arch partial.
 v:1:USE_GENERIC_DUMMY_FRAMES:int:use_generic_dummy_frames::::0:-1
 v:1:CALL_DUMMY_LOCATION:int:call_dummy_location::::0:0
 f:2:CALL_DUMMY_ADDRESS:CORE_ADDR:call_dummy_address:void:::0:0::gdbarch->call_dummy_location == AT_ENTRY_POINT && gdbarch->call_dummy_address == 0
@@ -477,9 +500,12 @@ f:2:INIT_FRAME_PC:void:init_frame_pc:int fromleaf, struct frame_info *prev:froml
 v:2:BELIEVE_PCC_PROMOTION:int:believe_pcc_promotion:::::::
 v:2:BELIEVE_PCC_PROMOTION_TYPE:int:believe_pcc_promotion_type:::::::
 f:2:COERCE_FLOAT_TO_DOUBLE:int:coerce_float_to_double:struct type *formal, struct type *actual:formal, actual:::default_coerce_float_to_double::0
+# GET_SAVED_REGISTER is like DUMMY_FRAMES.  It is at level one as the
+# old code has strange #ifdef interaction.  So far no one has found
+# that default_get_saved_register() is the default they are after.
 f:1:GET_SAVED_REGISTER:void:get_saved_register:char *raw_buffer, int *optimized, CORE_ADDR *addrp, struct frame_info *frame, int regnum, enum lval_type *lval:raw_buffer, optimized, addrp, frame, regnum, lval::generic_get_saved_register:0
 #
-f:1:REGISTER_CONVERTIBLE:int:register_convertible:int nr:nr:::generic_register_convertible_not::0
+f:2:REGISTER_CONVERTIBLE:int:register_convertible:int nr:nr:::generic_register_convertible_not::0
 f:2:REGISTER_CONVERT_TO_VIRTUAL:void:register_convert_to_virtual:int regnum, struct type *type, char *from, char *to:regnum, type, from, to:::0::0
 f:2:REGISTER_CONVERT_TO_RAW:void:register_convert_to_raw:struct type *type, int regnum, char *from, char *to:type, regnum, from, to:::0::0
 # This function is called when the value of a pseudo-register needs to
@@ -497,9 +523,9 @@ F:2:INTEGER_TO_ADDRESS:CORE_ADDR:integer_to_address:struct type *type, void *buf
 #
 f:2:RETURN_VALUE_ON_STACK:int:return_value_on_stack:struct type *type:type:::generic_return_value_on_stack_not::0
 f:2:EXTRACT_RETURN_VALUE:void:extract_return_value:struct type *type, char *regbuf, char *valbuf:type, regbuf, valbuf::0:0
-f:1:PUSH_ARGUMENTS:CORE_ADDR:push_arguments:int nargs, struct value **args, CORE_ADDR sp, int struct_return, CORE_ADDR struct_addr:nargs, args, sp, struct_return, struct_addr::0:0
+f:2:PUSH_ARGUMENTS:CORE_ADDR:push_arguments:int nargs, struct value **args, CORE_ADDR sp, int struct_return, CORE_ADDR struct_addr:nargs, args, sp, struct_return, struct_addr:::default_push_arguments::0
 f:2:PUSH_DUMMY_FRAME:void:push_dummy_frame:void:-:::0
-F:1:PUSH_RETURN_ADDRESS:CORE_ADDR:push_return_address:CORE_ADDR pc, CORE_ADDR sp:pc, sp:::0
+F:2:PUSH_RETURN_ADDRESS:CORE_ADDR:push_return_address:CORE_ADDR pc, CORE_ADDR sp:pc, sp:::0
 f:2:POP_FRAME:void:pop_frame:void:-:::0
 #
 f:2:STORE_STRUCT_RETURN:void:store_struct_return:CORE_ADDR addr, CORE_ADDR sp:addr, sp:::0
@@ -526,7 +552,14 @@ f:2:REMOTE_TRANSLATE_XFER_ADDRESS:void:remote_translate_xfer_address:CORE_ADDR g
 v:2:FRAME_ARGS_SKIP:CORE_ADDR:frame_args_skip::::0:-1
 f:2:FRAMELESS_FUNCTION_INVOCATION:int:frameless_function_invocation:struct frame_info *fi:fi:::generic_frameless_function_invocation_not::0
 f:2:FRAME_CHAIN:CORE_ADDR:frame_chain:struct frame_info *frame:frame::0:0
-f:1:FRAME_CHAIN_VALID:int:frame_chain_valid:CORE_ADDR chain, struct frame_info *thisframe:chain, thisframe::0:0
+# Define a default FRAME_CHAIN_VALID, in the form that is suitable for
+# most targets.  If FRAME_CHAIN_VALID returns zero it means that the
+# given frame is the outermost one and has no caller.
+#
+# XXXX - both default and alternate frame_chain_valid functions are
+# deprecated.  New code should use dummy frames and one of the generic
+# functions.
+f:2:FRAME_CHAIN_VALID:int:frame_chain_valid:CORE_ADDR chain, struct frame_info *thisframe:chain, thisframe:::func_frame_chain_valid::0
 f:2:FRAME_SAVED_PC:CORE_ADDR:frame_saved_pc:struct frame_info *fi:fi::0:0
 f:2:FRAME_ARGS_ADDRESS:CORE_ADDR:frame_args_address:struct frame_info *fi:fi::0:0
 f:2:FRAME_LOCALS_ADDRESS:CORE_ADDR:frame_locals_address:struct frame_info *fi:fi::0:0
@@ -534,14 +567,14 @@ f:2:SAVED_PC_AFTER_CALL:CORE_ADDR:saved_pc_after_call:struct frame_info *frame:f
 f:2:FRAME_NUM_ARGS:int:frame_num_args:struct frame_info *frame:frame::0:0
 #
 F:2:STACK_ALIGN:CORE_ADDR:stack_align:CORE_ADDR sp:sp::0:0
-v:1:EXTRA_STACK_ALIGNMENT_NEEDED:int:extra_stack_alignment_needed::::0:1::0:::
+v:2:EXTRA_STACK_ALIGNMENT_NEEDED:int:extra_stack_alignment_needed::::0:1::0:::
 F:2:REG_STRUCT_HAS_ADDR:int:reg_struct_has_addr:int gcc_p, struct type *type:gcc_p, type::0:0
 F:2:SAVE_DUMMY_FRAME_TOS:void:save_dummy_frame_tos:CORE_ADDR sp:sp::0:0
 v:2:PARM_BOUNDARY:int:parm_boundary
 #
 v:2:TARGET_FLOAT_FORMAT:const struct floatformat *:float_format::::::default_float_format (gdbarch)
 v:2:TARGET_DOUBLE_FORMAT:const struct floatformat *:double_format::::::default_double_format (gdbarch)
-v:2:TARGET_LONG_DOUBLE_FORMAT:const struct floatformat *:long_double_format::::::&floatformat_unknown
+v:2:TARGET_LONG_DOUBLE_FORMAT:const struct floatformat *:long_double_format::::::default_double_format (gdbarch)
 f:2:CONVERT_FROM_FUNC_PTR_ADDR:CORE_ADDR:convert_from_func_ptr_addr:CORE_ADDR addr:addr:::core_addr_identity::0
 # On some machines there are bits in addresses which are not really
 # part of the address, but are used by the kernel, the hardware, etc.
@@ -553,6 +586,9 @@ f:2:CONVERT_FROM_FUNC_PTR_ADDR:CORE_ADDR:convert_from_func_ptr_addr:CORE_ADDR ad
 # sort of generic thing to handle alignment or segmentation (it's
 # possible it should be in TARGET_READ_PC instead).
 f:2:ADDR_BITS_REMOVE:CORE_ADDR:addr_bits_remove:CORE_ADDR addr:addr:::core_addr_identity::0
+# It is not at all clear why SMASH_TEXT_ADDRESS is not folded into 
+# ADDR_BITS_REMOVE.
+f:2:SMASH_TEXT_ADDRESS:CORE_ADDR:smash_text_address:CORE_ADDR addr:addr:::core_addr_identity::0
 # FIXME/cagney/2001-01-18: This should be split in two.  A target method that indicates if
 # the target needs software single step.  An ISA method to implement it.
 #
@@ -588,6 +624,8 @@ m:::int:in_function_epilogue_p:CORE_ADDR addr:addr::0:generic_in_function_epilog
 # ARGV is an array of strings, one per argument.
 m::CONSTRUCT_INFERIOR_ARGUMENTS:char *:construct_inferior_arguments:int argc, char **argv:argc, argv:::construct_inferior_arguments::0
 F:2:DWARF2_BUILD_FRAME_INFO:void:dwarf2_build_frame_info:struct objfile *objfile:objfile:::0
+f:2:ELF_MAKE_MSYMBOL_SPECIAL:void:elf_make_msymbol_special:asymbol *sym, struct minimal_symbol *msym:sym, msym:::default_elf_make_msymbol_special::0
+f:2:COFF_MAKE_MSYMBOL_SPECIAL:void:coff_make_msymbol_special:int val, struct minimal_symbol *msym:val, msym:::default_coff_make_msymbol_special::0
 EOF
 }
 
@@ -643,7 +681,7 @@ cat <<EOF
 /* *INDENT-OFF* */ /* THIS FILE IS GENERATED */
 
 /* Dynamic architecture support for GDB, the GNU debugger.
-   Copyright 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+   Copyright 1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -695,6 +733,7 @@ cat <<EOF
 struct frame_info;
 struct value;
 struct objfile;
+struct minimal_symbol;
 
 extern struct gdbarch *current_gdbarch;
 
@@ -730,11 +769,11 @@ do
 	printf "\n"
 	printf "extern ${returntype} gdbarch_${function} (struct gdbarch *gdbarch);\n"
 	printf "/* set_gdbarch_${function}() - not applicable - pre-initialized. */\n"
-	printf "#if (GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL) && defined (${macro})\n"
+	printf "#if (GDB_MULTI_ARCH ${gt_level}) && defined (${macro})\n"
 	printf "#error \"Non multi-arch definition of ${macro}\"\n"
 	printf "#endif\n"
 	printf "#if GDB_MULTI_ARCH\n"
-	printf "#if (GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL) || !defined (${macro})\n"
+	printf "#if (GDB_MULTI_ARCH ${gt_level}) || !defined (${macro})\n"
 	printf "#define ${macro} (gdbarch_${function} (current_gdbarch))\n"
 	printf "#endif\n"
 	printf "#endif\n"
@@ -779,10 +818,10 @@ do
 	    printf "#endif\n"
 	    printf "\n"
 	    printf "extern int gdbarch_${function}_p (struct gdbarch *gdbarch);\n"
-	    printf "#if (GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL) && defined (${macro}_P)\n"
+	    printf "#if (GDB_MULTI_ARCH ${gt_level}) && defined (${macro}_P)\n"
 	    printf "#error \"Non multi-arch definition of ${macro}\"\n"
 	    printf "#endif\n"
-	    printf "#if (GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL) || !defined (${macro}_P)\n"
+	    printf "#if (GDB_MULTI_ARCH ${gt_level}) || !defined (${macro}_P)\n"
 	    printf "#define ${macro}_P() (gdbarch_${function}_p (current_gdbarch))\n"
 	    printf "#endif\n"
 	fi
@@ -801,11 +840,11 @@ do
 	printf "\n"
 	printf "extern ${returntype} gdbarch_${function} (struct gdbarch *gdbarch);\n"
 	printf "extern void set_gdbarch_${function} (struct gdbarch *gdbarch, ${returntype} ${function});\n"
-	printf "#if (GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL) && defined (${macro})\n"
+	printf "#if (GDB_MULTI_ARCH ${gt_level}) && defined (${macro})\n"
 	printf "#error \"Non multi-arch definition of ${macro}\"\n"
 	printf "#endif\n"
 	printf "#if GDB_MULTI_ARCH\n"
-	printf "#if (GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL) || !defined (${macro})\n"
+	printf "#if (GDB_MULTI_ARCH ${gt_level}) || !defined (${macro})\n"
 	printf "#define ${macro} (gdbarch_${function} (current_gdbarch))\n"
 	printf "#endif\n"
 	printf "#endif\n"
@@ -847,11 +886,11 @@ do
 	printf "extern void set_gdbarch_${function} (struct gdbarch *gdbarch, gdbarch_${function}_ftype *${function});\n"
 	if class_is_multiarch_p ; then :
 	else
-	    printf "#if (GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL) && defined (${macro})\n"
+	    printf "#if (GDB_MULTI_ARCH ${gt_level}) && defined (${macro})\n"
 	    printf "#error \"Non multi-arch definition of ${macro}\"\n"
 	    printf "#endif\n"
 	    printf "#if GDB_MULTI_ARCH\n"
-	    printf "#if (GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL) || !defined (${macro})\n"
+	    printf "#if (GDB_MULTI_ARCH ${gt_level}) || !defined (${macro})\n"
 	    if [ "x${actual}" = "x" ]
 	    then
 		printf "#define ${macro}() (gdbarch_${function} (current_gdbarch))\n"
@@ -1178,13 +1217,6 @@ static void init_gdbarch_swap (struct gdbarch *);
 static void swapout_gdbarch_swap (struct gdbarch *);
 static void swapin_gdbarch_swap (struct gdbarch *);
 
-/* Convenience macro for allocting typesafe memory. */
-
-#ifndef XMALLOC
-#define XMALLOC(TYPE) (TYPE*) xmalloc (sizeof (TYPE))
-#endif
-
-
 /* Non-zero if we want to trace architecture code.  */
 
 #ifndef GDBARCH_DEBUG
@@ -1306,6 +1338,7 @@ void
 initialize_non_multiarch ()
 {
   alloc_gdbarch_data (&startup_gdbarch);
+  init_gdbarch_swap (&startup_gdbarch);
   init_gdbarch_data (&startup_gdbarch);
 }
 EOF
@@ -1432,12 +1465,12 @@ do
 	    printf "    gdbarch->${function} = ${postdefault};\n"
 	elif [ -n "${invalid_p}" ]
 	then
-	    printf "  if ((GDB_MULTI_ARCH >= ${level})\n"
+	    printf "  if ((GDB_MULTI_ARCH ${gt_level})\n"
 	    printf "      && (${invalid_p}))\n"
 	    printf "    fprintf_unfiltered (log, \"\\\\n\\\\t${function}\");\n"
 	elif [ -n "${predefault}" ]
 	then
-	    printf "  if ((GDB_MULTI_ARCH >= ${level})\n"
+	    printf "  if ((GDB_MULTI_ARCH ${gt_level})\n"
 	    printf "      && (gdbarch->${function} == ${predefault}))\n"
 	    printf "    fprintf_unfiltered (log, \"\\\\n\\\\t${function}\");\n"
 	fi

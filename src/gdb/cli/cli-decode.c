@@ -28,6 +28,8 @@
 #include "cli/cli-cmds.h"
 #include "cli/cli-decode.h"
 
+#include "gdb_assert.h"
+
 /* Prototypes for local functions */
 
 static void undef_cmd_error (char *, char *);
@@ -40,6 +42,78 @@ static struct cmd_list_element *find_cmd (char *command,
 
 static void help_all (struct ui_file *stream);
 
+/* Set the callback function for the specified command.  For each both
+   the commands callback and func() are set.  The latter set to a
+   bounce function (unless cfunc / sfunc is NULL that is).  */
+
+static void
+do_cfunc (struct cmd_list_element *c, char *args, int from_tty)
+{
+  c->function.cfunc (args, from_tty); /* Ok.  */
+}
+
+void
+set_cmd_cfunc (struct cmd_list_element *cmd,
+	       void (*cfunc) (char *args, int from_tty))
+{
+  if (cfunc == NULL)
+    cmd->func = NULL;
+  else
+    cmd->func = do_cfunc;
+  cmd->function.cfunc = cfunc; /* Ok.  */
+}
+
+static void
+do_sfunc (struct cmd_list_element *c, char *args, int from_tty)
+{
+  c->function.sfunc (args, from_tty, c); /* Ok.  */
+}
+
+void
+set_cmd_sfunc (struct cmd_list_element *cmd,
+	       void (*sfunc) (char *args, int from_tty,
+			      struct cmd_list_element * c))
+{
+  if (sfunc == NULL)
+    cmd->func = NULL;
+  else
+    cmd->func = do_sfunc;
+  cmd->function.sfunc = sfunc; /* Ok.  */
+}
+
+int
+cmd_cfunc_eq (struct cmd_list_element *cmd,
+	      void (*cfunc) (char *args, int from_tty))
+{
+  return cmd->func == do_cfunc && cmd->function.cfunc == cfunc;
+}
+
+void
+set_cmd_context (struct cmd_list_element *cmd, void *context)
+{
+  cmd->context = context;
+}
+
+void *
+get_cmd_context (struct cmd_list_element *cmd)
+{
+  return cmd->context;
+}
+
+enum cmd_types
+cmd_type (struct cmd_list_element *cmd)
+{
+  return cmd->type;
+}
+
+void
+set_cmd_completer (struct cmd_list_element *cmd,
+		   char **(*completer) (char *text, char *word))
+{
+  cmd->completer = completer; /* Ok.  */
+}
+
+
 /* Add element named NAME.
    CLASS is the top level category into which commands are broken down
    for "help" purposes.
@@ -85,7 +159,8 @@ add_cmd (char *name, enum command_class class, void (*fun) (char *, int),
 
   c->name = name;
   c->class = class;
-  c->function.cfunc = fun;
+  set_cmd_cfunc (c, fun);
+  set_cmd_context (c, NULL);
   c->doc = doc;
   c->flags = 0;
   c->replacement = NULL;
@@ -97,7 +172,7 @@ add_cmd (char *name, enum command_class class, void (*fun) (char *, int),
   c->prefixname = NULL;
   c->allow_unknown = 0;
   c->abbrev_flag = 0;
-  c->completer = make_symbol_completion_list;
+  set_cmd_completer (c, make_symbol_completion_list);
   c->type = not_set_cmd;
   c->var = NULL;
   c->var_type = var_boolean;
@@ -165,7 +240,10 @@ add_alias_cmd (char *name, char *oldname, enum command_class class,
       return 0;
     }
 
-  c = add_cmd (name, class, old->function.cfunc, old->doc, list);
+  c = add_cmd (name, class, NULL, old->doc, list);
+  /* NOTE: Both FUNC and all the FUNCTIONs need to be copied.  */
+  c->func = old->func;
+  c->function = old->function;
   c->prefixlist = old->prefixlist;
   c->prefixname = old->prefixname;
   c->allow_unknown = old->allow_unknown;
@@ -222,12 +300,34 @@ empty_sfunc (char *args, int from_tty, struct cmd_list_element *c)
 {
 }
 
-/* Add element named NAME to command list LIST (the list for set
+/* Add element named NAME to command list LIST (the list for set/show
    or some sublist thereof).
+   TYPE is set_cmd or show_cmd.
    CLASS is as in add_cmd.
    VAR_TYPE is the kind of thing we are setting.
    VAR is address of the variable being controlled by this command.
    DOC is the documentation string.  */
+
+static struct cmd_list_element *
+add_set_or_show_cmd (char *name,
+		     enum cmd_types type,
+		     enum command_class class,
+		     var_types var_type,
+		     void *var,
+		     char *doc,
+		     struct cmd_list_element **list)
+{
+  struct cmd_list_element *c = add_cmd (name, class, NULL, doc, list);
+  gdb_assert (type == set_cmd || type == show_cmd);
+  c->type = type;
+  c->var_type = var_type;
+  c->var = var;
+  /* This needs to be something besides NULL so that this isn't
+     treated as a help class.  */
+  set_cmd_sfunc (c, empty_sfunc);
+  return c;
+}
+
 
 struct cmd_list_element *
 add_set_cmd (char *name,
@@ -237,16 +337,7 @@ add_set_cmd (char *name,
 	     char *doc,
 	     struct cmd_list_element **list)
 {
-  struct cmd_list_element *c
-  = add_cmd (name, class, NO_FUNCTION, doc, list);
-
-  c->type = set_cmd;
-  c->var_type = var_type;
-  c->var = var;
-  /* This needs to be something besides NO_FUNCTION so that this isn't
-     treated as a help class.  */
-  c->function.sfunc = empty_sfunc;
-  return c;
+  return add_set_or_show_cmd (name, set_cmd, class, var_type, var, doc, list);
 }
 
 /* Add element named NAME to command list LIST (the list for set
@@ -311,44 +402,30 @@ add_set_boolean_cmd (char *name,
 }
 
 /* Where SETCMD has already been added, add the corresponding show
-   command to LIST and return a pointer to the added command (not 
+   command to LIST and return a pointer to the added command (not
    necessarily the head of LIST).  */
+/* NOTE: cagney/2002-03-17: The original version of add_show_from_set
+   used memcpy() to clone `set' into `show'.  This ment that in
+   addition to all the needed fields (var, name, et.al.) some
+   unnecessary fields were copied (namely the callback function).  The
+   function explictly copies relevant fields.  For a `set' and `show'
+   command to share the same callback, the caller must set both
+   explicitly.  */
 struct cmd_list_element *
 add_show_from_set (struct cmd_list_element *setcmd,
 		   struct cmd_list_element **list)
 {
-  struct cmd_list_element *showcmd =
-  (struct cmd_list_element *) xmalloc (sizeof (struct cmd_list_element));
-  struct cmd_list_element *p;
+  char *doc;
+  const static char setstring[] = "Set ";
 
-  memcpy (showcmd, setcmd, sizeof (struct cmd_list_element));
-  delete_cmd (showcmd->name, list);
-  showcmd->type = show_cmd;
+  /* Create a doc string by replacing "Set " at the start of the
+     `set'' command's doco with "Show ".  */
+  gdb_assert (strncmp (setcmd->doc, setstring, sizeof (setstring) - 1) == 0);
+  doc = concat ("Show ", setcmd->doc + sizeof (setstring) - 1, NULL);
 
-  /* Replace "set " at start of docstring with "show ".  */
-  if (setcmd->doc[0] == 'S' && setcmd->doc[1] == 'e'
-      && setcmd->doc[2] == 't' && setcmd->doc[3] == ' ')
-    showcmd->doc = concat ("Show ", setcmd->doc + 4, NULL);
-  else
-    fprintf_unfiltered (gdb_stderr, "GDB internal error: Bad docstring for set command\n");
-
-  if (*list == NULL || strcmp ((*list)->name, showcmd->name) >= 0)
-    {
-      showcmd->next = *list;
-      *list = showcmd;
-    }
-  else
-    {
-      p = *list;
-      while (p->next && strcmp (p->next->name, showcmd->name) <= 0)
-	{
-	  p = p->next;
-	}
-      showcmd->next = p->next;
-      p->next = showcmd;
-    }
-
-  return showcmd;
+  /* Insert the basic command.  */
+  return add_set_or_show_cmd (setcmd->name, show_cmd, setcmd->class,
+			      setcmd->var_type, setcmd->var, doc, list);
 }
 
 /* Remove the command named NAME from the command list.  */
@@ -517,18 +594,18 @@ help_cmd (char *command, struct ui_file *stream)
      If c->prefixlist is nonzero, we have a prefix command.
      Print its documentation, then list its subcommands.
 
-     If c->function is nonzero, we really have a command.
-     Print its documentation and return.
+     If c->func is non NULL, we really have a command.  Print its
+     documentation and return.
 
-     If c->function is zero, we have a class name.
-     Print its documentation (as if it were a command)
-     and then set class to the number of this class
-     so that the commands in the class will be listed.  */
+     If c->func is NULL, we have a class name.  Print its
+     documentation (as if it were a command) and then set class to the
+     number of this class so that the commands in the class will be
+     listed.  */
 
   fputs_filtered (c->doc, stream);
   fputs_filtered ("\n", stream);
 
-  if (c->prefixlist == 0 && c->function.cfunc != NULL)
+  if (c->prefixlist == 0 && c->func != NULL)
     return;
   fprintf_filtered (stream, "\n");
 
@@ -537,7 +614,7 @@ help_cmd (char *command, struct ui_file *stream)
     help_list (*c->prefixlist, c->prefixname, all_commands, stream);
 
   /* If this is a class name, print all of the commands in the class */
-  if (c->function.cfunc == NULL)
+  if (c->func == NULL)
     help_list (cmdlist, "", c->class, stream);
 
   if (c->hook_pre || c->hook_post)
@@ -621,7 +698,7 @@ help_all (struct ui_file *stream)
         help_cmd_list (*c->prefixlist, all_commands, c->prefixname, 0, stream);
     
       /* If this is a class name, print all of the commands in the class */
-      else if (c->function.cfunc == NULL)
+      else if (c->func == NULL)
         help_cmd_list (cmdlist, c->class, "", 0, stream);
     }
 }
@@ -682,8 +759,8 @@ help_cmd_list (struct cmd_list_element *list, enum command_class class,
     {
       if (c->abbrev_flag == 0 &&
 	  (class == all_commands
-	   || (class == all_classes && c->function.cfunc == NULL)
-	   || (class == c->class && c->function.cfunc != NULL)))
+	   || (class == all_classes && c->func == NULL)
+	   || (class == c->class && c->func != NULL)))
 	{
 	  fprintf_filtered (stream, "%s%s -- ", prefix, c->name);
 	  print_doc_line (stream, c->doc);
@@ -711,7 +788,7 @@ find_cmd (char *command, int len, struct cmd_list_element *clist,
   *nfound = 0;
   for (c = clist; c; c = c->next)
     if (!strncmp (command, c->name, len)
-	&& (!ignore_help_classes || c->function.cfunc))
+	&& (!ignore_help_classes || c->func))
       {
 	found = c;
 	(*nfound)++;
@@ -900,7 +977,7 @@ undef_cmd_error (char *cmdtype, char *q)
 	 cmdtype,
 	 q,
 	 *cmdtype ? " " : "",
-	 strlen (cmdtype) - 1,
+	 (int) strlen (cmdtype) - 1,
 	 cmdtype);
 }
 
@@ -1242,7 +1319,7 @@ complete_on_cmdlist (struct cmd_list_element *list, char *text, char *word)
   for (ptr = list; ptr; ptr = ptr->next)
     if (!strncmp (ptr->name, text, textlen)
 	&& !ptr->abbrev_flag
-	&& (ptr->function.cfunc
+	&& (ptr->func
 	    || ptr->prefixlist))
       {
 	if (matches == sizeof_matchlist)

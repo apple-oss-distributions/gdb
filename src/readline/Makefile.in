@@ -259,7 +259,6 @@ dist:   force
 	@echo gzip $(RL_LIBRARY_NAME)-$(RL_LIBRARY_VERSION).tar
 
 NSLIBTOOL = cc -dynamiclib
-
 SYSTEM_FRAMEWORK = -framework System -lcurses
 
 FRAMEWORK = readline
@@ -296,7 +295,7 @@ stamp-framework: $(FRAMEWORK_OFILES)
 		ln -s Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX) $(FRAMEWORK).framework/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX); \
 		ln -s $(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX) $(FRAMEWORK).framework/$(FRAMEWORK); \
 	else \
-		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE) -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(FRAMEWORK).framework/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_PREFIX)$(FRAMEWORK) -o $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK_OFILES) $(FRAMEWORK_LIB); \
+		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE)  -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(FRAMEWORK).framework/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_PREFIX)$(FRAMEWORK) -o $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK_OFILES) $(FRAMEWORK_LIB); \
 		ln -s Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK).framework/$(FRAMEWORK_PREFIX)$(FRAMEWORK); \
 	fi
 	touch stamp-framework

@@ -225,6 +225,19 @@ default_double_format (struct gdbarch *gdbarch)
     }
 }
 
+void
+default_print_float_info (void)
+{
+#ifdef FLOAT_INFO
+#if GDB_MULTI_ARCH > GDB_MULTI_ARCH_PARTIAL
+#error "FLOAT_INFO defined in multi-arch"
+#endif
+  FLOAT_INFO;
+#else
+  printf_filtered ("No floating point info available for this processor.\n");
+#endif
+}
+
 /* Misc helper functions for targets. */
 
 int
@@ -359,6 +372,18 @@ init_frame_pc_default (int fromleaf, struct frame_info *prev)
     prev->pc = read_pc ();
 }
 
+void
+default_elf_make_msymbol_special (asymbol *sym, struct minimal_symbol *msym)
+{
+  return;
+}
+
+void
+default_coff_make_msymbol_special (int val, struct minimal_symbol *msym)
+{
+  return;
+}
+
 int
 cannot_register_not (int regnum)
 {
@@ -399,13 +424,14 @@ generic_register_virtual_size (int regnum)
 
 /* Functions to manipulate the endianness of the target.  */
 
-#ifndef TARGET_BYTE_ORDER_DEFAULT
-#define TARGET_BYTE_ORDER_DEFAULT BFD_ENDIAN_BIG /* arbitrary */
-#endif
 /* ``target_byte_order'' is only used when non- multi-arch.
-   Multi-arch targets obtain the current byte order using
-   TARGET_BYTE_ORDER which is controlled by gdbarch.*. */
-int target_byte_order = TARGET_BYTE_ORDER_DEFAULT;
+   Multi-arch targets obtain the current byte order using the
+   TARGET_BYTE_ORDER gdbarch method.
+
+   The choice of initial value is entirely arbitrary.  During startup,
+   the function initialize_current_architecture() updates this value
+   based on default byte-order information extracted from BFD.  */
+int target_byte_order = BFD_ENDIAN_BIG;
 int target_byte_order_auto = 1;
 
 static const char endian_big[] = "big";
@@ -678,6 +704,8 @@ set_gdbarch_from_file (bfd *abfd)
    architecture'' command so that it specifies a list of valid
    architectures.  */
 
+#define bfd_powerpc_arch bfd_powerpc_archs[0]
+
 #ifdef DEFAULT_BFD_ARCH
 extern const bfd_arch_info_type DEFAULT_BFD_ARCH;
 static const bfd_arch_info_type *default_bfd_arch = &DEFAULT_BFD_ARCH;
@@ -725,9 +753,7 @@ initialize_current_architecture (void)
 			"initialize_current_architecture: Arch not found");
     }
 
-  /* take several guesses at a byte order. */
-  /* NB: can't use TARGET_BYTE_ORDER_DEFAULT as its definition is
-     forced above. */
+  /* Take several guesses at a byte order.  */
   if (info.byte_order == BFD_ENDIAN_UNKNOWN
       && default_bfd_vec != NULL)
     {
@@ -769,7 +795,13 @@ initialize_current_architecture (void)
 	}
     }
   else
-    initialize_non_multiarch ();
+    {
+      /* If the multi-arch logic comes up with a byte-order (from BFD)
+         use it for the non-multi-arch case.  */
+      if (info.byte_order != BFD_ENDIAN_UNKNOWN)
+	target_byte_order = info.byte_order;
+      initialize_non_multiarch ();
+    }
 
   /* Create the ``set architecture'' command appending ``auto'' to the
      list of architectures. */
@@ -788,7 +820,7 @@ initialize_current_architecture (void)
 			  arches, &set_architecture_string,
 			  "Set architecture of target.",
 			  &setlist);
-    c->function.sfunc = set_architecture;
+    set_cmd_sfunc (c, set_architecture);
     add_alias_cmd ("processor", "architecture", class_support, 1, &setlist);
     /* Don't use set_from_show - need to print both auto/manual and
        current setting. */
@@ -823,7 +855,7 @@ _initialize_gdbarch_utils (void)
 			endian_enum, &set_endian_string,
 			"Set endianness of target.",
 			&setlist);
-  c->function.sfunc = set_endian;
+  set_cmd_sfunc (c, set_endian);
   /* Don't use set_from_show - need to print both auto/manual and
      current setting. */
   add_cmd ("endian", class_support, show_endian,

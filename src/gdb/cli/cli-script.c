@@ -214,6 +214,39 @@ print_command_lines (struct ui_out *uiout, struct command_line *cmd,
     }				/* while (list) */
 }
 
+/* Handle pre-post hooks.  */
+
+void
+clear_hook_in_cleanup (void *data)
+{
+  struct cmd_list_element *c = data;
+  c->hook_in = 0; /* Allow hook to work again once it is complete */
+}
+
+void
+execute_cmd_pre_hook (struct cmd_list_element *c)
+{
+  if ((c->hook_pre) && (!c->hook_in))
+    {
+      struct cleanup *cleanups = make_cleanup (clear_hook_in_cleanup, c);
+      c->hook_in = 1; /* Prevent recursive hooking */
+      execute_user_command (c->hook_pre, (char *) 0);
+      do_cleanups (cleanups);
+    }
+}
+
+void
+execute_cmd_post_hook (struct cmd_list_element *c)
+{
+  if ((c->hook_post) && (!c->hook_in))
+    {
+      struct cleanup *cleanups = make_cleanup (clear_hook_in_cleanup, c);
+      c->hook_in = 1; /* Prevent recursive hooking */
+      execute_user_command (c->hook_post, (char *) 0);
+      do_cleanups (cleanups);
+    }
+}
+
 /* Execute the command in CMD.  */
 
 void
@@ -597,14 +630,26 @@ insert_args (char *line)
   while ((p = locate_arg (line)))
     {
       len += p - line;
-      i = p[4] - '0';
-
-      if (i >= user_args->count)
-       {
-         error ("Missing argument %d in user function.\n", i);
-         return NULL;
-       }
-      len += user_args->a[i].len;
+      
+      if (p[4] == 'c')          /* $argc */
+        {
+          if (user_args->count > 9)
+            len += 2;           /* $argc expands to '10' or greater */
+          else
+            len += 1;           /* $argc expands to '0'..'9' */
+        }
+      else
+	{
+	  len += p - line;
+	  i = p[4] - '0';
+	  
+	  if (i >= user_args->count)
+	    {
+	      error ("Missing argument %d in user function.\n", i);
+	      return NULL;
+	    }
+	  len += user_args->a[i].len;
+	}
       line = p + 5;
     }
  
@@ -628,14 +673,24 @@ insert_args (char *line)
 
       memcpy (new_line, line, p - line);
       new_line += p - line;
-      i = p[4] - '0';
 
-      len = user_args->a[i].len;
-      if (len)
-       {
-         memcpy (new_line, user_args->a[i].arg, len);
-         new_line += len;
-       }
+      if (p[4] == 'c')          /* $argc */
+        {
+          if (user_args->count > 9)     /* $argc expands to 1 or 2 characters, '0'..'10' */
+            *(new_line++) = '0' + (user_args->count / 10);
+          *(new_line++) = '0' + (user_args->count % 10);
+        }
+      else
+        {
+	  i = p[4] - '0';
+	  
+	  len = user_args->a[i].len;
+	  if (len)
+	    {
+	      memcpy (new_line, user_args->a[i].arg, len);
+	      new_line += len;
+	    }
+	}
       line = p + 5;
     }
   /* Don't forget the tail.  */

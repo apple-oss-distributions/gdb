@@ -75,7 +75,7 @@ CC=@CC@
 
 # Directory containing source files.
 srcdir = @srcdir@
-VPATH = @srcdir@:@srcdir@/../gdb-next:@srcdir@/../gdb:@srcdir@/../gdb-next/display-support
+VPATH = @srcdir@:@srcdir@/macosx
 
 YACC=@YACC@
 
@@ -147,8 +147,10 @@ INTL_CFLAGS = -I$(INTL_DIR) -I$(INTL_SRC)
 # CLI sub directory definitons
 #
 SUBDIR_CLI_OBS = \
+	cli-dump.o \
 	cli-decode.o cli-script.o cli-cmds.o cli-setshow.o cli-utils.o
 SUBDIR_CLI_SRCS = \
+	cli/cli-dump.c \
 	cli/cli-decode.c cli/cli-script.c cli/cli-cmds.c cli/cli-setshow.c \
 	cli/cli-utils.c
 SUBDIR_CLI_DEPS =
@@ -319,7 +321,7 @@ CONFIG_UNINSTALL = @CONFIG_UNINSTALL@
 # It is also possible that you will need to add -I/usr/include/sys if
 # your system doesn't have fcntl.h in /usr/include (which is where it
 # should be according to Posix).
-DEFS = @DEFS@ -Dfree=xfree
+DEFS = @DEFS@
 GDB_CFLAGS = -I. -I$(srcdir) -I$(srcdir)/config $(DEFS)
 
 # M{H,T}_CFLAGS, if defined, have host- and target-dependent CFLAGS
@@ -339,9 +341,9 @@ CXXFLAGS = -g -O
 # INTERNAL_CFLAGS is the aggregate of all other *CFLAGS macros.
 INTERNAL_WARN_CFLAGS = \
 	$(CFLAGS) $(GLOBAL_CFLAGS) $(PROFILE_CFLAGS) \
-	$(GDB_CFLAGS) $(OPCODES_CFLAGS) $(READLINE_CFLAGS) \
+	$(GDB_CFLAGS) $(INCLUDE_CFLAGS) \
 	$(BFD_CFLAGS) $(EFENCE_CFLAGS) $(MMALLOC_CFLAGS) \
-	$(INCLUDE_CFLAGS) $(INTL_CFLAGS) $(TUI_CFLAGS) \
+	$(INTL_CFLAGS) $(TUI_CFLAGS) $(OPCODES_CFLAGS) $(READLINE_CFLAGS) \
 	$(UIOUT_CFLAGS) $(ENABLE_CFLAGS) $(GDB_WARN_CFLAGS)
 
 INTERNAL_CFLAGS = $(INTERNAL_WARN_CFLAGS) $(GDB_WERROR_CFLAGS)
@@ -545,7 +547,7 @@ SFILES = ax-general.c ax-gdb.c bcache.c blockframe.c breakpoint.c \
 	memattr.c mem-break.c minsyms.c mipsread.c nlmread.c objfiles.c \
 	p-exp.y p-lang.c p-typeprint.c p-valprint.c parse.c \
 	printcmd.c remote.c remote-nrom.c scm-exp.c scm-lang.c \
-	scm-valprint.c signals.c source.c stabsread.c stack.c symfile.c \
+	scm-valprint.c source.c stabsread.c stack.c symfile.c \
 	symmisc.c symtab.c linespec.c target.c thread.c top.c tracepoint.c \
 	typeprint.c utils.c valarith.c valops.c valprint.c values.c \
 	serial.c ser-unix.c mdebugread.c os9kread.c \
@@ -603,7 +605,8 @@ buildsym_h =	buildsym.h
 c_lang_h =	c-lang.h $(value_h)
 call_cmds_h =	call-cmds.h
 cli_cmds_h =	$(srcdir)/cli/cli-cmds.h
-cli_decode_h =	$(srcdir)/cli/cli-decode.h
+cli_decode_h =	$(srcdir)/cli/cli-decode.h $(command_h)
+cli_dump_h =	$(srcdir)/cli/cli-dump.h
 cli_out_h =	cli-out.h
 cli_script_h =	$(srcdir)/cli/cli-script.h
 cli_setshow_h =	$(srcdir)/cli/cli-setshow.h
@@ -614,7 +617,7 @@ completer_h =	completer.h
 cp_abi_h =	cp-abi.h
 dcache_h =	dcache.h
 defs_h =	defs.h $(xm_h) $(tm_h) $(nm_h) config.status config.h \
-		gdbarch.h ui-file.h
+		gdbarch.h ui-file.h $(INCLUDE_DIR)/gdb/signals.h
 doublest_h =	doublest.h $(floatformat_h)
 dwarf2cfi_h =	dwarf2cfi.h
 event_loop_h =  event-loop.h
@@ -733,7 +736,8 @@ COMMON_OBS = version.o blockframe.o breakpoint.o findvar.o regcache.o \
 	c-valprint.o cp-valprint.o ch-valprint.o f-valprint.o m2-valprint.o \
 	nlmread.o serial.o mdebugread.o os9kread.o top.o utils.o \
 	ui-file.o frame.o doublest.o \
-	gnu-v2-abi.o gnu-v3-abi.o hpacc-abi.o cp-abi.o
+	gnu-v2-abi.o gnu-v3-abi.o hpacc-abi.o cp-abi.o \
+	cached-symfile.o
 
 OBS = $(COMMON_OBS) $(ANNOTATE_OBS)
 
@@ -857,6 +861,7 @@ init.c.hidden: $(INIT_FILES)
 	    -e '/^[a-z0-9A-Z_]*_[SU].o/d' \
 	    -e '/[a-z0-9A-Z_]*-exp.tab.o/d' \
 	    -e 's/\.o/.c/' \
+	    -e 's,signals\.c,signals/signals\.c,' \
 	    -e 's|\([^  ][^     ]*\)|$(srcdir)/\1|g' | \
 	while read f; do grep '^_initialize_[a-z_0-9A-Z]* *(' $$f 2>/dev/null; done | \
 	sed -e 's/^.*://' -e 's/^\([a-z_0-9A-Z]*\).*/\1/' > init.l-tmp
@@ -900,53 +905,28 @@ init.c: $(INIT_FILES)
 	    *) \
 	      if [ -f $$filebase ]; then \
 		pathname=$$filebase; \
-	      elif [ -f $(srcdir)/../gdb/$$filebase.c ]; then \
-	        pathname=$(srcdir)/../gdb/$$filebase.c; \
-	      elif [ -f $(srcdir)/../gdb/$$filebase.m ]; then \
-	        pathname=$(srcdir)/../gdb/$$filebase.m; \
-	      elif [ -f $(srcdir)/../gdb/tui/$$filebase.c ]; then \
-	        pathname=$(srcdir)/../gdb/tui/$$filebase.c; \
-	      elif [ -f $(srcdir)/../gdb/tui/$$filebase.m ]; then \
-	        pathname=$(srcdir)/../gdb/tui/$$filebase.m; \
-	      elif [ -f $(srcdir)/../gdb/mi/$$filebase.c ]; then \
-	        pathname=$(srcdir)/../gdb/mi/$$filebase.c; \
-	      elif [ -f $(srcdir)/../gdb/mi/$$filebase.m ]; then \
-	        pathname=$(srcdir)/../gdb/mi/$$filebase.m; \
-	      elif [ -f $(srcdir)/../gdb/cli/$$filebase.c ]; then \
-	        pathname=$(srcdir)/../gdb/cli/$$filebase.c; \
-	      elif [ -f $(srcdir)/../gdb/cli/$$filebase.m ]; then \
-	        pathname=$(srcdir)/../gdb/cli/$$filebase.m; \
-	      elif [ -f $(srcdir)/../gdb-next/$$filebase.c ]; then \
-	        pathname=$(srcdir)/../gdb-next/$$filebase.c; \
-	      elif [ -f $(srcdir)/../gdb-next/$$filebase.m ]; then \
-	        pathname=$(srcdir)/../gdb-next/$$filebase.m; \
-	      elif [ -f $(srcdir)/../gdb-next/display-support/$$filebase.c ]; then \
-	        pathname=$(srcdir)/../gdb-next/display-support/$$filebase.c; \
-	      elif [ -f $(srcdir)/../gdb-next/display-support/$$filebase.m ]; then \
-	        pathname=$(srcdir)/../gdb-next/display-support/$$filebase.m; \
-	      elif [ -f ../gdb/$$filebase.c ]; then \
-	        pathname=../gdb/$$filebase.c; \
-	      elif [ -f ../gdb/$$filebase.m ]; then \
-	        pathname=../gdb/$$filebase.m; \
-	      elif [ -f ../tui/$$filebase.c ]; then \
-	        pathname=../tui/$$filebase.c; \
-	      elif [ -f ../tui/$$filebase.m ]; then \
-	        pathname=../tui/$$filebase.m; \
-	      elif [ -f ../mi/$$filebase.c ]; then \
-	        pathname=../mi/$$filebase.c; \
-	      elif [ -f ../mi/$$filebase.m ]; then \
-	        pathname=../mi/$$filebase.m; \
-	      elif [ -f ../gdb-next/$$filebase.c ]; then \
-	        pathname=../gdb-next/$$filebase.c; \
-	      elif [ -f ../gdb-next/$$filebase.m ]; then \
-	        pathname=../gdb-next/$$filebase.m; \
-	      elif [ -f ../gdb-next/display-support/$$filebase.c ]; then \
-	        pathname=../gdb-next/display-support/$$filebase.c; \
-	      elif [ -f ../gdb-next/display-support/$$filebase.m ]; then \
-	        pathname=../gdb-next/display-support/$$filebase.m; \
+	      elif [ -f $(srcdir)/$$filebase.c ]; then \
+	        pathname=$(srcdir)/$$filebase.c; \
+	      elif [ -f $(srcdir)/tui/$$filebase.c ]; then \
+	        pathname=$(srcdir)/tui/$$filebase.c; \
+	      elif [ -f $(srcdir)/mi/$$filebase.c ]; then \
+	        pathname=$(srcdir)/mi/$$filebase.c; \
+	      elif [ -f $(srcdir)/cli/$$filebase.c ]; then \
+	        pathname=$(srcdir)/cli/$$filebase.c; \
+	      elif [ -f $(srcdir)/macosx/$$filebase.c ]; then \
+	        pathname=$(srcdir)/macosx/$$filebase.c; \
+	      elif [ -f $$filebase.c ]; then \
+	        pathname=$$filebase.c; \
+	      elif [ -f tui/$$filebase.c ]; then \
+	        pathname=tui/$$filebase.c; \
+	      elif [ -f mi/$$filebase.c ]; then \
+	        pathname=mi/$$filebase.c; \
+	      elif [ -f gdb/$$filebase.c ]; then \
+	        pathname=gdb/$$filebase.c; \
 	      else \
 	        echo "unable to locate $$filebase"; \
 		pathname=/dev/null; \
+		exit 1; \
 	      fi; \
 	      sed < $$pathname >> init.c-tmp -n \
 	        -e '/^_initialize_[a-z_0-9A-Z]* *(/s/^\([a-z_0-9A-Z]*\).*/  {extern void \1 (); \1 ();}/p' ; \
@@ -1158,7 +1138,7 @@ $(srcdir)/copying.c: @MAINTAINER_MODE_TRUE@ \
 version.c: Makefile version.in
 	rm -f version.c-tmp
 	echo '#include "version.h"' >> version.c-tmp
-	# echo 'const char version[] = "'"`head -1 ${srcdir}/version.in`"'";' >> version.c-tmp
+	#echo 'const char version[] = "'"`sed q ${srcdir}/version.in`"'";' >> version.c-tmp
 	echo 'const char version[] = "$(VERSION)";' >> version.c-tmp
 	echo 'const char host_name[] = "$(host_alias)";' >> version.c-tmp
 	echo 'const char target_name[] = "$(target_alias)";' >> version.c-tmp
@@ -1298,6 +1278,7 @@ ALLDEPFILES = 29k-share/udi/udip2soc.c 29k-share/udi/udr.c \
 	29k-share/udi/udi2go32.c \
 	a29k-tdep.c a68v-nat.c alpha-nat.c alpha-tdep.c \
 	arm-linux-nat.c arm-linux-tdep.c arm-tdep.c armnbsd-nat.c \
+	armnbsd-tdep.c \
 	coff-solib.c \
 	core-sol2.c core-regset.c core-aout.c corelow.c core-macho.c \
 	dcache.c delta68-nat.c dpx2-nat.c dstread.c exec.c fork-child.c \
@@ -1374,10 +1355,16 @@ arm-linux-nat.o: arm-linux-nat.c $(defs_h) $(inferior_h) $(gdbcore_h) \
 arm-linux-tdep.o: arm-linux-tdep.c $(defs_h) $(target_h) $(value_h) \
 	$(gdbtypes_h) $(floatformat_h) $(regcache_h) $(doublest_h)
 
-arm-tdep.o: arm-tdep.c $(gdbcmd_h) $(gdbcore_h) $(inferior_h) $(defs_h) \
-	$(gdbcore_h) $(regcache_h) $(doublest_h) $(value_h)
+arm-tdep.o: arm-tdep.c $(defs_h) $(frame_h) $(inferior_h) $(gdbcmd_h) \
+	$(gdbcore_h) $(gdb_string_h) $(dis_asm_h) $(regcache_h) $(doublest_h) \
+	$(value_h) $(arch_utils_h) $(solib_svr4_h) arm-tdep.h \
+	$(BFD_SRC)/elf-bfd.h $(INCLUDE_DIR)/coff/internal.h \
+	$(INCLUDE_DIR)/elf/arm.h 
 
-armnbsd-nat.o: armnbsd-nat.c $(defs_h)
+armnbsd-nat.o: armnbsd-nat.c $(defs_h) arm-tdep.h $(inferior_h) $(regcache_h) \
+	$(gdbcore_h)
+
+armnbsd-tdep.o: armnbsd-tdep.c $(defs_h) arm-tdep.h
 
 bcache.o: bcache.c $(bcache_h) $(defs_h)
 
@@ -1461,7 +1448,7 @@ gcore.o: gcore.c $(defs_h) $(command_h) $(inferior_h) $(gdbcore_h) \
 	$(BFD_SRC)/elf-bfd.h $(symfile_h) $(objfiles_h) 
 
 linux-proc.o: linux-proc.c $(defs_h) $(inferior_h) $(gregset_h) \
-	$(gdbcore_h) $(gdbthread_h) $(BFD_SRC)/elf-bfd.h 
+	$(gdbcore_h) $(gdbthread_h) $(regcache_h) $(BFD_SRC)/elf-bfd.h 
 
 cp-abi.o: cp-abi.c $(defs_h) $(value_h) $(cp_abi_h)
 
@@ -1515,7 +1502,7 @@ event-loop.o: event-loop.c $(defs_h) $(top_h) $(event_loop_h) $(event_top_h)
 
 event-top.o: event-top.c $(top_h) $(readline_headers) \
       $(defs_h) $(inferior_h) $(event_loop_h) $(event_top_h) $(terminal_h) \
-	$(gdbcmd_h) $(target_h)
+	$(gdbcmd_h) $(target_h) $(cli_decode_h)
 
 inf-loop.o: inf-loop.c $(defs_h) $(inferior_h) $(inf_loop_h) $(event_loop_h) \
 	 $(event_top_h)
@@ -1838,7 +1825,8 @@ main.o: main.c $(top_h) $(defs_h) $(gdb_string_h) $(event_loop_h) \
 	$(symfile_h)  $(gdbcore_h) $(ui_out_h)
 
 maint.o: maint.c $(defs_h) $(gdbcmd_h) $(gdbtypes_h) $(symtab_h) \
-	$(language_h) $(expression_h) $(objfiles_h) $(symfile_h)
+	$(language_h) $(expression_h) $(objfiles_h) $(symfile_h) \
+	$(cli_decode_h)
 
 mcore-tdep.o: mcore-tdep.c $(defs_h) $(frame_h) $(gdbcmd_h) $(value_h) \
 	$(symtab_h) $(symfile_h) $(gdbcore_h) $(inferior_h)
@@ -1982,9 +1970,6 @@ sol-thread.o: sol-thread.c $(defs_h) $(gdbthread_h) $(target_h) $(inferior_h) \
 
 linux-proc.o: linux-proc.c $(defs_h)
 
-linux-thread.o: linux-thread.c $(breakpoint_h) $(gdbcmd_h) gdb_wait.h \
-	$(gdbthread_h) $(gdbcore_h) $(inferior_h) $(target_h) $(defs_h)
-
 thread-db.o: thread-db.c $(defs_h) gdb_assert.h gdb_proc_service.h \
 	gdb_thread_db.h $(bfd_h) $(gdbthread_h) $(inferior_h) $(symfile_h) \
 	$(objfiles_h) $(target_h) $(regcache_h)
@@ -2102,7 +2087,7 @@ rom68k-rom.o: rom68k-rom.c $(monitor_h) $(bfd_h) gdb_wait.h $(defs_h) \
 
 rs6000-nat.o: rs6000-nat.c $(bfd_h) $(defs_h) $(inferior_h) $(target_h) \
 	$(gdbcore_h) $(xcoffsolib_h) $(symfile_h) $(objfiles_h) \
-	$(gdb_stabs_h) $(regcache_h)
+	$(gdb_stabs_h) $(regcache_h) $(arch_utils_h)
 
 rs6000-tdep.o: rs6000-tdep.c $(defs_h) $(gdbcore_h) $(inferior_h) \
 	$(target_h) ppc-tdep.h $(regcache_h) $(value_h) $(parser_defs_h)
@@ -2141,7 +2126,8 @@ sh3-rom.o: sh3-rom.c $(monitor_h) $(bfd_h) gdb_wait.h $(defs_h) $(gdbcmd_h) \
 	$(inferior_h) $(target_h) $(serial_h) $(terminal_h) $(arch_utils_h) \
 	$(regcache_h)
 
-signals.o: signals.c $(defs_h) $(target_h)
+signals.o: signals/signals.c $(defs_h) $(target_h)
+	$(CC) -c $(INTERNAL_CFLAGS) $<
 
 mon960-rom.o: mon960-rom.c $(monitor_h) $(bfd_h) gdb_wait.h $(defs_h) \
 	$(gdbcmd_h) $(inferior_h) $(target_h) $(serial_h) $(terminal_h)
@@ -2229,7 +2215,8 @@ thread.o: thread.c $(defs_h) $(gdbthread_h) $(gdbcmd_h) $(target_h) \
 	$(regcache_h) $(ui_out_h) $(gdb_h)
 
 completer.o: completer.c $(completer_h) $(gdbtypes_h) $(symtab_h) \
-	$(defs_h) $(gdbcmd_h) $(expression_h) $(readline_headers)
+	$(defs_h) $(gdbcmd_h) $(expression_h) $(readline_headers) \
+	$(cli_decode_h)
 
 top.o: top.c $(top_h) $(bfd_h) $(getopt_h) $(readline_headers) $(call_cmds_h) \
 	$(cli_cmds_h) $(cli_script_h) $(cli_setshow_h) \
@@ -2356,15 +2343,19 @@ wrapper.o: wrapper.c $(defs_h) $(frame_h) $(value_h) $(wrapper_h)
 # Need to explicitly specify the compile rule as make will do nothing
 # or try to compile the object file into the cli directory.
 
+cli-cmds.o: $(srcdir)/cli/cli-cmds.c  $(cli_cmds_h) $(cli_decode_h) \
+		$(cli_script_h) $(cli_setshow_h) $(top_h) $(completer_h) \
+		 $(defs_h) $(target_h) gdb_wait.h gdb_regex.h $(ui_out_h)
+	$(CC) -c $(INTERNAL_CFLAGS) $(srcdir)/cli/cli-cmds.c
+
 cli-decode.o: $(srcdir)/cli/cli-decode.c $(cli_decode_h) \
 		$(cli_cmds_h) $(defs_h) $(ui_out_h) \
 		$(symtab_h) gdb_regex.h
 	$(CC) -c $(INTERNAL_CFLAGS) $(srcdir)/cli/cli-decode.c
 
-cli-cmds.o: $(srcdir)/cli/cli-cmds.c  $(cli_cmds_h) $(cli_decode_h) \
-		$(cli_script_h) $(cli_setshow_h) $(top_h) $(completer_h) \
-		 $(defs_h) $(target_h) gdb_wait.h gdb_regex.h $(ui_out_h)
-	$(CC) -c $(INTERNAL_CFLAGS) $(srcdir)/cli/cli-cmds.c
+cli-dump.o: $(srcdir)/cli/cli-dump.c $(defs_h) $(gdb_string_h) $(command_h) \
+	$(value_h) $(gdbcmd_h) $(completer_h) $(cli_dump_h)
+	$(CC) -c $(INTERNAL_CFLAGS) $(srcdir)/cli/cli-dump.c
 
 cli-setshow.o: $(srcdir)/cli/cli-setshow.c $(cli_setshow_h) \
 		$(cli_decode_h) $(cli_cmds_h) $(defs_h) \
@@ -2518,6 +2509,10 @@ stamp-framework-headers:
 	ln -s A $(FRAMEWORK).framework/Versions/Current
 	cp -p $(srcdir)/*.h $(FRAMEWORK).framework/Versions/Current/Headers/
 	cp -p *.h $(FRAMEWORK).framework/Versions/Current/Headers/
+	mkdir $(FRAMEWORK).framework/Versions/Current/Headers/mi
+	cp -p $(srcdir)/mi/*.h $(FRAMEWORK).framework/Versions/Current/Headers/mi/
+	mkdir $(FRAMEWORK).framework/Versions/Current/Headers/cli
+	cp -p $(srcdir)/mi/*.h $(FRAMEWORK).framework/Versions/Current/Headers/cli/
 	touch stamp-framework-headers
 
 stamp-framework:
@@ -2535,7 +2530,7 @@ stamp-framework:
 		ln -s Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX) $(FRAMEWORK).framework/$(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX); \
 		ln -s $(FRAMEWORK_PREFIX)$(FRAMEWORK)$(FRAMEWORK_SUFFIX) $(FRAMEWORK).framework/$(FRAMEWORK); \
 	else \
-		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE) -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(FRAMEWORK).framework/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_PREFIX)$(FRAMEWORK) -o $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK_OFILES) $(FRAMEWORK_LIB); \
+		$(NSLIBTOOL) -arch $(HOST_ARCHITECTURE)  -compatibility_version 1 -current_version 1 -install_name /System/Library/PrivateFrameworks/$(FRAMEWORK).framework/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_PREFIX)$(FRAMEWORK) -o $(FRAMEWORK).framework/Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK_OFILES) $(FRAMEWORK_LIB); \
 		ln -s Versions/Current/$(FRAMEWORK_PREFIX)$(FRAMEWORK) $(FRAMEWORK).framework/$(FRAMEWORK_PREFIX)$(FRAMEWORK); \
 	fi
 	touch stamp-framework

@@ -32,6 +32,9 @@
 /* Define if you have <vfork.h>.  */
 #undef HAVE_VFORK_H
 
+/* Define as __inline if that's what the C compiler calls it.  */
+#undef inline
+
 /* Define to `int' if <sys/types.h> doesn't define.  */
 #undef pid_t
 
@@ -183,6 +186,9 @@
 
 /* Define if you have the bzero function.  */
 #undef HAVE_BZERO
+
+/* Define if you have the canonicalize_file_name function.  */
+#undef HAVE_CANONICALIZE_FILE_NAME
 
 /* Define if you have the getpagesize function.  */
 #undef HAVE_GETPAGESIZE

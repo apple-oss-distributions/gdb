@@ -406,7 +406,7 @@ body SrcTextWin::makeBreakDot {size colorList {image {}}} {
 # METHOD: setTabs - set the tabs for the assembly/src windows
 # ------------------------------------------------------------------
 body SrcTextWin::setTabs {win {asm S}} {
-  set fsize [font measure src-font "W"]
+  set fsize [font measure [pref get gdb/src/font] "W"]
   set tsize [pref get gdb/src/tab_size]
   set rest ""
   
@@ -753,7 +753,7 @@ body SrcTextWin::reconfig {} {
 #  debug
   
   # Make sure we redo the break images when we reconfigure
-  set size [font measure src-font "W"]
+  set size [font measure [pref get gdb/src/font] "W"]
   makeBreakDot $size [pref get gdb/src/bp_fg] $break_images(bp)
   makeBreakDot $size [pref get gdb/src/temp_bp_fg] $break_images(temp_bp)
   makeBreakDot $size [pref get gdb/src/disabled_fg] $break_images(disabled_bp)
@@ -2315,22 +2315,38 @@ body SrcTextWin::showBPBalloon {win x y} {
     set bpinfo [gdb_get_breakpoint_info $b]
     lassign $bpinfo file func linenum addr type enabled disposition \
       ignore_count commands cond thread hit_count user_specification
-    if {$thread == "-1"} {set thread "all"}
     set file [lindex [file split $file] end]
     if {$enabled} {
       set enabled "ENA"
     } else {
       set enabled "DIS"
     }
-    if {$cond == ""} {set cond "none"}
-    if {$need_lf} {
-      append str \n
-    } else {
-      set need_lf 1
+
+    if {$need_lf} {append str \n}
+
+    append str [format "breakpoint %d at %s:%d (%#x)\n   %s %s %s" \
+		  $b $file $linenum $addr $enabled $type $disposition]
+
+    if {$thread != "-1"} {
+      append str "\n   threads: $thread"
     }
-    append str [format "breakpoint %d at %s:%d (%#x)\n\t%s %s %s %s %s" \
-		  $b $file $linenum $addr $enabled $type $disposition \
-		  threads=$thread cond=$cond]
+
+    if {$ignore_count != 0} {
+      append str "\n   ignore: $ignore_count"
+    }
+
+    if {$cond != ""} {
+      append str "\n   condition: $cond"
+    }
+
+    if {$commands != ""} {
+      if {[string length $commands] > 50} {
+	append str "\n   commands: [string range $commands 0 50] ..."
+      } else {
+	append str "\n   commands: $commands"
+      }
+    }
+    set need_lf 1
   }
 
   # Scope out which break type is set here, and use the tag to get

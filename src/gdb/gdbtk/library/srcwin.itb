@@ -96,34 +96,23 @@ body SrcWin::_build_win {} {
   frame $_statbar
   pack $_statbar -expand 1 -fill both
 
-  combobox::combobox $_statbar.name -maxheight 15 -font src-font\
+  combobox::combobox $_statbar.name -maxheight 15 -font global/fixed\
     -command [code $this _name]
   
   set need_files 1
   
-  combobox::combobox $_statbar.func -maxheight 15 -font src-font\
+  combobox::combobox $_statbar.func -maxheight 15 -font global/fixed\
     -command [code $this goto_func]
   combobox::combobox $_statbar.mode -width 9 -editable false \
-    -font src-font -command [code $this mode]
+    -font global/fixed -command [code $this mode]
   
   $_statbar.mode list insert end SOURCE
   $_statbar.mode list insert end ASSEMBLY
   $_statbar.mode list insert end MIXED
   $_statbar.mode list insert end SRC+ASM
 
-  # Search
-  frame $_statbar.frame
-  entry $_statbar.frame.search -bd 3 -font src-font -width 10
-  bind_plain_key $_statbar.frame.search \
-    Return [code $this _search forwards]
-  bind_plain_key $_statbar.frame.search \
-    Shift-Return [code $this _search backwards]
-
-  pack $_statbar.frame -side right -pady 4 -padx 10 -fill y -expand 1 -anchor e
   pack $_statbar.mode -side right -padx 10 -pady 4
   pack $_statbar.name $_statbar.func -side left -pady 4 -padx 10
-
-  pack $_statbar.frame.search -fill x -expand yes  
 
   # if user likes control on top...
   if {[pref get gdb/src/top_control]} {
@@ -147,9 +136,9 @@ body SrcWin::_build_win {} {
 
     # add address and line number indicators
     label $_statusframe.addr -text "" -width 10 -relief sunken \
-      -bd 1 -anchor e -font src-font
+      -bd 1 -anchor e -font global/fixed
     label $_statusframe.line -text "" -width 6 -relief sunken \
-      -bd 1 -anchor e -font src-font
+      -bd 1 -anchor e -font global/fixed
 
     balloon register $_statusframe.addr "Address"
     balloon register $_statusframe.line "Line number"
@@ -171,7 +160,6 @@ body SrcWin::_build_win {} {
     balloon register $_statbar.func.$i "Current function name"
     balloon register $_statbar.mode.$i "Source mode"
   }
-  balloon register $_statbar.frame.search "Search for text"
   balloon variable $_status ${twin}_balloon
 
   $_statbar.mode entryset [$twin mode_get]
@@ -484,7 +472,7 @@ body SrcWin::location {tag linespec} {
     # 32-bit address plus "0x"
     set width 10
   }
-  $_statusframe.addr configure -text $addr -font src-font -width $width
+  $_statusframe.addr configure -text $addr -font global/fixed -width $width
   $_statusframe.line configure -text $line
 
   # set function combobox
@@ -803,14 +791,12 @@ body SrcWin::reset {} {
 }
 
 # ------------------------------------------------------------------
-#  PRIVATE METHOD:  _search - search for text or jump to a specific line
+#  PUBLIC METHOD:  search - search for a STRING or jump to a specific line
 #           in source window, going in the specified DIRECTION.
 # ------------------------------------------------------------------
-body SrcWin::_search {direction} {
-  set exp [$_statbar.frame.search get]
-  #debug "searching $direction for \"$exp\""
+body SrcWin::search {direction string} {
   set_status
-  set_status [$twin search $exp $direction] 1
+  set_status [$twin search $string $direction] 1
 }
 
 # ------------------------------------------------------------------

@@ -21,6 +21,9 @@
 #include <stdarg.h>
 
 #include "command.h"
+/* FIXME: we don't have interfaces to the parts of cmd_list_element
+   that we need here yet.  They need to be added... */
+#include "cli/cli-decode.h"
 #include "breakpoint.h"
 #include "gdbcore.h" // file_changed_hook
 //#include "inferior.h"

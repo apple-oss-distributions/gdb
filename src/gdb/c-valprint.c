@@ -441,8 +441,12 @@ c_val_print (struct type *type, char *valaddr, int embedded_offset,
       break;
 
     case TYPE_CODE_METHOD:
-      cp_print_class_method (valaddr + embedded_offset, lookup_pointer_type (type), stream);
-      break;
+      {
+	struct value *v = value_at (type, address, NULL);
+	cp_print_class_method (VALUE_CONTENTS (value_addr (v)),
+			       lookup_pointer_type (type), stream);
+	break;
+      }
 
     case TYPE_CODE_VOID:
       fprintf_filtered (stream, "void");
@@ -457,6 +461,28 @@ c_val_print (struct type *type, char *valaddr, int embedded_offset,
          dbx xrefs (NO_DBX_XREFS in gcc) if a file has a "struct foo *bar"
          and no complete type for struct foo in that file.  */
       fprintf_filtered (stream, "<incomplete type>");
+      break;
+
+    case TYPE_CODE_COMPLEX:
+      if (format)
+	print_scalar_formatted (valaddr + embedded_offset,
+				TYPE_TARGET_TYPE (type),
+				format, 0, stream);
+      else
+	print_floating (valaddr + embedded_offset, TYPE_TARGET_TYPE (type),
+			stream);
+      fprintf_filtered (stream, " + ");
+      if (format)
+	print_scalar_formatted (valaddr + embedded_offset
+				+ TYPE_LENGTH (TYPE_TARGET_TYPE (type)),
+				TYPE_TARGET_TYPE (type),
+				format, 0, stream);
+      else
+	print_floating (valaddr + embedded_offset
+			+ TYPE_LENGTH (TYPE_TARGET_TYPE (type)),
+			TYPE_TARGET_TYPE (type),
+			stream);
+      fprintf_filtered (stream, " * I");
       break;
 
     default:

@@ -107,10 +107,6 @@ enum target_waitkind
     TARGET_WAITKIND_SYSCALL_ENTRY,
     TARGET_WAITKIND_SYSCALL_RETURN,
 
-    /* An exception was received for a sub-process of the target. */
-
-    TARGET_WAITKIND_SUBPROCESS,
-
     /* Nothing happened, but we stopped anyway.  This perhaps should be handled
        within target_wait, but I'm not sure target_wait should be resuming the
        inferior.  */
@@ -323,6 +319,7 @@ struct target_ops
 					    void *), 
 				   void *);
     char * (*to_make_corefile_notes) (bfd *, int *);
+    int (*to_bind_function) (char *);
     int to_magic;
     /* Need sub-structure for target machine related rather than comm related?
      */
@@ -442,10 +439,10 @@ extern void target_detach (char *, int);
     (*current_target.to_resume) (ptid, step, siggnal);			\
   } while (0)
 
-/* Wait for process pid to do something.  PTID = -1 to wait for any pid
-   to do something.  Return pid of child, or -1 in case of error;
+/* Wait for process pid to do something.  PTID = -1 to wait for any
+   pid to do something.  Return pid of child, or -1 in case of error;
    store status through argument pointer STATUS.  Note that it is
-   *not* OK to return_to_top_level out of target_wait without popping
+   _NOT_ OK to throw_exception() out of target_wait() without popping
    the debugging target from the stack; GDB isn't prepared to get back
    to the prompt with a debugging target but without the frame cache,
    stop_pc, etc., set up.  */
@@ -569,6 +566,7 @@ extern int child_thread_alive (ptid_t);
 /* From exec.c */
 
 extern void print_section_info (struct target_ops *, bfd *);
+extern void print_section_info_objfile (struct objfile *o);
 
 /* Print a line about the current target.  */
 
@@ -1034,6 +1032,13 @@ extern void (*target_new_objfile_hook) (struct objfile *);
 #define target_make_corefile_notes(BFD, SIZE_P) \
      (current_target.to_make_corefile_notes) (BFD, SIZE_P)
 
+/*
+ * Bind function NAME into the target process
+ */
+
+#define target_bind_function(NAME) \
+     (current_target.to_bind_function) (NAME)
+
 /* Hook to call target-dependent code after reading in a new symbol table.  */
 
 #ifndef TARGET_SYMFILE_POSTREAD
@@ -1275,5 +1280,9 @@ extern void push_remote_target (char *name, int from_tty);
 
 /* Blank target vector entries are initialized to target_ignore. */
 void target_ignore (void);
+
+void update_current_target (void);
+
+void cleanup_target (struct target_ops *);
 
 #endif /* !defined (TARGET_H) */

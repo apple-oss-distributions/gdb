@@ -32,8 +32,6 @@ struct frame_saved_regs;
 struct value;
 struct type;
 
-#define TARGET_BYTE_ORDER BFD_ENDIAN_LITTLE
-
 /* The format used for `long double' on almost all i386 targets is the
    i387 extended floating-point format.  In fact, of all targets in the
    GCC 2.95 tree, only OSF/1 does it different, and insists on having
@@ -63,7 +61,7 @@ struct type;
 
 #define SKIP_PROLOGUE(frompc)   (i386_skip_prologue (frompc))
 
-extern int i386_skip_prologue (int);
+extern CORE_ADDR i386_skip_prologue (CORE_ADDR);
 
 /* Immediately after a function call, return the saved pc.  */
 

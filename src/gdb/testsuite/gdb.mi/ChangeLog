@@ -1,3 +1,29 @@
+2002-03-04  Michael Chastain  <mec@shout.net>
+
+	* mi-var-cmd.exp: In test "create local variable func",
+	accommodate gcc v3 function signature.
+	* mi0-var-cmd-exp: Ditto.
+
+2002-02-05  Jim Blandy  <jimb@redhat.com>
+
+	* mi-regs.exp: Various cleanups for SPARC-only tests.
+	(test_breakpoints_creation_and_listing): Format of breakpoint
+	table has changed.
+	(sparc_register_tests): Expand floating-point number regexp to
+	recognize NaN values, too.  Replace ineffectual single backslash
+	before a hyphen with a double backslash.  Don't check the exact
+	numbers of the registers which have changed, since there's no way
+	to know which registers changed, exactly; just check that the
+	result is well-formed.
+	* mi0-regs.exp: (sparc_register_tests): Same as for
+	sparc_register_tests in mi-regs.exp.
+
+	* mi-var-child.exp ("get children of struct_declarations", "get
+	children of struct_declarations.s2.u2.u1s2", "get children of
+	weird"): Tolerate argument types when they appear in function
+	types.  (Dwarf 2 includes prototype info; STABS does not.)
+	* mi0-var-child.exp: Same.
+
 2001-12-19  Keith Seitz  <keiths@redhat.com>
 
 	* mi-var-display.exp: char* variables have a child. Update all

@@ -1,5 +1,5 @@
 /* Support for GDB maintenance commands.
-   Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1999, 2000, 2001
+   Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support.
 
@@ -35,6 +35,8 @@
 #include "symfile.h"
 #include "objfiles.h"
 #include "value.h"
+
+#include "cli/cli-decode.h"
 
 extern void _initialize_maint_cmds (void);
 
@@ -309,7 +311,7 @@ print_section_info (const char *name, flagword flags,
   /* FIXME-32x64: Need print_address_numeric with field width.  */
   printf_filtered ("    0x%s", paddr (addr));
   printf_filtered ("->0x%s", paddr (endaddr));
-  printf_filtered (" at 0x%s",
+  printf_filtered (" at %s",
 		   local_hex_string_custom ((unsigned long) filepos, "08l"));
   printf_filtered (": %s", name);
   print_bfd_flags (flags);
@@ -494,7 +496,6 @@ maintenance_translate_address (char *arg, int from_tty)
 
   return;
 }
-
 
 /* When a command is deprecated the user will be warned the first time
    the command is used.  If possible, a replacement will be
@@ -803,7 +804,7 @@ passes without a response from the target, an error occurs.", &setlist),
 			"Set internal profiling.\n\
 When enabled GDB is profiled.",
 			&maintenance_set_cmdlist);
-  tmpcmd->function.sfunc = maintenance_set_profile_cmd;
+  set_cmd_sfunc (tmpcmd, maintenance_set_profile_cmd);
   add_show_from_set (tmpcmd, &maintenance_show_cmdlist);
 #endif
 }

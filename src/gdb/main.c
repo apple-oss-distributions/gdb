@@ -85,11 +85,6 @@ static void print_gdb_help (struct ui_file *);
 
 extern char *external_editor_command;
 
-#ifdef __CYGWIN__
-#include <windows.h>		/* for MAX_PATH */
-#include <sys/cygwin.h>		/* for cygwin32_conv_to_posix_path */
-#endif
-
 static char *
 quote_string (char *s)
 {
@@ -523,15 +518,9 @@ extern int gdbtk_test (char *);
 
   if (!quiet)
     {
-      /* Print all the junk at the top, with trailing "..." if we are about
-         to read a symbol file (possibly slowly).  */
+      /* Print all the junk at the top. */
       print_gdb_version (gdb_stdout);
-#if 0
-      if (symarg)
-	printf_filtered ("..");
-#else
       printf_filtered ("\n");
-#endif
       wrap_here ("");
       gdb_flush (gdb_stdout);	/* Force to screen during slow operations */
     }
@@ -620,10 +609,6 @@ extern int gdbtk_test (char *);
   /* After the symbol file has been read, print a newline to get us
      beyond the copyright line...  But errors should still set off
      the error message with a (single) blank line.  */
-#if 0
-  if (!quiet)
-    printf_filtered ("\n");
-#endif
   error_pre_print = "\n";
   quit_pre_print = error_pre_print;
   warning_pre_print = "\nwarning: ";
@@ -647,9 +632,6 @@ extern int gdbtk_test (char *);
 	  if (isdigit (corearg[0]))
 	    catch_command_errors (attach_command, corearg, !batch, RETURN_MASK_ALL);
 	}
-      else /* Can't be a pid, better be a corefile. */
-	catch_command_errors (core_file_command, corearg, 
-			      !batch, RETURN_MASK_ALL);
     }
 
   if (ttyarg != NULL)

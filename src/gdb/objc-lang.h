@@ -41,3 +41,5 @@ find_methods (struct symtab *symtab, char type,
 char *
 find_imps (struct symtab *symtab, struct block *block, char *method,
 	   struct symbol **syms, unsigned int *nsym, unsigned int *ndebug);
+
+int should_lookup_objc_class ();

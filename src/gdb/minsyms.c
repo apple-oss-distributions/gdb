@@ -75,18 +75,6 @@ static int msym_bunch_index;
 
 static int msym_count;
 
-/* Prototypes for local functions. */
-
-static int compare_minimal_symbols (const PTR, const PTR);
-
-static int
-compact_minimal_symbols (struct minimal_symbol *, int, struct objfile *);
-
-static void add_minsym_to_demangled_hash_table (struct minimal_symbol *sym,
-						struct minimal_symbol **table);
-
-void objfile_demangle_msymbols (struct objfile *objfile);
-
 /* Compute a hash code based using the same criteria as `strcmp_iw'.  */
 
 unsigned int
@@ -719,7 +707,7 @@ prim_record_minimal_symbol_and_info (const char *name, CORE_ADDR address,
    Within groups with the same address, sort by name.  */
 
 static int
-compare_minimal_symbols (const PTR fn1p, const PTR fn2p)
+compare_minimal_symbols (const void *fn1p, const void *fn2p)
 {
   register const struct minimal_symbol *fn1;
   register const struct minimal_symbol *fn2;
@@ -1021,10 +1009,9 @@ install_minimal_symbols (struct objfile *objfile)
 	for (i = 0; i < mcount; i++)
 	  {
 	    const char *name = SYMBOL_NAME (&objfile->msymbols[i]);
-	    if (name[0] == '_' && name[1] == 'Z')
+	    if (name[0] == '_' && name[1] == 'Z' && cp_abi_is_auto_p())
 	      {
-		if (cp_abi_is_auto_p ())
-		  switch_to_cp_abi ("gnu-v3");
+		set_cp_abi_as_auto_default ("gnu-v3");
 		break;
 	      }
 	  }
@@ -1032,14 +1019,7 @@ install_minimal_symbols (struct objfile *objfile)
       
       /* Now walk through all the minimal symbols, selecting the newly added
          ones and attempting to cache their C++ demangled names. */
-      for (; mcount-- > 0; msymbols++)
-	SYMBOL_INIT_DEMANGLED_NAME (msymbols, &objfile->symbol_obstack);
-
-      /* Now build the hash tables; we can't do this incrementally
-         at an earlier point since we weren't finished with the obstack
-	 yet.  (And if the msymbol obstack gets moved, all the internal
-	 pointers to other msymbols need to be adjusted.) */
-      build_minimal_symbol_hash_tables (objfile);
+      objfile_demangle_msymbols (objfile);
     }
 }
 

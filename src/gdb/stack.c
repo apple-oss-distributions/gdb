@@ -403,7 +403,10 @@ print_frame_info_base (struct frame_info *fi, int level, int source, int args)
       if (!done)
 	{
 	  if (print_frame_info_listing_hook)
-	    print_frame_info_listing_hook (sal.symtab, sal.line, sal.line + 1, 0);
+	    {
+	      print_frame_info_listing_hook (sal.symtab, sal.line, sal.line + 1, 0);
+	      current_source_symtab = sal.symtab;
+	    }
 	  else
 	    {
 	      /* We used to do this earlier, but that is clearly
@@ -424,6 +427,7 @@ print_frame_info_base (struct frame_info *fi, int level, int source, int args)
 		print_frame_info_listing_hook (sal.symtab, sal.line, 1, 0);
 	      else
 		print_source_lines (sal.symtab, sal.line, 1, 0);
+
 	    }
 	}
       current_source_line = max (sal.line - lines_to_list / 2, 1);
@@ -561,6 +565,11 @@ print_frame (struct frame_info *fi,
 	ui_out_field_core_addr (uiout, "addr", fi->pc);
 	annotate_frame_address_end ();
 	ui_out_text (uiout, " in ");
+        
+        if (ui_out_is_mi_like_p (uiout))
+          {
+            ui_out_field_core_addr (uiout, "fp", FRAME_FP(fi));
+          }
       }
   annotate_frame_function_name ();
   fprintf_symbol_filtered (stb->stream, funname ? funname : "??", funlang,
@@ -725,7 +734,7 @@ parse_frame_specification (char *frame_exp)
 	   really should be used instead of spaces to delimit; using spaces
 	   normally works in an expression).  */
 #ifdef SETUP_ARBITRARY_FRAME
-	error ("No frame %d", args[0]);
+	error ("No frame %s", paddr_d (args[0]));
 #endif
 
 	/* If (s)he specifies the frame with an address, he deserves what
@@ -1259,7 +1268,7 @@ static void
 print_frame_local_vars (register struct frame_info *fi, register int num_tabs,
 			register struct ui_file *stream)
 {
-  register struct block *block = get_frame_block (fi);
+  register struct block *block = get_frame_block (fi, 0);
   register int values_printed = 0;
 
   if (block == 0)
@@ -1293,7 +1302,7 @@ print_frame_label_vars (register struct frame_info *fi, int this_level_only,
 			register struct ui_file *stream)
 {
   register struct blockvector *bl;
-  register struct block *block = get_frame_block (fi);
+  register struct block *block = get_frame_block (fi, 0);
   register int values_printed = 0;
   int index, have_default = 0;
   char *blocks_printed;
@@ -1526,17 +1535,21 @@ record_selected_frame (CORE_ADDR *frameaddrp, int *levelp)
 }
 
 /* Return the symbol-block in which the selected frame is executing.
-   Can return zero under various legitimate circumstances.  */
+   Can return zero under various legitimate circumstances.
+
+   If ADDR_IN_BLOCK is non-zero, set *ADDR_IN_BLOCK to the relevant
+   code address within the block returned.  We use this to decide
+   which macros are in scope.  */
 
 struct block *
-get_selected_block (void)
+get_selected_block (CORE_ADDR *addr_in_block)
 {
   if (!target_has_stack)
     return 0;
 
   if (!selected_frame)
-    return get_current_block ();
-  return get_frame_block (selected_frame);
+    return get_current_block (addr_in_block);
+  return get_frame_block (selected_frame, addr_in_block);
 }
 
 /* Find a frame a certain number of levels away from FRAME.

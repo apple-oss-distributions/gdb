@@ -256,10 +256,11 @@ static int
 do_captured_list_thread_ids (struct ui_out *uiout,
 			     void *arg)
 {
+  struct cleanup *chain;
   struct thread_info *tp;
   int num = 0;
 
-  ui_out_tuple_begin (uiout, "thread-ids");
+  chain = make_cleanup_ui_out_tuple_begin_end (uiout, "thread-ids");
   
   if (!target_has_stack)
     error ("No stack.");
@@ -273,7 +274,7 @@ do_captured_list_thread_ids (struct ui_out *uiout,
       ui_out_field_int (uiout, "thread-id", tp->num);
     }
 
-  ui_out_tuple_end (uiout);
+  do_cleanups (chain);
   ui_out_field_int (uiout, "number-of-threads", num);
   return GDB_RC_OK;
 }

@@ -75,6 +75,9 @@ static struct complaint noclass_lookup_complaint =
 static struct complaint nosel_lookup_complaint = 
   {"no way to lookup Objective-C selectors", 0, 0};
 
+/* Should we lookup ObjC Classes as part of ordinary symbol resolution? */
+int lookup_objc_class_p = 1;
+
 /* Lookup a structure type named "struct NAME",
    visible in lexical block BLOCK.  
    If NOERR is nonzero, return zero if NAME is not suitably defined.  */
@@ -240,7 +243,7 @@ objc_demangle (mangled)
 
       if (!(cp = strchr(cp, '_')))	/* find first non-initial underbar */
 	{
-	  free(demangled);	/* not mangled name */
+	  xfree(demangled);	/* not mangled name */
 	  return NULL;
 	}
       if (cp[1] == '_') {	/* easy case: no category name     */
@@ -251,7 +254,7 @@ objc_demangle (mangled)
 	*cp++ = '(';		/* less easy case: category name */
 	if (!(cp = strchr(cp, '_')))
 	  {
-	    free(demangled);	/* not mangled name */
+	    xfree(demangled);	/* not mangled name */
 	    return NULL;
 	  }
 	*cp++ = ')';
@@ -748,7 +751,7 @@ add_msglist(str, addcolon)
   s = (char *)xmalloc(len);
   strcpy(s, msglist_sel);
   strncat(s, p, plen);
-  free(msglist_sel);
+  xfree(msglist_sel);
   msglist_sel = s;
   if (addcolon) {
     s[len-2] = ':';
@@ -773,9 +776,9 @@ end_msglist()
   if (!selid)
     error("Can't find selector \"%s\"", p);
   write_exp_elt_longcst (selid);
-  free(p);
+  xfree(p);
   write_exp_elt_longcst (val);/* Number of args */
-  free(sel);
+  xfree(sel);
 
   return val;
 }
@@ -1565,10 +1568,10 @@ struct objc_methcall {
   CORE_ADDR end;		    /* end of pc range corresponding to method invocation */
 };
 
-static int resolve_msgsend PARAMS ((CORE_ADDR pc, CORE_ADDR *new_pc));
-static int resolve_msgsend_stret PARAMS ((CORE_ADDR pc, CORE_ADDR *new_pc));
-static int resolve_msgsend_super PARAMS ((CORE_ADDR pc, CORE_ADDR *new_pc));
-static int resolve_msgsend_super_stret PARAMS ((CORE_ADDR pc, CORE_ADDR *new_pc));
+static int resolve_msgsend (CORE_ADDR pc, CORE_ADDR *new_pc);
+static int resolve_msgsend_stret (CORE_ADDR pc, CORE_ADDR *new_pc);
+static int resolve_msgsend_super (CORE_ADDR pc, CORE_ADDR *new_pc);
+static int resolve_msgsend_super_stret (CORE_ADDR pc, CORE_ADDR *new_pc);
 
 static struct objc_methcall methcalls[] = {
   { "_objc_msgSend", resolve_msgsend, 0, 0},
@@ -1936,4 +1939,22 @@ resolve_msgsend_super_stret (pc, new_pc)
   if (new_pc != 0) { *new_pc = res; }
   if (res == 0) { return 1; }
   return 0;
+}
+
+int
+should_lookup_objc_class ()
+{
+  return lookup_objc_class_p;
+}
+
+void
+_initialize_objc_lang ()
+{
+    add_show_from_set
+    (add_set_boolean_cmd ("lookup_objc_class", no_class, &lookup_objc_class_p,
+			  "Set whether we should attempt to lookup ObjC"
+			  " classes when we resolve symbols.",
+			  &setlist),
+     &showlist);
+
 }

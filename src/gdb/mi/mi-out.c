@@ -1,5 +1,7 @@
 /* MI Command Set - output generating routines.
-   Copyright 2000 Free Software Foundation, Inc.
+
+   Copyright 2000, 2002 Free Software Foundation, Inc.
+
    Contributed by Cygnus Solutions (a Red Hat company).
 
    This file is part of GDB.
@@ -21,13 +23,14 @@
 
 #include "defs.h"
 #include "ui-out.h"
+#include "ui-file.h"
 #include "mi-out.h"
 
-/* Convenience macro for allocting typesafe memory. */
-
-#ifndef XMALLOC
-#define XMALLOC(TYPE) (TYPE*) xmalloc (sizeof (TYPE))
-#endif
+/* This comes from the mi-main.c.  I need it because the notify
+   code has to "put" the temporary notify buffer before discarding
+   it. */
+   
+extern struct ui_file *raw_stdout;
 
 struct ui_out_data
   {
@@ -67,6 +70,8 @@ static void mi_message (struct ui_out *uiout, int verbosity, const char *format,
 			va_list args);
 static void mi_wrap_hint (struct ui_out *uiout, char *identstring);
 static void mi_flush (struct ui_out *uiout);
+static void mi_notify_begin (struct ui_out *uiout, char *class);
+static void mi_notify_end (struct ui_out *uiout);
 
 /* This is the MI ui-out implementation functions vector */
 
@@ -91,6 +96,8 @@ struct ui_out_impl mi_ui_out_impl =
   mi_message,
   mi_wrap_hint,
   mi_flush,
+  mi_notify_begin,
+  mi_notify_end,
   1, /* Needs MI hacks.  */
 };
 
@@ -313,6 +320,47 @@ mi_flush (struct ui_out *uiout)
 {
   struct ui_out_data *data = ui_out_data (uiout);
   gdb_flush (data->buffer);
+}
+
+struct ui_file *notify_buffer;
+struct ui_file *notify_suspended_buffer;
+
+static void 
+mi_notify_begin (struct ui_out *uiout, char *class)
+{
+  struct ui_out_data *data = ui_out_data (uiout);
+  if (notify_buffer != NULL)
+    {
+      /* This should not happen, but try to recover... */
+      if (notify_suspended_buffer != NULL)
+        {
+          ui_file_delete (notify_buffer);
+          notify_buffer = NULL;
+          data->buffer = notify_suspended_buffer;
+          notify_suspended_buffer = NULL;
+        }
+      error ("Called to start an mi notify with a notify already started.");
+      return;
+    }
+    
+  notify_suspended_buffer = data->buffer;
+  notify_buffer = mem_fileopen();
+  data->buffer = notify_buffer;
+  fprintf_unfiltered (data->buffer, "=%s", class);
+}
+
+static void 
+mi_notify_end (struct ui_out *uiout)
+{
+  struct ui_out_data *data = ui_out_data (uiout);
+  mi_out_put (uiout, raw_stdout);
+  fputs_unfiltered ("\n", raw_stdout);  
+  gdb_flush (raw_stdout);
+
+  ui_file_delete (data->buffer);
+  notify_buffer = NULL;
+  data->buffer = notify_suspended_buffer;
+  notify_suspended_buffer = NULL;
 }
 
 /* local functions */

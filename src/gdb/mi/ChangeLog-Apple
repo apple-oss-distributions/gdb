@@ -1,3 +1,63 @@
+2002-06-10  Jim Ingham <jingham@apple.com>
+
+      * mi-stack-cmd.c (list_args_or_locals): endaddr should be a 
+      CORE_ADDR.
+      
+2002-06-07  Jim Ingham <jingham@apple.com>
+
+      * mi-out.c: Add the mi versions of notify_begin and
+      notify_end.
+
+2002-05-30  Rab Hagy <rhagy@apple.com>
+
+      * mi-main.c (mi_verify_command): clean up output
+      * mi-cmd-var.c: added "unsigned" format specification
+      
+2002-04-24  James Ingham <jingham@apple.com>
+
+      * mi-cmd-var.c (mi_report_var_creation): Use varobj_in_scope_p to figure
+      out whether a variable is in scope.
+
+2002-04-17  James Ingham <jingham@apple.com>
+
+	* mi-cmd-var.c: Mutatis mutandi for new block parameter to
+	varobj_create.
+	* mi_cmd_stack.c: ditto.
+
+2002-04-17  James Ingham <jingham@apple.com>
+
+	* mi-var-cmd.c (mi_cmd_var_update): use
+	make_cleanup_ui_out_tuple_begin_end to start the list, so we can
+	clean up on error.
+
+	* mi-cmd-stack.c (print_syms_for_block): Move the start of the
+	list for the create_varobj case till after we have created the
+	varobj, so we can handle errors in the creation better.
+	
+2002-04-15  James Ingham <jingham@apple.com>
+
+	mi-cmd-var.c (print_typecode): The type might be null.  Return UNDEF
+	in this case.
+
+2002-04-11  James Ingham <jingham@apple.com>
+
+	mi-cmds.c: Add exec-metrowerk-step command
+	mi-cmds.h: Add the declaration of mi_cmd_exec_metrowerks_next.
+	mi-main.c (mi_cmd_exec_metrowerks_next): New function, routes
+	through to metrowerks_next...
+
+2002-03-28  James Ingham <jingham@apple.com>
+
+	* mi-cmds.h: Added def'n of mi_cmd_var_info_path_expression.
+	* mi-cmds.c: Added var-info-path-expression to command list.
+	* mi-cmd-var.c (mi_cmd_var_info_path_expression) New function,
+	the MI interface to varobj_get_path_expression.
+
+2002-03-05  James Ingham <jingham@apple.com>
+	
+	* mi-main.c (mi_cmd_data_evaluate_expression): Add "-u" flag to this
+	command - sets unwindonsignal for the evaluation.
+
 2002-01-31 James Ingham <jingham@inghji.apple.com>
 	* mi-main.c (mi_create_interpreter): Dopey bug, actually return
 	the new interpreter!

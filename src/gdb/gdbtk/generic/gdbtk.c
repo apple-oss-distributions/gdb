@@ -1,5 +1,5 @@
 /* Startup code for Insight
-   Copyright 1994, 1995, 1996, 1997, 1998, 2001 
+   Copyright 1994, 1995, 1996, 1997, 1998, 2001, 2002
    Free Software Foundation, Inc.
 
    Written by Stu Grossman <grossman@cygnus.com> of Cygnus Support.
@@ -22,45 +22,41 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
-#include "symtab.h"
 #include "inferior.h"
-#include "command.h"
-#include "bfd.h"
 #include "symfile.h"
 #include "objfiles.h"
-#include "target.h"
 #include "gdbcore.h"
 #include "tracepoint.h"
 #include "demangle.h"
 #include "version.h"
 #include "cli-out.h"
+#include "top.h"
+#include "annotate.h"
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
 
-#include <sys/stat.h>
+/* tcl header files includes varargs.h unless HAS_STDARG is defined,
+   but gdb uses stdarg.h, so make sure HAS_STDARG is defined.  */
+#define HAS_STDARG 1
 
-#include <tcl.h>
-#include <tk.h>
-#include <itcl.h>
 #include <tix.h>
+#include <itcl.h>
 #include <itk.h>
 #include "guitcl.h"
 #include "gdbtk.h"
 
-#include <signal.h>
 #include <fcntl.h>
-#include "top.h"
+#include <sys/stat.h>
 #include <sys/ioctl.h>
+#include <sys/time.h>
+#include <signal.h>
+
 #include "gdb_string.h"
 #include "dis-asm.h"
-#include <stdio.h>
 #include "gdbcmd.h"
-
-#include "annotate.h"
-#include <sys/time.h>
 
 #ifdef __CYGWIN32__
 #include <sys/cygwin.h>		/* for cygwin32_attach_handle_to_fd */
@@ -74,17 +70,15 @@ static sigset_t nullsigmask;
 static struct sigaction act1, act2;
 static struct itimerval it_on, it_off;
 
-static void x_event_wrapper (int);
 static void
-x_event_wrapper (signo)
-     int signo;
+x_event_wrapper (int signo)
 {
   x_event (signo);
 }
 
- /*
-  * This variable controls the interaction with an external editor.
-  */
+/*
+ * This variable controls the interaction with an external editor.
+ */
 
 char *external_editor_command = NULL;
 
@@ -134,23 +128,19 @@ int gdbtk_disable_fputs = 1;
 
 #if TCL_MAJOR_VERSION == 8 && TCL_MINOR_VERSION == 0
 char *
-TclpAlloc (size)
-     unsigned int size;
+TclpAlloc (unsigned int size)
 {
   return xmalloc (size);
 }
 
 char *
-TclpRealloc (ptr, size)
-     char *ptr;
-     unsigned int size;
+TclpRealloc (char *ptr, unsigned int size)
 {
   return xrealloc (ptr, size);
 }
 
 void
-TclpFree (ptr)
-     char *ptr;
+TclpFree (char *ptr)
 {
   free (ptr);
 }
@@ -171,13 +161,13 @@ void
 close_bfds ()
 {
   struct objfile *o;
-
+  
   ALL_OBJFILES (o)
-  {
-    if (o->obfd != NULL)
-      bfd_cache_close (o->obfd);
-  }
-
+    {
+      if (o->obfd != NULL)
+	bfd_cache_close (o->obfd);
+    }
+  
   if (exec_bfd != NULL)
     bfd_cache_close (exec_bfd);
 }
@@ -314,16 +304,14 @@ gdbtk_stop_timer ()
 /* Should this target use the timer? See comments before
    x_event for the logic behind all this. */
 static int
-target_should_use_timer (t)
-     struct target_ops *t;
+target_should_use_timer (struct target_ops *t)
 {
   return target_is_native (t);
 }
 
 /* Is T a native target? */
 int
-target_is_native (t)
-     struct target_ops *t;
+target_is_native (struct target_ops *t)
 {
   char *name = t->to_shortname;
 
@@ -339,8 +327,7 @@ target_is_native (t)
 /* gdbtk_init installs this function as a final cleanup.  */
 
 static void
-gdbtk_cleanup (dummy)
-     PTR dummy;
+gdbtk_cleanup (PTR dummy)
 {
   Tcl_Eval (gdbtk_interp, "gdbtk_cleanup");
   Tcl_Finalize ();
@@ -355,8 +342,7 @@ gdbtk_cleanup (dummy)
  */
 
 static void
-gdbtk_init (argv0)
-     char *argv0;
+gdbtk_init (char *argv0)
 {
   struct cleanup *old_chain;
   char *s;
@@ -604,7 +590,7 @@ gdbtk_init (argv0)
   uiout = cli_out_new (gdb_stdout);
 
 #ifdef __CYGWIN32__
-      (void) FreeConsole ();
+  (void) FreeConsole ();
 #endif
 
   /* find the gdb tcl library and source main.tcl */
@@ -679,8 +665,7 @@ gdbtk_find_main";
    startup procedure. */
 
 int
-gdbtk_test (filename)
-     char *filename;
+gdbtk_test (char *filename)
 {
   if (access (filename, R_OK) != 0)
     return 0;
@@ -728,15 +713,14 @@ _initialize_gdbtk ()
 }
 
 static void
-tk_command (cmd, from_tty)
-     char *cmd;
-     int from_tty;
+tk_command (char *cmd, int from_tty)
 {
   int retval;
   char *result;
   struct cleanup *old_chain;
 
-  /* Catch case of no argument, since this will make the tcl interpreter dump core. */
+  /* Catch case of no argument, since this will make the tcl interpreter 
+     dump core. */
   if (cmd == NULL)
     error_no_arg ("tcl command to interpret");
 
@@ -753,4 +737,3 @@ tk_command (cmd, from_tty)
 
   do_cleanups (old_chain);
 }
-

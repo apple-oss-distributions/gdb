@@ -21,8 +21,6 @@
 
 #include "regcache.h"
 
-#define TARGET_BYTE_ORDER BFD_ENDIAN_LITTLE
-
 #define NUM_REGS 66
 
 #define REGISTER_NAMES \
@@ -74,7 +72,6 @@ extern char **v850_register_names;
 #define FP_RAW_REGNUM 29
 
 #define TARGET_READ_FP() read_register (FP_RAW_REGNUM)
-#define TARGET_WRITE_FP(VAL) write_register (FP_REGNUM, (VAL))
 
 #define REGISTER_VIRTUAL_TYPE(REG) builtin_type_int
 

@@ -172,117 +172,11 @@ extern CORE_ADDR symbol_overlayed_address (CORE_ADDR, asection *);
       }									\
   } while (0)
 
-/* Macro that attempts to initialize the demangled name for a symbol,
-   based on the language of that symbol.  If the language is set to
-   language_auto, it will attempt to find any demangling algorithm
-   that works and then set the language appropriately.  If no demangling
-   of any kind is found, the language is set back to language_unknown,
-   so we can avoid doing this work again the next time we encounter
-   the symbol.  Any required space to store the name is obtained from the
-   specified obstack. */
-
-#define SYMBOL_INIT_DEMANGLED_NAME(symbol,obstack)			\
-  do {									\
-    char *demangled = NULL;						\
-    if (SYMBOL_LANGUAGE (symbol) == language_unknown)                 \
-          SYMBOL_LANGUAGE (symbol) = language_auto;                    \
-    if (SYMBOL_LANGUAGE (symbol) == language_cplus			\
-	|| SYMBOL_LANGUAGE (symbol) == language_auto)			\
-      {									\
-	demangled =							\
-	  cplus_demangle (SYMBOL_NAME (symbol), DMGL_PARAMS | DMGL_ANSI);\
-	if (demangled != NULL)						\
-	  {								\
-	    SYMBOL_LANGUAGE (symbol) = language_cplus;			\
-	    SYMBOL_CPLUS_DEMANGLED_NAME (symbol) = 			\
-	      obsavestring (demangled, strlen (demangled), (obstack));	\
-	    xfree (demangled);						\
-	  }								\
-	else								\
-	  {								\
-	    SYMBOL_CPLUS_DEMANGLED_NAME (symbol) = NULL;		\
-	  }								\
-      }									\
-    if (SYMBOL_LANGUAGE (symbol) == language_java)			\
-      {									\
-	demangled =							\
-	  cplus_demangle (SYMBOL_NAME (symbol),				\
-			  DMGL_PARAMS | DMGL_ANSI | DMGL_JAVA);		\
-	if (demangled != NULL)						\
-	  {								\
-	    SYMBOL_LANGUAGE (symbol) = language_java;			\
-	    SYMBOL_CPLUS_DEMANGLED_NAME (symbol) = 			\
-	      obsavestring (demangled, strlen (demangled), (obstack));	\
-	    xfree (demangled);						\
-	  }								\
-	else								\
-	  {								\
-	    SYMBOL_CPLUS_DEMANGLED_NAME (symbol) = NULL;		\
-	  }								\
-      }									\
-    if (demangled == NULL						\
-	&& (SYMBOL_LANGUAGE (symbol) == language_chill			\
-	    || SYMBOL_LANGUAGE (symbol) == language_auto))		\
-      {									\
-	demangled =							\
-	  chill_demangle (SYMBOL_NAME (symbol));			\
-	if (demangled != NULL)						\
-	  {								\
-	    SYMBOL_LANGUAGE (symbol) = language_chill;			\
-	    SYMBOL_CHILL_DEMANGLED_NAME (symbol) = 			\
-	      obsavestring (demangled, strlen (demangled), (obstack));	\
-	    xfree (demangled);						\
-	  }								\
-	else								\
-	  {								\
-	    SYMBOL_CHILL_DEMANGLED_NAME (symbol) = NULL;		\
-	  }								\
-      }									\
-    if (demangled == NULL &&						\
- 	(SYMBOL_LANGUAGE (symbol) == language_objc ||			\
- 	 SYMBOL_LANGUAGE (symbol) == language_objcplus ||		\
- 	 SYMBOL_LANGUAGE (symbol) == language_auto))			\
-       {								\
- 	demangled =							\
- 	  objc_demangle (SYMBOL_NAME (symbol));				\
- 	if (demangled != NULL)						\
- 	  {								\
- 	    SYMBOL_LANGUAGE (symbol) = language_objc;			\
- 	    if (SYMBOL_LANGUAGE (symbol) == language_auto)		\
-	      SYMBOL_OBJC_DEMANGLED_NAME (symbol) = 			\
- 	        obsavestring (demangled, strlen (demangled), (obstack)); \
- 	    free (demangled);						\
- 	  }								\
- 	else								\
- 	  {								\
- 	    SYMBOL_OBJC_DEMANGLED_NAME (symbol) = NULL;			\
- 	  }								\
-       }								\
-     if (demangled &&							\
- 	SYMBOL_LANGUAGE (symbol) != language_objc &&			\
- 	SYMBOL_LANGUAGE (symbol) != language_objcplus &&		\
-        (demangled = SYMBOL_NAME (symbol)) && 				\
- 	demangled[0] == '_' &&						\
-        (demangled[1] == 'i' || demangled[1] == 'c') &&			\
- 	demangled[2] == '_')						\
-	/* some other demangling succeeded, yet it looks like ObjC   */	\
-       {								\
- 	demangled =							\
- 	  objc_demangle (SYMBOL_NAME (symbol));				\
- 	if (demangled != NULL)  /*  yes, it was ObjC: let ObjC win   */	\
- 	  {			/* (C++ demangling is too forgiving) */	\
- 	    SYMBOL_LANGUAGE (symbol) = language_objc;			\
- 	    SYMBOL_OBJC_DEMANGLED_NAME (symbol) = 			\
- 	      obsavestring (demangled, strlen (demangled), (obstack));	\
- 	    free (demangled);						\
- 	  }								\
-       }								\
-    if (SYMBOL_LANGUAGE (symbol) == language_auto)			\
-      {									\
-	SYMBOL_LANGUAGE (symbol) = language_unknown;			\
-      }									\
-  } while (0)
-
+#define SYMBOL_INIT_DEMANGLED_NAME(symbol,obstack) \
+  (symbol_init_demangled_name (&symbol->ginfo, (obstack)))
+extern void symbol_init_demangled_name (struct general_symbol_info *symbol,
+                                        struct obstack *obstack);
+  
 /* Macro that returns the demangled name for a symbol based on the language
    for that symbol.  If no demangled name exists, returns NULL. */
 
@@ -863,7 +757,10 @@ struct linetable_entry
    30   0x300
    10   0x400   - for the increment part of a for stmt.
 
- */
+   If an entry has a line number of zero, it marks the start of a PC
+   range for which no line number information is available.  It is
+   acceptable, though wasteful of table space, for such a range to be
+   zero length.  */
 
 struct linetable
   {
@@ -1163,6 +1060,7 @@ extern struct symbol *lookup_block_symbol_helper (const struct block *,
 						  int exhaustive);
 
 extern struct symbol *lookup_block_symbol (const struct block *, const char *,
+					   const char *,
 					   const namespace_enum);
 
 /* lookup a [struct, union, enum] by name, within a specified block */

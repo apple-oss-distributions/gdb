@@ -163,6 +163,14 @@ extern int ui_out_test_flags (struct ui_out *uiout, int mask);
 
 extern void ui_out_cleanup_after_error (struct ui_out *uiout);
 
+struct cleanup *
+make_cleanup_ui_out_notify_begin_end (struct ui_out *uiout,
+				      char *class);
+
+extern void ui_out_notify_begin (struct ui_out *uiout, char *class);
+
+extern void ui_out_notify_end (struct ui_out *uiout);
+
 #if 0
 extern void ui_out_result_begin (struct ui_out *uiout, char *class);
 
@@ -171,10 +179,6 @@ extern void ui_out_result_end (struct ui_out *uiout);
 extern void ui_out_info_begin (struct ui_out *uiout, char *class);
 
 extern void ui_out_info_end (struct ui_out *uiout);
-
-extern void ui_out_notify_begin (struct ui_out *uiout, char *class);
-
-extern void ui_out_notify_end (struct ui_out *uiout);
 
 extern void ui_out_error_begin (struct ui_out *uiout, char *class);
 
@@ -241,6 +245,8 @@ typedef void (message_ftype) (struct ui_out * uiout, int verbosity,
 			      const char *format, va_list args);
 typedef void (wrap_hint_ftype) (struct ui_out * uiout, char *identstring);
 typedef void (flush_ftype) (struct ui_out * uiout);
+typedef void (notify_begin_ftype) (struct ui_out *uiout, char *class);
+typedef void (notify_end_ftype) (struct ui_out *uiout);
 
 /* ui-out-impl */
 
@@ -265,6 +271,8 @@ struct ui_out_impl
     message_ftype *message;
     wrap_hint_ftype *wrap_hint;
     flush_ftype *flush;
+    notify_begin_ftype *notify_begin;
+    notify_end_ftype *notify_end;
     int is_mi_like_p;
   };
 

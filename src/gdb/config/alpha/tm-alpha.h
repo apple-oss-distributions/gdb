@@ -1,7 +1,8 @@
 /* Definitions to make GDB run on an Alpha box under OSF1.  This is
-   also used by the Alpha/Netware and Alpha/Linux targets.
-   Copyright 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2002
-   Free Software Foundation, Inc.
+   also used by the Alpha/Netware and Alpha GNU/Linux targets.
+
+   Copyright 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2002 Free
+   Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -32,10 +33,6 @@ struct frame_info;
 struct type;
 struct value;
 struct symbol;
-
-#if !defined (TARGET_BYTE_ORDER)
-#define TARGET_BYTE_ORDER BFD_ENDIAN_LITTLE
-#endif
 
 /* Redefine some target bit sizes from the default.  */
 

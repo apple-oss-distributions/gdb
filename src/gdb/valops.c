@@ -85,6 +85,7 @@ int overload_resolution = 0;
    The default is to stop in the frame where the signal was received. */
 
 int unwind_on_signal_p = 0;
+
 
 
 extern struct type *msym_text_symbol_type;
@@ -103,10 +104,19 @@ create_cached_function (name, type)
   ptr = (struct cached_value *) xmalloc (sizeof (struct cached_value));
   ptr->name = xstrdup (name);
   ptr->type = type;
+  ptr->bound = 0;
   memset (&ptr->val, 0, sizeof (struct value));
   ptr->generation = (unsigned int) -1;
 
   return ptr;
+}
+
+int
+set_unwind_on_signal (int new_val)
+{
+  int old_val = unwind_on_signal_p;
+  unwind_on_signal_p = new_val;
+  return old_val;
 }
 
 struct value *
@@ -120,7 +130,16 @@ lookup_cached_function (struct cached_value *cval)
       val = find_function_in_inferior (cval->name, cval->type);
       cval->val = *val;
       cval->val.next = NULL;
+      cval->bound = 0;
       cval->generation = symbol_generation;
+    }
+
+  if (!cval->bound)
+    {
+      if (!target_bind_function (cval->name))
+	error ("Could not bind function \"%s\".", cval->name);
+      else
+	cval->bound = 1;
     }
 
   val = allocate_value (cval->val.type);
@@ -1123,10 +1142,6 @@ value_push (register CORE_ADDR sp, struct value *arg)
   return sp;
 }
 
-#ifndef PUSH_ARGUMENTS
-#define PUSH_ARGUMENTS default_push_arguments
-#endif
-
 CORE_ADDR
 default_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
 			int struct_return, CORE_ADDR struct_addr)
@@ -1198,7 +1213,8 @@ value_arg_coerce (struct value *arg, struct type *param_type,
   switch (TYPE_CODE (type))
     {
     case TYPE_CODE_REF:
-      if (TYPE_CODE (arg_type) != TYPE_CODE_REF)
+      if (TYPE_CODE (arg_type) != TYPE_CODE_REF
+	  && TYPE_CODE (arg_type) != TYPE_CODE_PTR)
 	{
 	  arg = value_addr (arg);
 	  VALUE_TYPE (arg) = param_type;
@@ -2349,23 +2365,32 @@ search_struct_method (char *name, struct value **arg1p,
 
 	  if (j > 0 && args == 0)
 	    error ("cannot resolve overloaded method `%s': no arguments supplied", name);
-	  while (j >= 0)
+	  else if (j == 0 && args == 0)
 	    {
 	      if (TYPE_FN_FIELD_STUB (f, j))
 		check_stub_method (type, i, j);
-	      if (!typecmp (TYPE_FN_FIELD_STATIC_P (f, j),
-			    TYPE_FN_FIELD_ARGS (f, j), args))
-		{
-		  if (TYPE_FN_FIELD_VIRTUAL_P (f, j))
-		    return value_virtual_fn_field (arg1p, f, j, type, offset);
-		  if (TYPE_FN_FIELD_STATIC_P (f, j) && static_memfuncp)
-		    *static_memfuncp = 1;
-		  v = value_fn_field (arg1p, f, j, type, offset);
-		  if (v != NULL)
-		    return v;       
-		}
-	      j--;
+	      v = value_fn_field (arg1p, f, j, type, offset);
+	      if (v != NULL)
+		return v;
 	    }
+	  else
+	    while (j >= 0)
+	      {
+		if (TYPE_FN_FIELD_STUB (f, j))
+		  check_stub_method (type, i, j);
+		if (!typecmp (TYPE_FN_FIELD_STATIC_P (f, j),
+			      TYPE_FN_FIELD_ARGS (f, j), args))
+		  {
+		    if (TYPE_FN_FIELD_VIRTUAL_P (f, j))
+		      return value_virtual_fn_field (arg1p, f, j, type, offset);
+		    if (TYPE_FN_FIELD_STATIC_P (f, j) && static_memfuncp)
+		      *static_memfuncp = 1;
+		    v = value_fn_field (arg1p, f, j, type, offset);
+		    if (v != NULL)
+		      return v;       
+		  }
+		j--;
+	      }
 	}
     }
 
@@ -2814,23 +2839,6 @@ find_overload_match (struct type **arg_types, int nargs, char *name, int method,
   /* Consider each candidate in turn */
   for (ix = 0; ix < num_fns; ix++)
     {
-      if (method)
-	{
-	  /* For static member functions, we won't have a this pointer, but nothing
-	     else seems to handle them right now, so we just pretend ourselves */
-	  nparms=0;
-
-	  if (TYPE_FN_FIELD_ARGS(fns_ptr,ix))
-	    {
-	      while (TYPE_CODE(TYPE_FN_FIELD_ARGS(fns_ptr,ix)[nparms]) != TYPE_CODE_VOID)
-		nparms++;
-	    }
-	}
-      else
-	{
-	  /* If it's not a method, this is the proper place */
-	  nparms=TYPE_NFIELDS(SYMBOL_TYPE(oload_syms[ix]));
-	}
       /* Number of parameters for current candidate */
       nparms = method ? TYPE_NFIELDS (fns_ptr[ix].type)
 	: TYPE_NFIELDS (SYMBOL_TYPE (oload_syms[ix]));
@@ -3322,7 +3330,8 @@ value_of_local (char *name, int complain)
 
   /* Calling lookup_block_symbol is necessary to get the LOC_REGISTER
      symbol instead of the LOC_ARG one (if both exist).  */
-  sym = lookup_block_symbol (b, name, VAR_NAMESPACE);
+
+  sym = lookup_block_symbol (b, name, NULL, VAR_NAMESPACE);
   if (sym == NULL)
     {
       if (complain)

@@ -1,5 +1,7 @@
-/* Functions specific to running gdb native on IA-64 running Linux.
-   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
+/* Functions specific to running gdb native on IA-64 running
+   GNU/Linux.
+
+   Copyright 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -338,7 +340,7 @@ int ia64_cannot_store_register (regno)
      to be changed by (roughly) N as well.  (It could be N-1 or N+1
      depending upon where the NaT collection bits fall.)
 
-     OTOH, the linux kernel provides read/write access to bsp (and
+     OTOH, the Linux kernel provides read/write access to bsp (and
      currently read/write access to bspstore as well).  But it
      is definitely the case that if you change one, the other
      will change at the same time.  It is more useful to gdb to

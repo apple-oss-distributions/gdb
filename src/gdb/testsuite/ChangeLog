@@ -1,3 +1,247 @@
+2002-04-07  Michael Chastain  <mec@shout.net>
+
+	* gdb.c++/method.exp: Use gdb_test instead of send_gdb/gdb_expect.
+	Accept "A * const" and "const A * const" as type of "this".
+	Fix spelling of getFunky throughout.  Make messages uniform.
+
+2002-04-07  Elena Zannoni  <ezannoni@redhat.com>
+
+        Work around for PR gdb/285:
+	* gdb.asm/asm-source.exp: Bail out if multilibs are detected.
+
+2002-04-07  Elena Zannoni  <ezannoni@redhat.com>
+
+	* gdb.asm/asm-source.exp: Build symbolic link to arch specific
+	instructions file at run time instead of configure time.
+	Sometimes we run the test in a directory that is not the one we
+	configured in.
+	* gdb.asm/configure.in: Delete creation of symlink.
+	* gdb.asm/configure: Regenerate.
+
+2002-04-05  J. Brobecker  <brobecker@gnat.com>
+
+	* gdb.gdb/xfullpath.exp: New test, to exercise the new
+	xfullpath () function.
+
+2002-04-04  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.asm/Makefile.in: Correct dependencies.
+
+	* gdb.asm/powerpc.inc: New file.
+	* gdb.asm/asm-source.exp: Add PowerPC.
+	* gdb.asm/configure.in: Likewise.
+	* gdb.asm/configure: Regenerated.
+
+2002-04-04  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.base/relocate.exp: New file.
+	* gdb.base/relocate.c: New file.
+
+2002-04-04  Fred Fish  <fnf@redhat.com>
+
+	* gdb.base/step-test.exp: Update comment regarding stopping in
+	memcpy/bcopy calls inserted as part of the compiler runtime.
+
+2002-04-04  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.base/ovlymgr.c: Add overlay event breakpoint support.
+
+2002-04-03  Daniel Jacobowitz  <drow@mvista.com>
+
+	* lib/gdb.exp (gdb_test): Move -notransfer inside of gdb_expect.
+	(gdb_expect): Remove $notransfer hack.
+
+2002-04-02  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.c++/classes.exp ("calling method for small class"): Match
+	updated register output.
+
+2002-03-30  Daniel Jacobowitz  <drow@mvista.com>
+
+	Fix PR gdb/452
+	* gdb.base/dbx.exp: Restore old definition of gdb_file_cmd
+	when finished.  Make gdb_file_cmd send "exec-file" when
+	appropriate.
+
+2002-03-30  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.base/attach.exp: Remove extra setup_xfail.
+
+2002-03-26  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.base/default.exp: Add tests for dump, append, and restore.
+	* gdb.base/help.exp: Add tests for dump, append, and restore.
+	* gdb.base/dump.exp: New file, test dump, append and restore.
+	* gdb.base/dump.c: New file.
+
+2002-03-27  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.base/help.exp: Modify expect strings to reflect 
+	clean-ups in help messages.
+
+2002-03-26  Fred Fish  <fnf@redhat.com>
+
+	* gdb.base/step-test.exp: Accept stopping in memcpy/bcopy when we
+	have debugging info for those functions and the compiler uses them
+	internally to copy structs around.
+
+2002-03-26  Fred Fish  <fnf@redhat.com>
+
+	* gdb.base/list.exp: Revert the change made yesterday and add note
+	about why we don't list the default lines for remote targets.
+
+2002-03-25  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.base/help.exp: Clean up unnecessary wild cards in regexps.
+
+2002-03-25  Fred Fish  <fnf@redhat.com>
+
+	* gdb.base/list.exp: This test works on remote targets so remove
+	the short circuit for remote targets.  Update copyright.
+
+2002-03-25  Fred Fish  <fnf@redhat.com>
+
+	* gdb.base/attach.exp: Fix logic error that was suppressing this
+	test for all non hppa*-*-hpux* targets, instead of the hp target.
+	Move comments closer to the suppression point.  Also now need to
+	check that we are running natively.
+
+2002-03-22  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.base/default.exp: Add test for gcore.  Update copyright.
+	* gdb.base/help.exp: Add test for gcore.  Update copyright.
+
+2002-03-06  Fred Fish  <fnf@redhat.com>
+
+	* gdb.base/funcargs.c:  Remove extraneous ';' character.
+	* gdb.trace/gdb_c_test.c: Remove extraneous ';' character.
+
+2002-03-04  Michael Chastain  <mec@shout.net>
+
+	* gdb.mi/mi-var-cmd.exp: In test "create local variable func",
+	accommodate gcc v3 function signature.
+	* gdb.mi/mi0-var-cmd-exp: Ditto.
+
+2002-02-24  Andrew Cagney  <ac131313@redhat.com>
+
+	* testsuite/gdb.base/huge.c: Replace ``Linux'' with either
+	``GNU/Linux'' or ``Linux kernel''
+	* testsuite/gdb.threads/pthreads.c: Ditto.
+
+2002-02-24  Michael Chastain  <mec@shout.net>
+
+	* gdb.threads/pthreads.c (thread1): Add a return statement.
+	(thread2): Likewise.
+	(foo): Likewise.
+
+2002-02-23  Michael Chastain  <mec@shout.net>
+
+	* gdb.threads/linux-dp.c (philosopher): Add a return statement
+	to placate gcc.
+
+2002-02-23  Michael Chastain  <mec@shout.net>
+
+	* gdb.c++/templates.exp: Remove setup_xfail_format "stabs" on
+	test "ptype bint".  The test passes on all my stabs configurations.
+
+2002-02-21  Jim Blandy  <jimb@redhat.com>
+
+	* gdb.asm/asm-source.exp: Parse the output from `info sources' one
+	filename at a time, and watch for the ones we want to see.
+
+	* gdb.base/ptype.exp, gdb.base/ptype.c: Add tests for printing
+	types of pointers to prototyped functions.
+
+2002-02-20  Andrew Cagney  <ac131313@redhat.com>
+
+	* gdb.base/sizeof.c (main): Call fill_structs.  Print value of
+	signed, unsigned and straight char.
+	(padding_char, padding_short, padding_int, padding_long,
+	padding_long_long, padding_float, padding_double,
+	padding_long_double): New global variables.
+	(fill, fill_structs): New functions.
+
+	* gdb.base/sizeof.exp: Check for signed and unsigned char.  Check
+	for correctly sized writes.  Update copyright.
+	(get_valueof): New procedure.
+	(get_sizeof): Call get_valueof.
+	(check_valueof): New procedure.
+	(check_padding): New procedure.
+
+2002-02-20  Michael Chastain  <mec@shout.net>
+
+	* gdb.c++/virtfunc.exp (test_virtual_calls): Remove obsolete calls
+	to setup_xfail.  Document some of the remaining calls.
+
+2002-02-18  Michael Chastain  <mec@shout.net>
+
+	* gdb.c++/userdef.exp: Update copyright year.
+
+2002-02-18  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.c++/userdef.exp: Test overloaded operators properly.
+	Remove xfails.
+
+2002-02-14  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.base/a2-run.exp: Check for a remote target properly.
+	* gdb.base/annota1.exp: Likewise.
+	* gdb.base/list.exp: Likewise.
+	* gdb.base/reread.exp: Likewise.
+	* gdb.base/scope.exp: Likewise.
+	* gdb.base/shlib-call.exp: Likewise.
+	* gdb.base/term.exp: Likewise.
+	* gdb.c++/annota2.exp: Likewise.
+
+2002-02-13  Richard Earnshaw  <rearnsha@arm.com>
+
+	* gdb.base/watchpoint.exp: Restore previous timeout at end of test.
+
+2002-02-10  Michael Chastain  <mec@shout.net>
+
+	* gdb.base/funcargs.c (localvars_after_alloca): Fix return type.
+	(call_after_alloca): Ditto.
+
+2002-02-10  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.base/ending-run.exp: Guard "cont" test with
+	gdb_skip_stdio_test.
+
+2002-02-06  Jim Blandy  <jimb@redhat.com>
+
+	* gdb.base/callfwmall.c, gdb.base/callfwmall.exp: Move these tests
+	from here...
+	* gdb.hp/gdb.base-hp/callfwmall.c, gdb.hp/gdb.base-hp/callfwmall.exp:
+	To here.  Disable this test on non-HP platforms.  Add big comment.
+
+2002-02-04  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.base/ovlymgr.c  (ovly_copy): Generalize for targets
+	  other than d10v and m32r.
+
+2002-02-02  Richard Earnshaw  <rearnsha@arm.com>
+
+	* gdb.base/default.exp: Rewrite test patterns to reduce time
+	taken to match them.
+
+2002-01-30  Daniel Jacobowitz  <drow@mvista.com>
+
+	* gdb.base/annota1.exp (backtrace from shlibrary): Fix spelling.
+	Allow a start function above main.
+	* gdb.threads/linux-dp.exp: Fix copyright date.
+
+2002-01-30  Daniel Jacobowitz  <drow@mvista.com>
+
+        * gdb.threads/linux-dp.exp: Use 'array unset', not 'array set'.
+        (check_philosopher_stack): Check for manager thread before checking
+        for a just-starting thread.
+
+2002-01-30  Daniel Jacobowitz  <drow@mvista.com>
+
+	From Neil Booth <neil@daikokuya.demon.co.uk>:
+	* gdb.base/bitfields.c: Correct assignments to bitfields to avoid
+	warnings.
+
 2002-01-21  Fred Fish  <fnf@redhat.com>
 
 	* gdb.base/restore.exp (restore_tests): Fix obvious typo, callee
@@ -54,6 +298,10 @@
 
 	* gdb.base/maint.exp: Update ``maint internal-error'' to match
 	continue/quit query.  Update copyright.
+
+2002-01-14  Michael Snyder  <msnyder@redhat.com>
+
+	* gdb.base/gcore.exp: Remove extra debugging output.
 
 2002-01-13  Daniel Jacobowitz  <drow@mvista.com>
 

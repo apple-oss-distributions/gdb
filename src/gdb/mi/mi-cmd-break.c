@@ -33,11 +33,6 @@
 /* There really ought to be a global mi .h file for this stuff... */
 extern struct gdb_interpreter *mi_interp;
 
-/* Convenience macro for allocting typesafe memory. */
-
-#undef XMALLOC
-#define XMALLOC(TYPE) (TYPE*) xmalloc (sizeof (TYPE))
-
 enum
   {
     FROM_TTY = 0
@@ -155,17 +150,17 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
     case REG_BP:
       rc = gdb_breakpoint (address, condition,
 			   0 /*hardwareflag */ , temp_p,
-			   thread, ignore_count, 0);
+			   0 /* futureflag */, thread, ignore_count);
       break;
     case HW_BP:
       rc = gdb_breakpoint (address, condition,
 			   1 /*hardwareflag */ , temp_p,
-			   thread, ignore_count, 0);
+			   0 /* futureflag */, thread, ignore_count);
       break;
     case FUT_BP:
       rc = gdb_breakpoint (address, condition,
 			   0, temp_p,
-			   thread, ignore_count, 1);
+			   1 /* futureflag */, thread, ignore_count);
       break;
 
 #if 0

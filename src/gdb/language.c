@@ -1,5 +1,5 @@
 /* Multiple source language support for GDB.
-   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2001
+   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
    Contributed by the Department of Computer Science at the State University
    of New York at Buffalo.
@@ -100,7 +100,6 @@ static int unk_lang_value_print (struct value *, struct ui_file *, int, enum val
 
 /* Forward declaration */
 extern const struct language_defn unknown_language_defn;
-extern char *warning_pre_print;
 
 /* The current (default at startup) state of type and range checking.
    (If the modes are set to "auto", though, these are changed based
@@ -1248,47 +1247,63 @@ op_error (char *fmt, enum exp_opcode op, int fatal)
     }
 }
 
-/* These are called when a language fails a type- or range-check.
-   The first argument should be a printf()-style format string, and
-   the rest of the arguments should be its arguments.  If
-   [type|range]_check is [type|range]_check_on, then return_to_top_level()
-   is called in the style of error ().  Otherwise, the message is prefixed
-   by the value of warning_pre_print and we do not return to the top level. */
+/* These are called when a language fails a type- or range-check.  The
+   first argument should be a printf()-style format string, and the
+   rest of the arguments should be its arguments.  If
+   [type|range]_check is [type|range]_check_on, an error is printed;
+   if [type|range]_check_warn, a warning; otherwise just the
+   message. */
 
 void
-type_error (char *string,...)
+type_error (const char *string,...)
 {
   va_list args;
   va_start (args, string);
 
-  if (type_check == type_check_warn)
-    fprintf_filtered (gdb_stderr, warning_pre_print);
-  else
-    error_begin ();
-
-  vfprintf_filtered (gdb_stderr, string, args);
-  fprintf_filtered (gdb_stderr, "\n");
+  switch (type_check)
+    {
+    case type_check_warn:
+      vwarning (string, args);
+      break;
+    case type_check_on:
+      verror (string, args);
+      break;
+    case type_check_off:
+      /* FIXME: cagney/2002-01-30: Should this function print anything
+         when type error is off?  */
+      vfprintf_filtered (gdb_stderr, string, args);
+      fprintf_filtered (gdb_stderr, "\n");
+      break;
+    default:
+      internal_error (__FILE__, __LINE__, "bad switch");
+    }
   va_end (args);
-  if (type_check == type_check_on)
-    return_to_top_level (RETURN_ERROR);
 }
 
 void
-range_error (char *string,...)
+range_error (const char *string,...)
 {
   va_list args;
   va_start (args, string);
 
-  if (range_check == range_check_warn)
-    fprintf_filtered (gdb_stderr, warning_pre_print);
-  else
-    error_begin ();
-
-  vfprintf_filtered (gdb_stderr, string, args);
-  fprintf_filtered (gdb_stderr, "\n");
+  switch (range_check)
+    {
+    case range_check_warn:
+      vwarning (string, args);
+      break;
+    case range_check_on:
+      verror (string, args);
+      break;
+    case range_check_off:
+      /* FIXME: cagney/2002-01-30: Should this function print anything
+         when range error is off?  */
+      vfprintf_filtered (gdb_stderr, string, args);
+      fprintf_filtered (gdb_stderr, "\n");
+      break;
+    default:
+      internal_error (__FILE__, __LINE__, "bad switch");
+    }
   va_end (args);
-  if (range_check == range_check_on)
-    return_to_top_level (RETURN_ERROR);
 }
 
 
@@ -1443,7 +1458,7 @@ unk_lang_value_print (struct value *val, struct ui_file *stream, int format,
   error ("internal error - unimplemented function unk_lang_value_print called.");
 }
 
-static struct type **CONST_PTR (unknown_builtin_types[]) =
+static struct type **const (unknown_builtin_types[]) =
 {
   0
 };
@@ -1554,17 +1569,17 @@ _initialize_language (void)
 		     "Set the current source language.",
 		     &setlist);
   show = add_show_from_set (set, &showlist);
-  set->function.cfunc = set_language_command;
-  show->function.cfunc = show_language_command;
+  set_cmd_cfunc (set, set_language_command);
+  set_cmd_cfunc (show, show_language_command);
 
   add_prefix_cmd ("check", no_class, set_check,
-		  "Set the status of the type/range checker",
+		  "Set the status of the type/range checker.",
 		  &setchecklist, "set check ", 0, &setlist);
   add_alias_cmd ("c", "check", no_class, 1, &setlist);
   add_alias_cmd ("ch", "check", no_class, 1, &setlist);
 
   add_prefix_cmd ("check", no_class, show_check,
-		  "Show the status of the type/range checker",
+		  "Show the status of the type/range checker.",
 		  &showchecklist, "show check ", 0, &showlist);
   add_alias_cmd ("c", "check", no_class, 1, &showlist);
   add_alias_cmd ("ch", "check", no_class, 1, &showlist);
@@ -1574,16 +1589,16 @@ _initialize_language (void)
 		     "Set type checking.  (on/warn/off/auto)",
 		     &setchecklist);
   show = add_show_from_set (set, &showchecklist);
-  set->function.cfunc = set_type_command;
-  show->function.cfunc = show_type_command;
+  set_cmd_cfunc (set, set_type_command);
+  set_cmd_cfunc (show, show_type_command);
 
   set = add_set_cmd ("range", class_support, var_string_noescape,
 		     (char *) &range,
 		     "Set range checking.  (on/warn/off/auto)",
 		     &setchecklist);
   show = add_show_from_set (set, &showchecklist);
-  set->function.cfunc = set_range_command;
-  show->function.cfunc = show_range_command;
+  set_cmd_cfunc (set, set_range_command);
+  set_cmd_cfunc (show, show_range_command);
 
   set = add_set_cmd ("case-sensitive", class_support, var_string_noescape,
                      (char *) &case_sensitive,
@@ -1591,8 +1606,8 @@ _initialize_language (void)
 For Fortran the default is off; for other languages the default is on.",
                      &setlist);
   show = add_show_from_set (set, &showlist);
-  set->function.cfunc = set_case_command;
-  show->function.cfunc = show_case_command;
+  set_cmd_cfunc (set, set_case_command);
+  set_cmd_cfunc (show, show_case_command);
 
   add_language (&unknown_language_defn);
   add_language (&local_language_defn);

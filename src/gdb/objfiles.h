@@ -510,12 +510,6 @@ extern struct objfile *current_objfile;
 
 extern struct objfile *object_files;
 
-/* Declarations for functions defined in objfiles.c */
-
-extern struct objfile *allocate_objfile (bfd *, int, int, CORE_ADDR);
-
-extern int build_objfile_section_table (struct objfile *);
-
 extern void objfile_to_front (struct objfile *);
 
 extern void unlink_objfile (struct objfile *);

@@ -196,7 +196,7 @@ void sparc_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR fun,
    this is also an argument.  This is used in call_function to build a
    stack, and in value_being_returned to print return values. 
 
-   On Sparc64, we only pass pointers to structs if they're larger then
+   On Sparc64, we only pass pointers to structs if they're larger than
    32 bytes. Otherwise they're stored in %o0-%o3 (floating-point
    values go into %fp0-%fp3).  */
 
@@ -268,12 +268,10 @@ CORE_ADDR sparc64_push_arguments (int,
 extern CORE_ADDR sparc64_read_sp ();
 extern CORE_ADDR sparc64_read_fp ();
 extern void sparc64_write_sp (CORE_ADDR);
-extern void sparc64_write_fp (CORE_ADDR);
 
 #define TARGET_READ_SP() (sparc64_read_sp ())
 #define TARGET_READ_FP() (sparc64_read_fp ())
 #define TARGET_WRITE_SP(X) (sparc64_write_sp (X))
-#define TARGET_WRITE_FP(X) (sparc64_write_fp (X))
 
 #undef EXTRACT_RETURN_VALUE
 #define EXTRACT_RETURN_VALUE(TYPE,REGBUF,VALBUF) \
