@@ -60,7 +60,8 @@ struct mi_cmd mi_cmds[] =
   {"environment-directory", 0, 0, mi_cmd_env_dir},
   {"environment-path", 0, 0, mi_cmd_env_path},
   {"environment-pwd", 0, 0, mi_cmd_env_pwd},
-  {"exec-abort", 0, 0},
+  /* APPLE LOCAL: Xcode wants to kill off inferiors that have been naughty.  */
+  {"exec-abort", "kill", 0},
   {"exec-arguments", "set args %s", 0},
   {"exec-continue", 0, mi_cmd_exec_continue},
   {"exec-finish", 0, mi_cmd_exec_finish},
@@ -69,6 +70,7 @@ struct mi_cmd mi_cmds[] =
   {"exec-next-instruction", 0, mi_cmd_exec_next_instruction},
   {"exec-return", 0, mi_cmd_exec_return},
   {"exec-run", 0, mi_cmd_exec_run},
+  {"exec-safe-call", 0, 0, mi_cmd_exec_safe_call},
   {"exec-show-arguments", 0, 0},
   {"exec-signal", 0, 0},
   {"exec-step", 0, mi_cmd_exec_step},
@@ -82,6 +84,8 @@ struct mi_cmd mi_cmds[] =
   /* APPLE LOCAL fix-and-continue */
   {"file-fix-file", "fix %s", 0},
   {"file-list-symbol-files", 0, 0},
+  {"file-list-statics", 0, 0, mi_cmd_file_list_statics},
+  {"file-list-globals", 0, 0, mi_cmd_file_list_globals},
   {"file-symbol-file", "symbol-file %s", 0},
   {"file-sharedlibrary-section-info", "sharedlibrary section-info %s", 0},
   {"file-sharedlibrary-info", "info sharedlibrary %s", 0},
@@ -97,6 +101,7 @@ struct mi_cmd mi_cmds[] =
   {"gdb-version", "show version", 0},
   {"interpreter-set", 0, 0, mi_cmd_interpreter_set},    
   {"interpreter-exec", 0, 0, mi_cmd_interpreter_exec},
+  {"interpreter-complete", 0, 0, mi_cmd_interpreter_complete},
   {"kod-info", 0, 0},
   {"kod-list", 0, 0},
   {"kod-list-object-types", 0, 0},
@@ -111,6 +116,8 @@ struct mi_cmd mi_cmds[] =
   {"overlay-off", 0, 0},
   {"overlay-on", 0, 0},
   {"overlay-unmap", 0, 0},
+  /* APPLE LOCAL: Xcode needs -pid-info to find the inferior's pid.  */
+  {"pid-info", "info pid", 0},
   {"signal-handle", 0, 0},
   {"signal-list-handle-actions", 0, 0},
   {"signal-list-signal-types", 0, 0},

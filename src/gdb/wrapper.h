@@ -56,7 +56,7 @@ extern int gdb_parse_and_eval_type (char *, int, struct type **);
 
 int gdb_varobj_get_value (struct varobj *val1, char **result);
 
-int safe_value_objc_target_type (struct value *val, struct type **dynamic_type);
+int safe_value_objc_target_type (struct value *val, struct block *block, struct type **dynamic_type);
 
 extern int safe_execute_command (char *command, int from_tty);
 #endif /* WRAPPER_H */

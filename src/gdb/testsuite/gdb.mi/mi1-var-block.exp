@@ -156,11 +156,12 @@ mi_step_to "do_block_tests" "" "var-cmd.c" "171" "step at do_block_test"
 # APPLE LOCAL: Works for us.
 
 # APPLE LOCAL: [var-update] Changelist tuples are named by VAROBJ field.
-# This is wrong - if we successfully saw that foo2 was out of scope just above
-# then it will be unchanged here, and the changelist should be empty.
+# This test was written incorrectly - if we successfully saw that
+# foo2 was out of scope just above then it will be unchanged here,
+# and the changelist should be empty.
 
 mi_gdb_test "-var-update foo2" \
-	"\\^done,changelist=\\\[varobj=\{name=\"foo2\",in_scope=\"false\"\}\\\]" \
+	"\\^done,changelist=\\\[\\\]" \
 	"update foo2 should be out of scope"
 # clear_xfail *-*-*
 

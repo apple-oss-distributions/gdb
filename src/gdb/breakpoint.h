@@ -303,7 +303,21 @@ struct breakpoint
     char *exec_pathname;
 
     asection *section;
+
+    /* Record the shared library name that this breakpoint is
+       to be set for.  If NULL, then don't bother with this.  
+       N.B. this is not the sharedlibrary it is actually set in,
+       and will be null unless the breakpoint's creator specifically
+       limited the breakpoint to a particular shlib.  */
+
+    char *requested_shlib;
     
+    /* This is the objfile that the breakpoint is currently set
+       in.  Need this for "tell_breakpoint_objfile_changed" since
+       you may have many objfiles overlapping the same address
+       range...  */
+    struct objfile *bp_objfile;
+
     /* Used for save-breakpoints.  */ 
     int original_flags;
 

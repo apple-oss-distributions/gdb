@@ -319,7 +319,7 @@ struct target_ops
 				   void *);
     char * (*to_make_corefile_notes) (bfd *, int *);
     int (*to_bind_function) (char *);
-
+    
     /* Return the thread-local address at OFFSET in the
        thread-local storage for the thread PTID and the shared library
        or executable file given by OBJFILE.  If that block of
@@ -328,7 +328,11 @@ struct target_ops
     CORE_ADDR (*to_get_thread_local_address) (ptid_t ptid,
 					      struct objfile *objfile,
 					      CORE_ADDR offset);
-
+    /* Check whether calling a function on the current thread is advisable 
+       (for instance, does the thread hold a malloc lock that is
+       going to cause a deadlock.)  Returns 1 if safe to call
+       0 if unsafe, and -1 if there was an error checking.  */
+    int (*to_check_safe_call) ();
     int to_magic;
     /* Need sub-structure for target machine related rather than comm related?
      */
@@ -958,6 +962,13 @@ extern void (*target_new_objfile_hook) (struct objfile *);
 
 #define target_bind_function(NAME) \
      (current_target.to_bind_function) (NAME)
+
+/*
+ * Check whether it is safe to call functions on this thread 
+ */
+
+#define target_check_safe_call \
+    (current_target.to_check_safe_call)
 
 /* Thread-local values.  */
 #define target_get_thread_local_address \

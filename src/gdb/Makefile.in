@@ -372,9 +372,10 @@ INSTALLED_LIBS=-lbfd -lreadline -lopcodes -liberty \
 	$(XM_CLIBS) $(TM_CLIBS) $(NAT_CLIBS) $(GDBTKLIBS) @LIBS@ \
 	-lmmalloc -lintl -liberty
 CLIBS = $(SIM) $(BFD) $(READLINE) $(OPCODES) $(INTL) $(LIBIBERTY) \
-	$(XM_CLIBS) $(TM_CLIBS) $(NAT_CLIBS) $(GDBTKLIBS) @LIBS@ \
+	$(XM_CLIBS) $(TM_CLIBS) $(NAT_CLIBS) $(GDBTKLIBS) $(LIBIBERTY) \
+	@LIBS@ \
 	$(LIBICONV) \
-	$(MMALLOC) $(LIBIBERTY) $(WIN32LIBS)
+	$(MMALLOC) $(WIN32LIBS)
 CDEPS = $(XM_CDEPS) $(TM_CDEPS) $(NAT_CDEPS) $(SIM) $(BFD_DEP) $(READLINE_DEP) \
 	$(OPCODES_DEP) $(MMALLOC_DEP) $(INTL_DEP) $(LIBIBERTY_DEP) $(CONFIG_DEPS)
 
@@ -1120,10 +1121,12 @@ TAGS: $(TAGFILES_NO_SRCDIR) $(TAGFILES_WITH_SRCDIR)
 	  $(srcdir)/$(XM_FILE) \
 	  $(srcdir)/$(NAT_FILE) \
 	`(for i in $(DEPFILES) $(TAGFILES_NO_SRCDIR); do \
-		echo $(srcdir)/$$i ; \
+		j=$${i/\.o/\.c} ; \
+		if [ -f $(srcdir)/$$j ] ; then \
+		echo $(srcdir)/$$j; else echo $(srcdir)/macosx/$$j ; fi; \
 	done ; for i in $(TAGFILES_WITH_SRCDIR); do \
 		echo $$i ; \
-	done) | sed -e 's/\.o$$/\.c/'` \
+	done)` \
 	`find $(srcdir)/config -name '*.h' -print`
 
 tags: TAGS
@@ -2610,7 +2613,7 @@ mi-main.o: $(srcdir)/mi/mi-main.c $(defs_h) $(target_h) $(inferior_h) \
 	$(gdb_string_h) $(top_h) $(gdbthread_h) $(mi_cmds_h) $(mi_parse_h) \
 	$(mi_getopt_h) $(mi_console_h) $(ui_out_h) $(mi_out_h) \
 	$(event_loop_h) $(event_top_h) $(gdbcore_h) $(value_h) $(regcache_h) \
-	$(gdb_h) $(frame_h)
+	$(gdb_h) $(frame_h) $(source_h)
 	$(CC) -c $(INTERNAL_CFLAGS) $(srcdir)/mi/mi-main.c
 mi-out.o: $(srcdir)/mi/mi-out.c $(defs_h) $(ui_out_h) $(mi_out_h)
 	$(CC) -c $(INTERNAL_CFLAGS) $(srcdir)/mi/mi-out.c

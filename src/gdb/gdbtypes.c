@@ -528,7 +528,7 @@ make_cv_type (int cnst, int voltl, struct type *type, struct type **typeptr)
 	 to do is to copy the core type into the new objfile.  */
 
       gdb_assert (TYPE_OBJFILE (*typeptr) == TYPE_OBJFILE (type)
-		  || TYPE_STUB (*typeptr));
+		  || (TYPE_STUB (*typeptr) || TYPE_IS_OPAQUE (*typeptr)));
       if (TYPE_OBJFILE (*typeptr) != TYPE_OBJFILE (type))
 	{
 	  TYPE_MAIN_TYPE (*typeptr)
@@ -1509,8 +1509,12 @@ check_typedef (struct type *type)
       TYPE_TARGET_TYPE (type) = alloc_type (NULL);    
     }
         
-  /* Cache TYPE_LENGTH for future use. */
-  TYPE_LENGTH (orig_type) = TYPE_LENGTH (type);
+  /* Cache TYPE_LENGTH for future use.  Only change it if it actually
+     needs changing, in case the symbol information is in a read-only
+     section. */
+  if (TYPE_LENGTH (orig_type) != TYPE_LENGTH (type))
+    TYPE_LENGTH (orig_type) = TYPE_LENGTH (type);
+
   return type;
 }
 

@@ -838,8 +838,12 @@ debugging may prove unreliable.\n");
   dejavu = 0;
 }
 
+/* APPLE LOCAL: Default to not dumping core for gdb.
+   No one ever does, and at this point you're already
+   pissed off that gdb tripped--making the user answer
+   lots of questions just pisses them off more.  */
 static struct internal_problem internal_error_problem = {
-  "internal-error", AUTO_BOOLEAN_AUTO, AUTO_BOOLEAN_AUTO
+  "internal-error", AUTO_BOOLEAN_AUTO, AUTO_BOOLEAN_FALSE
 };
 
 NORETURN void
@@ -859,8 +863,12 @@ internal_error (const char *file, int line, const char *string, ...)
   va_end (ap);
 }
 
+/* APPLE LOCAL: Default to not dumping core for gdb.
+   No one ever does, and at this point you're already
+   pissed off that gdb tripped--making the user answer
+   lots of questions just pisses them off more.  */
 static struct internal_problem internal_warning_problem = {
-  "internal-error", AUTO_BOOLEAN_AUTO, AUTO_BOOLEAN_AUTO
+  "internal-error", AUTO_BOOLEAN_AUTO, AUTO_BOOLEAN_FALSE
 };
 
 void

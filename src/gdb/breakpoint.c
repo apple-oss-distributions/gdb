@@ -50,6 +50,7 @@
 #include "wrapper.h"
 #include "gdb-events.h"
 #include "gdb_regex.h"
+#include <readline/tilde.h>
 
 #include "cli/cli-script.h"
 #include "gdb_assert.h"
@@ -585,13 +586,16 @@ condition_command (char *arg, int from_tty)
 	}
       else
 	{
+	  int parse_successful;
 	  arg = p;
 	  /* I don't know if it matters whether this is the string the user
 	     typed in or the decompiled expression.  */
 	  b->cond_string = savestring (arg, strlen (arg));
-	  b->cond = parse_exp_1 (&arg, block_for_pc (b->address), 0);
-	  if (*arg)
-	    error ("Junk at end of expression");
+	  parse_successful = gdb_parse_exp_1 (&arg, block_for_pc (b->address), 0, &(b->cond));
+	  if (!parse_successful)
+	    error ("Error parsing breakpoint condition.  Will try again when we hit the breakpoint.");
+	  else if (*arg)
+	    error ("Junk at end of expression.");
 	}
       breakpoints_changed ();
       breakpoint_modify_event (b->number);
@@ -2954,6 +2958,8 @@ bpstat_stop_status (CORE_ADDR *pc, int not_a_sw_breakpoint)
 
 	if (b->cond_string)
 	  {
+	    int parse_succeeded = 1;
+
 	    /* Need to select the frame, with all that implies
 	       so that the conditions will have the right context.  */
 
@@ -2964,16 +2970,22 @@ bpstat_stop_status (CORE_ADDR *pc, int not_a_sw_breakpoint)
 	       rebuild it here. */
 	    if (b->cond == NULL)
 	      {
+		/* APPLE LOCAL: It is important to catch errors here.  If we
+		   get an error parsing the expression we will miss inserting
+		   the instruction under the breakpoint.  */
 		char *s = b->cond_string;
-		b->cond = parse_exp_1 (&s, get_selected_block (NULL), 0);
+		 parse_succeeded = gdb_parse_exp_1 (&s, get_selected_block (NULL), 0, &(b->cond));
 	      }
-
-	    value_is_zero
-	      = catch_errors (breakpoint_cond_eval, (b->cond),
-			      "Error in testing breakpoint condition:\n",
-			      RETURN_MASK_ALL);
-	    /* FIXME-someday, should give breakpoint # */
-	    free_all_values ();
+	    
+	    if (parse_succeeded)
+	      {
+		value_is_zero
+		  = catch_errors (breakpoint_cond_eval, (b->cond),
+				  "Error in testing breakpoint condition:\n",
+				  RETURN_MASK_ALL);
+		/* FIXME-someday, should give breakpoint # */
+		free_all_values ();
+	      }
 	  }
 	if (b->cond && value_is_zero)
 	  {
@@ -4107,6 +4119,8 @@ set_raw_breakpoint (struct symtab_and_line sal, enum bptype bptype)
   b->triggered_dll_pathname = NULL;
   b->forked_inferior_pid = 0;
   b->exec_pathname = NULL;
+  b->requested_shlib = NULL;
+  b->bp_objfile = NULL;
 
   /* Add this breakpoint to the end of the chain
      so that a list of breakpoints will come out in order
@@ -4369,6 +4383,7 @@ re_enable_breakpoints_in_shlibs (int silent)
 	if (target_read_memory (b->address, buf, 1) == 0) 
 	  { 
 	    b->enable_state = bp_enabled; 
+	    check_duplicates (b);
 	    if (!silent)  
 	      {  
 		if (!enabled_shlib_breaks)  
@@ -4829,7 +4844,7 @@ mention (struct breakpoint *b)
 
 static void
 create_breakpoints (struct symtabs_and_lines sals, char **addr_string,
-		    struct expression **cond, char **cond_string,
+		    struct expression **cond, char **cond_string, char *requested_shlib,
 		    enum bptype type, enum bpdisp disposition,
 		    int origflags, int thread, int ignore_count, int from_tty)
 {
@@ -4872,7 +4887,27 @@ create_breakpoints (struct symtabs_and_lines sals, char **addr_string,
 	b->ignore_count = ignore_count;
 	b->enable_state = bp_enabled;
 	b->disposition = disposition;
+	/* APPLE LOCAL: Set the requested_shlib if it has been passed
+	   into this function.  */
+	if (requested_shlib)
+	  b->requested_shlib = xstrdup (requested_shlib);
+	/* APPLE LOCAL: Set the bp_objfile to the objfile that we found
+	   this breakpoint in.  This way we will only shlib_disable this
+	   breakpoint if the objfile it is in was changed (useful in the
+	   case that more than one objfile shares the same memory address.  */
+	if (sal.symtab != NULL)
+	  b->bp_objfile = sal.symtab->objfile;
+	else if (sal.section != NULL)
+	  {
+	    struct obj_section *osect;
+	    osect = find_pc_sect_section (sal.pc, sal.section);
+	    if (osect)
+	      b->bp_objfile = osect->objfile;
+	  }
+	/* APPLE LOCAL: Mark the breakpoint as set so we don't try to reset
+	   it unless the objfile it was set in gets reread.  */
 	b->bp_set_p = 1;
+	/* END APPLE LOCAL */
 	mention (b);
       }
   }    
@@ -4886,10 +4921,13 @@ create_breakpoints (struct symtabs_and_lines sals, char **addr_string,
 void
 parse_breakpoint_sals (char **address,
 		       struct symtabs_and_lines *sals,
-		       char ***addr_string)
+		       char ***addr_string,
+		       char *requested_shlib)
 {
   char *addr_start = *address;
   *addr_string = NULL;
+  struct cleanup *restrict_cleanup = make_cleanup (null_cleanup, NULL);
+
   /* If no arg given, or if first arg is 'if ', use the default
      breakpoint. */
   if ((*address) == NULL
@@ -4928,6 +4966,13 @@ parse_breakpoint_sals (char **address,
 	 
       struct symtab_and_line cursal = get_current_source_symtab_and_line ();
 			
+      if (requested_shlib != NULL)
+	{
+	  restrict_cleanup = make_cleanup_restrict_to_shlib (requested_shlib);
+	  if (restrict_cleanup == NULL)
+	    error ("Couldn't locate shared library \"%s\" for breakpoint.", requested_shlib);
+	}
+      
       if (default_breakpoint_valid
 	  && (!cursal.symtab
  	      || ((strchr ("+-", (*address)[0]) != NULL)
@@ -4936,7 +4981,9 @@ parse_breakpoint_sals (char **address,
 			       default_breakpoint_line, addr_string);
       else
 	*sals = decode_line_1 (address, 1, (struct symtab *) NULL, 0, addr_string);
+      do_cleanups (restrict_cleanup);
     }
+
   /* For any SAL that didn't have a canonical string, fill one in. */
   if (sals->nelts > 0 && *addr_string == NULL)
     *addr_string = xcalloc (sals->nelts, sizeof (char **));
@@ -5003,6 +5050,7 @@ struct captured_breakpoint_args
     int thread;
     int ignore_count;
     int from_tty;
+    char *requested_shlib;
   };
 
 static void
@@ -5016,7 +5064,8 @@ break_command_1 (char *arg, int flags, int from_tty)
   args.futureflag = flags & BP_FUTUREFLAG; 
   args.thread = -1; 
   args.ignore_count = 0; 
-  args.from_tty = from_tty; 
+  args.from_tty = from_tty;
+  args.requested_shlib = NULL;
  
   if (args.futureflag) 
     { 
@@ -5026,31 +5075,24 @@ break_command_1 (char *arg, int flags, int from_tty)
 	error ("Future breakpoints may not be specified as hardware."); 
     } 
    
-  if (args.futureflag) 
-    { 
-      enum gdb_rc ret = catch_errors
-	(do_captured_breakpoint, &args, NULL, RETURN_MASK_ALL); 
-      if (ret != GDB_RC_OK) 
-	{ 
-	  struct symtab_and_line sal = 
-	    {0, 0}; 
-          struct breakpoint *b = set_raw_breakpoint (sal, bp_breakpoint); 
- 
-	  printf_unfiltered 
-	    ("Will attempt to resolve \"%s\" on future dynamic loads.\n", args.address); 
-	  
-	  b->number = ++breakpoint_count; 
-	  b->addr_string = savestring (args.address, strlen (args.address)); 
-	  b->enable_state = bp_shlib_disabled; 
-	  b->inserted = 0; 
-	  b->disposition = disp_donttouch; 
-	  if (modify_breakpoint_hook) 
-	    modify_breakpoint_hook (b); 
-	} 
-    } 
-  else 
+  enum gdb_rc ret = catch_errors
+    (do_captured_breakpoint, &args, NULL, RETURN_MASK_ALL); 
+  if ((ret != GDB_RC_OK) && args.futureflag && (args.address != NULL))
     {
-      do_captured_breakpoint (&args); 
+      struct symtab_and_line sal = 
+	{0, 0}; 
+      struct breakpoint *b = set_raw_breakpoint (sal, bp_breakpoint); 
+ 
+      printf_unfiltered 
+	("Will attempt to resolve \"%s\" on future dynamic loads.\n", args.address); 
+	  
+      b->number = ++breakpoint_count; 
+      b->addr_string = savestring (args.address, strlen (args.address)); 
+      b->enable_state = bp_shlib_disabled; 
+      b->inserted = 0; 
+      b->disposition = disp_donttouch; 
+      if (modify_breakpoint_hook) 
+	modify_breakpoint_hook (b); 
     } 
 }
 
@@ -5062,6 +5104,7 @@ struct captured_parse_breakpoint_sals_args
     char **address;
     struct symtabs_and_lines *sals;
     char ***addr_string;
+    char *requested_shlib;
   };
 
 static int
@@ -5070,7 +5113,7 @@ captured_parse_breakpoint_sals (void *data)
   struct captured_parse_breakpoint_sals_args *args
     = (struct captured_parse_breakpoint_sals_args *) data;
 
-  parse_breakpoint_sals (args->address, args->sals, args->addr_string);
+  parse_breakpoint_sals (args->address, args->sals, args->addr_string, args->requested_shlib);
   return (int) GDB_RC_OK;
 }
 
@@ -5115,13 +5158,69 @@ do_captured_breakpoint (void *data)
       parse_args.address = &address_end;
       parse_args.sals = &sals;
       parse_args.addr_string = &addr_string;
+      parse_args.requested_shlib = args->requested_shlib;
 
       rc = catch_errors (captured_parse_breakpoint_sals, &parse_args,
 		    NULL, RETURN_MASK_ALL);
     }
   else
     {
-      parse_breakpoint_sals (&address_end, &sals, &addr_string);
+      parse_breakpoint_sals (&address_end, &sals, &addr_string, args->requested_shlib);
+    }
+
+  /* APPLE_LOCAL: if the interpreter is the mi, and we have gotten more
+     than one breakpoint hit, then don't set the breakpoint, but just
+     output the hits, and return.  The MI client should then query the
+     user for their choice, and reset the breakpoints based on the canonical
+     form returned. */
+
+  if (rc == GDB_RC_OK && ui_out_is_mi_like_p (uiout) && sals.nelts > 1)
+    {
+      struct cleanup *old_chain, *list_cleanup;
+
+      /* Always have a addr_string array, even if it is empty. */
+      old_chain = make_cleanup (xfree, addr_string);
+      
+      /* Make sure that all storage allocated to SALS gets freed.  */
+      make_cleanup (xfree, sals.sals);
+
+      breakpoint_sals_to_pc (&sals, args->address);
+      
+      make_cleanup_ui_out_list_begin_end (uiout, "matches");
+      
+      for (i = 0; i < sals.nelts; i++) 
+	{
+	  struct symtab_and_line sal = sals.sals[i];
+	  list_cleanup = make_cleanup_ui_out_list_begin_end (uiout, "b");
+
+	  /* Output an index so that the MI client can come back and
+	     make choices without having to ask by name (which might 
+	     end up being circular.  Increment by two so we can pass
+	     the results back to select_symbol_args...  */
+
+	  ui_out_field_int (uiout, "index", i+2);
+
+	  if (addr_string[i] != NULL)
+	    ui_out_field_string (uiout, "canonical", addr_string[i]);
+	  else
+	    ui_out_field_skip (uiout, "canonical");
+
+	  if (sal.symtab && sal.symtab->filename)
+	    ui_out_field_string (uiout, "file", sal.symtab->filename);
+
+	  if (sal.symtab && sal.symtab->objfile && sal.symtab->objfile->name)
+	    ui_out_field_string (uiout, "binary", sal.symtab->objfile->name);
+	  else if (sal.section && sal.section->owner && sal.section->owner->filename)
+	    ui_out_field_string (uiout, "binary", sal.section->owner->filename);
+				
+	  ui_out_field_int (uiout, "line", sal.line);
+	  ui_out_field_core_addr (uiout, "addr", sal.pc);
+	  
+
+	  do_cleanups (list_cleanup);
+	}
+      do_cleanups (old_chain);
+      return GDB_RC_NONE;
     }
 
   if (rc != GDB_RC_OK)
@@ -5137,6 +5236,9 @@ do_captured_breakpoint (void *data)
 	  b->inserted = 0;
 	  b->ignore_count = args->ignore_count;
 	  b->disposition = args->tempflag ? disp_del : disp_donttouch;
+	  if (args->requested_shlib != NULL)
+	    b->requested_shlib = xstrdup (args->requested_shlib);
+
 	  if (args->condition != NULL)
 	    {
 	      b->cond_string = savestring (args->condition, 
@@ -5249,7 +5351,7 @@ do_captured_breakpoint (void *data)
 	}
     }
 
-  create_breakpoints (sals, addr_string, cond, cond_string,
+  create_breakpoints (sals, addr_string, cond, cond_string, args->requested_shlib,
 		      args->hardwareflag ? bp_hardware_breakpoint : bp_breakpoint,
 		      args->tempflag ? disp_del : disp_donttouch, orig_flags, 
 		      args->thread, args->ignore_count, args->from_tty); 
@@ -5271,7 +5373,7 @@ do_captured_breakpoint (void *data)
 enum gdb_rc
 gdb_breakpoint (char *address, char *condition,
 		int hardwareflag, int tempflag, int futureflag,
-		int thread, int ignore_count)
+		int thread, int ignore_count, char *requested_shlib)
 {
   struct captured_breakpoint_args args;
   args.address = address;
@@ -5281,6 +5383,8 @@ gdb_breakpoint (char *address, char *condition,
   args.futureflag = futureflag;
   args.thread = thread;
   args.ignore_count = ignore_count;
+  args.requested_shlib = requested_shlib;
+
   return catch_errors (do_captured_breakpoint, &args,
 		       NULL, RETURN_MASK_ALL);
 }
@@ -7333,6 +7437,8 @@ delete_breakpoint (struct breakpoint *bpt)
     xfree (bpt->triggered_dll_pathname);
   if (bpt->exec_pathname != NULL)
     xfree (bpt->exec_pathname);
+  if (bpt->requested_shlib != NULL)
+    xfree (bpt->requested_shlib);
 
   /* Be sure no bpstat's are pointing at it after it's been freed.  */
   /* FIXME, how can we find all bpstat's?
@@ -7479,6 +7585,12 @@ breakpoint_re_set_one (void *bint)
       s = b->addr_string;
       allow_objc_selectors_flag = 0;
       old_chain = make_cleanup (reset_allow_objc_selectors_flag, 0);
+      if (b->requested_shlib != NULL)
+	{
+	  if (make_cleanup_restrict_to_shlib (b->requested_shlib) == NULL)
+	    error ("Couldn't find requested shlib: \"%s\" for breakpoint %d.\n", 
+		   b->requested_shlib, b->number);
+	}
       sals = decode_line_1 (&s, 1, (struct symtab *) NULL, 0, (char ***) NULL);
 
       do_cleanups (old_chain);
@@ -7487,6 +7599,7 @@ breakpoint_re_set_one (void *bint)
 	{
 	  return 0;
 	}
+
       for (i = 0; i < sals.nelts; i++)
 	{
 	  resolve_sal_pc (&sals.sals[i]);
@@ -7538,6 +7651,19 @@ breakpoint_re_set_one (void *bint)
 	    }
 	  b->section = sals.sals[i].section;
 	  b->enable_state = save_enable;	/* Restore it, this worked. */
+	  /* APPLE LOCAL: Set the bp_objfile to the objfile that we found
+	     this breakpoint in.  This way we will only shlib_disable this
+	     breakpoint if the objfile it is in was changed (useful in the
+	     case that more than one objfile shares the same memory address.  */
+	  if (sals.sals[i].symtab != NULL)
+	    b->bp_objfile = sals.sals[i].symtab->objfile;
+	  else if (sals.sals[i].section != NULL)
+	    {
+	      struct obj_section *osect;
+	      osect = find_pc_sect_section (sals.sals[i].pc, sals.sals[i].section);
+	      b->bp_objfile = osect->objfile;
+	    }
+	  /* APPLE LOCAL: Mark the breakpoint as set so we don't try to reset it.  */
 	  b->bp_set_p = 1;    /* Note that it has been successfully set */
 
 	  /* Now that this is re-enabled, check_duplicates
@@ -7663,7 +7789,6 @@ void
 breakpoint_update ()
 {
   if (breakpoint_generation != symbol_generation) {
-    struct objfile *objfile;
     struct cleanup *old_cleanups;
 
     old_cleanups = make_cleanup (restrict_search_cleanup, NULL);
@@ -8277,10 +8402,10 @@ save_breakpoints_command (char *arg, int from_tty)
   else if ((argv = buildargv (arg)) == NULL) 
     nomem (0); 
 
-  cleanups = make_cleanup_freeargv (argv); 
+  make_cleanup_freeargv (argv); 
   
-  pathname = tilde_expand (arg); 
-  make_cleanup (xfree, pathname); 
+  pathname = tilde_expand (*argv); 
+  cleanups = make_cleanup (xfree, pathname); 
 
   ALL_BREAKPOINTS (b)
     {
@@ -8354,7 +8479,7 @@ save_breakpoints_command (char *arg, int from_tty)
         fputs_unfiltered ("set input-radix 012\n", stream);
       fputs_unfiltered ("set input-radix $current_radix\n", stream);
       if (from_tty)
-        printf_filtered ("Breakpoints saved to file '%s'.\n", arg);
+        printf_filtered ("Breakpoints saved to file '%s'.\n", pathname);
     }
 
   do_cleanups (cleanups);
@@ -8961,12 +9086,23 @@ tell_breakpoints_objfile_changed (struct objfile *objfile)
 	    {
 	      struct obj_section *osect;
 	      
-	      ALL_OBJFILE_OSECTIONS (objfile, osect)
+	      if (b->bp_objfile != NULL)
 		{
-		  if (osect->addr < b->address && b->address < osect->endaddr)
+		  if (b->bp_objfile == objfile)
 		    {
 		      b->bp_set_p = 0;
-		      break;
+		      b->bp_objfile = NULL;
+		    }
+		}
+	      else
+		{
+		  ALL_OBJFILE_OSECTIONS (objfile, osect)
+		    {
+		      if (osect->addr < b->address && b->address < osect->endaddr)
+			{
+			  b->bp_set_p = 0;
+			  break;
+			}
 		    }
 		}
 	    }

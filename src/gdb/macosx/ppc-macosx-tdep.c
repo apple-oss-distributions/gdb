@@ -393,7 +393,24 @@ ppc_frame_chain (struct frame_info *frame)
     return frame->frame;
   }
 
-  return psp;
+  /* If we are at the botton of the stack and we HAVEN'T stored away the
+     stack pointer yet, then it is going to be given as an offset of the
+     current value of r1, not of the saved stack frame value.  
+     Only do this if we actually saw when the stack pointer was set up.
+     We used to also do this when sp_setup_pc == 0, but that got too
+     many false positives in optimized code.  */
+  {
+    struct ppc_function_properties props;
+    if (frame->level == 0 && !ppc_frame_cache_properties (frame, &props)
+	&& (frame->pc <= props.sp_setup_pc))
+      {
+	CORE_ADDR sp = read_sp ();
+	printf ("Reading memory from the sp at: %s\n", paddr_nz (sp));
+	return sp;
+      }
+    else	
+      return psp;
+  }
 }
 
 int 
@@ -1156,7 +1173,7 @@ int ppc_macosx_in_solib_call_trampoline (CORE_ADDR pc, char *name)
 char *
 ppc_throw_catch_find_typeinfo (struct frame_info *curr_frame, int exception_type)
 {
-  struct minimal_symbol *typeinfo_sym;
+  struct minimal_symbol *typeinfo_sym = NULL;
   ULONGEST typeinfo_ptr;
   char *typeinfo_str;
   

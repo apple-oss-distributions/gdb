@@ -73,8 +73,17 @@ struct objc_method {
   CORE_ADDR imp;
 };
 
+static void find_methods (struct symtab *symtab, char type,
+                          const char *class, const char *category,
+                          const char *selector, struct symbol **syms,
+                          unsigned int *nsym, unsigned int *ndebug);
+
 /* Should we lookup ObjC Classes as part of ordinary symbol resolution? */
 int lookup_objc_class_p = 1;
+
+/* Should we override the check for things like malloc on the stack above us before
+   calling PO?  */
+int call_po_at_unsafe_times = 0;
 
 /* Lookup a structure type named "struct NAME", visible in lexical
    block BLOCK.  If NOERR is nonzero, return zero if NAME is not
@@ -1370,7 +1379,7 @@ parse_method (char *method, char *type, char **class,
   return s2;
 }
 
-void
+static void
 find_methods (struct symtab *symtab, char type, 
 	      const char *class, const char *category, 
 	      const char *selector, struct symbol **syms, 
@@ -1387,6 +1396,7 @@ find_methods (struct symtab *symtab, char type,
   char *nclass = NULL;
   char *ncategory = NULL;
   char *nselector = NULL;
+  char *name_end = NULL;
 
   unsigned int csym = 0;
   unsigned int cdebug = 0;
@@ -1435,7 +1445,14 @@ find_methods (struct symtab *symtab, char type,
 	}
       strcpy (tmp, symname);
 
-      if (parse_method (tmp, &ntype, &nclass, &ncategory, &nselector) == NULL)
+      name_end = parse_method (tmp, &ntype, &nclass, &ncategory, &nselector);
+
+      /* Only accept the symbol if the WHOLE name is an ObjC method name.
+	 If you compile an objc file with -fexceptions, then you will end up
+	 with [Class message].eh symbols for all the real ObjC symbols, and
+	 we don't want to match those.  */
+
+      if (name_end == NULL || *name_end != '\0')
 	continue;
       
       if ((type != '\0') && (ntype != type))
@@ -1453,7 +1470,7 @@ find_methods (struct symtab *symtab, char type,
 	  ((nselector == NULL) || (strcmp (selector, nselector) != 0)))
 	continue;
 
-      sym = find_pc_function (SYMBOL_VALUE_ADDRESS (msymbol));
+      sym = find_pc_sect_function (SYMBOL_VALUE_ADDRESS (msymbol), SYMBOL_BFD_SECTION (msymbol));
       if (sym != NULL)
         {
           const char *newsymname = SYMBOL_DEMANGLED_NAME (sym);
@@ -1497,7 +1514,8 @@ find_methods (struct symtab *symtab, char type,
     *ndebug = cdebug;
 }
 
-char *find_imps (struct symtab *symtab, struct block *block,
+char *
+find_imps (struct symtab *symtab, struct block *block,
 		 char *method, struct symbol **syms, 
 		 unsigned int *nsym, unsigned int *ndebug)
 {
@@ -1640,6 +1658,14 @@ print_object_command (char *args, int from_tty)
   if (!args || !*args)
     error (
 "The 'print-object' command requires an argument (an Objective-C object)");
+
+  if (!call_po_at_unsafe_times)
+    {
+      if (target_check_safe_call == 0)
+	{
+	  error ("Set call-po-at-unsafe-times to 1 to override this check.");
+	}
+    }
 
   {
     struct expression *expr = parse_expression (args);
@@ -1931,14 +1957,34 @@ CORE_ADDR
 find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
 {
   CORE_ADDR subclass = class;
+  char sel_str[2048];
+  
+  sel_str[0] = '\0';
 
   while (subclass != 0) 
     {
 
       struct objc_class class_str;
       unsigned mlistnum = 0;
+      int class_initialized;
 
       read_objc_class (subclass, &class_str);
+      class_initialized = ((class_str.info & 0x4L) == 0x4L);
+      if (!class_initialized)
+	{
+	  if (sel_str[0] == '\0')
+	    {
+	      read_memory_string (sel, sel_str, 2047);
+	    }
+	}
+
+#if 0
+       {
+	 char buffer[2048];
+	 read_memory_string (class_str.name, buffer, 2047);
+	 fprintf (stderr, "Reading methods for %s, info is 0x%lx\n", buffer, class_str.info);
+       }
+#endif
 
       for (;;) 
 	{
@@ -1948,7 +1994,12 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
       
 	  mlist = read_memory_unsigned_integer (class_str.methods + 
 						(4 * mlistnum), 4);
-	  if (mlist == 0) 
+	  /* It looks like sometimes the ObjC runtime uses NULL to indicate
+	     then end of the method chunk pointers, and sometimes it uses -1.
+	     FIXME: We will have to change this when we get a 64 bit 
+	     runtime.  */
+
+	  if (mlist == 0 || mlist == 0xffffffff) 
 	    break;
 
 	  nmethods = read_objc_methlist_nmethods (mlist);
@@ -1956,15 +2007,28 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
 	  for (i = 0; i < nmethods; i++) 
 	    {
 	      struct objc_method meth_str;
+	      char name_str[2048];
+
 	      read_objc_methlist_method (mlist, i, &meth_str);
 
+	      if (!class_initialized)
+		read_memory_string (meth_str.name, name_str, 2047);
 #if 0
+	      if (class_initialized)
+		read_memory_string (meth_str.name, name_str, 2047);
 	      fprintf (stderr, 
-		       "checking method 0x%lx against selector 0x%lx\n", 
-		       meth_str.name, sel);
+		       "checking method 0x%lx (%s) against selector 0x%lx\n", 
+		       (long unsigned int) meth_str.name, name_str, (long unsigned int) sel);
 #endif
 
-	      if (meth_str.name == sel) 
+	      /* The first test relies on the selectors being uniqued across shared
+		 library boundaries.  But this uniquing is done lazily when the
+		 class is initialized, so if the class is not yet initialized,
+		 we should also directly compare the selector strings.  */
+
+	      if (meth_str.name == sel || (!class_initialized 
+					   && (name_str[0] == sel_str[0])
+					   && (strcmp (name_str, sel_str) == 0))) 
 		return CONVERT_FUNCPTR (meth_str.imp);
 	    }
 	  mlistnum++;
@@ -1972,6 +2036,7 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
       subclass = class_str.super_class;
     }
 
+  
   return 0;
 }
 
@@ -2085,7 +2150,7 @@ should_lookup_objc_class ()
    dynamic class type.  Will resolve typedefs etc...  */
 
 struct type *
-value_objc_target_type (struct value *val)
+value_objc_target_type (struct value *val, struct block *block)
 {
   struct type *base_type, *dynamic_type = NULL;
 
@@ -2102,10 +2167,11 @@ value_objc_target_type (struct value *val)
 
   /* Don't try to get the dynamic type of an objc_class object.  This is the
      class object, not an instance object, so it won't have the fields the
-     instance object has. */
+     instance object has.  Also be careful to check for NULL, since val may be
+     a typedef or pointer to an incomplete type.  */
 
-  if (TYPE_TAG_NAME (base_type) != NULL 
-      && (strcmp (TYPE_TAG_NAME (base_type), "objc_class") == 0))
+  if ((base_type == NULL) || (TYPE_TAG_NAME (base_type) != NULL 
+      && (strcmp (TYPE_TAG_NAME (base_type), "objc_class") == 0)))
     return NULL;
 
   if (TYPE_CODE (base_type) == TYPE_CODE_CLASS)
@@ -2119,9 +2185,14 @@ value_objc_target_type (struct value *val)
       /* The first field is the isa field (offset by TYPE_N_BASECLASSES in
 	 case we ever add hierarchy info to the ObjC class types.)  
          isa points to the dynamic type class object.  The "name" field of
-         that object gives us the dynamic class name.  */
+         that object gives us the dynamic class name.  However, again we
+         might get an incomplete type that we have baseclass info for,
+         so make sure we aren't indexing past the end of the fields array.  */
 
       i = TYPE_N_BASECLASSES (base_type);
+
+      if (i >= TYPE_NFIELDS (base_type))
+	return NULL;
 
       t_field_name = TYPE_FIELD_NAME (base_type, i);
       if (t_field_name && (strcmp_iw (t_field_name, "isa") == 0))
@@ -2136,7 +2207,7 @@ value_objc_target_type (struct value *val)
 	  name_addr =  read_memory_unsigned_integer (isa_addr + 8, 4);
 
 	  read_memory_string (name_addr, class_name, 255);
-	  class_symbol = lookup_symbol (class_name, 0, STRUCT_NAMESPACE, 0, 0);
+	  class_symbol = lookup_symbol (class_name, block, STRUCT_NAMESPACE, 0, 0);
 	  if (! class_symbol)
 	    {
 	      warning ("can't find class named `%s' given by ObjC class object", class_name);
@@ -2163,6 +2234,14 @@ value_objc_target_type (struct value *val)
 void
 _initialize_objc_lang ()
 {
+  add_setshow_boolean_cmd ("call-po-at-unsafe-times", no_class, &call_po_at_unsafe_times, 
+			   "Set whether to override the check for potentially unsafe"
+			   " situations before calling print-object.",
+			   "Show whether to override the check for potentially unsafe"
+			   " situations before calling print-object.",
+			   NULL, NULL,
+			   &setlist, &showlist);
+		      
   add_setshow_boolean_cmd ("lookup-objc-class", no_class, &lookup_objc_class_p,
 			   "Set whether we should attempt to lookup Obj-C classes when we resolve symbols.",
 			   "Show whether we should attempt to lookup Obj-C classes when we resolve symbols.",

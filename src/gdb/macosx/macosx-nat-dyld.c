@@ -98,6 +98,8 @@ void clear_gdbarch_swap (struct gdbarch *);
 void swapout_gdbarch_swap (struct gdbarch *);
 void swapin_gdbarch_swap (struct gdbarch *);
 
+static void info_sharedlibrary_address (CORE_ADDR);
+
 static
 void dyld_info_read_raw
 (struct macosx_dyld_thread_status *status,
@@ -1149,7 +1151,9 @@ map_shlib_numbers
  struct dyld_path_info *d, struct dyld_objfile_info *info)
 {
   char *p, *p1, *val;
+  char **argv;
   int num, match;
+  struct cleanup *cleanups;
 
   if (args == 0)
     error_no_arg ("one or more shlib numbers");
@@ -1173,6 +1177,15 @@ map_shlib_numbers
     }
   val = p;
 
+  argv = buildargv (val);
+  if (argv == NULL)
+    error ("no argument provided");
+  cleanups = make_cleanup_freeargv (argv);
+  if ((argv[0] == NULL) || (argv[1] != NULL))
+    error ("exactly one argument must be provided");
+  gdb_assert (strlen (argv[0]) <= strlen (val));
+  strcpy (val, argv[0]);
+
   if ((*p != '\0') && (p > args)) {
     p[-1] = '\0';
   }
@@ -1187,6 +1200,7 @@ map_shlib_numbers
       DYLD_ALL_OBJFILE_INFO_ENTRIES (info, e, n)
 	(* function) (d, e, e->objfile, val);
 
+      do_cleanups (cleanups);
       return;
     }
 
@@ -1202,6 +1216,7 @@ map_shlib_numbers
 
       if (num == 0) {
 	warning ("bad shlib number at or near '%s'", p1);
+	do_cleanups (cleanups);
 	return;
       }
 
@@ -1209,11 +1224,14 @@ map_shlib_numbers
 
       if (ret < 0) {
 	warning ("no shlib %d", num);
+	do_cleanups (cleanups);
 	return;
       }
 
       (* function) (d, e, o, val);
     }
+
+  do_cleanups (cleanups);
 }
 
 static void
@@ -1233,6 +1251,7 @@ dyld_add_symbol_file_command (char *args, int from_tty)
 
   dyld_objfile_info_copy (&original_info, &macosx_status->dyld_status.current_info);
   dyld_objfile_info_copy (&modified_info, &macosx_status->dyld_status.current_info);
+  dyld_objfile_info_clear_objfiles (&modified_info);
 
   map_shlib_numbers (args, add_helper, &macosx_status->dyld_status.path_info, &modified_info);
 
@@ -1258,6 +1277,7 @@ static void
 specify_symfile_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, struct objfile *o, const char *arg)
 {
   e->user_name = xstrdup (arg);
+  e->loaded_error = 0;
 }
 
 static void dyld_specify_symbol_file_command (char *args, int from_tty)
@@ -1269,6 +1289,7 @@ static void dyld_specify_symbol_file_command (char *args, int from_tty)
 
   dyld_objfile_info_copy (&original_info, &macosx_status->dyld_status.current_info);
   dyld_objfile_info_copy (&modified_info, &macosx_status->dyld_status.current_info);
+  dyld_objfile_info_clear_objfiles (&modified_info);
 
   map_shlib_numbers (args, specify_symfile_helper, &macosx_status->dyld_status.path_info, &modified_info);
 
@@ -1293,6 +1314,7 @@ void dyld_remove_symbol_file_command (char *args, int from_tty)
 
   dyld_objfile_info_copy (&original_info, &macosx_status->dyld_status.current_info);
   dyld_objfile_info_copy (&modified_info, &macosx_status->dyld_status.current_info);
+  dyld_objfile_info_clear_objfiles (&modified_info);
 
   map_shlib_numbers (args, remove_helper, &macosx_status->dyld_status.path_info, &modified_info);
 
@@ -1327,6 +1349,7 @@ dyld_set_load_state_command (char *args, int from_tty)
 
   dyld_objfile_info_copy (&original_info, &macosx_status->dyld_status.current_info);
   dyld_objfile_info_copy (&modified_info, &macosx_status->dyld_status.current_info);
+  dyld_objfile_info_clear_objfiles (&modified_info);
 
   map_shlib_numbers (args, set_load_state_helper, &macosx_status->dyld_status.path_info, &modified_info);
 
@@ -1418,11 +1441,91 @@ dyld_section_info_command (char *args, int from_tty)
 		     &macosx_status->dyld_status.current_info);
 }
         
+
+/* The "info sharedlibrary" command is overloaded a bit much.
+
+   "info sharedlibrary" by itself will print some help text, followed
+   by all your shared libraries.
+
+   "info sharedlibrary [all|dyld|cfm|raw-cfm]" list certain types of
+   shared libraries, sans the help text.
+  
+   "info sharedlibrary <address>" show the shared library that contains
+   that address.  
+
+   The gdb command system will run seperate routines for the
+   "info sharedlibrary [all|dyld|cfm|raw-cfm]" case, but we need
+   to handle the other two here.  */
+
 static
 void info_sharedlibrary_command (char *args, int from_tty)
 {
+  char **argv;
+  struct cleanup *wipe;
+
   CHECK_FATAL (macosx_status != NULL);
-  dyld_print_status_info (&macosx_status->dyld_status, dyld_reason_all_mask | dyld_reason_user, args);
+
+  wipe = make_cleanup (null_cleanup, NULL);
+
+  if (args != NULL)
+    if ((argv = buildargv (args)) != NULL)
+      make_cleanup_freeargv (argv);
+
+  if (args == NULL || argv == NULL || argv[0] == NULL || !strcmp (argv[0], ""))
+    {
+      dyld_print_status_info (&macosx_status->dyld_status, 
+                              dyld_reason_all_mask | dyld_reason_user, args);
+    }
+  else
+    {
+      CORE_ADDR address;
+
+      errno = 0;
+      address = strtoul (argv[0], NULL, 16);
+      if (errno == 0)
+        info_sharedlibrary_address (address);
+      else
+        error ("[unknown]");
+    }
+
+  do_cleanups (wipe);
+}
+
+/* Given an address, find the shared library (or executable) that contains
+   this address.  Akin to the old metrowerks-address-to-name command.  */
+
+static void
+info_sharedlibrary_address (CORE_ADDR address)
+{
+  struct dyld_objfile_info *s = &macosx_status->dyld_status.current_info;
+  int shlibnum = 1;
+  int found_dylib = 0;
+  int baselen;
+  int i;
+  struct obj_section *osection;
+
+  baselen = dyld_shlib_info_basename_length (s, dyld_reason_all_mask);
+  if (baselen < 12)
+    baselen = 12;
+
+  osection = find_pc_sect_in_ordered_sections (address, NULL);
+  if (osection != NULL)
+    {
+      for (i = 0; i < s->nents; i++)
+        {
+          if (osection->objfile == s->entries[i].objfile)
+            {
+              found_dylib = 1;
+              break;
+            }
+          shlibnum++;
+        }
+    }
+
+   if (found_dylib)
+      dyld_print_entry_info (&s->entries[i], shlibnum, baselen);
+   else
+      error ("[unknown]");
 }
 
 static
@@ -1555,7 +1658,7 @@ dyld_cache_symfiles_command (char *args, int from_tty)
 		     &macosx_status->dyld_status.path_info,
 		     &macosx_status->dyld_status.current_info);
 #else /* ! MAPPED_SYMFILES */
-  error ("Cached symfiles not supported on this configuration of GDB.");
+  error ("Cached symfiles are not supported on this configuration of GDB.");
 #endif /* MAPPED_SYMFILES */
 }
 
@@ -1571,6 +1674,8 @@ dyld_cache_symfile_command (char *args, int from_tty)
   struct cleanup *cleanups;
   const char *prefix;
 
+  if (args == NULL)
+    error_no_arg ("file to be cached and target");
   argv = buildargv (args);
   if (argv == NULL)
     nomem (0);
@@ -1585,48 +1690,103 @@ dyld_cache_symfile_command (char *args, int from_tty)
   if (abfd == NULL)
     error ("unable to open BFD for \"%s\"", filename);
   objfile = cache_bfd (abfd, prefix, OBJF_SYM_ALL, 0, 0, dest);
-  free_objfile (objfile);
+  if ((objfile != NULL) && (objfile->obfd == NULL))
+    bfd_close (abfd);
+  if (objfile != NULL)
+    free_objfile (objfile);
+
 #else /* ! MAPPED_SYMFILES */
-  error ("Cached symfiles not supported on this configuration of GDB.");
+  error ("Cached symfiles are not supported on this configuration of GDB.");
 #endif /* MAPPED_SYMFILES */
 }
 
+extern struct target_ops exec_ops;
+
 void
-update_section_tables (struct target_ops *target, struct dyld_objfile_info *info)
+update_section_tables ()
 {
-  struct dyld_objfile_entry *e;
+  update_section_tables_dyld (&macosx_status->dyld_status.current_info);
+}
+
+void
+update_section_tables_dyld (struct dyld_objfile_info *s)
+{
+  struct target_ops *target;
+  struct objfile *o;
   struct obj_section *osection;
   int nsections, csection, osections;
   unsigned int i;
 
+  target = &exec_ops;
+
+  /* Count the total # of sections. */
+
   nsections = 0;
-  DYLD_ALL_OBJFILE_INFO_ENTRIES (info, e, i) {
-    if (e->objfile == NULL)
-      continue;
-    ALL_OBJFILE_OSECTIONS (e->objfile, osection)
+  ALL_OBJFILES (o)
+    ALL_OBJFILE_OSECTIONS (o, osection)
       nsections++;
-  }
 
   osections = target->to_sections_end - target->to_sections;
   target_resize_to_sections (target, nsections - osections);
   gdb_assert ((target->to_sections + nsections) == target->to_sections_end);
 
+#define ADD_SECTION(osection) \
+	{ \
+	gdb_assert (osection != NULL); \
+	gdb_assert (osection->objfile != NULL); \
+	target->to_sections[csection].addr = osection->addr; \
+	target->to_sections[csection].endaddr = osection->endaddr; \
+	target->to_sections[csection].the_bfd_section = osection->the_bfd_section; \
+	target->to_sections[csection].bfd = osection->objfile->obfd; \
+	csection++; \
+	}
+
   csection = 0;
-  DYLD_ALL_OBJFILE_INFO_ENTRIES (info, e, i) {
-    if (e->objfile == NULL)
+
+  /* First, add all the shared libraries brought in from the
+     dyld_objfile_entry code, in the order that they are printed by
+     dyld_print_shlib_info (that way, the exec file will always go
+     first, among other things).  When there are overlapping sections,
+     GDB just uses the first one. */
+
+  for (i = 0; i < s->nents; i++) {
+
+    struct dyld_objfile_entry *j = &s->entries[i];
+    if (! j->allocated)
       continue;
-    ALL_OBJFILE_OSECTIONS (e->objfile, osection) {
-      gdb_assert (osection != NULL);
-      gdb_assert (osection->objfile != NULL);
-      target->to_sections[csection].addr = osection->addr;
-      target->to_sections[csection].endaddr = osection->endaddr;
-      target->to_sections[csection].the_bfd_section = osection->the_bfd_section;
-      target->to_sections[csection].bfd = osection->objfile->obfd;
-      csection++;
-    }
+    if (j->objfile != NULL)
+      ALL_OBJFILE_OSECTIONS (j->objfile, osection)
+	ADD_SECTION (osection);
+
+    if (j->commpage_objfile != NULL)
+      ALL_OBJFILE_OSECTIONS (j->commpage_objfile, osection)
+	ADD_SECTION (osection);
   }
 
-  gdb_assert ((target->to_sections + csection) == target->to_sections_end);
+  /* Then, go through and match all the objfiles not managed by the
+     dyld_objfile_entry code ... again, matching the order used by
+     dyld_print_shlib_info. */
+
+  ALL_OBJFILES (o) {
+
+    int found = 0;
+    
+    for (i = 0; i < s->nents; i++) {
+      struct dyld_objfile_entry *j = &s->entries[i];
+      if (! j->allocated)
+	continue; 
+      if ((j->objfile == o) || (j->commpage_objfile == o))
+	found = 1;
+    }
+
+    if (! found)
+      ALL_OBJFILE_OSECTIONS (o, osection)
+	ADD_SECTION (osection);
+  }
+  
+#undef ADD_SECTION
+
+  gdb_assert (csection == nsections);
 }
 
 struct cmd_list_element *dyldlist = NULL;
@@ -1687,8 +1847,8 @@ _initialize_macosx_nat_dyld ()
            "Process all pending DYLD events.", &shliblist);
 
   add_prefix_cmd ("sharedlibrary", no_class, info_sharedlibrary_command,
-                  "Generic command for shlib information.",
-                  &infoshliblist, "info sharedlibrary ", 0, &infolist);
+                  "Generic command for shlib information.\n`info sharedlibrary ADDRESS' will show the dylib containing ADDRESS.",
+                  &infoshliblist, "info sharedlibrary ", 1, &infolist);
 
   add_cmd ("all", no_class, info_sharedlibrary_all_command, "Show current DYLD state.", &infoshliblist);  
   add_cmd ("dyld", no_class, info_sharedlibrary_dyld_command, "Show current DYLD state.", &infoshliblist);  
@@ -1803,8 +1963,9 @@ unless you know what you are doing.",
   add_show_from_set (cmd, &showshliblist);
 
   add_cmd ("cache-symfiles", class_run, dyld_cache_symfiles_command,
-           "Generate persistent caches of symbol files for the current executable state", &shliblist);
+           "Generate persistent caches of symbol files for the current executable state.", &shliblist);
 
   add_cmd ("cache-symfile", class_run, dyld_cache_symfile_command,
-           "Generate persistent caches of symbol files for the current executable state", &shliblist);
+           "Generate persistent caches of symbol files for a specified executable.\n"
+	   "usage: cache-symfile <source> <target> [prefix]", &shliblist);
 }

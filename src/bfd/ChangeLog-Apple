@@ -1,7 +1,7 @@
 2003-08-06  Klee Dienes  <kdienes@apple.com>
 
-	* bfdio.c (bfd_get_mtime): When BFD_IN_MEMORY is set, don't try to
-	provide a valid mtime (since none exists).
+        * bfdio.c (bfd_get_mtime): When BFD_IN_MEMORY is set, don't try to
+        provide a valid mtime (since none exists).
 
 2003-07-22  Klee Dienes  <kdienes@apple.com>
 

@@ -526,14 +526,15 @@ wrap_value_objc_target_type (char *a)
   struct gdb_wrapper_arguments *args = (struct gdb_wrapper_arguments *) a;
 
   struct value * val = (struct val *) args->args[0].pointer;
+  struct block * block = (struct block *) args->args[1].pointer;
 
-  (args)->result.pointer = value_objc_target_type (val);
+  (args)->result.pointer = value_objc_target_type (val, block);
 
   return 1;
 }
 
 int
-safe_value_objc_target_type (struct value *val, struct type **dynamic_type)
+safe_value_objc_target_type (struct value *val, struct block *block, struct type **dynamic_type)
 {
   struct gdb_wrapper_arguments args;
   struct ui_file *saved_gdb_stderr;
@@ -550,6 +551,7 @@ safe_value_objc_target_type (struct value *val, struct type **dynamic_type)
   gdb_stderr = null_stderr;
 
   args.args[0].pointer = val;
+  args.args[1].pointer = block;
 
   if (!catch_errors ((catch_errors_ftype *) wrap_value_objc_target_type, &args,
 		     "", RETURN_MASK_ALL))

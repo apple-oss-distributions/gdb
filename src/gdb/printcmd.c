@@ -553,6 +553,17 @@ print_address_symbolic (CORE_ADDR addr, struct ui_file *stream, int do_demangle,
 
   /* throw away both name and filename */
   struct cleanup *cleanup_chain = make_cleanup (free_current_contents, &name);
+
+  /* See the note on print_address_numeric.  We have to do the same thing
+     here or we won't get the location (and thus the name) right when printing
+     signed types as addresses if the address is high enough to have the top
+     bit set.  */
+     
+  int addr_bit = TARGET_ADDR_BIT;
+
+  if (addr_bit < (sizeof (CORE_ADDR) * HOST_CHAR_BIT))
+    addr &= ((CORE_ADDR) 1 << addr_bit) - 1;
+
   make_cleanup (free_current_contents, &filename);
 
   if (build_address_symbolic (addr, do_demangle, &name, &offset, &filename, &line, &unmapped))

@@ -28,6 +28,7 @@
 #include "wrapper.h"
 #include "ui-out.h"
 #include "cli-out.h"
+#include "cli/cli-cmds.h" /* for cli_interpreter_complete */
 #include "gdb_string.h"
 #include "interpreter.h"
 #include "event-top.h"
@@ -509,7 +510,8 @@ _initialize_cli_out (void)
 			   cli_interpreter_suspend,
 			   cli_interpreter_delete,
 			   cli_interpreter_exec,
-			   cli_interpreter_display_prompt);
+			   cli_interpreter_display_prompt,
+			   cli_interpreter_complete);
 
   gdb_add_interpreter (tmp_interp);
 
@@ -526,7 +528,8 @@ _initialize_cli_out (void)
 			   cli_interpreter_suspend,
 			   cli_interpreter_delete,
 			   cli_interpreter_exec,
-			   cli_interpreter_display_prompt);
+			   cli_interpreter_display_prompt,
+			   cli_interpreter_complete);
 
   gdb_add_interpreter (tmp_interp);
 				 

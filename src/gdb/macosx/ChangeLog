@@ -1,16 +1,205 @@
+2004-07-15  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_print_entry_info): Always output
+	the name (as defined by objfile->name) as "path".  Emit the
+	descriptive text (which used to be in "path") as "description".
+	See Radar #3727326.
+
+2004-07-06  Jason Molenda  (jmolenda@apple.com)
+
+	* kdp-transactions.c (kdp_transaction): Fix typeo in error message.
+
+2004-06-17  Jim Ingham   <jingham@apple.com>
+
+	* macosx-tdep.c (macosx_symbol_type): Check for section number
+	less than 1: the CodeWarrior linker produces symbols that have
+	type N_SECT, but whose n_sect is 0.
+	
+2004-05-11  Jim Ingham   <jingham@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_frame_chain): Only trust the sp_setup_pc
+	value if it is NOT zero, zero means we didn't find the setup, but
+	that gets too many false positives, particularly in optimized code.
+	(ppc_throw_catch_find_typeinfo): Initialize typeinfo_sym to NULL, since
+	we could fail safe_read_memory_unsigned_integer, and then we would still
+	try to access the symbol.
+	
+2004-04-13  Jim Ingham   <jingham@apple.com>
+
+	* remote-kdp.c (kdp_fetch_registers_i386): Comment out fetching
+	the floating point registers for now, as the kdp side is broken.
+	
+2004-03-04  Jim Ingham   <jingham@apple.com>
+
+	* ppc-macosx-framinfo.h: Add sp_setup_pc to frame properties.
+	* ppc-macosx-frameinfo.c (ppc_clear_function_properties): zero
+	sp_setup_pc.
+	(ppc_parse_instructions): Set it when we see the stack pointer
+	stored away.
+	* ppc-macosx-tdep.c (ppc_frame_chain): If we are in the 0th frame
+	and we haven't stored away the sp yet, read it out of r1.
+	
+2004-02-03  Jim Ingham   <jingham@apple.com>
+
+	* macosx-nat-inferior.c (macosx_check_safe_call): New function.
+	(_initialize_macosx_inferior): Add above fn. to the target vector.
+	
+2003-12-03  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.c (map_shlib_numbers): Don't call freeargv
+	explicitly, the memory is managed by make_cleanup_freeargv ().
+
+2003-11-14  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-process.c (dyld_shlibs_updated): Call
+	update_current_target to propagate the section tables up from the
+	exec target.
+	* macosx-nat-dyld.h (update_section_tables): Update prototype.
+	* macosx-nat-dyld.c (update_section_tables): Build the section
+	table for the exec_target using all currently loaded objfiles.  Be
+	careful to put the section entries in the correct order.
+	* remote-kdp.c: Just call update_current_target, not cleanup_target.
+	
+2003-11-11  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-info.h (dyld_shlib_info_basename_length): Add 
+	prototype.
+	* macosx-nat-dyld.c (info_sharedlibrary_command): Modify to 
+	accept an optional argument, an address.
+	(info_sharedlibrary_address): Given an address, print the
+	name of the objfile containing that addr.
+	(_initialize_macosx_nat_dyld): Update for new usage.
+
+2003-11-05  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-process.c: Properly define MAPPED_SYMFILES.
+
+2003-10-31  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-process.c: Fix the string-comparison algorithm.
+
+2003-10-06  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld.c (map_shlib_numbers): Parse the final argument
+	of the argslist as if it were a possibly-quoted string.
+
+2003-10-06  Jason Molenda  (jmolenda@apple.com)
+
+	* cached-symfile.c (open_objfile_from_mmalloc_pool): Fix warning
+	formatter string.
+
+2003-10-06  Klee Dienes  <kdienes@apple.com>
+
+	* cached-symfile.c (cached_symfile_version): Increment.
+
+2003-10-03  Jim Ingham  <jingham@apple.com>
+
+        * ppc-macosx-tdep.c (ppc_frameless_function_invocation): If the pc is
+        not readable, we should treat the function as frameless (it means we
+        crashed following a bad function pointer, and so surely didn't set
+        up a frame.)
+
+2003-09-29  Klee Dienes  <kdienes@apple.com>
+
+	* cached-symfile.c (check_timestamp): New variable; defaults to 'on'.
+	(_initialize_cached_symfile): Bind
+	'cached-symfiles-check-timestamp' to check_timestamp.
+	(cache_bfd): Null out the objfile pointer when prepping the
+	objfile for write.  Don't build the section table; leave that to
+	be done on read-in.
+	(relocate): Ignore pointers that match the objfile entry of the relocation.
+	(move_symtab): Set the objfile field, if one is specified by the relocation.
+	(move_psymtab): Ditto.
+	(move_main_type): Ditto.
+	(move_psymbol_allocation_list): Stop iterating through the psymbol
+	table when you reach a NULL pointer.
+	(move_objfile): Don't NULL the section table, just check that it's
+	NULL.  Check for a NULL msymbol table when iterating through the
+	msymbols to relocate them.
+	(verify): Initialize the 'objfile' field of the relocation to NULL.
+	(open_objfile_from_mmalloc_pool): If check_timestamp is not set,
+	warn, but do not reject cached symfiles based on timestamp
+	mismatches.  Set the 'objfile' key of the saved memory descriptor
+	to be an offset, not an absolute value.  Set the 'objfile' field
+	of the relocation struct when relocating the objfile; don't set
+	the objfile field explicitly.  Allocate a fresh malloc()-based
+	memory allocator, and fresh obstacks, so that other code can add
+	new types to the newly-consed objfile.  Generate the section table
+	after reading in the cached objfile.
+	* cached-symfile.h (struct relocation_context): Add new 'objfile'
+	field, to allow the relocation code to munge objfile pointers to
+	the newly-allocated objfile.
+
+2003-09-29  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-process.c (dyld_libraries_compatible): If one of
+	the prefixes is NULL, the other must be as well.  Ditto for the
+	library name.
+	
+2003-09-29  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_entry_string): Refer to memory
+	objects as 'memory object', not just 'memory'.
+	(dyld_entry_out): Remove.
+	(dyld_print_entry_info): Incorporate dyld_entry_out, removing
+	an extra call to dyld_entry_info.
+
+2003-09-02  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_objfile_info_clear_objfiles): New
+	function.
+	(dyld_entry_filename): Re-organize; honor DYLD_ENTRY_FILENAME_USER.
+	(dyld_entry_out): Fix parameter order to dyld_entry_info.
+	(dyld_entry_info): Convert to use dyld_entry_filename where possible.
+	(dyld_print_entry_info): Add explanatory text to the symfile and
+	commpage fields when not using MI.
+	(dyld_convert_entry): Set the user_name field of the synthesized
+	dyld_objfile_entry.
+	
+	* macosx-nat-dyld-info.h: (dyld_objfile_info_clear_objfiles): Add
+	prototype.
+	(dyld_entry_filename_type): Add DYLD_ENTRY_FILENAME_BASE and
+	DYLD_ENTRY_FILENAME_USER.
+
+	* macosx-nat-dyld-process.c (dyld_resolve_load_flag): Use
+	DYLD_ENTRY_FILENAME_LOADED.
+	(dyld_load_library): Use DYLD_LOAD_LIBRARY.  Only set loaded_name
+	and loaded_from_memory if we actually succeed in loading the file.
+	(dyld_objfile_move_load_data): Make sure we aren't stomping any
+	objfile or bfd references in the 'to' struct.
+	(dyld_merge_shlib): Once we merge a library into the specified
+	entry, don't bother looking for more.
+	(dyld_prune_shlib): Only call tell_breakpoints_objfile_changed if
+	the objfile has actually changed.
+	(dyld_merge_shlibs): Only try to merge objfiles into entries that
+	don't already have one.
+
+	* macosx-nat-dyld.c (dyld_add_symbol_file_command): Clear any
+	objfiles from the dyld_objfile_info_struct after copying it, to
+	preserve correct reference-counting semantics.  
+	(dyld_specify_symbol_file_command): Ditto.
+	(dyld_remove_symbol_file_command): Ditto.
+	(dyld_set_load_state_command): Ditto.
+	(specify_symfile_helper): Reset the 'error' flag for the entry.
+	(dyld_cache_symfile_command): Free the loaded objfile, if it
+	hasn't been captured by the returned objfile.
+	
 2003-09-02  Klee Dienes  <kdienes@apple.com>
 
 	* macosx-nat-inferior-debug.c (macosx_debug_regions): Use
 	prev_info for the fields to output; we've already advanced info to
 	the next region.
 
-2003-08-27  Jim Ingham  <jingham@apple.com>
+2003-09-02  Klee Dienes  <kdienes@apple.com>
 
-	* ppc-macosx-tdep.c (ppc_frameless_function_invocation): If the pc is
-	not readable, we should treat the function as frameless (it means we
-	crashed following a bad function pointer, and so surely didn't set
-	up a frame.)
-
+	* cached-symfile.c (mmalloc_xfree_hook): New function.
+	(mmalloc_xmalloc_hook): New function.
+	(mmalloc_xrealloc_hook): New function.
+	(open_objfile_from_mmalloc_pool): Re-organize the function to make
+	the mapped malloc pool read-only as soon as possible.  Make copies
+	of all objfile, symtabs, and psymtab structs into malloc'd
+	(writable) memory.
+	
 2003-08-21  Jim Ingham  <jingham@apple.com>
 
 	* ppc-macosx-frameinfo.c (ppc_parse_instructions): If we have 
@@ -24,34 +213,35 @@
 	
 2003-08-06  Klee Dienes  <kdienes@apple.com>
 
-	* macosx-nat-dyld-info.c (dyld_objfile_entry_clear): Rename
-	sym_bfd to commpage_bfd, sym_objfile to commpage_objfile.
-	(dyld_objfile_entry_compare): Ditto.
-	(dyld_entry_string): Update to use new dyld_entry_info.
-	(dyld_entry_out): Update to use new dyld_entry_info.
-	(dyld_entry_info): Add two new parameters, to fetch the objfile
-	and symfile name for the commpage symbol data.  Allow the caller
-	to specify NULL to mean "don't bother telling me this string".
-	(dyld_resolve_shlib_num): Rename sym_objfile to commpage_objfile.
-	(dyld_shlib_info_basename_length): Ditto.
-	(dyld_print_entry_info): Rename sym_objfile to commpage_objfile.
-	Output the objfile and symfile name for the commpage symbol data,
-	if they are present.
-	* macosx-nat-dyld-info.h (dyld_objfile_entry): Rename sym_bfd to
-	commpage_bfd, sym_objfile to commpage_objfile.
-	(dyld_entry_info): Update prototype.
-	* macosx-nat-dyld-process.c (dyld_load_symfile): Check for a
-	__DATA.__commpage section, and load it into commpage_objfile, if
-	found.
-	(dyld_remove_objfile): Free the commpage_objfile and commpage_bfd,
-	if present.
-	(dyld_objfile_move_load_data): Move the commpage objfile and bfd
-	to the new entry.
-	
+        * macosx-nat-dyld-info.c (dyld_objfile_entry_clear): Rename
+        sym_bfd to commpage_bfd, sym_objfile to commpage_objfile.
+        (dyld_objfile_entry_compare): Ditto.
+        (dyld_entry_string): Update to use new dyld_entry_info.
+        (dyld_entry_out): Update to use new dyld_entry_info.
+        (dyld_entry_info): Add two new parameters, to fetch the objfile
+        and symfile name for the commpage symbol data.  Allow the caller
+        to specify NULL to mean "don't bother telling me this pathname"
+        for the pathname arguments to dyld_entry_info.
+        (dyld_resolve_shlib_num): Rename sym_objfile to commpage_objfile.
+        (dyld_shlib_info_basename_length): Ditto.
+        (dyld_print_entry_info): Rename sym_objfile to commpage_objfile.
+        Output the objfile and symfile name for the commpage symbol data,
+        if they are present.
+        * macosx-nat-dyld-info.h (dyld_objfile_entry): Rename sym_bfd to
+        commpage_bfd, sym_objfile to commpage_objfile.
+        (dyld_entry_info): Update prototype.
+        * macosx-nat-dyld-process.c (dyld_load_symfile): Check for a
+        __DATA.__commpage section, and load it into commpage_objfile, if
+        found.
+        (dyld_remove_objfile): Free the commpage_objfile and commpage_bfd,
+        if present.
+        (dyld_objfile_move_load_data): Move the commpage objfile and bfd
+        to the new entry.
+
 2003-08-06  Klee Dienes  <kdienes@apple.com>
 
-	* cached-symfile.c (_initialize_cached_symfile): Fix the entry for
-	cached-symfile-dir to refer to the correct GDB variable.
+        * cached-symfile.c (_initialize_cached_symfile): Fix the entry for
+        cached-symfile-dir to refer to the correct GDB variable.
 
 2003-07-31  Jim Ingham  <jingham@apple.com>
 

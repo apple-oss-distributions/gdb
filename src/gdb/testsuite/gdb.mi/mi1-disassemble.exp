@@ -157,8 +157,11 @@ proc test_disassembly_bogus_args {} {
              "321\\^error,msg=\"No symbol \\\\\"foo\\\\\" in current context.\"" \
              "data-disassemble bogus address"
 
+# APPLE LOCAL [data-disassemble]: We make the -s [-n] a valid input.,
+# so the help msg correctly puts brackets [ ] around it to indicate its
+# optionality.
     mi_gdb_test "456-data-disassemble -s \$pc -f basics.c -- 0" \
-             "456\\^error,msg=\"mi_cmd_disassemble: Usage: \\( .-f filename -l linenum .-n howmany.. | .-s startaddr -e endaddr.\\) .--. mixed_mode.\"" \
+             "456\\^error,msg=\"mi_cmd_disassemble: Usage: \\( .-f filename -l linenum .-n howmany.. | .-s startaddr .-e endaddr.. | .-s startaddr .-n howmany..\\) .--. mixed_mode.\"" \
              "data-disassemble mix different args"
 
     mi_gdb_test "789-data-disassemble -f basics.c -l 32 -- 9" \

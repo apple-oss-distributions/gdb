@@ -588,7 +588,12 @@ complete_line (const char *text, char *line_buffer, int point)
 		{
 		  /* See the commentary above about the specifics
 		     of file-name completion.  */
-		  for (p = word;
+		  /* APPLE LOCAL: The net version backs up from word to look
+		     for the string to complete.  That breaks complete_command.
+		     You are supposed to be completing the word ending at the cursor,
+		     so back up from the cursor instead...  */
+		     
+		  for (p = tmp_command + point - 1;
 		       p > tmp_command
 			 && strchr (gdb_completer_file_name_break_characters, p[-1]) == NULL;
 		       p--)

@@ -209,7 +209,7 @@ kdp_return_t kdp_transaction
     }
 
     if (rtn == RR_RECV_TIMEOUT) {
-      c->logger (KDP_LOG_INFO, "kdp_transaction (%s): transation timed out\n", name);
+      c->logger (KDP_LOG_INFO, "kdp_transaction (%s): transaction timed out\n", name);
       c->logger (KDP_LOG_INFO, "kdp_transaction (%s): re-sending transaction\n", name);
       continue;
     }

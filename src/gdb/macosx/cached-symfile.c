@@ -38,6 +38,8 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+#include "gdb_assert.h"
+
 #include "cached-symfile.h"
 #include "macosx-nat-dyld.h"
 
@@ -60,9 +62,11 @@ relocate (struct relocation_context *r, void *ptr, void **new);
 static char *cached_symfile_path = NULL;
 static char *cached_symfile_dir = NULL;
 
+static int check_timestamp = 1;
+
 #ifndef FSF_OBJFILES
 
-static unsigned long cached_symfile_version = 5;
+static unsigned long cached_symfile_version = 6;
 
 extern int mapped_symbol_files;
 extern int use_mapped_symbol_files;
@@ -194,13 +198,33 @@ void mmalloc_protect (PTR md, int flags)
     perror ("setting memory protection");
 }
 
+static void
+mmalloc_xfree_hook (PTR md, PTR ptr)
+{
+  free (ptr);
+}
+
+static PTR
+mmalloc_xmalloc_hook (PTR md, size_t size)
+{
+  return xmalloc (size);
+}
+
+static PTR
+mmalloc_xrealloc_hook (PTR md, PTR ptr, size_t size)
+{
+  return xrealloc (ptr, size);
+}
+
 struct objfile *
 open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *filename, const char *prefix)
 {
+  struct objfile *orig_objfile;
+  struct symtab *orig_s;
+  struct objfile *objfile;
   struct symtab *s;
   struct partial_symtab *p;
-  struct objfile *orig_objfile;
-  struct objfile *objfile;
+  struct partial_symbol *ps;
   time_t timestamp = 0;
   unsigned long version;
   void *mapto;
@@ -212,7 +236,7 @@ open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *f
 
   mapto = (void *) mmalloc_getkey (md, 0);
 
-  orig_objfile = (struct objfile *) mmalloc_getkey (md, 1);
+  orig_objfile = (struct objfile *) ((CORE_ADDR) mmalloc_getkey (md, 1) + (CORE_ADDR) mmalloc_getkey (md, 0));
   if (orig_objfile == NULL)
     {
       warning ("Unable to read objfile from \"%s\"; ignoring", filename);
@@ -223,24 +247,35 @@ open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *f
 
   if (mtime != timestamp)
     {
-      char *str1 = xstrdup (ctime (&mtime));
-      char *str2 = xstrdup (ctime (&timestamp));
-      str1[strlen(str1) - 1] = '\0';
-      str2[strlen(str2) - 1] = '\0';
-      warning ("Pre-compiled symbol file \"%s\" is out of date (%s vs. %s); ignoring",
-	       filename, str1, str2);
-      xfree (str1);
-      xfree (str2);
-      return NULL;
+      if (info_verbose)
+	{
+	  char *str1 = xstrdup (ctime (&mtime));
+	  char *str2 = xstrdup (ctime (&timestamp));
+	  str1[strlen(str1) - 1] = '\0';
+	  str2[strlen(str2) - 1] = '\0';
+	  if (check_timestamp)
+	    warning ("Timestamp for cached symbol file \"%s\" (%s) does not match timestamp for library (%s); ignoring",
+		     filename, str1, str2);
+	  else
+	    warning ("Timestamp for cached symbol file \"%s\" (%s) does not match timestamp for library (%s); using anyway",
+		     filename, str1, str2);
+	  xfree (str1);
+	  xfree (str2);
+	}
+      if (check_timestamp)
+	return NULL;
     }
 
   version = (unsigned long) mmalloc_getkey (md, 3);
   if (version != cached_symfile_version)
     {
-      warning ("Mapped symbol file \"%s\" is for a different version of GDB; ignoring", filename);
+      warning ("Version for symbol file \"%s\" (%ld) does not match version for GDB (%ld); ignoring", filename,
+	       version, cached_symfile_version);
       return NULL;
     }
 
+  objfile = (struct objfile *) xmalloc (sizeof (struct objfile));
+  
   mmalloc_endpoints (md, &start, &end);
   
   if (md != mapto)
@@ -253,8 +288,12 @@ open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *f
       r.to_start = start;
       r.mapped_start = start;
 
+      r.objfile = objfile;
+
       orig_objfile = objfile_reposition (orig_objfile, &r);
     }
+
+  *objfile = *orig_objfile;
 
   if (strcmp ((orig_objfile->prefix == NULL) ? "" : orig_objfile->prefix,
              (prefix == NULL) ? "" : prefix) != 0)
@@ -266,11 +305,14 @@ open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *f
       return NULL;
     }
 
-  objfile = (struct objfile *) xmalloc (sizeof (struct objfile));
-  *objfile = *orig_objfile;
-  
-  for (ms = objfile->msymbols; (ms->ginfo.name != NULL); ms++)
+  for (ms = objfile->msymbols; (ms != NULL) && (ms->ginfo.name != NULL); ms++)
     ms->ginfo.bfd_section = NULL;
+
+  mdp->mmalloc_hook = (void *) mmalloc_xmalloc_hook;
+  mdp->mrealloc_hook = (void *) mmalloc_xrealloc_hook;
+  mdp->mfree_hook = (void *) mmalloc_xfree_hook;
+
+  mmalloc_protect (md, PROT_READ);
 
   /* Update stale pointers from the old symfile, to point to the
      values in the current GDB address space. */
@@ -282,37 +324,95 @@ open_objfile_from_mmalloc_pool (PTR md, bfd *abfd, int fd, time_t mtime, char *f
   objfile->name = filename;
   objfile->flags |= OBJF_MAPPED;
 
-  if (build_objfile_section_table (objfile))
-    error ("Can't find the file sections in `%s': %s",
-	   objfile->name, bfd_errmsg (bfd_get_error ()));
+  if (objfile->symtabs != NULL) 
+    {
+      struct symtab *cur, *prev, *temp;
+    
+      temp = (struct symtab *) xmalloc (sizeof (struct symtab));
+      *temp = *objfile->symtabs;
+    
+      objfile->symtabs = temp;
+      prev = objfile->symtabs;
+      cur = prev->next;
 
-  ALL_OBJFILE_SYMTABS (objfile, s)
-    s->objfile = objfile;
+      while (cur != NULL)
+	{
+	  temp = (struct symtab *) xmalloc (sizeof (struct symtab));
 
-  ALL_OBJFILE_PSYMTABS (objfile, p)
-    p->objfile = objfile;
+	  *temp = *cur;
+	  prev->next = temp;
 
-  mdp->mmalloc_hook = (void *) abort;
-  mdp->mrealloc_hook = (void *) abort;
-  mdp->mfree_hook = (void *) abort;
+	  prev = prev->next;
+	  cur = cur->next;
+	}
+    }
 
-#if 0
-  /* Update pointers to functions to *our* copies */
+  if (objfile->psymtabs != NULL) 
+    {
+      struct partial_symtab *cur, *prev, *temp;
+    
+      temp = (struct partial_symtab *) xmalloc (sizeof (struct partial_symtab));
+      *temp = *objfile->psymtabs;
+    
+      objfile->psymtabs = temp;
+      prev = objfile->psymtabs;
+      cur = prev->next;
+
+      while (cur != NULL)
+	{
+	  temp = (struct partial_symtab *) xmalloc (sizeof (struct partial_symtab));
+
+	  *temp = *cur;
+	  prev->next = temp;
+
+	  prev = prev->next;
+	  cur = cur->next;
+	}
+    }
+
+  for (p = objfile->psymtabs; p != NULL; p = p->next)
+    {
+      if (p->symtab == NULL)
+	continue;
+
+      orig_s = orig_objfile->symtabs;
+      s = objfile->symtabs;
+
+      for (;;)
+	{
+	  if ((orig_s == NULL) || (s == NULL))
+	    error ("unable to find matching symtab when updating pointers");
+
+	  if (p->symtab == orig_s)
+	    {
+	      p->symtab = s;
+	      break;
+	    }
+	  
+	  orig_s = orig_s->next;
+	  s = s->next;
+	}
+    }
+
+  objfile->psymbol_cache = bcache_xmalloc (objfile->md);
+  objfile->macro_cache = bcache_xmalloc (objfile->md);
+
   bcache_specify_allocation_with_arg
-    (objfile->psymbol_cache, abort, abort, objfile->md);
+    (objfile->psymbol_cache, xmmalloc, xmfree, objfile->md);
   bcache_specify_allocation_with_arg
-    (objfile->macro_cache, abort, abort, objfile->md);
+    (objfile->macro_cache, xmmalloc, xmfree, objfile->md);
   obstack_specify_allocation_with_arg
-    (&objfile->psymbol_obstack, 0, 0, abort, abort, objfile->md);
+    (&objfile->psymbol_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
   obstack_specify_allocation_with_arg
-    (&objfile->symbol_obstack, 0, 0, abort, abort, objfile->md);
+    (&objfile->symbol_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
   obstack_specify_allocation_with_arg
-    (&objfile->type_obstack, 0, 0, abort, abort, objfile->md);
-#endif
+    (&objfile->type_obstack, 0, 0, xmmalloc, xmfree, objfile->md);
 
   link_objfile (objfile);
 
-  /* mmalloc_protect (md, PROT_READ); */
+  if (build_objfile_section_table (objfile))
+    error ("Can't find the file sections in `%s': %s",
+	   objfile->name, bfd_errmsg (bfd_get_error ()));
 
   return objfile;
 }
@@ -342,17 +442,25 @@ open_mapped_objfile (const char *filename, bfd *abfd, time_t mtime, CORE_ADDR ma
     return NULL;
 
   if (sbuf.st_mtime < mtime)
-    {
-      char *str1 = xstrdup (ctime (&sbuf.st_mtime));
-      char *str2 = xstrdup (ctime (&mtime));
-      str1[strlen(str1) - 1] = '\0';
-      str2[strlen(str2) - 1] = '\0';
-      warning ("Pre-compiled symbol file \"%s\" is out of date (%s vs. %s); ignoring\n",
-	       symsfilename, str1, str2);
-      xfree (str1);
-      xfree (str2);
-      return NULL;
-    }
+      {
+	if (info_verbose)
+	  {
+	    char *str1 = xstrdup (ctime (&sbuf.st_mtime));
+	    char *str2 = xstrdup (ctime (&mtime));
+	    str1[strlen(str1) - 1] = '\0';
+	    str2[strlen(str2) - 1] = '\0';
+	    if (check_timestamp)
+	      warning ("Cached symbol file \"%s\" is older (%s) than library (%s); ignoring\n",
+		       symsfilename, str1, str2);
+	    else
+	      warning ("Cached symbol file \"%s\" is older (%s) than library (%s); ignoring\n",
+		       symsfilename, str1, str2);
+	    xfree (str1);
+	    xfree (str2);
+	  }
+	if (check_timestamp)
+	  return NULL;
+      }
 
   md = mmalloc_attach (fd, 0, MMALLOC_SHARED);
   if (md == NULL)
@@ -384,7 +492,7 @@ create_objfile_from_mmalloc_pool (bfd *abfd, PTR md, int fd, CORE_ADDR mapaddr)
   objfile->md = init_malloc (md);
 
   mmalloc_setkey (md, 0, (void *) (((unsigned char *) 0) + mapaddr));
-  mmalloc_setkey (md, 1, (void *) objfile);
+  mmalloc_setkey (md, 1, (void *) (((unsigned char *) objfile) - mapaddr));
   mmalloc_setkey (md, 2, (void *) bfd_get_mtime (abfd));
   mmalloc_setkey (md, 3, (void *) cached_symfile_version);
 
@@ -499,10 +607,6 @@ struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
   else
     objfile->prefix = mstrsave (objfile->md, prefix);
 	
-  if (build_objfile_section_table (objfile))
-    error ("Unable to find the file sections in `%s': %s",
-	   objfile->name, bfd_errmsg (bfd_get_error ()));
-      
   for (i = 0; i < MAX_SECTIONS; i++) 
     {
       addrs.other[i].name = NULL;
@@ -526,6 +630,7 @@ struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
   r.mapped_start = start;
   r.from_start = start;
   r.to_start = 0;
+  r.objfile = NULL;
   repositioned = objfile_reposition (objfile, &r);
   mmalloc_setkey (objfile->md, 0, 0);
   mmalloc_setkey (objfile->md, 1, repositioned);
@@ -579,7 +684,7 @@ create_objfile (bfd *abfd)
 
 #endif /* FSF_OBJFILES */
 
-static inline void validate_context (struct relocation_context *r)
+static void validate_context (struct relocation_context *r)
 {
   if (((r->to_start >= r->from_start) && (r->to_start <= (r->from_start + r->len)))
       || ((r->from_start >= r->to_start) && (r->from_start <= (r->to_start + r->len))))
@@ -588,12 +693,15 @@ static inline void validate_context (struct relocation_context *r)
     }
 }
 
-static inline int
+static int
 relocate (struct relocation_context *r, void *ptr, void **new)
 {
   size_t addr = (size_t) ptr;
 
   if (ptr == NULL)
+    return 0;
+
+  if (addr == r->objfile)
     return 0;
 
   if ((addr >= r->to_start) && (addr <= (r->to_start + r->len)))
@@ -708,7 +816,9 @@ move_main_type (struct relocation_context *r, struct main_type *m)
 
   RELOCATE (m->name);
   RELOCATE (m->tag_name);
-  RELOCATE (m->objfile);
+
+  if (r->objfile != NULL)
+    m->objfile = r->objfile;
 
   if (RELOCATE (m->target_type))
     move_type (r, LOOKUP (m->target_type));
@@ -848,8 +958,11 @@ move_psymtab (struct relocation_context *r, struct partial_symtab *p)
 
   RELOCATE (p->filename);
   RELOCATE (p->fullname);
-  RELOCATE (p->objfile);
   RELOCATE (p->section_offsets);
+
+  RELOCATE (p->objfile);
+  if (r->objfile != NULL)
+    p->objfile = r->objfile;
 
   RELOCATE (p->symtab);
   RELOCATE (p->read_symtab_private);
@@ -859,6 +972,32 @@ move_psymtab (struct relocation_context *r, struct partial_symtab *p)
     RELOCATE (LOOKUP (p->dependencies)[i]);
 }
   
+void
+move_obstack_chunk (struct relocation_context *r, struct _obstack_chunk *s)
+{
+  if (s == NULL)
+    return;
+
+  RELOCATE (s->limit);
+  RELOCATE (s->prev);
+
+  move_obstack_chunk (r, LOOKUP (s->prev));
+}
+
+void
+move_obstack (struct relocation_context *r, struct obstack *s)
+{
+  if (s == NULL)
+    return;
+
+  RELOCATE (s->object_base);
+  RELOCATE (s->next_free);
+  RELOCATE (s->chunk_limit);
+
+  RELOCATE (s->chunk);
+  move_obstack_chunk (r, LOOKUP (s->chunk));
+}
+
 void
 move_symtab (struct relocation_context *r, struct symtab *s)
 {
@@ -876,6 +1015,8 @@ move_symtab (struct relocation_context *r, struct symtab *s)
   RELOCATE (s->version);
   RELOCATE (s->fullname);
   RELOCATE (s->objfile);
+  if (r->objfile != NULL)
+    s->objfile = r->objfile;
 }
 
 static void
@@ -892,8 +1033,13 @@ move_psymbol_allocation_list (struct relocation_context *r,
 
   for (i = 0; i < l->size; i++)
     {
-      if (RELOCATE (LOOKUP (l->list)[i]))
-	move_psymbol (r, LOOKUP (LOOKUP (l->list)[i]));
+      if (LOOKUP (l->list)[i] == NULL)
+	break;
+
+      if (! RELOCATE (LOOKUP (l->list)[i]))
+	continue;
+      
+      move_psymbol (r, LOOKUP (LOOKUP (l->list)[i]));
     }
 }
 
@@ -914,7 +1060,7 @@ move_objfile (struct relocation_context *r, struct objfile *o)
 
   RELOCATE (o->msymbols);
 
-  for (ms = LOOKUP (o->msymbols); (ms->ginfo.name != NULL); ms++) {
+  for (ms = LOOKUP (o->msymbols); (ms != NULL) && (ms->ginfo.name != NULL); ms++) {
     move_msymbol (r, ms);
   }
   for (i = 0; i < MINIMAL_SYMBOL_HASH_SIZE; i++) {
@@ -926,11 +1072,16 @@ move_objfile (struct relocation_context *r, struct objfile *o)
 
   RELOCATE (o->section_offsets);
 
-  o->sections = NULL;
-  o->sections_end = NULL;
+  gdb_assert (o->sections == NULL);
+  gdb_assert (o->sections_end == NULL);
+
+  move_obstack (r, &o->psymbol_obstack);
+  move_obstack (r, &o->symbol_obstack);
+  move_obstack (r, &o->type_obstack);
 
   RELOCATE (o->psymbol_cache);
   RELOCATE (o->macro_cache);
+
   RELOCATE (o->sym_stab_info);
   RELOCATE (o->sym_private);
 
@@ -971,6 +1122,7 @@ static void verify (struct objfile *o, void (* f) (struct relocation_context *, 
   r.from_start = start;
   r.to_start = 0xf0000000;
   r.len = end - start;
+  r.objfile = NULL;
 
   relocate (&r, p, (void **) &p);
   (* f) (&r, (void *) lookup (&r, p));
@@ -1016,6 +1168,14 @@ struct objfile *objfile_reposition (struct objfile *o, struct relocation_context
 void
 _initialize_cached_symfile ()
 {
+  struct cmd_list_element *c;
+
+  c = add_set_cmd ("cached-symfiles-check-timestamp", class_obscure, var_boolean,
+		   (char *) &check_timestamp,
+		   "Set if GDB should ignore cached symbol files with incorrect timestamps.",
+		   &setlist);
+  add_show_from_set (c, &showlist);
+
   add_show_from_set
     (add_set_cmd ("cached-symfile-path", class_support, var_string,
 		  (char *) &cached_symfile_path,

@@ -42,6 +42,7 @@
 #include "gdb_string.h"
 #include "buildsym.h"
 #include "breakpoint.h"
+#include "objfiles.h"
 
 /* Prototypes for local functions */
 
@@ -309,7 +310,9 @@ objfile_add_to_ordered_sections (struct objfile *objfile)
   struct obj_section_with_index static_insert_list[STATIC_INSERT_LIST_SIZE];
   struct obj_section_with_index *insert_list = static_insert_list;
   int insert_list_size;
-  
+
+  CHECK_FATAL (objfile != NULL);
+
   /* First find the index for insertion of all the sections in
      this objfile.  The sort that array in reverse order by address,
      then go through the ordered list block moving the bits between
@@ -441,7 +444,7 @@ find_in_ordered_sections_index (CORE_ADDR addr, struct sec *bfd_section)
 			       && (ordered_sections[pos].the_bfd_section == bfd_section))
 			return pos;
 		    }
-		  for (pos = mid - 1; pos > 0; pos--)
+		  for (pos = mid - 1; pos >= 0; pos--)
 		    {
 		      if ((ordered_sections[pos].endaddr > addr)
 			  && (ordered_sections[pos].the_bfd_section == bfd_section))
@@ -1549,12 +1552,14 @@ static int restrict_search = 0;
 struct objfile_list *objfile_list;
 
 /* Set the flag to tell ALL_OBJFILES whether to restrict the search or
-   not. */
+   not.  Returns the old flag value.  */
 
-void 
+int 
 objfile_restrict_search (int on)
 {
+  int old = restrict_search;
   restrict_search = on;
+  return old;
 }
 
 /* Add an objfile to the restricted search list.  */
@@ -1601,6 +1606,110 @@ objfile_clear_restrict_list ()
       objfile_list = list_ptr->next;
       xfree (list_ptr);
     }
+}
+
+struct swap_objfile_list_cleanup
+{
+  struct objfile_list *old_list;
+  int restrict_state;
+};
+
+void
+do_cleanup_restrict_to_objfile (void *arg)
+{
+  struct swap_objfile_list_cleanup *data =
+    (struct swap_objfile_list_cleanup *) arg;
+  objfile_clear_restrict_list ();
+  objfile_list = data->old_list;
+  objfile_restrict_search (data->restrict_state);
+}
+
+struct cleanup *
+make_cleanup_restrict_to_objfile (struct objfile *objfile)
+{
+  struct swap_objfile_list_cleanup *data
+    = (struct swap_objfile_list_cleanup *) xmalloc (sizeof (struct swap_objfile_list_cleanup));
+  data->old_list = objfile_list;
+  objfile_list = NULL;
+  objfile_add_to_restrict_list (objfile);
+  data->restrict_state = objfile_restrict_search (1);
+  return make_cleanup (do_cleanup_restrict_to_objfile, (void *) data);
+}
+
+/* Check whether the OBJFILE matches NAME.  We want to match either the
+   full name, or the base name.  We also want to handle the case where
+   OBJFILE comes from a cached symfile.  In that case, the OBJFILE name
+   will be the cached symfile name, but the real shlib name will be in
+   the OBFD for the OBJFILE.  So in the case of a cached symfile
+   we match against the bfd name instead.  */
+
+#define CACHED_SYM_SUFFIX ".syms"
+int
+objfile_matches_name (struct objfile *objfile, char *name)
+{
+  const char *filename;
+  int len; 
+  static int suffixlen = strlen (CACHED_SYM_SUFFIX);
+  const char *real_name;
+
+  if (objfile->name == NULL)
+    return 0;
+
+  /* See if this is a cached symfile, in which case we use the bfd name
+     if it exists.  */
+  len = strlen (objfile->name);
+  if (len > suffixlen 
+      && strcmp (objfile->name + len - suffixlen, CACHED_SYM_SUFFIX) == 0
+      && objfile->obfd != NULL && objfile->obfd->filename != NULL)
+    {
+      real_name = objfile->obfd->filename;
+    }
+  else
+    real_name = objfile->name;
+
+  if (strcmp (real_name, name) == 0)
+    return 1;
+
+  filename = lbasename (real_name);
+  if (filename == NULL)
+    return 0;
+
+  if (strcmp (filename, name) == 0)
+    return 1;
+  
+  return 0;
+}
+
+/* Restricts the objfile search to the REQUESTED_SHILB.  Returns
+   a cleanup for the restriction, or NULL if no such shlib is
+   found.  */
+
+struct cleanup *
+make_cleanup_restrict_to_shlib (char *requested_shlib)
+{
+  struct objfile *requested_objfile = NULL;
+  struct objfile *tmp_obj;
+
+  if (requested_shlib == NULL)
+    return NULL;
+  
+  /* Find the requested_objfile, if it doesn't exist, then throw an error.  Look
+     for an exact match on the name, and if that doesn't work, look for a match
+     on the filename, in case the user just gave us the library name.  */
+  ALL_OBJFILES (tmp_obj)
+  {
+    if (objfile_matches_name (tmp_obj, requested_shlib))
+      {
+	requested_objfile = tmp_obj;
+	break;
+      }
+  }
+
+  if (requested_objfile == NULL)
+    return (void *) -1;
+  else
+    return make_cleanup_restrict_to_objfile (requested_objfile);
+
 }
 
 /* Get the first objfile.  If the restrict_search flag is set,
@@ -1650,22 +1759,63 @@ objfile_get_next (struct objfile *in_objfile)
 
 /* APPLE LOCAL begin fix-and-continue */
 
+/* Originally these two functions were a temporary measure to ensure
+   I hadn't missed any symtab/psymtab creation paths, but they are a
+   generally useful diagnostic to make sure future merges don't hose
+   Fix and Continue, so I'm leaving them in.  */
+
 static void sanity_check_symtab_obsoleted_flag (struct symtab *s)
 {
-  /* FIXME FIXME FIXME DO NOT RELEASE jmolenda/2003-05-01 */
   if (s != NULL && 
       SYMTAB_OBSOLETED (s) != 51 &&
       SYMTAB_OBSOLETED (s) != 50)
-    error ("Symtab with invalid OBSOLETED flag setting.  Value is %d, symtab name is %s", SYMTAB_OBSOLETED (s), s->filename);
+    {
+      struct objfile *objfile;
+      struct symtab *symtab;
+      const char *objfile_name = "(not found)";
+      const char *symtab_name = "(null)";
+
+      ALL_SYMTABS (objfile, symtab)
+        if (symtab == s)
+          {
+            objfile_name = objfile->name;
+            break;
+          }
+
+      if (s->filename)
+        symtab_name = s->filename;
+
+      error ("Symtab with invalid OBSOLETED flag setting.  "
+             "Value is %d, symtab name is %s objfile name is %s", 
+             SYMTAB_OBSOLETED (s), symtab_name, objfile_name);
+    }
 }
 
 static void sanity_check_psymtab_obsoleted_flag (struct partial_symtab *ps)
 {
-  /* FIXME FIXME FIXME DO NOT RELEASE jmolenda/2003-05-01 */
   if (ps != NULL && 
       PSYMTAB_OBSOLETED (ps) != 51 &&
       PSYMTAB_OBSOLETED (ps) != 50)
-    error ("Psymtab with invalid OBSOLETED flag setting.  Value is %d, psymtab name is %s", PSYMTAB_OBSOLETED (ps), ps->filename);
+    {
+      struct objfile *objfile;
+      struct partial_symtab *psymtab;
+      const char *objfile_name = "(not found)";
+      const char *psymtab_name = "(null)";
+
+      ALL_PSYMTABS (objfile, psymtab)
+        if (psymtab == ps)
+          {
+            objfile_name = objfile->name;
+            break;
+          }
+
+      if (ps->filename)
+        psymtab_name = ps->filename;
+
+      error ("Psymtab with invalid OBSOLETED flag setting.  "
+             "Value is %d, psymtab name is %s, objfile name is %s", 
+             PSYMTAB_OBSOLETED (ps), psymtab_name, objfile_name);
+    }
 }
 
 /* Return the first objfile that isn't marked as 'obsolete' (i.e. has been

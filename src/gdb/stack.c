@@ -1728,6 +1728,10 @@ return_command (char *retval_exp, int from_tty)
 				get_frame_base (get_current_frame ())))
     frame_pop (get_current_frame ());
 
+  /* The stack has changed, inform anyone who might be listening.  */
+      if (stack_changed_hook != NULL)
+	  stack_changed_hook ();
+  
   /* If interactive, print the frame that is now current.  */
 
   if (from_tty)
@@ -1818,7 +1822,7 @@ get_frame_language (void)
 		 let's use that to get the frame's language... */
 	      struct symbol *sym = 
 		find_pc_function (get_frame_pc (deprecated_selected_frame));
-	      if (SYMBOL_LANGUAGE (sym) == language_cplus)
+	      if (sym && (SYMBOL_LANGUAGE (sym) == language_cplus))
 		flang = language_cplus;
 	    }
 	}

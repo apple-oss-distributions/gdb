@@ -197,56 +197,62 @@ do_setshow_command (char *arg, int from_tty, struct cmd_list_element *c)
 	  {
 	    int i;
 	    int len;
-	    int nmatches;
+	    int nmatches = 0;
 	    const char *match = NULL;
 	    char *p;
 
 	    /* if no argument was supplied, print an informative error message */
-	    if (arg == NULL)
+	    if (arg != NULL)
 	      {
-		char msg[1024];
-		strcpy (msg, "Requires an argument. Valid arguments are ");
+		p = strchr (arg, ' ');
+		
+		if (p)
+		  len = p - arg;
+		else
+		  len = strlen (arg);
+		
+		nmatches = 0;
+		for (i = 0; c->enums[i]; i++)
+		  if (strncmp (arg, c->enums[i], len) == 0)
+		    {
+		      if (c->enums[i][len] == '\0')
+			{
+			  match = c->enums[i];
+			  nmatches = 1;
+			  break; /* exact match. */
+			}
+		      else
+			{
+			  match = c->enums[i];
+			  nmatches++;
+			}
+		    }
+	      }
+	    if (nmatches == 1)
+	      *(const char **) c->var = match;
+	    else
+	      {
+		/* If there was an error, print an informative
+		   error message.  */
+		struct ui_file *tmp_error_stream = mem_fileopen ();
+		make_cleanup_ui_file_delete (tmp_error_stream);
+
+		if (arg == NULL)
+		  fprintf_unfiltered (tmp_error_stream, "Requires an argument.");
+		else if (nmatches <= 0)
+		  fprintf_unfiltered (tmp_error_stream, "Undefined item: \"%s\".", arg);		
+		else if (nmatches > 1)
+		  fprintf_unfiltered  (tmp_error_stream, "Ambiguous item \"%s\".", arg);
+		fprintf_unfiltered (tmp_error_stream, " Valid values are ");
 		for (i = 0; c->enums[i]; i++)
 		  {
 		    if (i != 0)
-		      strcat (msg, ", ");
-		    strcat (msg, c->enums[i]);
+		      fprintf_unfiltered (tmp_error_stream, ", ");
+		    fputs_unfiltered (c->enums[i], tmp_error_stream);
 		  }
-		strcat (msg, ".");
-		error (msg);
+		fprintf_unfiltered (tmp_error_stream, ".");
+		error_stream (tmp_error_stream);
 	      }
-
-	    p = strchr (arg, ' ');
-
-	    if (p)
-	      len = p - arg;
-	    else
-	      len = strlen (arg);
-
-	    nmatches = 0;
-	    for (i = 0; c->enums[i]; i++)
-	      if (strncmp (arg, c->enums[i], len) == 0)
-		{
-		  if (c->enums[i][len] == '\0')
-		    {
-		      match = c->enums[i];
-		      nmatches = 1;
-		      break; /* exact match. */
-		    }
-		  else
-		    {
-		      match = c->enums[i];
-		      nmatches++;
-		    }
-		}
-
-	    if (nmatches <= 0)
-	      error ("Undefined item: \"%s\".", arg);
-
-	    if (nmatches > 1)
-	      error ("Ambiguous item \"%s\".", arg);
-
-	    *(const char **) c->var = match;
 	  }
 	  break;
 	default:
@@ -271,8 +277,14 @@ do_setshow_command (char *arg, int from_tty, struct cmd_list_element *c)
 	 it doesn't want to see the doc string.  */
       if (!ui_out_is_mi_like_p (uiout)) 
 	{
-	  print_doc_line (gdb_stdout, c->doc + 5);
-	  
+	  long length;
+	  char *output;
+
+	  print_doc_line (stb->stream, c->doc + 5);
+	  output = ui_file_xstrdup (stb->stream, &length);
+	  ui_out_text (uiout, output);
+	  xfree (output);
+	  ui_file_rewind (stb->stream);
 	  ui_out_text (uiout, " is ");
 	  ui_out_wrap_hint (uiout, "    ");
 	}

@@ -70,6 +70,7 @@ void macosx_init_dyld (struct macosx_dyld_thread_status *s,
 void macosx_init_dyld_symfile (struct objfile *o, bfd *abfd);
 int macosx_dyld_update (int dyldonly);
 int dyld_lookup_and_bind_function (char *name);
-void update_section_tables (struct target_ops *target, struct dyld_objfile_info *info);
+void update_section_tables_dyld (struct dyld_objfile_info *s);
+void update_section_tables ();
 
 #endif /* __GDB_MACOSX_NAT_DYLD_H__ */

@@ -2361,6 +2361,54 @@ There's no @value{GDBN} command which directly corresponds to this one.
 N.A.
 
 
+@subheading The @code{-file-list-globals} Command
+@findex -file-list-globals
+
+@subsubheading Synopsis
+
+@example
+-file-list-globals @var{file} @var{image} @var{print-values}
+@end example
+
+List the globals defined in file @var{file} and image @var{image}.  If
+@var{file} is the empty string, then all globals in @var{image} are
+listed, and if both @var{file} and @var{image} are the empty string,
+then all globals are listed.
+
+@var{print-values} has the same meaning as for @samp{-stack-list-locals}.
+
+@subsubheading @value{GDBN} Command
+
+There's no @value{GDBN} command which directly corresponds to this one.
+
+@subsubheading Example
+
+@smallexample
+(@value{GDBP})
+-file-list-globals main.c gdb 1
+^done,globals=[@{name="tui_version",value="0"@},@{name="gdb_sysroot",value="0x0"@},...]
+(@value{GDBP})
+@end smallexample
+
+If there is more than one file, then the output will be a list of files
+with the file and the globals as the elements of the list, as in:
+
+@smallexample
+(@value{GDBP})
+-file-list-globals "" gdb 0
+^done,file=[filename="../../gdb/src/mmalloc/keys.c",globals=[]],file=[filename="../../gdb/src/mmalloc/mmap-sup.c",globals=[]],...]
+(@value{GDBP})
+@end smallexample
+
+And if there are more than one shared library, the output will contain a list of images, which will contain a list of files as above, for instance:
+
+@smallexample
+(@value{GDBP})
+-file-list-globals "" "" 0
+^done,image=[imagename="/usr/lib/dyld"],image=[imagename="/usr/lib/libncurses.5.dylib"],image=[imagename="/usr/lib,image=[imagename="/build/gdb/gdb",file=[filename="../../gdb/src/mmalloc/keys.c",globals=[]],...]]
+(@value{GDBP})
+@end smallexample
+
 @subheading The @code{-file-list-shared-libraries} Command
 @findex -file-list-shared-libraries
 
@@ -2379,6 +2427,34 @@ The corresponding @value{GDBN} command is @samp{info shared}.
 @subsubheading Example
 N.A.
 
+
+@subheading The @code{-file-list-statics} Command
+@findex -file-list-statics
+
+@subsubheading Synopsis
+
+@example
+ -file-list-statics @var{file} @var{image} @var{print-values}
+@end example
+
+List the globals defined in file @var{file} and image @var{image}.  If
+@var{image} is the empty string, then the first occurance of the file
+@var{file} is used.
+
+@var{print-values} has the same meaning as for @samp{-stack-list-locals}.
+
+@subsubheading @value{GDBN} Command
+
+There's no @value{GDBN} command which directly corresponds to this one.
+
+@subsubheading Example
+
+@smallexample
+(@value{GDBP})
+-file-list-statics breakpoint.c gdb 0
+^done,statics=[@{name="overlay_events_enabled"@},@{name="exception_catchpoint_throw_enabled"@},...]
+(@value{GDBP})
+@end smallexample
 
 @subheading The @code{-file-list-symbol-files} Command
 @findex -file-list-symbol-files
@@ -2842,7 +2918,8 @@ Show a single frame:
 
 Display the local variable names for the current frame.  With an
 argument of 0 prints only the names of the variables, with argument of 1
-prints also their values.
+prints also their values, with an argument of 2 creates a varobj for each
+of the variables.
 
 @subsubheading @value{GDBN} Command
 

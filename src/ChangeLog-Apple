@@ -1,3 +1,8 @@
+2004-06-11  Jason Molenda  (jmolenda@apple.com)
+
+	* install-sh: Update to current FSF version so directory
+	names with spaces in them are handled correctly.
+
 2003-02-27  Klee Dienes  <kdienes@apple.com>
 
 	* defs.h (gdb_osabi): Add support for 64-bit registers on Darwin.

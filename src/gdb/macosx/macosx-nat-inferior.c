@@ -505,7 +505,8 @@ macosx_service_event (enum macosx_source_type source,
 {
   if (source == NEXT_SOURCE_EXCEPTION)
     {
-      inferior_debug (1, "macosx_service_events: got exception message\n");
+      macosx_exception_thread_message *msg = (macosx_exception_thread_message *) buf;
+      inferior_debug (1, "macosx_service_events: got exception message 0x%lx\n", msg->exception_type);
       CHECK_FATAL (inferior_bind_exception_port_flag);
       macosx_handle_exception ((macosx_exception_thread_message *) buf, status);
       if (status->kind != TARGET_WAITKIND_SPURIOUS) 
@@ -1830,6 +1831,58 @@ macosx_filename_in_bundle (const char *filename, int mainline)
   return wrapped_filename;
 }
 
+char *unsafe_functions[] = {
+  "malloc",
+  "free",
+  "szone_malloc",
+  "szone_free",
+  NULL
+};
+
+int
+macosx_check_safe_call ()
+{
+  struct frame_info *fi;
+
+  /* Look up the stack to make sure none of the malloc
+     calls that might hold the malloc lock are present.  
+     We aren't going to crawl the whole stack, but just look
+     up a few levels.  */
+
+  fi = parse_frame_specification ("0");
+  if (!fi)
+    return -1;
+
+  while (frame_relative_level (fi) < 5)
+    {
+      CORE_ADDR pc;
+      char *sym_name;
+
+      pc = get_frame_pc (fi);
+
+
+      if (find_pc_partial_function (pc, &sym_name, NULL, NULL))
+	{
+	  int i;
+	  for (i = 0; unsafe_functions[i] != NULL; i++)
+	    {
+	      if (strcmp (sym_name, unsafe_functions[i]) == 0)
+		{
+		  ui_out_text (uiout, "Unsafe to call functions: ");
+		  ui_out_field_fmt (uiout, "reason", "function: %s on stack", unsafe_functions[i]);
+		  return 0;
+		}
+	    }
+	}
+
+      fi = get_prev_frame (fi);
+      if (!fi)
+	break;
+    }
+
+  return 1;
+}
+
 void 
 _initialize_macosx_inferior ()
 {
@@ -1889,6 +1942,7 @@ _initialize_macosx_inferior ()
   macosx_child_ops.to_async = macosx_async; 
   macosx_child_ops.to_async_mask_value = 1;
   macosx_child_ops.to_bind_function = dyld_lookup_and_bind_function;
+  macosx_child_ops.to_check_safe_call = macosx_check_safe_call;
   macosx_child_ops.to_find_exception_catchpoints 
     = macosx_find_exception_catchpoints;
   macosx_child_ops.to_enable_exception_callback 

@@ -647,6 +647,7 @@ gdb_expect  {
 # test completions.
 
 gdb_test "cd ${objdir}" "Working directory ${objdir}.*" "cd to \${objdir}"
+
 send_gdb "file ./Make\t"
 sleep 1
 gdb_expect  {
@@ -670,6 +671,7 @@ gdb_expect  {
         timeout         { fail "(timeout) complete 'file ./Make'" }
         }
 
+
 # ${srcdir} may be a relative path.  We want to make sure we end up
 # in the right directory - so make sure we know where it is.
 set mydir [pwd]
@@ -678,6 +680,16 @@ set fullsrcdir [pwd]
 cd ${mydir}
 
 gdb_test "cd ${fullsrcdir}" "Working directory ${fullsrcdir}.*" "cd to \${srcdir}"
+send_gdb "complete file ./gdb.base/compl\n"
+sleep 1
+gdb_expect  {
+    -re "file ./gdb.base/completion\\.exp.*$gdb_prompt $"\
+	{ pass "complete-command 'file ./gdb.base/compl'"}
+    -re ".*$gdb_prompt $"       { fail "complete-command 'file ./gdb.base/compl'" }
+    timeout         { fail "(timeout) complete-command 'file ./gdb.base/compl'" }
+}
+
+
 send_gdb "file ./gdb.base/compl\t"
 sleep 1
 gdb_expect  {

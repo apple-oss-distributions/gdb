@@ -57,6 +57,9 @@
 #include <sys/ioctl.h>
 #endif
 
+/* APPLE LOCAL: -exec-abort support */
+#include "ui-out.h"
+
 #if defined (SIGIO) && defined (FASYNC) && defined (FD_SET) && defined (F_SETOWN)
 static void handle_sigio (int);
 #endif
@@ -255,7 +258,8 @@ terminal_inferior (void)
       /* Because we were careful to not change in or out of raw mode in
          terminal_ours, we will not change in our out of raw mode with
          this call, so we don't flush any input.  */
-      result = serial_set_tty_state (stdin_serial, inferior_ttystate);
+      if (inferior_ttystate != NULL)
+	result = serial_set_tty_state (stdin_serial, inferior_ttystate);
       OOPSY ("setting tty state");
 
       if (!job_control)
@@ -392,7 +396,8 @@ terminal_ours_1 (int output_only)
          though, since readline will deal with raw mode when/if it needs to.
        */
 
-      serial_noflush_set_tty_state (stdin_serial, our_ttystate,
+      if (inferior_ttystate != NULL)
+	serial_noflush_set_tty_state (stdin_serial, our_ttystate,
 				    inferior_ttystate);
 
       if (job_control)
@@ -520,8 +525,10 @@ child_terminal_info (char *args, int from_tty)
 #endif
 
   printf_filtered ("tty state:\n");
-  serial_print_tty_state (stdin_serial, inferior_ttystate, gdb_stdout);
-  
+  if (inferior_ttystate)
+    serial_print_tty_state (stdin_serial, inferior_ttystate, gdb_stdout);
+  else
+    printf_filtered ("Unable to determine inferior tty state.\n");
   printf_filtered ("GDB's terminal status (currently in use):\n");
   
 #ifdef PROCESS_GROUP_TYPE
@@ -619,7 +626,9 @@ kill_command (char *arg, int from_tty)
 
   if (ptid_equal (inferior_ptid, null_ptid))
     error ("The program is not being run.");
-  if (!query ("Kill the program being debugged? "))
+  /* APPLE LOCAL: Don't query if we're an MI command.  */
+  if (!ui_out_is_mi_like_p (uiout) 
+      && !query ("Kill the program being debugged? "))
     error ("Not confirmed.");
   target_kill ();
 

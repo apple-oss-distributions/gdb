@@ -90,14 +90,6 @@ static void print_gdb_help (struct ui_file *);
 
 extern char *external_editor_command;
 
-static char *
-quote_string (char *s)
-{
-  char *ret = xmalloc (strlen (s) + 2 + 1);
-  sprintf (ret, "\"%s\"", s);
-  return ret;
-}
-
 /* Call command_loop.  If it happens to return, pass that through as a
    non-zero return status. */
 
@@ -651,7 +643,7 @@ extern int gdbtk_test (char *);
 
   if (corearg != NULL)
     {
-      if (catch_command_errors (core_file_command, corearg, !batch, RETURN_MASK_ALL) == 0)
+      if (catch_command_errors (core_file_attach, corearg, !batch, RETURN_MASK_ALL) == 0)
 	{
 	  /* See if the core file is really a PID. */
 	  /* Be careful, we have quoted the corearg above... */

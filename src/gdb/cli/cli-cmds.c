@@ -237,17 +237,34 @@ compare_strings (const void *arg1, const void *arg2)
 static void
 complete_command (char *arg, int from_tty)
 {
-  int i;
   int argpoint;
-  char **completions;
 
   dont_repeat ();
 
   if (arg == NULL)
     arg = "";
   argpoint = strlen (arg);
+  cli_interpreter_complete (NULL, arg, arg, argpoint);
 
-  completions = complete_line (arg, arg, argpoint);
+}
+
+/* This is the completer function for the cli interpreter.  This is
+   like the "complete" command, except that it can be used from
+   another interpreter more conveniently.  Pass it WORD as a pointer
+   into the COMMAND_BUFFER where you think completion should start,
+   and CURSOR as the logical end of input, and it will output the set
+   of completions to the current uiout.  */
+
+int
+cli_interpreter_complete (void *data, char *word, char *command_buffer, 
+			  int cursor)
+{
+  char **completions;
+  struct cleanup *old_chain;
+
+  completions = complete_line (word, command_buffer, cursor);
+
+  old_chain = make_cleanup_ui_out_list_begin_end (uiout, "completions");
 
   if (completions)
     {
@@ -263,7 +280,9 @@ complete_command (char *arg, int from_tty)
       while (item < size)
 	{
 	  int next_item;
-	  printf_unfiltered ("%s\n", completions[item]);
+	  
+	  ui_out_field_string (uiout, "c", completions[item]);
+	  ui_out_text (uiout, "\n");
 	  next_item = item + 1;
 	  while (next_item < size
 		 && ! strcmp (completions[item], completions[next_item]))
@@ -278,6 +297,10 @@ complete_command (char *arg, int from_tty)
 
       xfree (completions);
     }
+
+  do_cleanups (old_chain);
+
+  return 1;
 }
 
 int
@@ -305,6 +328,8 @@ quit_command (char *args, int from_tty)
     error ("Not confirmed.");
   quit_force (args, from_tty);
 }
+  char **argv;
+  struct cleanup *old_cleanups;
 
 /* ARGSUSED */
 static void
@@ -336,8 +361,14 @@ cd_command (char *dir, int from_tty)
   if (dir == 0)
     error_no_arg ("new working directory");
 
-  dir = tilde_expand (dir);
-  make_cleanup (xfree, dir);
+  argv = buildargv (dir);
+  if (argv == NULL)
+    nomem (0);
+
+  make_cleanup_freeargv (argv);
+
+  dir = tilde_expand (*argv);
+  old_cleanups = make_cleanup (xfree, dir);
 
   if (chdir (dir) < 0)
     perror_with_name (dir);
@@ -419,6 +450,8 @@ cd_command (char *dir, int from_tty)
 
   if (from_tty)
     pwd_command ((char *) 0, 1);
+  
+  do_cleanups (old_cleanups);
 }
 
 void
@@ -426,14 +459,21 @@ source_command (char *args, int from_tty)
 {
   FILE *stream;
   struct cleanup *old_cleanups;
-  char *file = args;
+  char *file;
+  char **argv;
 
-  if (file == NULL)
+  if (args == NULL)
     {
       error ("source command requires pathname of file to source.");
     }
 
-  file = tilde_expand (file);
+  argv = buildargv (args);
+  if (argv == NULL)
+    nomem (0);
+
+  make_cleanup_freeargv (argv);
+
+  file = tilde_expand (*argv);
   old_cleanups = make_cleanup (xfree, file);
 
   stream = fopen (file, FOPEN_RT);

@@ -1,3 +1,9 @@
+GDB_VERSION = 5.3-20030128
+GDB_RC_VERSION = 330.1
+
+BINUTILS_VERSION = 2.13-20021117
+BINUTILS_RC_VERSION = 46
+
 .PHONY: all clean configure build install installsrc installhdrs headers \
 	build-core build-binutils build-gdb \
 	install-frameworks-headers\
@@ -6,6 +12,17 @@
 	install-gdb-fat \
 	install-chmod-macosx \
 	install-clean install-source check
+
+
+# Get the correct setting for SYSTEM_DEVELOPER_TOOLS_DOC_DIR if 
+# the platform-variables.make file exists.
+
+OS=MACOS
+-include /Developer/Makefiles/pb_makefiles/platform-variables.make
+ifndef SYSTEM_DEVELOPER_TOOLS_DOC_DIR
+SYSTEM_DEVELOPER_TOOLS_DOC_DIR=/Developer/Documentation/DeveloperTools
+endif
+
 
 ifndef RC_ARCHS
 RC_ARCHS=$(shell /usr/bin/arch)
@@ -52,21 +69,14 @@ BUILD_ARCH := $(ARCH_SAYS)
 endif
 endif
 
-GDB_VERSION = 5.3-20030128
-GDB_RC_VERSION = 292
-
-BINUTILS_VERSION = 2.13-20021117
-BINUTILS_RC_VERSION = 46
-
 GDB_VERSION_STRING = $(GDB_VERSION) (Apple version gdb-$(GDB_RC_VERSION))
 BINUTILS_VERSION_STRING = "$(BINUTILS_VERSION) (Apple version binutils-$(BINUTILS_RC_VERSION))"
 
 GDB_BINARIES = gdb
-GDB_FRAMEWORKS = gdb readline
+GDB_FRAMEWORKS = gdb
 GDB_MANPAGES = 
 
-BINUTILS_BINARIES = objdump objcopy addr2line nm-new size strings cxxfilt
-BINUTILS_FRAMEWORKS = mmalloc liberty bfd opcodes binutils
+BINUTILS_FRAMEWORKS = bfd binutils
 BINUTILS_MANPAGES = 
 
 FRAMEWORKS = $(GDB_FRAMEWORKS) $(BINUTILS_FRAMEWORKS)
@@ -126,7 +136,6 @@ FRAMEWORK_VERSION_SUFFIX =
 CONFIG_DIR=UNKNOWN
 CONF_DIR=UNKNOWN
 DEVEXEC_DIR=UNKNOWN
-DOCUMENTATION_DIR=UNKNOWN
 LIBEXEC_BINUTILS_DIR=UNKNOWN
 LIBEXEC_GDB_DIR=UNKNOWN
 LIBEXEC_LIB_DIR=UNKNOWN
@@ -160,7 +169,7 @@ CONFIG_OTHER_OPTIONS=--disable-serial-configure
 ifneq ($(findstring macosx,$(CANONICAL_ARCHS))$(findstring darwin,$(CANONICAL_ARCHS)),)
 CC = cc -arch $(HOST_ARCHITECTURE) -no-cpp-precomp
 CC_FOR_BUILD = NEXT_ROOT= cc -no-cpp-precomp
-CDEBUGFLAGS = -g -Os
+CDEBUGFLAGS = -g -Os -mdynamic-no-pic
 CFLAGS = $(strip $(RC_CFLAGS_NOARCH) $(CDEBUGFLAGS) -Wall -Wimplicit -Wno-long-double)
 HOST_ARCHITECTURE = $(shell echo $* | sed -e 's/--.*//' -e 's/powerpc/ppc/' -e 's/-apple-macosx.*//' -e 's/-apple-macos.*//' -e 's/-apple-darwin.*//')
 endif
@@ -212,7 +221,6 @@ MACOSX_FLAGS = \
 	CONFIG_DIR=private/etc \
 	CONF_DIR=usr/share/gdb \
 	DEVEXEC_DIR=usr/bin \
-	DOCUMENTATION_DIR=Developer/Documentation/DeveloperTools \
 	LIBEXEC_BINUTILS_DIR=usr/libexec/binutils \
 	LIBEXEC_GDB_DIR=usr/libexec/gdb \
 	LIB_DIR=usr/lib \
@@ -224,7 +232,6 @@ PDO_FLAGS = \
 	CONFIG_DIR=Developer/Libraries/gdb \
 	CONF_DIR=Developer/Libraries/gdb \
 	DEVEXEC_DIR=Developer/Executables \
-	DOCUMENTATION_DIR=Documentation/Developer/DeveloperTools \
 	LIBEXEC_BINUTILS_DIR=Developer/Libraries/binutils \
 	LIBEXEC_GDB_DIR=Developer/Libraries/gdb \
 	MAN_DIR=Local/man \
@@ -500,13 +507,13 @@ install-gdb-common:
 		$(INSTALL) -c -d $${dstroot}/$(CONF_DIR); \
 		$(INSTALL) -c -d $${dstroot}/$(MAN_DIR); \
 		\
-		docroot=$${dstroot}/$(DOCUMENTATION_DIR)/gdb; \
+		docroot="$${dstroot}/$(SYSTEM_DEVELOPER_TOOLS_DOC_DIR)/gdb"; \
 		\
-		$(INSTALL) -c -d $${docroot}; \
+		$(INSTALL) -c -d "$${docroot}"; \
 		\
-		$(INSTALL) -c -m 644 $(SRCROOT)/src/gdb/gdb.1 $${docroot}/gdb.1; \
+		$(INSTALL) -c -m 644 $(SRCROOT)/src/gdb/gdb.1 "$${docroot}/gdb.1"; \
 		\
-		$(INSTALL) -c -m 644 $(SRCROOT)/doc/refcard.pdf $${docroot}/refcard.pdf; \
+		$(INSTALL) -c -m 644 $(SRCROOT)/doc/refcard.pdf "$${docroot}/refcard.pdf"; \
 		\
 	done;
 
@@ -516,11 +523,11 @@ install-gdb-macosx-common: install-gdb-common
 		\
 		$(INSTALL) -c -d $${dstroot}/$(LIBEXEC_GDB_DIR); \
 		\
-		docroot=$${dstroot}/$(DOCUMENTATION_DIR)/gdb; \
+		docroot="$${dstroot}/$(SYSTEM_DEVELOPER_TOOLS_DOC_DIR)/gdb"; \
 		\
 		for i in gdb gdbint stabs; do \
-			$(INSTALL) -c -d $${docroot}/$${i}; \
-			(cd $${docroot}/$${i} && \
+			$(INSTALL) -c -d "$${docroot}/$${i}"; \
+			(cd "$${docroot}/$${i}" && \
 				$(SRCROOT)/texi2html \
 					-split_chapter \
 					-I$(OBJROOT)/$(firstword $(NATIVE_TARGETS))/gdb/doc \
@@ -576,29 +583,11 @@ install-gdb-fat: install-gdb-macosx-common
 		fi; \
 	done
 
-install-binutils-common:
-
-	set -e; for dstroot in $(SYMROOT) $(DSTROOT); do \
-		\
-		docroot=$${dstroot}/$(DOCUMENTATION_DIR)/binutils; \
-		\
-		$(INSTALL) -c -d $${docroot}/binutils; \
-		\
-		for i in $(BINUTILS_MANPAGES); do \
-			$(INSTALL) -c -m 644 $(SRCROOT)/src/binutils/$${i} $${docroot}/`echo $${i} | sed -e 's/cxxfilt\\.man/cxxfilt.1/'`; \
-		done; \
-	done;
-
-install-binutils-macosx: install-binutils-common
+install-binutils-macosx:
 
 	set -e; for dstroot in $(SYMROOT) $(DSTROOT); do \
 		\
 		$(INSTALL) -c -d $${dstroot}/$(LIBEXEC_BINUTILS_DIR); \
-		\
-		docroot=$${dstroot}/$(DOCUMENTATION_DIR)/binutils; \
-		\
-		(cd $${docroot}/binutils && \
-			$(SRCROOT)/texi2html $(SRCROOT)/src/binutils/binutils.texi); \
 	done
 
 	set -e; for i in $(BINUTILS_BINARIES); do \

@@ -450,8 +450,18 @@ evaluate_subexp_standard (struct type *expect_type,
 
     case OP_REGISTER:
       {
+	struct value *val;
 	int regno = longest_to_int (exp->elts[pc + 1].longconst);
-	struct value *val = value_of_register (regno, deprecated_selected_frame);
+
+	/* APPLE LOCAL: deprecated_selected_frame is not always set,
+	   and code below value_of_register doesn't handle this.  This
+	   should get fixed when we merge to the final version of the
+	   frame unwind code.  */
+
+	if (deprecated_selected_frame == NULL)
+	  select_frame (get_current_frame ());
+	val = value_of_register (regno, 
+				 deprecated_selected_frame);
 	(*pos) += 2;
 	if (val == NULL)
 	  error ("Value of register %s not available.",
@@ -2201,7 +2211,7 @@ evaluate_subexp_with_coercion (register struct expression *exp,
 	  val =
 	    locate_var_value
 	    (var, block_innermost_frame (exp->elts[pc + 1].block));
-	  return value_cast (lookup_pointer_type (TYPE_TARGET_TYPE (SYMBOL_TYPE (var))),
+	  return value_cast (lookup_pointer_type (TYPE_TARGET_TYPE (check_typedef (SYMBOL_TYPE (var)))),
 			     val);
 	}
       /* FALLTHROUGH */

@@ -146,7 +146,7 @@ static unsigned char macosx_symbol_type (macho_type, macho_other, abfd)
 	{
 	  ntype |= N_TEXT;
 	}
-      else if (macho_other <= abfd->tdata.mach_o_data->nsects)
+      else if (macho_other > 0 && macho_other <= abfd->tdata.mach_o_data->nsects)
 	{
 	  const char *segname = abfd->tdata.mach_o_data->sections[macho_other - 1]->segname;
 	  const char *sectname = abfd->tdata.mach_o_data->sections[macho_other - 1]->sectname;

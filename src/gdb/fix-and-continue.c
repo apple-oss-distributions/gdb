@@ -188,9 +188,6 @@ struct fixinfo {
    single struct fixinfo to hold all fixes to that object file. */
 
 struct fixedobj {
-
-  struct objfile *objfile;
-
   /* Bundle file name, including path */
 
   const char *bundle_filename;
@@ -266,10 +263,6 @@ void do_final_fix_fixups_global_syms (struct block *newglobals, struct objfile *
 
 static void do_final_fix_fixups_static_syms (struct block *newstatics, struct objfile *oldobj, struct fixinfo *curfixinfo);
 
-static struct objfile ** build_list_of_current_objfiles (void);
-
-static struct objfile *find_newly_added_objfile (struct objfile **, const char *);
-
 static void pre_load_and_check_file (struct fixinfo *);
 
 static void force_psymtab_expansion (struct objfile *, const char *, const char *);
@@ -316,6 +309,9 @@ static void tell_zerolink (struct fixinfo *);
 static void print_active_functions (struct fixinfo *);
 
 static struct objfile *find_objfile_by_name (const char *);
+
+static struct symtab *find_symtab_by_name (struct objfile *, const char *);
+
 
 static struct symbol *search_for_coalesced_symbol (struct objfile *, 
                                                    struct symbol *);
@@ -437,9 +433,9 @@ fix_command_helper (const char *source_filename,
   cur->bundle_basename = getbasename (bundle_filename);
   cur->object_filename = object_filename;
 
-  find_original_object_file_name (cur);
-
   tell_zerolink (cur);
+
+  find_original_object_file_name (cur);
 
   pre_load_and_check_file (cur);
 
@@ -573,10 +569,12 @@ mark_previous_fixes_obsolete (struct fixinfo *cur)
 {
   struct fixedobj *fo;
   struct minimal_symbol *msym;
+  struct objfile *fo_objfile;
 
   for (fo = cur->fixed_object_files; fo != NULL; fo = fo->next)
     {
-      if (fo->objfile == NULL)
+      fo_objfile = find_objfile_by_name (fo->bundle_filename);
+      if (fo_objfile == NULL)
         {
           warning ("fixed object file entry for '%s' has a NULL objfile ptr!  "
                    "Will try continuing", fo->bundle_filename);
@@ -590,24 +588,35 @@ mark_previous_fixes_obsolete (struct fixinfo *cur)
       if (fo == cur->most_recent_fix)
         continue;
 
-      ALL_OBJFILE_MSYMBOLS (fo->objfile, msym)
-        MSYMBOL_OBSOLETED (msym) = 1;
+      /* Mark all minsyms obsolete except for global data - we'll leave
+         that up to the global-data-redirecting code to handle over in
+         redirect_statics().  */
+
+      ALL_OBJFILE_MSYMBOLS (fo_objfile, msym)
+        if (MSYMBOL_TYPE (msym) != mst_data && 
+            MSYMBOL_TYPE (msym) != mst_bss && 
+            MSYMBOL_TYPE (msym) != mst_file_data && 
+            MSYMBOL_TYPE (msym) != mst_file_bss)
+          {
+            MSYMBOL_OBSOLETED (msym) = 1;
+          }
 
       int i, j;
       struct symbol *sym;
       struct symtab *st;
       struct partial_symtab *pst;
 
-      ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (fo->objfile, st)
+      ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (fo_objfile, st)
         {
           if (st->primary == 1)
             for (i = 0; i < BLOCKVECTOR_NBLOCKS (BLOCKVECTOR (st)); i++)
               ALL_BLOCK_SYMBOLS (BLOCKVECTOR_BLOCK (BLOCKVECTOR (st), i), j, sym)
-                SYMBOL_OBSOLETED (sym) = 1;
-          SYMTAB_OBSOLETED (st) = 51;
+                if (SYMBOL_NAMESPACE (sym) != VAR_NAMESPACE ||
+                    SYMBOL_CLASS (sym) != LOC_STATIC)
+                  SYMTAB_OBSOLETED (st) = 51;
         }
 
-      ALL_OBJFILE_PSYMTABS (fo->objfile, pst)
+      ALL_OBJFILE_PSYMTABS (fo_objfile, pst)
         {
           PSYMTAB_OBSOLETED (pst) = 51;
         }
@@ -707,9 +716,9 @@ get_fixed_file (struct fixinfo *cur)
 {
   struct partial_symtab *ps = NULL;
   struct fixedobj *flp;
+  struct objfile *fixedobj_objfile;
 
   struct fixedobj *fixedobj;
-  struct objfile **objfile_list;
 
   int loaded_ok;
 
@@ -721,36 +730,27 @@ get_fixed_file (struct fixinfo *cur)
   fixedobj->firstdatum = NULL;
   fixedobj->lastdatum = NULL;
   fixedobj->obsoletedsym = NULL;
-  fixedobj->objfile = NULL;
   fixedobj->next = NULL;
   
   /* FIXME: leak of fixedobj if load_fixed_objfile() errors out.  */
-  /* FIXME: leak of objfile_list if load_fixed_objfile() errors out.  */
-
-  /* Get a list of all objfiles gdb knows about, load the new .o file,
-     figure out which one we just loaded. */
-
-  objfile_list = build_list_of_current_objfiles ();
 
   loaded_ok = load_fixed_objfile (fixedobj->bundle_filename);
 
-  fixedobj->objfile = 
-                  find_newly_added_objfile (objfile_list, cur->bundle_filename);
-  xfree (objfile_list);
+  fixedobj_objfile = find_objfile_by_name (fixedobj->bundle_filename);
 
   /* Even if the load_fixed_objfile() eventually failed, gdb may still believe
      a new solib was loaded successfully -- clear that out.  */
   if (loaded_ok != 1)
     {
 #ifdef NM_NEXTSTEP
-      if (fixedobj->objfile != NULL)
-        remove_objfile_from_dyld_records (fixedobj->objfile);
+      if (fixedobj_objfile != NULL)
+        remove_objfile_from_dyld_records (fixedobj_objfile);
 #endif
       error ("NSLinkModule was not able to correctly load the Fix bundle, "
              "most likely due to unresolved external references.");
     }
 
-  if (fixedobj->objfile == NULL)
+  if (fixedobj_objfile == NULL)
     error ("Unable to load fixed object file.");
 
   /* Throw fixedobj on to the cur->fixed_object_files linked list.  */
@@ -770,8 +770,8 @@ get_fixed_file (struct fixinfo *cur)
      then again I'm afraid we could have a lot of unnecessary psymtab
      expansion in an environment with a lot of header files.. */
 
-  ALL_OBJFILE_PSYMTABS (fixedobj->objfile, ps)
-    psymtab_to_symtab (ps);
+  ALL_OBJFILE_PSYMTABS (fixedobj_objfile, ps)
+    PSYMTAB_TO_SYMTAB (ps);
 
   cur->complete = 1;
 }
@@ -818,6 +818,7 @@ load_fixed_objfile (const char *name)
   struct value *objfile_image_ref_memory, *objfile_image_ref;
   struct value *ref_to_NSCreateObjectFileImageFromFile, *ref_to_NSLinkModule;
   NSObjectFileImageReturnCode retval;
+  unsigned long nslink_options;
 
   /* NSCreateObjectFileImageFromFile (NSObjectFileImage(3)) returns
      a pointer to an opaque structure via the 2nd argument you pass to it,
@@ -855,15 +856,19 @@ load_fixed_objfile (const char *name)
     }
   /* Call to NSLinkModule */
 
+  nslink_options = NSLINKMODULE_OPTION_PRIVATE | 
+                   NSLINKMODULE_OPTION_DONT_CALL_MOD_INIT_ROUTINES |
+                   NSLINKMODULE_OPTION_RETURN_ON_ERROR;
+
+  if (!inferior_is_zerolinked_p ())
+    nslink_options |= NSLINKMODULE_OPTION_BINDNOW;
+
   objfile_image_ref = value_at (builtin_type_CORE_ADDR, 
                                 value_as_long (objfile_image_ref_memory), NULL);
   args[0] = objfile_image_ref;
   args[1] = value_array (0, librarylen, libraryvec);
   args[2] = value_from_longest (builtin_type_int, 
-                     NSLINKMODULE_OPTION_PRIVATE | 
-                     NSLINKMODULE_OPTION_DONT_CALL_MOD_INIT_ROUTINES |
-                     NSLINKMODULE_OPTION_RETURN_ON_ERROR |
-                     NSLINKMODULE_OPTION_BINDNOW);
+                     nslink_options);
   args[3] = value_from_longest (builtin_type_int, 0);
   val = call_function_by_hand_expecting_type 
      (ref_to_NSLinkModule, builtin_type_int, 4, args, 1);
@@ -876,72 +881,6 @@ load_fixed_objfile (const char *name)
   return 1;
 }
 
-
-/* Record the list of object files that gdb currently knows about.
-   We'll then do some sort of operation that adds an object file to
-   the list, and we want to know what got added.  Returns malloc()'ed
-   memory that should be freed.  
-   I'm assuming that an objfile structure will stay at the same address
-   once it's allocated, but I'm pretty sure that's true...  */
-
-static struct objfile **
-build_list_of_current_objfiles (void)
-{
-  int size = 20;
-  int j;
-  struct objfile *i;
-  struct objfile **list = (struct objfile **) 
-                          xmalloc (sizeof (struct objfile *) * size);
-
-  if (list == NULL) 
-    error ("Ran out of memory while preparing to fix.");
-
-  j = 0;
-  ALL_OBJFILES (i)
-    {
-      list[j++] = i;
-      if (j == size)
-        {
-          size = size * 2;
-          list = (struct objfile **) xrealloc (list, sizeof (struct objfile *) * size);
-          if (list == NULL)
-            error ("Ran out of memory while preparing to fix.");
-        }
-    }
-  list[j] = NULL;
-
-  return list;
-}
-
-/* Given a list of object files that we know are old, and the name of a
-   newly added object file, return a pointer to the struct objfile for
-   that object file in the chain. */
-
-static struct objfile *
-find_newly_added_objfile (struct objfile **objlist, const char *objname)
-{
-  struct objfile *i;
-  int j;
-
-  ALL_OBJFILES (i)
-    {
-      if (!strcmp (i->name, objname))
-        {
-          j = 0;
-          while (objlist[j] != NULL)
-            {
-              if (objlist[j] == i)
-                break;
-              j++;
-            }
-          if (objlist[j] == NULL)   /* not found in objlist */
-            return (i);
-        }
-    }
-  return NULL;
-}
-
-
 /* Step through a newly loaded object file's symbols looking for
    functions that need to be redirected and such.  
    FIXME: Do something with file-static indirect data in the new .o file
@@ -950,20 +889,23 @@ find_newly_added_objfile (struct objfile **objlist, const char *objname)
 static void 
 do_final_fix_fixups (struct fixinfo *cur)
 {
-  struct objfile *newobj = cur->most_recent_fix->objfile;
+  struct objfile *most_recent_fix_objfile;
   struct symtab *newsymtab = NULL;
   struct blockvector *newbv;
   struct block *newblock;
   struct objfile **objfiles_to_update;
   struct cleanup *cleanups;
   int i;
+
+  most_recent_fix_objfile = find_objfile_by_name 
+                                  (cur->most_recent_fix->bundle_filename);
    
   objfiles_to_update = build_list_of_objfiles_to_update (cur);
   cleanups = make_cleanup (xfree, objfiles_to_update);
 
   for (i = 0; objfiles_to_update[i] != NULL; i++)
     {
-      ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (newobj, newsymtab)
+      ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (most_recent_fix_objfile, newsymtab)
         {
 
           /* All code-less symtabs will have links to a single codeful
@@ -1029,13 +971,17 @@ find_new_static_symbols (struct fixinfo *cur,
   struct block *b;
   struct symbol *sym;
   int i, j;
+  struct objfile *most_recent_fix_objfile;
+
+  most_recent_fix_objfile = find_objfile_by_name 
+                                  (cur->most_recent_fix->bundle_filename);
 
    for (j = 0; j < indirect_entry_count; j++)
      {
        CORE_ADDR addr = indirect_entries[j].value;
        int matched = 0;
  
-       ALL_OBJFILE_SYMTABS (cur->most_recent_fix->objfile, symtab)
+       ALL_OBJFILE_SYMTABS (most_recent_fix_objfile, symtab)
          {
            if (symtab->primary != 1)
              continue;
@@ -1072,7 +1018,7 @@ find_new_static_symbols (struct fixinfo *cur,
                indirect_entries[j].new_msym =
                   lookup_minimal_symbol
                         (SYMBOL_LINKAGE_NAME (indirect_entries[j].new_sym),
-                        NULL, cur->most_recent_fix->objfile);
+                        NULL, most_recent_fix_objfile);
              }
          }
     }
@@ -1086,42 +1032,73 @@ find_orig_static_symbols (struct fixinfo *cur,
   int i;
   struct symbol *new_sym, *orig_sym;
   struct block *static_bl, *global_bl;
-  struct objfile *original_objfile = find_original_object_file (cur);
-  struct symtab *original_symtab = find_original_symtab (cur);
+  struct fixedobj original_file;
+  struct fixedobj *f;
+  struct objfile *f_objfile;
+  struct symtab *f_symtab;
 
-  static_bl = BLOCKVECTOR_BLOCK (BLOCKVECTOR (original_symtab), STATIC_BLOCK);
-  global_bl = BLOCKVECTOR_BLOCK (BLOCKVECTOR (original_symtab), GLOBAL_BLOCK);
+  original_file.bundle_filename = cur->original_objfile_filename;
+  original_file.next = cur->fixed_object_files;
 
-  for (i = 0; i < indirect_entry_count; i++)
+  f = &original_file;
+
+  while (f != NULL)
     {
-      new_sym = indirect_entries[i].new_sym;
-      if (new_sym == NULL)
-        continue;
-
-      orig_sym = lookup_block_symbol (static_bl, SYMBOL_SOURCE_NAME (new_sym),
-                                      SYMBOL_LINKAGE_NAME (new_sym), 
-                                      SYMBOL_NAMESPACE (new_sym));
-      if (orig_sym == NULL)
-        orig_sym = lookup_block_symbol (global_bl, SYMBOL_SOURCE_NAME (new_sym),
-                                        SYMBOL_LINKAGE_NAME (new_sym), 
-                                        SYMBOL_NAMESPACE (new_sym));
-
-      /* For C++ coalesced symbols, expand the scope of the search to
-         other symtabs within this objfile.  */
-      if (orig_sym == NULL)
-        orig_sym = search_for_coalesced_symbol (original_objfile, new_sym);
-
-      if (orig_sym)
+      /* Don't "find" the original symbol in the currently-being-loaded
+         objfile.  */
+      if (!strcmp (f->bundle_filename, cur->most_recent_fix->bundle_filename))
         {
-          indirect_entries[i].original_sym = orig_sym;
-          indirect_entries[i].original_msym = 
-               lookup_minimal_symbol (SYMBOL_LINKAGE_NAME (orig_sym), 
-                                      NULL, original_objfile);
-          if (indirect_entries[i].original_msym == NULL && fix_and_continue_debug_flag)
+          f = f->next;
+          continue;
+        }
+
+      f_objfile = find_objfile_by_name (f->bundle_filename);
+      f_symtab = find_symtab_by_name (f_objfile, cur->canonical_source_filename);
+
+      static_bl = BLOCKVECTOR_BLOCK (BLOCKVECTOR (f_symtab), STATIC_BLOCK);
+      global_bl = BLOCKVECTOR_BLOCK (BLOCKVECTOR (f_symtab), GLOBAL_BLOCK);
+
+      for (i = 0; i < indirect_entry_count; i++)
+        {
+          /* Stop searching for a variable after the first match.  */
+          if (indirect_entries[i].original_sym != NULL)
+            continue;
+
+          new_sym = indirect_entries[i].new_sym;
+          if (new_sym == NULL)
+            continue;
+
+          orig_sym = lookup_block_symbol (static_bl, 
+                                          SYMBOL_SOURCE_NAME (new_sym),
+                                          SYMBOL_LINKAGE_NAME (new_sym), 
+                                          SYMBOL_NAMESPACE (new_sym));
+          if (orig_sym == NULL)
+            orig_sym = lookup_block_symbol (global_bl, 
+                                            SYMBOL_SOURCE_NAME (new_sym),
+                                            SYMBOL_LINKAGE_NAME (new_sym), 
+                                            SYMBOL_NAMESPACE (new_sym));
+
+          /* For C++ coalesced symbols, expand the scope of the search to
+             other symtabs within this objfile.  */
+          if (orig_sym == NULL)
+            orig_sym = search_for_coalesced_symbol (f_objfile, new_sym);
+
+          if (orig_sym)
             {
-              printf_unfiltered ("DEBUG: unable to find new msym for %s\n", SYMBOL_LINKAGE_NAME (orig_sym));
+              indirect_entries[i].original_sym = orig_sym;
+              indirect_entries[i].original_msym = 
+                   lookup_minimal_symbol (SYMBOL_LINKAGE_NAME (orig_sym), 
+                                          NULL, f_objfile);
+              if (indirect_entries[i].original_msym == NULL && 
+                  fix_and_continue_debug_flag)
+                {
+                  printf_unfiltered ("DEBUG: Found orig sym but unable to find orig msym for %s\n", 
+                                     SYMBOL_LINKAGE_NAME (orig_sym));
+                }
+
             }
         }
+      f = f->next;
     }
 }
 
@@ -1198,7 +1175,7 @@ static int
 find_and_parse_nonlazy_ptr_sect (struct fixinfo *cur, 
                                  struct file_static_fixups **indirect_entries)
 {
-  struct objfile *new_obj;
+  struct objfile *most_recent_fix_objfile;
   struct obj_section *indirect_ptr_section, *j;
   CORE_ADDR indirect_ptr_section_start;
   bfd_size_type indirect_ptr_section_size;
@@ -1210,12 +1187,13 @@ find_and_parse_nonlazy_ptr_sect (struct fixinfo *cur,
   
   *indirect_entries = NULL;
   indirect_ptr_section = NULL;
-  new_obj = cur->most_recent_fix->objfile;
+  most_recent_fix_objfile = find_objfile_by_name 
+                               (cur->most_recent_fix->bundle_filename);
 
 
-  ALL_OBJFILE_OSECTIONS (new_obj, j)
+  ALL_OBJFILE_OSECTIONS (most_recent_fix_objfile, j)
     if (!strcmp ("LC_SEGMENT.__DATA.__nl_symbol_ptr", 
-                bfd_section_name (new_obj->obfd, j->the_bfd_section)))
+         bfd_section_name (most_recent_fix_objfile->obfd, j->the_bfd_section)))
       {
         indirect_ptr_section = j;
         break;
@@ -1260,7 +1238,7 @@ find_and_parse_nonlazy_ptr_sect (struct fixinfo *cur,
 
       if (destination_address == 0 ||
           find_pc_section (destination_address)->objfile != 
-                                    cur->most_recent_fix->objfile)
+                                    most_recent_fix_objfile)
         continue;
 
       (*indirect_entries)[actual_entry_count].addr = 
@@ -1308,7 +1286,7 @@ build_list_of_objfiles_to_update (struct fixinfo *cur)
     {
       if (i == cur->most_recent_fix)
         continue;
-      old_objfiles[j++] = i->objfile;
+      old_objfiles[j++] = find_objfile_by_name (i->bundle_filename);
     }
   old_objfiles[j] = NULL;
 
@@ -2105,14 +2083,14 @@ force_psymtab_expansion (struct objfile *obj, const char *source_fn,
 
   ALL_OBJFILE_PSYMTABS_INCL_OBSOLETED (obj, ps)
     if (!strcmp (source_fn, ps->filename))
-      psymtab_to_symtab (ps);
+      PSYMTAB_TO_SYMTAB (ps);
     else if (ps->fullname != NULL && !strcmp (source_fn, ps->fullname))
-      psymtab_to_symtab (ps);
+      PSYMTAB_TO_SYMTAB (ps);
     else if (alt_source_fn != NULL && !strcmp (alt_source_fn, ps->filename))
-      psymtab_to_symtab (ps);
+      PSYMTAB_TO_SYMTAB (ps);
     else if (alt_source_fn != NULL && ps->fullname != NULL &&
              !strcmp (alt_source_fn, ps->filename))
-      psymtab_to_symtab (ps);
+      PSYMTAB_TO_SYMTAB (ps);
 }
 
 /* Expand all partial symtabs for all source files in an objfile (application,
@@ -2124,7 +2102,7 @@ expand_all_objfile_psymtabs (struct objfile *obj)
 {
   struct partial_symtab *pst = obj->psymtabs;
   ALL_OBJFILE_PSYMTABS_INCL_OBSOLETED (obj, pst)
-    psymtab_to_symtab (pst);
+    PSYMTAB_TO_SYMTAB (pst);
 }
 
 
@@ -2479,6 +2457,24 @@ find_objfile_by_name (const char *name)
   return NULL;
 }
 
+static struct symtab *
+find_symtab_by_name (struct objfile *obj, const char *name)
+{
+  struct symtab *s;
+  struct partial_symtab *ps;
+
+  ALL_SYMTABS_INCL_OBSOLETED (obj, s)
+    if (!strcmp (name, s->filename))
+      return s;
+
+  ALL_PSYMTABS (obj, ps)
+    if (!strcmp (name, ps->filename))
+      return (PSYMTAB_TO_SYMTAB (ps));
+
+  return NULL;
+}
+
+
 /* When we do symbol lookup for a sym in the newly fixed file,
    usually we can find the matching symbol in the symtab (the file)
    that we're replacing/fixing.  With C++, some symbols (inlined
@@ -2570,7 +2566,7 @@ find_original_object_file_name (struct fixinfo *cur)
         if (ps->texthigh != 0 &&
             (strcmp (ps->objfile->name, cur->bundle_filename) != 0))
           {
-            psymtab_to_symtab (ps);
+            PSYMTAB_TO_SYMTAB (ps);
             cur->original_objfile_filename = xstrdup (obj->name);
             cur->canonical_source_filename = cur->src_filename;
             return;
@@ -2590,7 +2586,7 @@ find_original_object_file_name (struct fixinfo *cur)
         if (ps->texthigh != 0 && 
             (strcmp (ps->objfile->name, cur->bundle_filename) != 0))
           {
-            psymtab_to_symtab (ps);
+            PSYMTAB_TO_SYMTAB (ps);
             cur->original_objfile_filename = xstrdup (obj->name);
             cur->canonical_source_filename = cur->src_basename;
             return;

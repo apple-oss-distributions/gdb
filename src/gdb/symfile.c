@@ -52,6 +52,7 @@
 #include "gdb_stat.h"
 #include <ctype.h>
 #include <time.h>
+#include <sys/mman.h>
 
 #ifndef TEXT_SECTION_NAME
 #define TEXT_SECTION_NAME ".text"
@@ -68,6 +69,8 @@
 #ifdef NM_NEXTSTEP
 #include "macosx-nat-dyld.h"
 #endif
+
+#define MAPPED_SYMFILES (USE_MMALLOC && HAVE_MMAP)
 
 #ifndef O_BINARY
 #define O_BINARY 0
@@ -933,7 +936,7 @@ symbol_file_add_bfd_with_addrs_or_offsets (bfd *abfd, int from_tty,
   /* Give user a chance to burp if we'd be interactively wiping out
      any existing symbols.  */
 
-  if ((have_full_symbols () || have_partial_symbols ())
+  if ((symfile_objfile != NULL)
       && mainline
       && from_tty
       && !query ("Load new symbol table from \"%s\"? ", abfd->filename))
@@ -970,11 +973,23 @@ symbol_file_add_bfd_with_addrs_or_offsets (bfd *abfd, int from_tty,
 	  for (i = 0; i < SECT_OFF_MAX; i++) {
 	    new_offsets->offsets[i] = addrs->other[0].addr;
 	  }
+#if MAPPED_SYMFILES
+	  mmalloc_protect (objfile->md, PROT_READ | PROT_WRITE);
+#endif
 	  objfile_relocate (objfile, new_offsets);
+#if MAPPED_SYMFILES
+	  mmalloc_protect (objfile->md, PROT_READ);
+#endif
 	}
       if (offsets != NULL)
 	{
+#if MAPPED_SYMFILES
+	  mmalloc_protect (objfile->md, PROT_READ | PROT_WRITE);
+#endif
 	  objfile_relocate (objfile, offsets);
+#if MAPPED_SYMFILES
+	  mmalloc_protect (objfile->md, PROT_READ);
+#endif
 	}
       find_sym_fns (objfile);
     }
@@ -1041,14 +1056,14 @@ symbol_file_add_bfd_with_addrs_or_offsets (bfd *abfd, int from_tty,
       xfree (debugfile);
     }
   
+#if 0
   if (!have_partial_symbols () && !have_full_symbols ())
     {
-#if 0
       wrap_here ("");
       printf_filtered ("(no debugging symbols found)...");
       wrap_here ("");
-#endif
     }
+#endif
 
   if (from_tty || info_verbose)
     {
@@ -1152,7 +1167,7 @@ symbol_file_add_main_1 (char *args, int from_tty, int flags)
 void
 symbol_file_clear (int from_tty)
 {
-  if ((have_full_symbols () || have_partial_symbols ())
+  if ((symfile_objfile != NULL)
       && from_tty
       && !query ("Discard symbol table from `%s'? ",
 		 symfile_objfile->name))
@@ -1886,21 +1901,19 @@ static void
 add_symbol_file_command (char *args, int from_tty)
 {
   char *filename = NULL;
+  char *address = NULL;
   char *prefix = NULL;
-  CORE_ADDR text_addr;
+  char **argv = NULL;
   CORE_ADDR mapaddr = 0;
   int flags = OBJF_USERLOADED;
   int symflags = OBJF_SYM_ALL;
   char *arg;
-  int expecting_option = 0;
   int section_index = 0;
   int argcnt = 0;
   int sec_num = 0;
   int i;
-  int expecting_sec_name = 0;
-  int expecting_sec_addr = 0;
   static char *usage_string =
-    "USAGE: add-symbol-file <filename> [-mapped] [-readnow] [-s <secname> <addr>]*";
+    "usage (%s): add-symbol-file <filename> [-mapped] [-readnow] [-s <secname> <addr>]*";
 
   struct
   {
@@ -1914,108 +1927,87 @@ add_symbol_file_command (char *args, int from_tty)
   dont_repeat ();
 
   if (args == NULL)
-    error (usage_string);
-
-  /* Make a copy of the string that we can safely write into. */
-  args = xstrdup (args);
+    error (usage_string, "argument required");
 
   /* Ensure section_addrs is initialized */
   memset (&section_addrs, 0, sizeof (section_addrs));
 
-  while (*args != '\000')
+  argv = buildargv (args);
+  if (argv == NULL)
+    nomem (0);
+  make_cleanup_freeargv (argv);
+	  
+  argcnt = 0;
+  for (;;)
     {
-      /* Any leading spaces? */
-      while (isspace (*args))
-	args++;
+      arg = argv[argcnt++];
+      if (arg == NULL)
+	break;
 
-      /* Point arg to the beginning of the argument. */
-      arg = args;
+      /* It's an option (starting with '-'), an argument
+	 to an option, or the filename. */
 
-      /* Move args pointer over the argument. */
-      while ((*args != '\000') && !isspace (*args))
-	args++;
-
-      /* If there are more arguments, terminate arg and
-         proceed past it. */
-      if (*args != '\000')
-	*args++ = '\000';
-
-      /* Now process the argument. */
-      if (argcnt == 0)
+      if (*arg == '-')
 	{
-	  /* The first argument is the file name. */
-	  filename = tilde_expand (arg);
-	  make_cleanup (xfree, filename);
+	  if (strcmp (arg, "-mapaddr") == 0)
+	    {
+	      char *atmp = argv[argcnt++];
+	      if (atmp == NULL)
+		error (usage_string, "must specify address to -mapaddr");
+	      mapaddr = parse_and_eval_address (atmp);
+	    }
+	  if (strcmp (arg, "-prefix") == 0)
+	    {
+	      char *atmp = argv[argcnt++];
+	      if (atmp == NULL)
+		error (usage_string, "must specify address to -prefix");
+	      prefix = xstrdup (atmp);
+	    }
+	  else if (strcmp (arg, "-mapped") == 0)
+	    flags |= OBJF_MAPPED;
+	  else if (strcmp (arg, "-readnow") == 0)
+	    flags |= OBJF_READNOW;
+	  else if (strcmp (arg, "-s") == 0)
+	    {
+	      char *atmp = argv[argcnt++];
+	      if (atmp == NULL)
+		error (usage_string, "must specify section name to -s");
+
+	      char *atmp2 = argv[argcnt++];
+	      if (atmp2 == NULL)
+		error (usage_string, "must specify section address to -s");
+
+	      if (section_index >= SECT_OFF_MAX)
+		error (usage_string, "too many sections specified.");
+
+	      sect_opts[section_index].name = atmp;
+	      sect_opts[section_index].value = atmp2;
+	      section_index++;		  
+	    }
 	}
       else
 	{
-	  /* It's an option (starting with '-') or it's an argument
-	     to an option */
-
-	  if (*arg == '-')
+	  if (filename == NULL)
 	    {
-	      if (strcmp (arg, "-mapaddr") == 0)
-		{
-		  char *atmp = args;
-		  if (*atmp == '\000')
-		    error ("usage: map address must be a valid address");
-		  while ((*args != '\000') && !isspace (*args))
-		    {
-		      args++;
-		    }
-		  if (*args != '\000')
-		    {
-		      *args++ = '\000';
-		    }
-		  mapaddr = parse_and_eval_address (atmp);
-		}
-	      if (strcmp (arg, "-prefix") == 0)
-		{
-		  char *atmp = args;
-		  if (*atmp == '\000')
-		    error ("usage: prefix must be a valid string");
-		  while ((*args != '\000') && !isspace (*args))
-		    {
-		      args++;
-		    }
-		  if (*args != '\000')
-		    {
-		      *args++ = '\000';
-		    }
-		  prefix = xstrdup (atmp);
-		}
-	      else if (strcmp (arg, "-mapped") == 0)
-		flags |= OBJF_MAPPED;
-	      else if (strcmp (arg, "-readnow") == 0)
-		flags |= OBJF_READNOW;
-	      else if (strcmp (arg, "-s") == 0)
-		{
-		  if (section_index >= SECT_OFF_MAX)
-		    error ("Too many sections specified.");
-		  expecting_sec_name = 1;
-		  expecting_sec_addr = 1;
-		}
+	      filename = tilde_expand (arg);
+	      make_cleanup (xfree, filename);
+	    }
+	  else if (address == NULL)
+	    {
+	      address = arg;
 	    }
 	  else
 	    {
-	      if (expecting_sec_name)
-		{
-		  sect_opts[section_index].name = arg;
-		  expecting_sec_name = 0;
-		}
-	      else
-		if (expecting_sec_addr)
-		    {
-		      sect_opts[section_index].value = arg;
-		      expecting_sec_addr = 0;
-		      section_index++;		  
-		    }
-		  else
-		    error (usage_string);
-	      }
-	  }
-      argcnt++;
+	      error (usage_string, "too many arguments");
+	    }
+	}
     }
+
+  if (address != NULL)
+    error (usage_string, "address specified without -s option");
+
+  if (filename == NULL)
+    error ("usage: must specify exactly one filename");
 
   /* Print the prompt for the query below. And save the arguments into
      a sect_addr_info structure to be passed around to other
@@ -2065,6 +2057,12 @@ add_symbol_file_command (char *args, int from_tty)
 
   symbol_file_add_with_addrs_or_offsets
     (filename, from_tty, &section_addrs, NULL, 0, 0, flags, symflags, mapaddr, prefix);
+
+#ifdef NM_NEXTSTEP
+ update_section_tables ();
+#endif
+  update_current_target ();
+  breakpoint_update ();
 
   /* Getting new symbols may change our opinion about what is
      frameless.  */
@@ -4005,9 +4003,8 @@ to execute.", &cmdlist);
   /* c->completer_word_break_characters = gdb_completer_filename_word_break_characters; */ /* FIXME */
 
   c = add_cmd ("add-symbol-file", class_files, add_symbol_file_command,
-	       "Usage: add-symbol-file FILE ADDR [-s <SECT> <SECT_ADDR> -s <SECT> <SECT_ADDR> ...]\n\
+	       "Usage: add-symbol-file FILE [-s <SECT> <SECT_ADDR> -s <SECT> <SECT_ADDR> ...]\n\
 Load the symbols from FILE, assuming FILE has been dynamically loaded.\n\
-ADDR is the starting address of the file's text.\n\
 The optional arguments are section-name section-address pairs and\n\
 should be specified if the data and bss segments are not contiguous\n\
 with the text.  SECT is a section name to be loaded at SECT_ADDR.",

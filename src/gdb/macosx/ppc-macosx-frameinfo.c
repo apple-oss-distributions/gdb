@@ -485,6 +485,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 	props->frameless = 0;
 	props->offset = SIGNED_SHORT (op);
 	offset2 = props->offset;
+	props->sp_setup_pc = pc;
 	goto processed_insn;
 	
       } 
@@ -747,6 +748,7 @@ ppc_clear_function_properties (ppc_function_properties *properties)
   properties->frameptr_pc = INVALID_ADDRESS;
 
   properties->frameless = 1;
+  properties->sp_setup_pc = 0;
 
   properties->lr_saved = 0;
   properties->lr_offset = -1;

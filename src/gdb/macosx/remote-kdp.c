@@ -355,7 +355,6 @@ kdp_attach (char *args, int from_tty)
   kdp_ops.to_has_execution = 1;
 
   update_current_target ();
-  cleanup_target (&current_target);
 
   inferior_ptid = pid_to_ptid (KDP_REMOTE_ID);
   kdp_stopped = 1;
@@ -382,7 +381,6 @@ kdp_detach (char *args, int from_tty)
   kdp_ops.to_has_execution = 0;
 
   update_current_target ();
-  cleanup_target (&current_target);
 
   if (kdp_is_bound (&c)) {
     kdpret = kdp_destroy (&c);
@@ -445,7 +443,6 @@ static void kdp_reattach_command (char *args, int from_tty)
   kdp_ops.to_has_execution = 0;
 
   update_current_target ();
-  cleanup_target (&current_target);
 
   kdp_mourn_inferior();
 
@@ -776,8 +773,9 @@ kdp_fetch_registers_i386 (int regno)
 
   if ((regno == -1) || IS_FP_REGNUM (regno)) {
     kdp_return_t kdpret;
-    gdb_i386_thread_fpstate_t fp_regs;
+    gdb_i386_thread_fpstate_t fp_regs = {};
 
+#if 0
     c.request->readregs_req.hdr.request = KDP_READREGS;
     c.request->readregs_req.cpu = 0;
     c.request->readregs_req.flavor = GDB_i386_THREAD_FPSTATE;
@@ -793,6 +791,7 @@ kdp_fetch_registers_i386 (int regno)
     }
 
     memcpy (&fp_regs.hw_state, c.response->readregs_reply.data, (GDB_i386_THREAD_FPSTATE_COUNT * 4));
+#endif
     i386_macosx_fetch_fp_registers (&fp_regs);
   }
 }

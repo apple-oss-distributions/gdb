@@ -5,6 +5,8 @@
 
 struct relocation_context
 {
+  struct objfile *objfile;
+
   size_t mapped_start;
   size_t from_start;
   size_t to_start;

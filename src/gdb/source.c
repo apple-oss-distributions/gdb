@@ -960,20 +960,19 @@ open_source_file (struct symtab *s)
   result = open_source_file_fullpath (s);
 
   if (result < 0) 
-    result = openp (path, 0, s->filename, OPEN_MODE, 0, &s->fullname);
+    result = openp (path, 0, s->filename, OPEN_MODE, 0, &fullname);
 
   if (result < 0)
     {
       /* Didn't work.  Try using just the basename. */
       p = lbasename (s->filename);
       if (p != s->filename)
-	result = openp (path, 0, p, OPEN_MODE, 0, &s->fullname);
+	result = openp (path, 0, p, OPEN_MODE, 0, &fullname);
     }
 
   if (result >= 0)
     {
-      fullname = s->fullname;
-      s->fullname = mstrsave (s->objfile->md, s->fullname);
+      s->fullname = mstrsave (s->objfile->md, fullname);
       xfree (fullname);
     }
   return result;

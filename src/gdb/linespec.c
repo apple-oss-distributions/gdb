@@ -32,6 +32,7 @@
 #include "completer.h"
 #include "cp-abi.h"
 #include "parser-defs.h"
+#include "ui-out.h" /* For ui_out_is_mi_like_p */
 
 extern int metrowerks_ignore_breakpoint_errors_flag;
 
@@ -105,6 +106,7 @@ static struct symtabs_and_lines select_symbols (struct symbol **sym_arr,
 						int nelts,
 						int nsyms,
 						int funfirstline,
+						int all,
 						char ***canonical);
 
 static struct
@@ -789,14 +791,23 @@ decode_objc (char **argptr, int funfirstline, struct symtab *file_symtab,
 	  values.sals[0].line = 0;
 	  values.sals[0].end = 0;
 	  values.sals[0].pc = SYMBOL_VALUE_ADDRESS (sym_arr[0]);
+	  values.sals[0].section = SYMBOL_BFD_SECTION (sym_arr[0]);
 	}
       return values;
     }
 
   if (i1 > 1)
     {
-      /* more than one match -- user must choose one or more */
-      return select_symbols (sym_arr, i1, i2, funfirstline, canonical);
+      int all;
+      /* more than one match -- user must choose one or more, or if the
+         interpterer is mi-like, then just return them all.  The caller
+         command will know what to report back to the mi.  */
+      if (ui_out_is_mi_like_p (uiout))
+	all = 1;
+      else
+	all = 0;
+      return select_symbols (sym_arr, i1, i2, funfirstline, all, canonical);
+
     }
 
   return values;
@@ -979,9 +990,18 @@ find_method (int funfirstline, char ***canonical, char *saved_arg,
     }
   else if (method_count > 0)
     {
-      /* There is more than one field with that name
-	 (overloaded).  Ask the user which one to use.  */
-      values = select_symbols (sym_arr, method_count, method_count, funfirstline, canonical);
+      int all;
+      /* There is more than one field with that name (overloaded).
+	 Ask the user which one to use.  If the interpterer is
+	 mi-like, then just return them all.  The caller command will
+	 know what to report back to the mi.  */
+      if (ui_out_is_mi_like_p (uiout))
+	all = 1;
+      else
+	all = 0;
+
+      values = select_symbols (sym_arr, method_count, method_count, 
+			       funfirstline, all, canonical);
     }
   else
     {
@@ -1244,17 +1264,21 @@ add_constructors (int method_counter, struct type *class_type,
    from non-debugging modules.  So, sym_arr will now contain:
    sym_arr[0..NELTS-1]:                struct symbol *
    sym_arr[NELTS..<first NULL entry>]: struct minimal_symbol *
+   ALL is added so callers can get the result formatted as if "all" had been
+   selected.  This is for the MI, so that it can return the whole list to
+   the MI command that got to here, and then the MI client can prompt for
+   the choice.
 */
 
 static struct symtabs_and_lines
 select_symbols (struct symbol **sym_arr, int nelts, int nsyms, int funfirstline,
+		int all,
 		char ***canonical)
 {
-  struct symtabs_and_lines values, return_values;
-  char *args, *arg1;
+  struct symtabs_and_lines values;
+  char *args;
   int i;
   char *prompt;
-  char *symname;
   struct cleanup *old_chain = NULL;
   char **canonical_arr = NULL;
 
@@ -1268,7 +1292,12 @@ select_symbols (struct symbol **sym_arr, int nelts, int nsyms, int funfirstline,
       *canonical = canonical_arr;
     }
 
-  printf_unfiltered ("[0] cancel\n[1] all\n");
+  if (all)
+    {
+      args="1";
+    }
+  else
+    printf_unfiltered ("[0] cancel\n[1] all\n");
   for (i = 0; i < nsyms; i++)
     {
       QUIT;
@@ -1276,22 +1305,24 @@ select_symbols (struct symbol **sym_arr, int nelts, int nsyms, int funfirstline,
       if (sym_arr[i] && SYMBOL_CLASS (sym_arr[i]) == LOC_BLOCK)
 	{
 	  values.sals[i] = find_function_start_sal (sym_arr[i], funfirstline);
-	  printf_unfiltered ("[%d] %s at %s:%d\n",
-			     (i + 2),
-			     SYMBOL_SOURCE_NAME (sym_arr[i]),
-			     values.sals[i].symtab->filename,
-			     values.sals[i].line);
+	  if (!all)
+	    printf_unfiltered ("[%d] %s at %s:%d\n",
+			       (i + 2),
+			       SYMBOL_SOURCE_NAME (sym_arr[i]),
+			       values.sals[i].symtab->filename,
+			       values.sals[i].line);
 	}
       else
-	printf_filtered ("[%d]    %s\n",
-			 (i + 2),
-			 SYMBOL_SOURCE_NAME (sym_arr[i]) ?
-			 SYMBOL_SOURCE_NAME (sym_arr[i]) : "?HERE?");
+	if (!all)
+	  printf_filtered ("[%d]    %s\n",
+			   (i + 2),
+			   SYMBOL_SOURCE_NAME (sym_arr[i]) ?
+			   SYMBOL_SOURCE_NAME (sym_arr[i]) : "?HERE?");
     }
-
-  if (nelts != nsyms)
-    printf_filtered ("\nNon-debugging symbols:\n");
-
+  
+  if (!all && nelts != nsyms)
+	printf_filtered ("\nNon-debugging symbols:\n");
+      
   /* handle minimal_symbols */
   for (i = nsyms; i < nelts; i++)
     {
@@ -1301,16 +1332,23 @@ select_symbols (struct symbol **sym_arr, int nelts, int nsyms, int funfirstline,
       values.sals[i].line = 0;
       values.sals[i].end = 0;
       values.sals[i].pc = SYMBOL_VALUE_ADDRESS (sym_arr[i]);
-      printf_filtered ("[%d]    %s\n",
-		       (i + 2),
-		       SYMBOL_SOURCE_NAME (sym_arr[i]));
+      values.sals[i].section = SYMBOL_BFD_SECTION (sym_arr[i]);
+      if (!all)
+	printf_filtered ("[%d]    %s\n",
+			 (i + 2),
+			 SYMBOL_SOURCE_NAME (sym_arr[i]));
     }
 
-  if ((prompt = getenv ("PS2")) == NULL)
+  if (!all)
     {
-      prompt = "> ";
+      if ((prompt = getenv ("PS2")) == NULL)
+	{
+	  prompt = "> ";
+	}
+      args = command_line_input (prompt, 0, "overload-choice");
     }
-  args = command_line_input (prompt, 0, "overload-choice");
+  else
+    args = "1";
 
   if (args == 0 || *args == 0)
     error_no_arg ("one or more choice numbers");
@@ -1355,7 +1393,7 @@ select_symbols_args (struct symbol **sym_arr, int nelts, int nsyms,
       num = atoi (args);
 
       if (num == 0)
-	error ("cancelled");
+	error ("canceled");
       else if (num == 1)
 	{
 	  if (canonical_arr != NULL)
@@ -1612,8 +1650,30 @@ decode_all_digits (char **argptr, int funfirstline,
 	{
 	  struct symbol *func_sym;
 	  struct symtab_and_line sal;
-	      
-	  func_sym = find_pc_function (pc);
+          
+          /* If we have an objfile for the pc, then be careful to only
+             look in that objfile for the function symbol.  This is
+             important because if you are running gdb on a program
+             BEFORE it has been launched, the shared libraries might
+             overlay each other, in which case we find_pc_function may
+             return a function from another of these libraries.  That
+             might fool us into moving the breakpoint over the
+             prologue of this function, which is now totally in the
+             wrong place...  */
+             
+          if (val.symtab && val.symtab->objfile)
+            {
+              struct cleanup *restrict_cleanup;
+	      restrict_cleanup = 
+		make_cleanup_restrict_to_objfile 
+		(val.symtab->objfile);
+	      func_sym = find_pc_function (pc);
+	      do_cleanups (restrict_cleanup);
+            }
+          else
+            {
+              func_sym = find_pc_function (pc);
+            }
 	  if (func_sym)
 	    {
 	      sal = find_function_start_sal (func_sym, 1);

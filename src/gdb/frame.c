@@ -1475,6 +1475,12 @@ refine_prologue_limit (CORE_ADDR pc, CORE_ADDR lim_pc, int max_skip_non_prologue
     {
       int i;
       CORE_ADDR addr = prologue_sal.end;
+      /* APPLE LOCAL - Work around the case where the function
+	 begins on the same line as the starting curley brace.
+	 So, if we have two source lines in a row that are
+	 on the SAME line, then we don't advance the prologue_sal.  */
+      int prev_line = prologue_sal.line;
+
 
       /* Handle the case in which compiler's optimizer/scheduler
          has moved instructions into the prologue.  We scan ahead
@@ -1493,10 +1499,12 @@ refine_prologue_limit (CORE_ADDR pc, CORE_ADDR lim_pc, int max_skip_non_prologue
 	  if (sal.line == 0)
 	    break;
 	  if (sal.line <= prologue_sal.line
+	      && prev_line != sal.line
 	      && sal.symtab == prologue_sal.symtab)
 	    {
 	      prologue_sal = sal;
 	    }
+	  prev_line = sal.line;
 	  addr = sal.end;
 	}
 

@@ -152,6 +152,20 @@ void dyld_objfile_info_init (struct dyld_objfile_info *i)
   i->sections_end = NULL;
 }
 
+void dyld_objfile_info_clear_objfiles (struct dyld_objfile_info *i)
+{
+  unsigned int n;
+
+  for (n = 0; n < i->nents; n++)
+    {
+      struct dyld_objfile_entry *e = &i->entries[n];
+      e->abfd = NULL;
+      e->objfile = NULL;
+      e->commpage_bfd = NULL;
+      e->commpage_objfile = NULL;
+    }
+}
+
 void dyld_objfile_info_pack (struct dyld_objfile_info *i)
 {
   unsigned int j;
@@ -312,6 +326,16 @@ struct dyld_objfile_entry *dyld_objfile_entry_alloc (struct dyld_objfile_info *i
   return e;
 }
 
+/* Return the appropriate filename for the given dyld_objfile_entry.
+   If 'type' is DYLD_ENTRY_FILENAME_BASE, give the base filename as
+   given by dyld.  If 'type' is DYLD_ENTRY_FILENAME_USER, return the
+   user-specified filename, if there is one; else use the name given
+   by dyld.  If 'type' is DYLD_ENTRY_FILENAME_LOADED, return the
+   symbol file actually loaded for that entry.  All filenames are
+   processed according to the path information contained in 'd'; if
+   the function is unable to resolve a pathname according to 'd', it
+   will return NULL. */
+
 const char *dyld_entry_filename
 (const struct dyld_objfile_entry *e, const struct dyld_path_info *d, int type)
 {
@@ -321,25 +345,33 @@ const char *dyld_entry_filename
   char *name = NULL;
   int name_is_absolute = 0;
 
-  if ((type & DYLD_ENTRY_FILENAME_LOADED) && (e->loaded_name != NULL)) {
-    name = e->loaded_name;
-    name_is_absolute = 1;
-  } else if (e->user_name != NULL) {
-    name = e->user_name;
-    name_is_absolute = 1;
-  } else if (e->dyld_name != NULL) {
-    name = e->dyld_name;
-    name_is_absolute = 1;
-  } else if (e->image_name != NULL) {
-    name = e->image_name;
-    name_is_absolute = 0;
-  } else if (e->text_name != NULL) {
+  if (e->text_name != NULL) {
     name = e->text_name;
     name_is_absolute = 0;
-  } else {
-    name = NULL;
+  }
+
+  if (e->image_name != NULL) {
+    name = e->image_name;
     name_is_absolute = 0;
   }
+
+  if (e->dyld_name != NULL) {
+    name = e->dyld_name;
+    name_is_absolute = 1;
+  }
+
+  if (((type == DYLD_ENTRY_FILENAME_USER) || (type == DYLD_ENTRY_FILENAME_LOADED))
+      && (e->user_name != NULL))
+    {
+      name = e->user_name;
+      name_is_absolute = 1;
+    }
+
+  if ((type == DYLD_ENTRY_FILENAME_LOADED) && (e->loaded_name != NULL))
+    {
+      name = e->loaded_name;
+      name_is_absolute = 1;
+    }
 
   if (name == NULL)
     return NULL;
@@ -353,7 +385,10 @@ const char *dyld_entry_filename
       else
 	resolved = dyld_resolve_image (d, name);
       
-      return resolved;
+      if (resolved != NULL)
+	return resolved;
+      else
+	return NULL;
     }
   else
       return name;
@@ -406,7 +441,7 @@ char *dyld_entry_string (struct dyld_objfile_entry *e, int print_basenames)
     if (addr == NULL)
       sprintf (ret + strlen (ret), "[unknown]");
     else
-      sprintf (ret + strlen (ret), "[memory at %s]", addr);
+      sprintf (ret + strlen (ret), "[memory object at %s]", addr);
   } else {
     if (addr == NULL)
       sprintf (ret + strlen (ret), "\"%s\"", name);
@@ -431,144 +466,11 @@ char *dyld_entry_string (struct dyld_objfile_entry *e, int print_basenames)
   return xstrdup (ret);
 }
 
-void dyld_entry_out (struct ui_out *uiout, struct dyld_objfile_entry *e, int print_basenames)
-{
-  char *name;
-  char *objname;
-  char *symname;
-  char *addr;
-  char *slide;
-  char *prefix;
-
-  dyld_entry_info (e, print_basenames, &name, &objname, NULL, NULL, &symname, &addr, &slide, &prefix);
-
-  if (name == NULL)
-    {
-      if (ui_out_is_mi_like_p (uiout))
-	{
-	  const char *name = dyld_entry_filename (e, NULL, 0);
-	  if (name != NULL)
-	    {
-	      ui_out_field_string (uiout, "path", name);
-	    }
-	  else
-	    {
-	      char *s = dyld_entry_string (e, print_basenames);
-	      ui_out_field_string (uiout, "path", s);
-	      xfree (s);
-	    }
-	}
-      else
-	ui_out_field_skip (uiout, "path");
-
-      if (addr != NULL)
-	{
-	  ui_out_text (uiout, "[memory at ");
-	  ui_out_field_string (uiout, "loaded_addr", addr);
-
-	  if (slide != NULL)
-	    {
-	      ui_out_text (uiout, "] (offset ");
-	      ui_out_field_string (uiout, "slide", slide);
-	      ui_out_text (uiout, ")");
-	    }
-	  else
-	    {
-	      ui_out_field_skip (uiout, "slide");
-	      ui_out_text (uiout, "]");
-	    }
-	}
-      else
-	{
-	  ui_out_field_skip (uiout, "loaded_addr");
-	  if (slide == NULL)
-	    ui_out_field_skip (uiout, "slide");
-	  else
-	    {
-	      ui_out_text (uiout, "(offset ");
-	      ui_out_field_string (uiout, "slide", slide);
-	      ui_out_text (uiout, ")");
-	    }
-	}     
-    }
-  else
-    {
-      ui_out_field_string (uiout, "path", name);
-
-      if (slide == NULL)
-	{
-	  ui_out_field_skip (uiout, "slide");
-	  if (addr == NULL)
-	      ui_out_field_skip (uiout, "addr");
-	  else
-	    {
-	      ui_out_text (uiout, " at ");
-	      ui_out_field_string (uiout, "loaded_addr", addr);
-	    }
-	}
-      else
-	{
-	  if (addr == NULL)
-	    {
-	      ui_out_field_skip (uiout, "loaded_addr");
-	      ui_out_text (uiout, " (offset ");
-	      ui_out_field_string (uiout, "slide", slide);
-	      ui_out_text (uiout, ")");
-	    }
-	  else
-	    {
-	      ui_out_text (uiout, " at ");
-	      ui_out_field_string (uiout, "loaded_addr", addr);
-	      ui_out_text (uiout, " (offset ");
-	      ui_out_field_string (uiout, "slide", slide);
-	      ui_out_text (uiout, ")");
-	    }	      
-	}
-
-      if (prefix == NULL)
-	{
-	  ui_out_field_skip (uiout, "prefix");
-	}
-      else
-	{
-	  ui_out_text (uiout, " with prefix \"");
-	  ui_out_field_string (uiout, "prefix", prefix);
-	  ui_out_text (uiout, "\"");
-	}
-    }
-
-  xfree (name);
-  xfree (objname);
-  xfree (symname);
-  xfree (addr);
-  xfree (slide);
-  xfree (prefix);
-}
-
-/* Fetch a number of strings useful for describing the
-   dyld_objfile_entry 'e'.  The returned strings will be allocated
-   with xmalloc; if a parameter is passed in as NULL, no string will
-   be returned.  If a given string is inapplicable, a null pointer
-   will be returned.  The following strings are provided,:
-
-     name        - the name of the image, as specified by DYLD
-
-     objname     - the name of the file on disk that GDB is using for
-                   symbol-reading purposes
-     
-     symname     - the name of the cached symbol file being used, if any
-
-     commobjname - the name of the file on disk that GDB is using for
-                   commpage data for that image
-
-     commsymname - the name of the cached symbol file being used for
-                   commpage data, if any
-*/
-
 void 
 dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames, 
-		 char **name, char **objname, char **symname,
-		 char **commobjname, char **commsymname,
+		 char **name,
+		 char **objname, char **symname,
+		 char **auxobjname, char **auxsymname,
 		 char **addr, char **slide, char **prefix)
 {
   CHECK_FATAL (e != NULL);
@@ -579,117 +481,103 @@ dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames,
     *objname = NULL;
   if (symname != NULL)
     *symname = NULL;
-  if (commobjname != NULL)
-    *commobjname = NULL;
-  if (commsymname != NULL)
-    *commsymname = NULL;
-  if (addr != NULL)
-    *addr = NULL;
-  if (slide != NULL)
-    *slide = NULL;
-  if (prefix != NULL)
-    *prefix = NULL;
+  if (auxobjname != NULL)
+    *auxobjname = NULL;
+  if (auxsymname != NULL)
+    *auxsymname = NULL;
+  *addr = NULL;
+  *slide = NULL;
+  *prefix = NULL;
 
   if (e->objfile && e->loaded_from_memory) {
 
-    CHECK_FATAL (! e->loaded_addrisoffset);
-    CHECK_FATAL (e->loaded_addr == e->loaded_memaddr);
-    if (e->image_addr_valid) {
-      if (slide != NULL)
+      CHECK_FATAL (! e->loaded_addrisoffset);
+      CHECK_FATAL (e->loaded_addr == e->loaded_memaddr);
+      if (e->image_addr_valid) {
 	*slide = dyld_offset_string ((unsigned long) (e->loaded_memaddr - e->image_addr));
-      if (addr != NULL)
 	xasprintf (addr, "0x%lx", (unsigned long) e->loaded_memaddr);
-    } else {
-      if (addr != NULL)
+      } else {
 	xasprintf (addr, "0x%lx", (unsigned long) e->loaded_memaddr);
-    }	      
+      }	      
 
   } else if (e->objfile && !e->loaded_from_memory) {
 
-    const char *loaded_name = e->loaded_name;
-    const char *loaded_objname = dyld_entry_filename (e, NULL, 0);
-    const char *loaded_symname = (e->objfile != NULL) ? e->objfile->name : NULL;
-    const char *loaded_commobjname = (e->commpage_bfd != NULL) ? e->commpage_bfd->filename : NULL;
-    const char *loaded_commsymname = (e->commpage_objfile != NULL) ? e->commpage_objfile->name : NULL;
+      const char *loaded_name = dyld_entry_filename (e, NULL, DYLD_ENTRY_FILENAME_BASE);
+      const char *loaded_objname = dyld_entry_filename (e, NULL, DYLD_ENTRY_FILENAME_LOADED);
+      const char *loaded_symname = (e->objfile != NULL) ? e->objfile->name : NULL;
+      const char *loaded_auxobjname = (e->commpage_bfd != NULL) ? e->commpage_bfd->filename : NULL;
+      const char *loaded_auxsymname = (e->commpage_objfile != NULL) ? e->commpage_objfile->name : NULL;
 
-    if ((! print_basenames) && (loaded_name != NULL))
-      if (strrchr (loaded_name, '/') != NULL)
-	loaded_name = strrchr (loaded_name, '/') + 1;
+      if ((! print_basenames) && (loaded_name != NULL))
+	if (strrchr (loaded_name, '/') != NULL)
+	  loaded_name = strrchr (loaded_name, '/') + 1;
 
-    if ((! print_basenames) && (loaded_objname != NULL))
-      if (strrchr (loaded_objname, '/') != NULL)
-	loaded_objname = strrchr (loaded_objname, '/') + 1;
+      if ((! print_basenames) && (loaded_objname != NULL))
+	if (strrchr (loaded_objname, '/') != NULL)
+	  loaded_objname = strrchr (loaded_objname, '/') + 1;
 
-    if ((! print_basenames) && (loaded_symname != NULL))
-      if (strrchr (loaded_symname, '/') != NULL)
-	loaded_symname = strrchr (loaded_symname, '/') + 1;
+      if ((! print_basenames) && (loaded_symname != NULL))
+	if (strrchr (loaded_symname, '/') != NULL)
+	  loaded_symname = strrchr (loaded_symname, '/') + 1;
       
-    if ((! print_basenames) && (loaded_commobjname != NULL))
-      if (strrchr (loaded_commobjname, '/') != NULL)
-	loaded_commobjname = strrchr (loaded_commobjname, '/') + 1;
+      if ((! print_basenames) && (loaded_auxobjname != NULL))
+	if (strrchr (loaded_auxobjname, '/') != NULL)
+	  loaded_auxobjname = strrchr (loaded_auxobjname, '/') + 1;
 
-    if ((! print_basenames) && (loaded_commsymname != NULL))
-      if (strrchr (loaded_commsymname, '/') != NULL)
-	loaded_commsymname = strrchr (loaded_commsymname, '/') + 1;
+      if ((! print_basenames) && (loaded_auxsymname != NULL))
+	if (strrchr (loaded_auxsymname, '/') != NULL)
+	  loaded_auxsymname = strrchr (loaded_auxsymname, '/') + 1;
       
-    if ((loaded_name != NULL) && (name != NULL)) {
-      int namelen = strlen (loaded_name) + 1;
-      *name = (char *) xmalloc (namelen);
-      memcpy (*name, loaded_name, namelen);
-    }
-      
-    if ((loaded_objname != NULL) && (objname != NULL)) {
-      int namelen = strlen (loaded_objname) + 1;
-      *objname = (char *) xmalloc (namelen);
-      memcpy (*objname, loaded_objname, namelen);
-    }
-
-    if ((loaded_symname != NULL) && (symname != NULL)) {
-      int namelen = strlen (loaded_symname) + 1;
-      *symname = (char *) xmalloc (namelen);
-      memcpy (*symname, loaded_symname, namelen);
-    }
-
-    if ((loaded_commobjname != NULL) && (commobjname != NULL)) {
-      int namelen = strlen (loaded_commobjname) + 1;
-      *commobjname = (char *) xmalloc (namelen);
-      memcpy (*commobjname, loaded_commobjname, namelen);
-    }
-
-    if ((loaded_commsymname != NULL) && (commsymname != NULL)) {
-      int namelen = strlen (loaded_commsymname) + 1;
-      *commsymname = (char *) xmalloc (namelen);
-      memcpy (*commsymname, loaded_commsymname, namelen);
-    }
-
-    if (e->loaded_addrisoffset) {
-      if (e->image_addr_valid) {
-	if (slide != NULL)
-	  *slide = dyld_offset_string ((unsigned long) e->loaded_offset);
-	if (addr != NULL)
-	  xasprintf (addr, "0x%lx", (unsigned long) e->image_addr);
-      } else {
-	if (slide != NULL)
-	  *slide = dyld_offset_string ((unsigned long) e->loaded_offset);
+      if ((loaded_name != NULL) && (name != NULL)) {
+	int namelen = strlen (loaded_name) + 1;
+	*name = (char *) xmalloc (namelen);
+	memcpy (*name, loaded_name, namelen);
       }
-    } else {
-      if (e->dyld_valid) {
-	if (slide != NULL)
-	  *slide = dyld_offset_string ((unsigned long) e->dyld_slide);
-	if (addr != NULL)
-	  xasprintf (addr, "0x%lx", (unsigned long) e->loaded_addr);
-      } else {
+      
+      if ((loaded_objname != NULL) && (objname != NULL)) {
+	int namelen = strlen (loaded_objname) + 1;
+	*objname = (char *) xmalloc (namelen);
+	memcpy (*objname, loaded_objname, namelen);
+      }
+
+      if ((loaded_symname != NULL) && (symname != NULL)) {
+	int namelen = strlen (loaded_symname) + 1;
+	*symname = (char *) xmalloc (namelen);
+	memcpy (*symname, loaded_symname, namelen);
+      }
+
+      if ((loaded_auxobjname != NULL) && (auxobjname != NULL)) {
+	int namelen = strlen (loaded_auxobjname) + 1;
+	*auxobjname = (char *) xmalloc (namelen);
+	memcpy (*auxobjname, loaded_auxobjname, namelen);
+      }
+
+      if ((loaded_auxsymname != NULL) && (auxsymname != NULL)) {
+	int namelen = strlen (loaded_auxsymname) + 1;
+	*auxsymname = (char *) xmalloc (namelen);
+	memcpy (*auxsymname, loaded_auxsymname, namelen);
+      }
+
+      if (e->loaded_addrisoffset) {
 	if (e->image_addr_valid) {
-	  if (slide != NULL)
-	    *slide = dyld_offset_string ((unsigned long) (e->loaded_addr - e->image_addr));
-	  if (addr != NULL)
-	    xasprintf (addr, "0x%lx", (unsigned long) e->loaded_addr);
+	  *slide = dyld_offset_string ((unsigned long) e->loaded_offset);
+	  xasprintf (addr, "0x%lx", (unsigned long) e->image_addr);
 	} else {
-	  if (addr != NULL)
+	  *slide = dyld_offset_string ((unsigned long) e->loaded_offset);
+	}
+      } else {
+	if (e->dyld_valid) {
+	  *slide = dyld_offset_string ((unsigned long) e->dyld_slide);
+	  xasprintf (addr, "0x%lx", (unsigned long) e->loaded_addr);
+	} else {
+	  if (e->image_addr_valid) {
+	    *slide = dyld_offset_string ((unsigned long) (e->loaded_addr - e->image_addr));
 	    xasprintf (addr, "0x%lx", (unsigned long) e->loaded_addr);
-	}	      
-      }
-    }	  
+	  } else {
+	    xasprintf (addr, "0x%lx", (unsigned long) e->loaded_addr);
+	  }	      
+	}
+      }	  
 
   } else {
 
@@ -711,14 +599,14 @@ dyld_entry_info (struct dyld_objfile_entry *e, int print_basenames,
       tmp = s;
     }
     
-    if ((tmp != NULL) && (name != NULL)) {
+    if (tmp != NULL) {
       namelen = strlen (tmp) + 1;
       *name = xmalloc (namelen);
       memcpy (*name, tmp, namelen);
     }
   }
 
-  if ((e->prefix != NULL) && (e->prefix[0] != '\0') && (prefix != NULL)) {
+  if ((e->prefix != NULL) && (e->prefix[0] != '\0')) {
     int prefixlen = strlen (e->prefix) + 1;
     *prefix = xmalloc (prefixlen);
     memcpy (*prefix, e->prefix, prefixlen);
@@ -941,7 +829,15 @@ int dyld_entry_shlib_num_matches (int shlibnum, const char *args, int verbose)
 void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
 			    unsigned int baselen)
 {
-  const char *name = NULL;
+  char *name;
+  char *objname;
+  char *symname;
+  char *auxobjname;
+  char *auxsymname;
+  char *addr;
+  char *slide;
+  char *prefix;
+    
   const char *tfname = NULL;
   unsigned int tfnamelen = 0;
   int is_framework, is_bundle;
@@ -949,7 +845,8 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
   char addrbuf[24];
   const char *ptr;
 
-  name = dyld_entry_filename (j, NULL, 0);
+  dyld_entry_info (j, 1, &name, &objname, &symname, &auxobjname, &auxsymname, &addr, &slide, &prefix);
+      
   if (name == NULL) {
     fname = savestring ("-", strlen ("-"));
     is_framework = 0;
@@ -1035,63 +932,151 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
   ui_out_field_string (uiout, "state", ptr);
   ui_out_spaces (uiout, 1);
 
-  dyld_entry_out (uiout, j, 1);
+  if (ui_out_is_mi_like_p (uiout))
+    ui_out_field_string (uiout, "path", (symname != NULL) ? symname : "");
 
-  { 
-    char *name;
-    char *objname;
-    char *symname;
-    char *commobjname;
-    char *commsymname;
-    char *addr;
-    char *slide;
-    char *prefix;
+  if (name == NULL)
+    {
+      if (ui_out_is_mi_like_p (uiout))
+	{
+	  char *s = dyld_entry_string (j, 1);
+	  ui_out_field_string (uiout, "description", s);
+	  xfree (s);
+	}
+      else
+	ui_out_field_skip (uiout, "description");
+
+      if (addr != NULL)
+	{
+	  ui_out_text (uiout, "[memory at ");
+	  ui_out_field_string (uiout, "loaded_addr", addr);
+
+	  if (slide != NULL)
+	    {
+	      ui_out_text (uiout, "] (offset ");
+	      ui_out_field_string (uiout, "slide", slide);
+	      ui_out_text (uiout, ")");
+	    }
+	  else
+	    {
+	      ui_out_field_skip (uiout, "slide");
+	      ui_out_text (uiout, "]");
+	    }
+	}
+      else
+	{
+	  ui_out_field_skip (uiout, "loaded_addr");
+	  if (slide == NULL)
+	    ui_out_field_skip (uiout, "slide");
+	  else
+	    {
+	      ui_out_text (uiout, "(offset ");
+	      ui_out_field_string (uiout, "slide", slide);
+	      ui_out_text (uiout, ")");
+	    }
+	}     
+    }
+  else
+    {
+      ui_out_field_string (uiout, "description", name);
+
+      if (slide == NULL)
+	{
+	  ui_out_field_skip (uiout, "slide");
+	  if (addr == NULL)
+	    ui_out_field_skip (uiout, "addr");
+	  else
+	    {
+	      ui_out_text (uiout, " at ");
+	      ui_out_field_string (uiout, "loaded_addr", addr);
+	    }
+	}
+      else
+	{
+	  if (addr == NULL)
+	    {
+	      ui_out_field_skip (uiout, "loaded_addr");
+	      ui_out_text (uiout, " (offset ");
+	      ui_out_field_string (uiout, "slide", slide);
+	      ui_out_text (uiout, ")");
+	    }
+	  else
+	    {
+	      ui_out_text (uiout, " at ");
+	      ui_out_field_string (uiout, "loaded_addr", addr);
+	      ui_out_text (uiout, " (offset ");
+	      ui_out_field_string (uiout, "slide", slide);
+	      ui_out_text (uiout, ")");
+	    }	      
+	}
+
+      if (prefix == NULL)
+	{
+	  ui_out_field_skip (uiout, "prefix");
+	}
+      else
+	{
+	  ui_out_text (uiout, " with prefix \"");
+	  ui_out_field_string (uiout, "prefix", prefix);
+	  ui_out_text (uiout, "\"");
+	}
+    }
+
+  if (objname != NULL)
+    if ((name == NULL) || (strcmp (name, objname) != 0))
+      {
+	const char *tag = "(objfile is)";
+	ui_out_text (uiout, "\n");
+	ui_out_spaces (uiout, baselen + 34 - strlen (tag) - 1);
+	ui_out_text (uiout, tag);
+	ui_out_text (uiout, " ");
+	ui_out_field_string (uiout, "objpath", objname);
+      }
+
+  if (symname != NULL)
+    if ((objname == NULL) || (strcmp (objname, symname) != 0))
+      {
+	const char *tag = "(symbols read from)";
+	ui_out_text (uiout, "\n");
+	ui_out_spaces (uiout, baselen + 34 - strlen (tag) - 1);
+	ui_out_text (uiout, tag);
+	ui_out_text (uiout, " ");
+	ui_out_field_string (uiout, "sympath", symname);
+      }
     
-    dyld_entry_info (j, 1, &name, &objname, &symname, &commobjname, &commsymname, &addr, &slide, &prefix);
+  if (auxobjname != NULL)
+    {
+      const char *tag = "(commpage objfile is)";
+      ui_out_text (uiout, "\n");
+      ui_out_spaces (uiout, baselen + 34 - strlen (tag) - 1);
+      ui_out_text (uiout, tag);
+      ui_out_text (uiout, " ");
+      ui_out_field_string (uiout, "commpage-objpath", auxobjname);
+    }
+
+  if (auxsymname != NULL)
+    if ((auxobjname == NULL) || (strcmp (auxobjname, auxsymname) != 0))
+      {
+	const char *tag = "(commpage symbols read from)";
+	ui_out_text (uiout, "\n");
+	ui_out_spaces (uiout, baselen + 34 - strlen (tag) - 1);
+	ui_out_text (uiout, tag);
+	ui_out_text (uiout, " ");
+	ui_out_field_string (uiout, "commpage-sympath", auxsymname);
+      }
       
-    if (objname != NULL)
-      if ((name == NULL) || (strcmp (name, objname) != 0))
-	{
-	  ui_out_text (uiout, "\n");
-	  ui_out_spaces (uiout, baselen + 34);
-	  ui_out_field_string (uiout, "objpath", objname);
-	}
-
-    if (symname != NULL)
-      if ((name == NULL) || (strcmp (name, symname) != 0))
-	{
-	  ui_out_text (uiout, "\n");
-	  ui_out_spaces (uiout, baselen + 34);
-	  ui_out_field_string (uiout, "sympath", symname);
-	}
-    
-    if (commobjname != NULL)
-      {
-	ui_out_text (uiout, "\n");
-	ui_out_spaces (uiout, baselen + 34);
-	ui_out_field_string (uiout, "objpath", commobjname);
-      }
-
-    if (commsymname != NULL)
-      {
-	ui_out_text (uiout, "\n");
-	ui_out_spaces (uiout, baselen + 34);
-	ui_out_field_string (uiout, "sympath", commsymname);
-      }
-    
-    xfree (name);
-    xfree (objname);
-    xfree (symname);
-    xfree (commobjname);
-    xfree (commsymname);
-    xfree (addr);
-    xfree (slide);
-    xfree (prefix);
-  }
-  
   ui_out_list_end (uiout);
 
   ui_out_text (uiout, "\n");
+
+  xfree (name);
+  xfree (objname);
+  xfree (symname);
+  xfree (auxobjname);
+  xfree (auxsymname);
+  xfree (addr);
+  xfree (slide);
+  xfree (prefix);
 }
 
 void dyld_convert_entry (struct objfile *o, struct dyld_objfile_entry *e)
@@ -1103,6 +1088,8 @@ void dyld_convert_entry (struct objfile *o, struct dyld_objfile_entry *e)
 
   e->objfile = o;
   e->abfd = o->obfd;
+
+  e->user_name = e->objfile->name;
 
   if (e->abfd != NULL)
     e->loaded_name = bfd_get_filename (e->abfd);
@@ -1135,6 +1122,10 @@ void dyld_print_shlib_info (struct dyld_objfile_info *s, unsigned int reason_mas
   if (args != NULL)
     dyld_entry_shlib_num_matches (-1, args, 1);
 
+  /* First, print all objfiles managed by the dyld_objfile_entry code, in order. */
+
+  /* Be sure to keep the order of output here synchronized with update_section_tables (). */
+
   for (i = 0; i < s->nents; i++) {
 
     struct dyld_objfile_entry *j = &s->entries[i];
@@ -1155,6 +1146,8 @@ void dyld_print_shlib_info (struct dyld_objfile_info *s, unsigned int reason_mas
       dyld_print_entry_info (j, shlibnum, baselen);
     }
   }
+
+  /* Then, print all the remaining objfiles. */
 
   ALL_OBJFILES_SAFE (objfile, temp) {
 

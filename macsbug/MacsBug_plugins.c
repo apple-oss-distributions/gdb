@@ -1755,7 +1755,7 @@ static void td(char *arg, int from_tty)
 
 static void tf(char *arg, int from_tty)
 {
-    int		  i, size;
+    int		  i;
     unsigned long fpscr;
     char	  f[4];
     
@@ -1787,7 +1787,7 @@ static void tf(char *arg, int from_tty)
     	sprintf(f, "$f%d", i);
 	gdb_printf("FPR%-2d = ", i);
 	
-	v = gdb_get_register(f, &value, &size);
+	v = gdb_get_register(f, &value);
 	
 	if (v == NULL)
 	    gdb_error(value.msg);
@@ -1825,7 +1825,7 @@ static void tf(char *arg, int from_tty)
 
 static void tv(char *arg, int from_tty)
 {
-    int 	  i, j, k, size;
+    int 	  i, j, k;
     unsigned long vrsave, vscr;
     double	  d;
     char	  vn[4], vf[13];
@@ -1857,7 +1857,7 @@ static void tv(char *arg, int from_tty)
     	sprintf(vn, "$v%d", i);
 	gdb_printf("V%-2d = ", i);
 	
-	v = gdb_get_register(vn, &value, &size);
+	v = gdb_get_register(vn, &value);
 	
 	if (v == NULL)
 	    gdb_error(value.msg);

@@ -24,8 +24,11 @@ for i in \
     /System/Library/PrivateFrameworks/*.framework/Frameworks/*.framework \
     ; do
     name=`basename $i .framework`
+    # FIXME: the first run of nm is to check that the file is a valid Mach-O file.  That's okay.
+    # The second is because gdb crashes when there are types in the cached symfile (Radar 3418798).
+    # So for now we just leave out all libraries that have any stabs.
     if [ -f $i/$name ]; then
-        if nm "$i/$name" >/dev/null 2>&1
+        if nm "$i/$name" >/dev/null 2>&1 && ! nm -ap "$i/$name" | grep 'SO ' >/dev/null 2>&1
         then
 	  libs="$libs $i/$name"
         fi
@@ -36,9 +39,8 @@ for i in \
     `find /usr/lib -name lib\*.dylib -type f` \
     /System/Library/Frameworks/*.framework/Libraries/*.dylib \
     ; do
-    name=`basename $i .dylib`
-    name=`echo $name | sed -e 's/\.[ABC]$//' -e 's/^lib//'`
-    if nm "$i" >/dev/null 2>&1
+    # FIXME: see fixme above.
+    if nm "$i" >/dev/null 2>&1  && ! nm -ap "$i" | grep 'SO ' >/dev/null 2>&1
     then
       libs="$libs $i"
     fi

@@ -59,6 +59,10 @@ char *log_filename = NULL;			/* log filename (NULL if file closed)	*/
 
 Special_Refresh_States immediate_flush;		/* Special_Refresh_States state switch	*/
 
+int current_pc_lines = 0;			/* nbr of lines in pc area (may be 1 	*/
+						/* bigger than pc_area_lines if no sym	*/
+						/* for pc area				*/
+
 #define SCREEN_RESET()        write_line(RESET)
 #define SCREEN_CLEAR_LINE()   write_line(CLEAR_LINE)
 #define SCREEN_GOTO(row, col) write_line(GOTO, row, col)
@@ -1003,7 +1007,7 @@ void rewrite_bottom_line(char *line, int err)
  | disasm_pc - format_disasm_line() output stream filter for display_pc_area()  |
  *------------------------------------------------------------------------------*
  
- format_disasm_line() write to a stream created by display_pc_area() whose output
+ format_disasm_line() writes to a stream created by display_pc_area() whose output
  redirection filter is disasm_pc().  Here we take each formatted disassembly line and
  write it to the pc area at the coordinates defined by the data channel that 
  display_pc_area() defined.  The data channel points to data with the following layout.
@@ -1011,6 +1015,8 @@ void rewrite_bottom_line(char *line, int err)
  typedef struct {			
     short row, col;				/* row, col to write disasm line to	*/
     int   remaining;				/* counts nbr of lines written 		*/
+    int   add1line;				/* set if no symbol at top of pc area	*/
+    DisasmData *disasm_info;			/* format_disasm_line data pointer	*/
  } Disasm_pc_data;
  											/*
  The line counter explicitly counts the number of lines the disassembly output. It is
@@ -1029,10 +1035,21 @@ static char *disasm_pc_area_output(FILE *f, char *line, void *data)
 {
     Disasm_pc_data *pc_data = (Disasm_pc_data *)data;
     
-    if (line && pc_data->remaining-- >= 0) {
-    	screen_fprintf(stdout, PC_AREA, GOTO CLEAR_LINE "%s", pc_data->row, pc_data->col, line);
-   	pc_data->row++;
+    /* If the line has nothing on it it must be because there is no symbol to display	*/
+    /* at the top of the pc area.  We make a special case of that by setting a flag to	*/
+    /* allow us to add one additional line to fill up the entire pc area instead of 	*/
+    /* wasting the top line of it with a blank line normally reserved for the symbol.	*/
+    
+    if (line) {
+    	char *p = line - 1;
+    	while (*++p && (*p == ' ' || *p == '\n')) ;
+    	if (!*p)
+    	    pc_data->add1line = 1;
+    	else if (pc_data->remaining-- >= 0)
+    	    screen_fprintf(stdout, PC_AREA, GOTO CLEAR_LINE "%s", pc_data->row++, pc_data->col, line);
     }
+    
+    pc_data->disasm_info->flags &= ~ALWAYS_SHOW_NAME;
     
     return (NULL);
 }
@@ -1058,6 +1075,18 @@ void display_pc_area(void)
     
     get_screen_size(&max_rows, &max_cols);
     
+    /* Sometimes gdb will print an extra line at the start of the first x/i done in a	*/
+    /* session.  For example, for Cocoa inferiors, it will print something like,	*/
+    
+    /*      Current language:  auto; currently objective-c				*/
+    
+    /* This will confuse the disassembly reformatting.  We can fake gdb out, however,	*/
+    /* by giving it "x/0i 0".  It won't do anything if gdb has nothing additional to	*/
+    /* say.  But if it does, the additional stuff is all it will say.  This will print	*/
+    /* to the current output stream which is where we want it to go.			*/
+    
+    gdb_execute_command("x/0i 0");
+    
     memset(line, '_', max_cols - pc_left);
     line[max_cols - pc_left] = '\0';
     screen_fprintf(stderr, PC_AREA, GOTO "%s", pc_top_divider,    pc_left, line);
@@ -1078,7 +1107,7 @@ void display_pc_area(void)
     
     /* No sense redrawing if the pc hasn't moved...					*/
     
-    current_pc = gdb_get_int("$pc");
+    gdb_get_register("$pc", &current_pc);
     if (previous_pc == current_pc)
     	return;
     previous_pc = current_pc;
@@ -1090,7 +1119,7 @@ void display_pc_area(void)
     /* stdout display for the x/i gdb disassembly command we issue, and the other 	*/
     /* (disasm_pc_area_output()) for the stream format_disasm_line() writes to.		*/
     
-    disasm_info.pc        = gdb_get_int("$pc");	/* these are for format_disasm_line()	*/
+    disasm_info.pc        = current_pc;		/* these are for format_disasm_line()	*/
     disasm_info.max_width = max_cols - pc_left;
     disasm_info.flags	  = (ALWAYS_SHOW_NAME|FLAG_PC);
     disasm_info.stream    = gdb_open_output(stdout, disasm_pc_area_output, &pc_data);
@@ -1098,20 +1127,30 @@ void display_pc_area(void)
     pc_data.row = pc_top;			/* for disasm_pc_area_output() to use	*/
     pc_data.col = pc_left;
     pc_data.remaining = pc_lines;		/* line cnt (funct names count as lines)*/
-
+    pc_data.disasm_info = &disasm_info;		/* disasm_pc_area_output changes flags	*/ 
+    pc_data.add1line = 0;			/* get's set if no symbol displayed	*/
+    
     redirect_stdout = gdb_open_output(stdout, format_disasm_line, &disasm_info);
     gdb_redirect_output(redirect_stdout);	/* x/i will go thru format_disasm_line()*/
    
     addr  = disasm_info.pc;			/* always disassemble starting from $pc	*/
-    limit = addr + 4 * pc_lines;		/* disassemble pc_lines lines		*/
+    //limit = addr + 4 * pc_lines;		/* disassemble pc_lines lines		*/
     
-    while (addr < limit && pc_data.remaining >= 0) { /* do the disassembly...		*/
-    	disasm_info.addr = addr;
-    	gdb_execute_command("x/i 0x%lX", addr);
-    	addr += 4;
-    	disasm_info.flags &= ~ALWAYS_SHOW_NAME;
-    }
+    disasm_info.addr = addr;
+    gdb_execute_command("x/%di 0x%lX", pc_lines, addr);
     
+    /* If we didn't show a function name because it wasn't available then we have room	*/
+    /* to add one more line of disassembly into the pc area.  Set current_pc_lines to   */
+    /* indicate how many lines we actually currently have in the pc area.  We need to	*/
+    /* know this in order to refresh the pc area if a breakpoint is set on an address	*/
+    /* currently displayed in there.  We must not change pc_lines.			*/
+    
+    if (pc_data.add1line) {
+    	 gdb_execute_command("x/i 0x%lX", disasm_info.addr);
+    	 current_pc_lines = pc_lines + 1;
+    } else
+    	current_pc_lines = pc_lines;
+    	
     gdb_close_output(disasm_info.stream);	/* close both redirections we defined	*/
     gdb_close_output(redirect_stdout);
     
@@ -1231,7 +1270,6 @@ static char *get_CurApName(char *curApName)
  Note, it is called usually by save_all_regs().  But it will also be called when the
  window size changes since that operation affects the number of screen rows.
 */
-
 void save_stack(int max_rows)
 {
     int i;
@@ -1251,7 +1289,7 @@ void save_stack(int max_rows)
     	prev_stack = (unsigned long *)gdb_realloc(prev_stack, i);
     
     if (prev_stack)
-    	gdb_read_memory(prev_stack, "$sp", i);
+    	gdb_read_memory(prev_stack, (char *)gdb_get_sp(), -i);
 }
 
 
@@ -1264,23 +1302,22 @@ void save_stack(int max_rows)
  the sidebar (could be 0) so the when the general registers are shown r31 will always
  end up on the last screen row.
 */
-
 static void save_all_regs(void)
 {
     int  i;
-    char r[6];
+    char r[6], v[50];
     
-    prev_pc  = gdb_get_int("$pc");
-    prev_lr  = gdb_get_int("$lr");
-    prev_ctr = gdb_get_int("$ctr");
-    prev_msr = gdb_get_int("$ps");
-    prev_cr  = gdb_get_int("$cr");
-    prev_xer = gdb_get_int("$xer");
-    prev_mq  = gdb_get_int("$mq");
+    gdb_get_register("$pc",  &prev_pc);		/* save current register values		*/
+    gdb_get_register("$lr",  &prev_lr);
+    gdb_get_register("$ctr", &prev_ctr);
+    gdb_get_register("$ps",  &prev_msr);
+    gdb_get_register("$cr",  &prev_cr);
+    gdb_get_register("$xer", &prev_xer);
+    gdb_get_register("$mq",  &prev_mq);
     
     for (i = 0; i < 32; ++i) {
-    	sprintf(r, "$r%d", i);
-	prev_gpr[i] = gdb_get_int(r);
+	sprintf(r, "$r%d", i);
+	gdb_get_register(r, &prev_gpr[i]);
     }
     
     save_stack(max_rows);
@@ -1333,13 +1370,12 @@ static void save_all_regs(void)
  __disasm command.  So it's exposed to the gdb command language as a "internal" command
  (hence the double underbar prefix just like __disasm).
 */
-
 void __display_side_bar(char *arg, int from_tty)
 {
     int           i, row, col, reg, saved_regs, lastcmd, left_col, bottom,
     		  cur_app_name, force_all_updates, changed, stack_rows;
     unsigned long pc, lr, ctr, msr, cr, xer, mq, gpr[32], *stack;
-    char          *bar_left, *bar_right, r[6], centered_name[13];
+    char          *bar_left, *bar_right, r[6], centered_name[13], v[50];
     
     static char prev_sp_color, prev_pc_color, prev_lr_color, prev_ctr_color,
     		prev_msr_color, prev_cr_color, prev_xer_color, prev_mq_color,
@@ -1416,17 +1452,17 @@ void __display_side_bar(char *arg, int from_tty)
     if (force_all_updates)
     	first_sidebar = force_all_updates;
     
-    pc  = gdb_get_int("$pc");		/* get current register values...		*/
-    lr  = gdb_get_int("$lr");
-    ctr = gdb_get_int("$ctr");
-    msr = gdb_get_int("$ps");
-    cr  = gdb_get_int("$cr");
-    xer = gdb_get_int("$xer");
-    mq  = gdb_get_int("$mq");
+    gdb_get_register("$pc",  &pc); 	/* get current register values...		*/
+    gdb_get_register("$lr",  &lr);
+    gdb_get_register("$ctr", &ctr);
+    gdb_get_register("$ps",  &msr);
+    gdb_get_register("$cr",  &cr);
+    gdb_get_register("$xer", &xer);
+    gdb_get_register("$mq",  &mq);
     
     for (i = 0; i < 32; ++i) {
-    	sprintf(r, "$r%d", i);
-	gpr[i] = gdb_get_int(r);
+	sprintf(r, "$r%d", i);
+	gdb_get_register(r, &gpr[i]);
     }
      
     row = 1;
@@ -1439,7 +1475,7 @@ void __display_side_bar(char *arg, int from_tty)
     	gdb_internal_error("Window size inconsistency dealing with number of stack entries");
     if (stack_rows > 0) {		
     	stack = (unsigned long *)gdb_malloc(stack_rows * sizeof(unsigned long));
-	gdb_read_memory(stack, "$sp", stack_rows * sizeof(unsigned long));
+    	gdb_read_memory(stack, (char *)gdb_get_sp(), -(stack_rows * sizeof(unsigned long)));
 	if (first_sidebar) {
 	    prev_stack_color = (char *)gdb_malloc(stack_rows);
 	    memset(prev_stack_color, 0, stack_rows);
@@ -2305,6 +2341,7 @@ static void mb(char *arg, int from_tty)
 
 void init_macsbug_display(void)
 {
+    
     MACSBUG_SCREEN_COMMAND(mb, 	    MB_HELP);
     MACSBUG_SCREEN_COMMAND(refresh, REFRESH_HELP);
     MACSBUG_SCREEN_COMMAND(scroll,  SCROLL_HELP);
@@ -2322,4 +2359,3 @@ void init_macsbug_display(void)
     COMMAND_ALIAS(su, scu);
     COMMAND_ALIAS(sd, scd);
 }
-

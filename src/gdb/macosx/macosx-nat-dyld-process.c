@@ -41,6 +41,7 @@
 #include "interpreter.h"
 #include "gdb_regex.h"
 #include "gdb-stabs.h"
+#include "gdb_assert.h"
 
 #include <mach-o/nlist.h>
 #include <mach-o/loader.h>
@@ -49,6 +50,8 @@
 #ifdef USE_MMALLOC
 #include "mmprivate.h"
 #endif
+
+#define MAPPED_SYMFILES (USE_MMALLOC && HAVE_MMAP)
 
 #include <sys/mman.h>
 #include <string.h>
@@ -384,7 +387,7 @@ dyld_resolve_load_flag (const struct dyld_path_info *d, struct dyld_objfile_entr
 	name = e->loaded_name;
       }
     } else {
-      name = dyld_entry_filename (e, d, 0);
+      name = dyld_entry_filename (e, d, DYLD_ENTRY_FILENAME_LOADED);
       if (name == NULL) {
 	if (! (e->reason & dyld_reason_weak_mask)) {
 	  warning ("Unable to resolve \"%s\"; not loading.", name);
@@ -465,7 +468,7 @@ void dyld_load_library (const struct dyld_path_info *d, struct dyld_objfile_entr
   }
 
   if (! read_from_memory) {
-    name = dyld_entry_filename (e, d, 0);
+    name = dyld_entry_filename (e, d, DYLD_ENTRY_FILENAME_LOADED);
     if (name == NULL) {
       char *s = dyld_entry_string (e, 1);
       warning ("No image filename available for %s.", s);
@@ -481,9 +484,10 @@ void dyld_load_library (const struct dyld_path_info *d, struct dyld_objfile_entr
       char *s = dyld_entry_string (e, 1);
       warning ("Unable to read symbols from %s.", s);
       xfree (s);
+    } else {
+      e->loaded_name = name;
+      e->loaded_from_memory = 0;
     }
-    e->loaded_name = name;
-    e->loaded_from_memory = 0;
   }	
   
   if (read_from_memory && (! e->dyld_valid)) {
@@ -1025,20 +1029,28 @@ static int dyld_libraries_compatible
   CHECK_FATAL (f != NULL);
   CHECK_FATAL (l != NULL);
 
-  if ((f->prefix != NULL && l->prefix != NULL)
-      && ((f->prefix != l->prefix) 
-	  || (strcmp (f->prefix, l->prefix) != 0))) {
-    return 0;
-  }
+  /* If either prefix is non-NULL, then they must both be the same string. */
+
+  if ((f->prefix != NULL) || (l->prefix != NULL))
+    {
+      if ((f->prefix == NULL) || (l->prefix == NULL))
+	return 0;
+      if (strcmp (f->prefix, l->prefix) != 0)
+	return 0;
+    }
 
   fname = dyld_entry_filename (f, d, DYLD_ENTRY_FILENAME_LOADED);
   lname = dyld_entry_filename (l, d, DYLD_ENTRY_FILENAME_LOADED);
 
-  if ((fname != NULL) && (lname != NULL)) {
-    if (strcmp (fname, lname) != 0) {
-      return 0;
+  /* If either filename is non-NULL, then they must both be the same string. */
+
+  if ((fname != NULL) || (lname != NULL))
+    {
+      if ((fname == NULL) || (lname == NULL))
+	return 0;
+      if (strcmp (fname, lname) != 0)
+	return 0;
     }
-  }
   
   if (dyld_always_read_from_memory_flag) {
     if (f->loaded_from_memory != l->loaded_from_memory) {
@@ -1052,6 +1064,12 @@ static int dyld_libraries_compatible
 void dyld_objfile_move_load_data
 (struct dyld_objfile_entry *f, struct dyld_objfile_entry *l)
 {
+  gdb_assert (l->abfd == NULL);
+  gdb_assert (l->commpage_bfd == NULL);
+
+  gdb_assert (l->objfile == NULL);
+  gdb_assert (l->commpage_objfile == NULL);
+
   l->abfd = f->abfd;
   l->objfile = f->objfile;
 
@@ -1116,6 +1134,7 @@ void dyld_merge_shlib
 	dyld_objfile_move_load_data (o, n);
 	if (n->reason & dyld_reason_executable_mask)
 	  symfile_objfile = n->objfile;
+	return;
       }
 
   DYLD_ALL_OBJFILE_INFO_ENTRIES (old, o, i)
@@ -1126,6 +1145,7 @@ void dyld_merge_shlib
 	dyld_objfile_move_load_data (o, n);
 	if (n->reason & dyld_reason_executable_mask)
 	  symfile_objfile = n->objfile;
+	return;
       }
 }
 
@@ -1143,7 +1163,7 @@ void dyld_prune_shlib
       if ((o->reason & dyld_reason_executable_mask)
 	  && (n->reason & dyld_reason_executable_mask))
 	{
-	  if (o->objfile != NULL)
+	  if ((o->objfile != NULL) && (o->objfile != n->objfile))
 	    tell_breakpoints_objfile_changed (o->objfile);
 	  dyld_objfile_entry_clear (o);
 	  continue;
@@ -1176,7 +1196,8 @@ void dyld_merge_shlibs
   dyld_resolve_filenames (s, new);
 
   DYLD_ALL_OBJFILE_INFO_ENTRIES (new, n, i)
-    dyld_merge_shlib (s, d, old, n);
+    if (n->objfile == NULL)
+      dyld_merge_shlib (s, d, old, n);
 
   DYLD_ALL_OBJFILE_INFO_ENTRIES (new, n, i)
     dyld_prune_shlib (s, d, old, n);
@@ -1196,7 +1217,8 @@ void dyld_merge_shlibs
 static void dyld_shlibs_updated (struct dyld_objfile_info *info)
 {
   dyld_objfile_info_pack (info);
-  update_section_tables (&current_target, info);
+  update_section_tables_dyld (info);
+  update_current_target ();
   reread_symbols ();
   breakpoint_update ();
   re_enable_breakpoints_in_shlibs (0);

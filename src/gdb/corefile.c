@@ -70,7 +70,6 @@ void
 core_file_command (char *args, int from_tty)
 {
   struct cleanup *cleanups;
-  struct target_ops *t;
   char *filename;
   char **argv;
 
@@ -96,6 +95,16 @@ core_file_command (char *args, int from_tty)
 	filename = argv[0];
     }
 
+  core_file_attach (filename, from_tty);
+
+  if (cleanups != NULL)
+    do_cleanups (cleanups);
+}
+
+void core_file_attach (char *filename, int from_tty)
+{
+  struct target_ops *t;
+
   t = find_core_target ();
   if (t == NULL)
     error ("GDB can't read core files on this machine.");
@@ -104,9 +113,6 @@ core_file_command (char *args, int from_tty)
     (t->to_detach) (filename, from_tty);
   else
     (t->to_open) (filename, from_tty);
-
-  if (cleanups != NULL)
-    do_cleanups (cleanups);
 }
 
 

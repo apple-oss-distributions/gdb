@@ -44,6 +44,9 @@ typedef struct ppc_function_properties {
   int fpr_offset;		/* offset of saved fprs */
 
   char frameless;		/* true if no stack frame allocated */
+  CORE_ADDR sp_setup_pc;        /* This stores the pc at which the sp
+				   is updated and the value written into
+				   the stack.  */
 
   char frameptr_used;		/* true if frame uses a frame pointer */
   int frameptr_reg;		/* frame pointer register number */

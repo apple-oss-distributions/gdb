@@ -95,6 +95,8 @@ static void environment_info (char *, int);
 
 static void program_info (char *, int);
 
+static void pid_info (char *, int);
+
 static void finish_command (char *, int);
 
 static void signal_command (char *, int);
@@ -1500,6 +1502,22 @@ program_info (char *args, int from_tty)
     }
 }
 
+/* APPLE LOCAL: A command to get the inferior's process ID, useful for
+   an IDE in some circumstances.  So pid_info() was added.  */
+static void
+pid_info (char *args, int from_tty)
+{
+  if (!target_has_execution)
+    {
+      error ("The program being debugged is not being run.");
+    }
+
+  ui_out_text (uiout, "Inferior has process ID ");
+  ui_out_field_int (uiout, "process-id", PIDGET (inferior_ptid));
+  ui_out_text (uiout, ".\n");
+  ui_out_flush (uiout);
+}
+
 static void
 environment_info (char *var, int from_tty)
 {
@@ -2292,6 +2310,11 @@ Register name as argument means describe only that register.");
 
   add_info ("program", program_info,
 	    "Execution status of the program.");
+
+  /* APPLE LOCAL: "info pid" & MI's "-pid-info" are Apple local cmds for
+     use by Xcode.  */
+  add_info ("pid", pid_info,
+	    "Process ID of the program.");
 
   add_info ("float", float_info,
 	    "Print the status of the floating point unit\n");

@@ -649,28 +649,21 @@ gdb_expect  {
         timeout         { fail "(timeout) maint dump-me" }
         }
 
+# APPLE LOCAL: We don't prompt for "Do you want fry's with that",
+# er I mean "Create a core file of GDB? (y or n)" because no one
+# ever, ever, ever, wants to create a core file of gdb.
+
 send_gdb "maint internal-error\n"
 gdb_expect  {
     -re "Quit this debugging session.*\\(y or n\\) $" {
 	send_gdb "n\n"
 	gdb_expect {
-	    -re "Create a core file.*\\(y or n\\) $" {
-		send_gdb "n\n"
-		gdb_expect {
-		    -re ".*$gdb_prompt $" {
-			pass "maint internal-error"
-		    }
-		    timeout {
-			fail "(timeout)  maint internal-error"
-		    }
-		}
-	    }
-	    -re ".*$gdb_prompt $" {
-		fail "maint internal-error"
-	    }
-	    timeout {
-		fail "(timeout)  maint internal-error"
-	    }
+	   -re ".*$gdb_prompt $" {
+		pass "maint internal-error"
+	   }
+	   timeout {
+	      fail "(timeout)  maint internal-error"
+	   }
 	}
     }
     -re ".*$gdb_prompt $" {

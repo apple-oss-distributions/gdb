@@ -72,7 +72,17 @@ enum bp_type
    -break-insert -t -h <location> --> insert a temporary hw bp.
    -break-insert -f <location> --> insert a future breakpoint.  
    -break-insert -r <regexp> --> insert a bp at functions matching
-   <regexp> */
+   <regexp>
+   
+   You can also specify the shared-library in which to set the breakpoint
+   by passing the -s argument, as:
+
+   -break-insert -s <shlib> 
+
+   If this is a path, the full path must match, otherwise the base
+   filename must match.  This can be given in combination with
+   the other options above.
+*/
 
 enum mi_cmd_result
 mi_cmd_break_insert (char *command, char **argv, int argc)
@@ -83,12 +93,13 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
   int thread = -1;
   int ignore_count = 0;
   char *condition = NULL;
+  char *requested_shlib = NULL;
   enum gdb_rc rc;
   struct gdb_events *old_hooks;
   enum opt
     {
       HARDWARE_OPT, TEMP_OPT, FUTURE_OPT /*, REGEXP_OPT */ , CONDITION_OPT,
-      IGNORE_COUNT_OPT, THREAD_OPT
+      IGNORE_COUNT_OPT, THREAD_OPT, SHLIB_OPT
     };
   static struct mi_opt opts[] =
   {
@@ -98,6 +109,7 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
     {"c", CONDITION_OPT, 1},
     {"i", IGNORE_COUNT_OPT, 1},
     {"p", THREAD_OPT, 1},
+    {"s", SHLIB_OPT, 1},
     0
   };
 
@@ -135,6 +147,9 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
 	case THREAD_OPT:
 	  thread = atol (optarg);
 	  break;
+	case SHLIB_OPT:
+	  requested_shlib = optarg;
+	  break;
 	}
     }
 
@@ -151,17 +166,17 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
     case REG_BP:
       rc = gdb_breakpoint (address, condition,
 			   0 /*hardwareflag */ , temp_p,
-			   0 /* futureflag */, thread, ignore_count);
+			   0 /* futureflag */, thread, ignore_count, requested_shlib);
       break;
     case HW_BP:
       rc = gdb_breakpoint (address, condition,
 			   1 /*hardwareflag */ , temp_p,
-			   0 /* futureflag */, thread, ignore_count);
+			   0 /* futureflag */, thread, ignore_count, requested_shlib);
       break;
     case FUT_BP:
       rc = gdb_breakpoint (address, condition,
 			   0, temp_p,
-			   1 /* futureflag */, thread, ignore_count);
+			   1 /* futureflag */, thread, ignore_count, requested_shlib);
       break;
 
 #if 0
@@ -280,6 +295,7 @@ mi_cmd_break_catch (char *command, char **argv, int argc)
 	  if (exception_catchpoints_enabled (ex_event))
 	    {
 	      disable_exception_catch (ex_event);
+	      return MI_CMD_DONE;
 	    }
 	  else
 	    {

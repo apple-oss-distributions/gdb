@@ -41,7 +41,7 @@ if $tracelevel then {
 	strace $tracelevel
 }
 
-set timeout 30
+set timeout 120
 set prms_id 0
 set bug_id 0
 

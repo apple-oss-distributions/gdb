@@ -87,7 +87,7 @@ struct dyld_objfile_info {
 
 struct dyld_path_info;
 
-enum { DYLD_ENTRY_FILENAME_LOADED = 1 } dyld_entry_filename_type;
+enum { DYLD_ENTRY_FILENAME_BASE = 0, DYLD_ENTRY_FILENAME_LOADED = 1, DYLD_ENTRY_FILENAME_USER = 2 } dyld_entry_filename_type;
 
 const char *dyld_entry_filename
 PARAMS ((const struct dyld_objfile_entry *e, const struct dyld_path_info *d, int type));
@@ -105,6 +105,9 @@ void dyld_objfile_entry_clear
 PARAMS ((struct dyld_objfile_entry *e));
 
 void dyld_objfile_info_init
+PARAMS ((struct dyld_objfile_info *i));
+
+void dyld_objfile_info_clear_objfiles
 PARAMS ((struct dyld_objfile_info *i));
 
 void dyld_objfile_info_pack
@@ -137,12 +140,15 @@ void dyld_convert_entry PARAMS ((struct objfile *o, struct dyld_objfile_entry *e
 void 
 dyld_entry_info PARAMS ((struct dyld_objfile_entry *e, int print_basenames, 
 			 char **in_name, char **in_objname, char **in_symname,
-			 char **in_commobjname, char **in_commsymname,
+			 char **in_auxobjname, char **in_auxsymname,
 			 char **addr, char **slide, char **prefix));
 
 void dyld_print_entry_info
 PARAMS ((struct dyld_objfile_entry *j, unsigned int shlibnum,
 	 unsigned int baselen));
+
+unsigned int dyld_shlib_info_basename_length (struct dyld_objfile_info *, 
+                                              unsigned int);
 
 int dyld_entry_shlib_num
 PARAMS ((struct dyld_objfile_info *s, struct dyld_objfile_entry *eptr,

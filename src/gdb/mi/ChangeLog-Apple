@@ -1,3 +1,97 @@
+2004-07-15  Jason Molenda  (jmolenda@apple.com)
+
+        * mi-main.c (mi_cmd_thread_set_pc): Split apart filename and line
+        number manually instead of using decode_line_1.  Add appropriate
+        error checking to catch bad filenames/line #'s.  
+
+2004-05-27  Jim Ingham  <jingham@apple.com>
+
+      * mi-cmd-stack.c (mi_cmd_file_list_statics): Not being able to
+      find a symtab for the CURRENT_FRAME_COOKIE, or for a "" filename
+      should just return an empty list, not an error.
+
+2004-05-25  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-break.c (mi_cmd_break_catch): Return from unsetting
+	the catchpoints rather than continuing on to set new ones (doh!)
+	
+2004-05-18  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-stack.c (mi_cmd_file_list_statics): Added the
+	"*CURRENT FRAME*" cookie.
+	
+2004-05-07  Jason Molenda  (jmolenda@apple.com)
+
+	* gdbmi.texinfo: Quote curly braces in examples properly.
+
+2004-05-05  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmds.c (mi_cmds): Route -exec-abort MI command to CLI's "kill".
+
+2004-05-03  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-stack.c (print_syms_for_block) Take & use the 
+	filter regexp.
+	(mi_cmd_file_list_statics): Add a fourth argument - 
+	a filter to apply to the symbols before printing.
+	(mi_cmd_file_list_globals): Ditto.
+	(print_globals_for_symtab): Pass the regexp filter through.
+
+2004-03-12  Jim Ingham  <jingham@apple.com>
+
+	* gdbmi.texinfo: Document new -file-list-statics and -file-list-globals
+	commands.
+	* mi-cmd-stack.c (mi_cmd_file_list_statics): New function.
+	* (print_globals_for_symtab): New function.
+	* (mi_cmd_file_list_globals): New function.
+	* (print_syms_for_block): Handle static block as well.
+	* mi-cmds.h: Add the ftype's for the new commands.
+	* mi-cmds.c: And add them to the command array.
+	
+2004-02-03  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmds.c: Add exec-safe-call.
+	* mi-main.c (mi_cmd_exec_safe_call): New function.
+2003-10-30  Jim Ingham  <jingham@apple.com>
+
+	* mi-main.c (mi_insert_notify_hooks): Add the "stack_changed"
+	hooks to the hooks we use.  This way we get notified if the
+	return command changes the stack.
+	(mi_remove_notify_hooks): Remove "stack_changed.
+
+2003-10-22  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmds.c (mi_cmds): Add "-pid-info" MI command.
+
+2003-10-20  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-disas.c (mi_cmd_disassemble): Allow the data-disassemble
+	command to that "-s -n" as a pair, and throttle the disassembly
+	to the number of lines specified in by the -n argument.
+
+2003-10-15  Jim Ingham  <jingham@apple.com>
+	
+	* mi-cmd-break.c: (mi_cmd_break_insert): Handle the "-s" option
+	for shared-library specific breakpoints.
+
+2003-10-08  James Ingham  <jingham@apple.com>
+
+	* mi-cmd-disas.c (mi_cmd_disassemble): Change the data-disassemble 
+	command so if you only provide -s, we disassemble the function
+	around the start address.
+
+2003-09-26  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmds.c: Add interpreter-complete.
+	* mi-cmds.h: ditto
+	* mi-main.c (mi_create_interpreter): pass a NULL complete_proc.
+	(mi_cmd_interpreter_complete): New function.
+
+2003-08-26  Jason Molenda  (jmolenda@apple.com)
+
+        * mi-main.c (mi_cmd_thread_set_pc): Update current source line
+        and current default breakpoint location after moving the pc.
+
 2003-08-08  Jim Ingham (jingham@apple.com)
 
 	* mi-main.c (mi_execute_async_cli_command): Use 

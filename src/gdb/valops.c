@@ -262,7 +262,16 @@ value_cast (struct type *type, struct value *arg2)
 
   CHECK_TYPEDEF (type);
   code1 = TYPE_CODE (type);
-  COERCE_REF (arg2);
+  
+  /* APPLE LOCAL: if we are going to cast arg2 to a reference type,
+     then don't coerce the reference.  Once you've done that you can't
+     get back to the reference form, and the cast to another reference
+     will be wrong.  */
+
+  if (code1 != TYPE_CODE_REF)
+    COERCE_REF (arg2);
+  /* END APPLE LOCAL */
+
   type2 = check_typedef (VALUE_TYPE (arg2));
 
   /* A cast to an undetermined-length array_type, such as (TYPE [])OBJECT,
