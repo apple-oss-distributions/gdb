@@ -963,6 +963,8 @@ ihex_sizeof_headers (abfd, exec)
 #define ihex_new_section_hook _bfd_generic_new_section_hook
 #define ihex_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define ihex_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 #define ihex_get_symtab_upper_bound bfd_0l
 #define ihex_canonicalize_symtab \

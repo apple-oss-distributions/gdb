@@ -268,20 +268,58 @@ legacy_virtual_frame_pointer (CORE_ADDR pc,
   *frame_offset = 0;
 }
 
+
+/* APPLE LOCAL: reg_cache to reduce the # of function calls done
+   to get each register's size; it turns out we do this quite a lot. */
+
+/* Register size cache */
+static int *reg_cache_hack__regsizes = 0;
+static int reg_cache_hack__maxregnum_sizes = 0;
+static int reg_cache_hack__regsize_cache_valid = 0;
+
+/* Register offset cache */
+static int *reg_cache_hack__regoffsets = 0;
+static int reg_cache_hack__maxregnum_offsets = 0;
+static int reg_cache_hack__regoffset_cache_valid  = 0;
+
+/* Reset the register size & register offset caches on an arch change. */
+void
+reg_cache_hack__architecture_changed_hook (void)
+{
+   if (reg_cache_hack__regsize_cache_valid)
+     xfree (reg_cache_hack__regsizes);
+   if (reg_cache_hack__regoffset_cache_valid)
+     xfree (reg_cache_hack__regoffsets);
+   reg_cache_hack__regsize_cache_valid = 0;
+   reg_cache_hack__regoffset_cache_valid = 0;
+}
+
 /* Assume the world is sane, every register's virtual and real size
    is identical.  */
 
 int
 generic_register_size (int regnum)
 {
-  gdb_assert (regnum >= 0 && regnum < NUM_REGS + NUM_PSEUDO_REGS);
-  if (gdbarch_register_type_p (current_gdbarch))
-    return TYPE_LENGTH (gdbarch_register_type (current_gdbarch, regnum));
-  else
-    /* FIXME: cagney/2003-03-01: Once all architectures implement
-       gdbarch_register_type(), this entire function can go away.  It
-       is made obsolete by register_size().  */
-    return TYPE_LENGTH (DEPRECATED_REGISTER_VIRTUAL_TYPE (regnum)); /* OK */
+    /* APPLE LOCAL: Instead of computing the size of each register
+       every time, save them in a little static array.  */
+    if (reg_cache_hack__regsize_cache_valid == 0)
+      {
+        int i;
+        reg_cache_hack__maxregnum_sizes = NUM_REGS + NUM_PSEUDO_REGS;
+        reg_cache_hack__regsizes = (int *) xmalloc (sizeof (int) * reg_cache_hack__maxregnum_sizes);
+        for (i = 0; i < reg_cache_hack__maxregnum_sizes; i++)
+            if (gdbarch_register_type_p (current_gdbarch))
+              reg_cache_hack__regsizes[i] = TYPE_LENGTH (gdbarch_register_type (current_gdbarch, i));
+            else
+            /* FIXME: cagney/2003-03-01: Once all architectures implement
+               gdbarch_register_type(), this entire function can go away.  It
+               is made obsolete by register_size().  */
+              reg_cache_hack__regsizes[i] = TYPE_LENGTH (DEPRECATED_REGISTER_VIRTUAL_TYPE (i)); /* OK */
+        reg_cache_hack__regsize_cache_valid = 1;
+      }
+
+    gdb_assert (regnum >= 0 && regnum < reg_cache_hack__maxregnum_sizes);
+    return reg_cache_hack__regsizes[regnum];
 }
 
 /* Assume all registers are adjacent.  */
@@ -291,13 +329,22 @@ generic_register_byte (int regnum)
 {
   int byte;
   int i;
-  gdb_assert (regnum >= 0 && regnum < NUM_REGS + NUM_PSEUDO_REGS);
-  byte = 0;
-  for (i = 0; i < regnum; i++)
+    /* APPLE LOCAL: Instead of computing the offset of each register
+       every time, save them in a little static array.  */
+  if (reg_cache_hack__regoffset_cache_valid == 0)
     {
-      byte += generic_register_size (i);
+      reg_cache_hack__maxregnum_offsets = NUM_REGS + NUM_PSEUDO_REGS;
+      reg_cache_hack__regoffsets = xmalloc (sizeof (int) * reg_cache_hack__maxregnum_offsets);
+      byte = 0;
+      for (i = 0; i < reg_cache_hack__maxregnum_offsets; i++)
+        {
+          reg_cache_hack__regoffsets[i] = byte;
+          byte += generic_register_size (i);
+        }
+      reg_cache_hack__regoffset_cache_valid = 1;
     }
-  return byte;
+  gdb_assert (regnum >= 0 && regnum < reg_cache_hack__maxregnum_offsets);
+  return reg_cache_hack__regoffsets[regnum];
 }
 
 

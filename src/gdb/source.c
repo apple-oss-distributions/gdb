@@ -1413,26 +1413,6 @@ void convert_sal (struct symtab_and_line *sal)
 }
 
 
-/* Print a list of files and line numbers which a user may choose from
-   in order to list a function which was specified ambiguously (as with
-   `list classname::overloadedfuncname', or 'list objectiveCSelector:).
-   The vector in SALS provides the filenames and line numbers.
-   NOTE: some of the SALS may have no filename or line information! */
-
-static void
-ambiguous_line_spec (struct symtabs_and_lines *sals)
-{
-  int i;
-
-  for (i = 0; i < sals->nelts; ++i)
-    if (sals->sals[i].symtab != 0)
-      printf_filtered ("file: \"%s\", line number: %d\n",
-		       sals->sals[i].symtab->filename, sals->sals[i].line);
-    else
-      printf_filtered ("No file and line information.\n");
-}
-
-
 /* Print info on range of pc's in a specified line.  */
 
 static void

@@ -563,6 +563,11 @@ set_interpreter_cmd (char *args, int from_tty, struct cmd_list_element * c)
   interp_ptr = interp_lookup (interpreter_p);
   if (interp_ptr != NULL)
     {
+      /* If we are already using this interpreter,
+	 just return.  */
+      if (interp_ptr == current_interpreter)
+	return;
+
       if (!interp_set (interp_ptr))
 	error ("\nCould not switch to interpreter \"%s\", %s%s\".\n", 
 	       interp_ptr->name, "reverting to interpreter \"",

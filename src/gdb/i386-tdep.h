@@ -67,6 +67,11 @@ struct gdbarch_tdep
   struct regset *fpregset;
   size_t sizeof_fpregset;
 
+  /* APPLE LOCAL: This cpu family is only 32 bit, but we use wordsize to 
+     distinguish between ppc32 and ppc64 -- so to allow for generic code,
+     we have wordsize over here, too.  */
+  int wordsize;           /* size in bytes of fixed-point word */
+
   /* Register number for %st(0).  The register numbers for the other
      registers follow from this one.  Set this to -1 to indicate the
      absence of an FPU.  */

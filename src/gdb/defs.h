@@ -245,6 +245,8 @@ enum auto_boolean
 };
 
 /* Potential ways that a function can return a value of a given type.  */
+/* APPLE LOCAL: I back ported this from the current (11-2004) version of
+   this enum.  */
 enum return_value_convention
 {
   /* Where the return value has been squeezed into one or more
@@ -256,7 +258,19 @@ enum return_value_convention
      should be stored.  While typically, and historically, used for
      large structs, this is convention is applied to values of many
      different types.  */
-  RETURN_VALUE_STRUCT_CONVENTION
+  RETURN_VALUE_STRUCT_CONVENTION,
+  /* Like the "struct return convention" above, but where the ABI
+     guarantees that the called function stores the address at which
+     the value being returned is stored in a well-defined location,
+     such as a register or memory slot in the stack frame.  Don't use
+     this if the ABI doesn't explicitly guarantees this.  */
+  RETURN_VALUE_ABI_RETURNS_ADDRESS,
+  /* Like the "struct return convention" above, but where the ABI
+     guarantees that the address at which the value being returned is
+     stored will be available in a well-defined location, such as a
+     register or memory slot in the stack frame.  Don't use this if
+     the ABI doesn't explicitly guarantees this.  */
+  RETURN_VALUE_ABI_PRESERVES_ADDRESS
 };
 
 /* the cleanup list records things that have to be undone
@@ -443,6 +457,8 @@ extern void set_demangling_style (char *);
 
 extern CORE_ADDR decode_fix_and_continue_trampoline (CORE_ADDR);
 extern void update_picbase_register (struct symbol *);
+extern void fix_command_1 (const char *, const char *, const char *, const char *);
+int fix_and_continue_supported (void);
 
 /* From tm.h */
 

@@ -415,6 +415,21 @@ set_language (enum language lang)
 
   return prev_language;
 }
+
+static void
+do_set_language (void *in_language)
+{
+  enum language lang = (enum language) in_language;
+  set_language (lang);
+}
+
+struct cleanup *
+make_cleanup_restore_language (enum language new_lang)
+{
+  enum language lang = set_language (new_lang);
+  return make_cleanup (do_set_language, (void *) lang);
+}
+
 
 /* This page contains functions that update the global vars
    language, type and range. */

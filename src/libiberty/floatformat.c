@@ -545,7 +545,14 @@ floatformat_is_valid (fmt, from)
      const struct floatformat *fmt;
      const char *from;
 {
-  return fmt->is_valid (fmt, from);
+  /* APPLE LOCAL: If our caller couldn't find a format, don't
+     crash.  */
+
+  if (fmt == NULL)
+    return 0;
+  else
+    /* END APPLE LOCAL */
+    return fmt->is_valid (fmt, from);
 }
 
 

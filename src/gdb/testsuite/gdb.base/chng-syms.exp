@@ -111,6 +111,9 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {deb
 	-re "Error in re-setting .*No symbol .var1..*Breakpoint .*,( 0x.* in)? exit .*$gdb_prompt $" {
 	    pass "running with invalidated bpt condition after executable changes" 
 	}
+	-re "No symbol .var1..*Breakpoint .*, stop_here \\(\\) at .*chng-syms.c.*$gdb_prompt $" {
+	    pass "APPLE LOCAL pass: running with invalidated bpt condition after executable changes" 
+	}
 	-re "$gdb_prompt $" { 
 	    fail "running with invalidated bpt condition after executable changes" 
 	}

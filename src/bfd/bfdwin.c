@@ -378,6 +378,9 @@ bfd_get_file_window (abfd, offset, size, windowp, writable)
       i->refcount = 1;
       i->mapped = 2;
 
+      windowp->data = i->data;
+      windowp->size = i->size;
+
       return TRUE;
     }
   else

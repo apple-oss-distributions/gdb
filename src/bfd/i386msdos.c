@@ -171,6 +171,8 @@ msdos_set_section_contents (abfd, section, location, offset, count)
 #define msdos_get_section_contents _bfd_generic_get_section_contents
 #define msdos_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define msdos_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 #define msdos_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define msdos_bfd_relax_section bfd_generic_relax_section

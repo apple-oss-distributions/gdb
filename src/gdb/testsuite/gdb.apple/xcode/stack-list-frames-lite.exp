@@ -42,7 +42,7 @@ mi_gdb_load ${binfile}
 
 send_gdb "100-break-insert foo4\n"
 gdb_expect {
-    -re "100\\^done,bkpt=\{number=\"1\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\".*foo4.*\",file=\".*callfuncs.c\",line=\"($decimal)\",times=\"0\"\}\[\r\n\]+$mi_gdb_prompt$"  {
+    -re "100\\^done,bkpt=\{number=\"1\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\".*foo4.*\",file=\".*callfuncs.c\",line=\"($decimal)\",shlib=\"$binfile\",times=\"0\"\}\[\r\n\]+$mi_gdb_prompt$"  {
     pass "break-insert foo4"
   }
   -re ".*$mi_gdb_prompt$" {

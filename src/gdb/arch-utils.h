@@ -168,4 +168,7 @@ extern void gdbarch_info_fill (struct gdbarch *gdbarch,
 
 extern struct gdbarch *gdbarch_from_bfd (bfd *abfd);
 
+/* APPLE LOCAL: regsize hack */
+void reg_cache_hack__architecture_changed_hook (void);
+
 #endif

@@ -74,8 +74,16 @@ static void print_syms_for_block (struct block *block,
 				  struct frame_info *fi, 
 				  struct ui_stream *stb,
 				  int locals, 
+				  int consts,
 				  enum print_values values,
 				  struct re_pattern_buffer *filter);
+
+static void
+print_globals_for_symtab (struct symtab *file_symtab, 
+			  struct ui_stream *stb,
+			  enum print_values values,
+			  int consts,
+			  struct re_pattern_buffer *filter);
 
 /* Print a list of the stack frames. Args can be none, in which case
    we want to print the whole backtrace, or a pair of numbers
@@ -473,7 +481,7 @@ list_args_or_locals (int locals, enum print_values values, struct frame_info *fi
 
       while (BLOCK_END (block) <= endaddr)
 	{
-	  print_syms_for_block (block, fi, stb, locals, 
+	  print_syms_for_block (block, fi, stb, locals, 1, 
 				values, NULL);
 	  index++;
 	  if (index == nblocks)
@@ -487,7 +495,7 @@ list_args_or_locals (int locals, enum print_values values, struct frame_info *fi
 
       while (block != 0)
 	{
-	  print_syms_for_block (block, fi, stb, locals, values, NULL);
+	  print_syms_for_block (block, fi, stb, locals, 1, values, NULL);
 	  
 	  if (BLOCK_FUNCTION (block))
 	    break;
@@ -517,6 +525,97 @@ list_args_or_locals (int locals, enum print_values values, struct frame_info *fi
 
 #define CURRENT_FRAME_COOKIE "*CURRENT FRAME*"
 
+static int
+parse_statics_globals_args (char **argv, int argc, char **filename_ptr, char ** shlibname_ptr, 
+			    enum print_values *values_ptr, struct re_pattern_buffer **filterp_ptr,
+			    int *consts_ptr)
+{
+  char *filter_arg;
+  int bad_args;
+
+  filter_arg = NULL;
+  *filename_ptr = NULL;
+  *shlibname_ptr = NULL;
+  bad_args = 0;
+  
+  if (argc > 2 && argc < 5)
+    {
+      *filename_ptr = argv[0];
+      *shlibname_ptr = argv[1];
+      *values_ptr = mi_decode_print_values (argv[2]);
+      if (*values_ptr == PRINT_BAD_INPUT) 
+	bad_args = 1;
+      if (argc == 4) 
+	filter_arg = argv[3];
+      *consts_ptr = 0;
+    }
+  else if (argc == 5 || argc == 7 || argc == 9)
+    {
+      int got_values = 0;
+
+      while (argc > 0) 
+	{
+	  int step = 2;
+	  if (strcmp (argv[0], "-file") == 0)
+	    *filename_ptr = argv[1];
+	  else if (strcmp (argv[0], "-shlib") == 0)
+	    *shlibname_ptr = argv[1];
+	  else if (strcmp (argv[0], "-filter") == 0)
+	    filter_arg = argv[1];
+	  else if (strcmp (argv[0], "-constants") == 0)
+	    {
+	      if (strcmp (argv[1], "1") == 0)
+		*consts_ptr = 1;
+	      else if (strcmp (argv[1], "0") == 0)
+		*consts_ptr = 0;
+	      else
+		{
+		  bad_args = 1;
+		  break;
+		}
+	    }
+	  else
+	    {
+	      *values_ptr = mi_decode_print_values (argv[0]);
+	      if (*values_ptr != PRINT_BAD_INPUT) 
+		{
+		  got_values = 1;
+		  step = 1;
+		}
+	      else
+		{
+		  bad_args = 1;
+		  break;
+		}
+	    }
+
+	  argc -= step;
+	  argv += step;
+	}
+      if (*filename_ptr == NULL || *shlibname_ptr == NULL || got_values == 0)
+	bad_args = 1;
+    }
+  else
+    bad_args = 1;
+
+  if (bad_args)
+    return 0;
+
+  if (filter_arg != NULL)
+    {
+      const char *msg;
+
+      msg = re_compile_pattern (filter_arg, strlen (filter_arg), &mi_symbol_filter);
+      if (msg)
+	error ("Error compiling regexp: \"%s\"", msg);
+      *filterp_ptr = &mi_symbol_filter;
+    }
+  else
+    *filterp_ptr = NULL;
+
+  return 1;
+}
+
 enum mi_cmd_result
 mi_cmd_file_list_statics (char *command, char **argv, int argc)
 {
@@ -528,33 +627,15 @@ mi_cmd_file_list_statics (char *command, char **argv, int argc)
   struct cleanup *cleanup_list;
   struct ui_stream *stb;
   struct re_pattern_buffer *filterp = NULL;
+  int consts = 1;
 
-  if (argc < 3 || argc > 4)
-    {
-      error ("mi_cmd_file_list_statics: Usage: FILE SHLIB PRINT_VALUES"
-	     " [FILTER]");
-    }
+
+  if (!parse_statics_globals_args (argv, argc, &filename, &shlibname, &values, 
+				   &filterp, &consts))
+    error ("mi_cmd_file_list_statics: Usage: -file FILE -shlib SHLIB"
+	   " VALUES"
+	   " [-filter FILTER] [-constants 0/1]");
   
-  
-  values = mi_decode_print_values (argv[2]);
-  if (values == PRINT_BAD_INPUT) 
-    error ("%s", print_values_bad_input_string);
-
-  filename = argv[0];
-  shlibname = argv[1];
-
-  if (argc == 4)
-    {
-      const char *msg;
-
-      msg = re_compile_pattern (argv[3], strlen (argv[3]), &mi_symbol_filter);
-      if (msg)
-	error ("Error compiling regexp: \"%s\"", msg);
-      filterp = &mi_symbol_filter;
-    }
-  else
-    filterp = NULL;
-
   if (strcmp (filename, CURRENT_FRAME_COOKIE) == 0)
     {
       CORE_ADDR pc;
@@ -584,28 +665,37 @@ mi_cmd_file_list_statics (char *command, char **argv, int argc)
       else
 	cleanup_list = make_cleanup (null_cleanup, NULL);
       
-      /* Probably better to not restrict the objfile search, while doing the 
-	 PSYMTAB to SYMTAB conversion to miss some types that are defined outside the
-	 current shlib.  So get the psymtab first, and then convert after cleaning up.  */
+      /* Probably better to not restrict the objfile search, while
+	 doing the PSYMTAB to SYMTAB conversion to miss some types
+	 that are defined outside the current shlib.  So get the
+	 psymtab first, and then convert after cleaning up.  */
 
-      file_ps = lookup_partial_symtab (filename);
-
-      
-      /* FIXME: dbxread.c only uses the SECOND N_SO stab when making psymtabs.  It discards
-	 the first one.  But that means that if filename is an absolute path, it is likely
-	 lookup_partial_symtab will fail.  If it did, try again with the base name.  */
-
-      if (file_ps == NULL)
-	if (lbasename(filename) != filename)
-	  file_ps = lookup_partial_symtab (lbasename (filename));
+      if (*filename != '\0')
+	{
+	  file_ps = lookup_partial_symtab (filename);
+	  
+	  
+	  /* FIXME: dbxread.c only uses the SECOND N_SO stab when making
+	     psymtabs.  It discards the first one.  But that means that if
+	     filename is an absolute path, it is likely
+	     lookup_partial_symtab will fail.  If it did, try again with
+	     the base name.  */
+	  
+	  if (file_ps == NULL)
+	    if (lbasename(filename) != filename)
+	      file_ps = lookup_partial_symtab (lbasename (filename));
+	}
+      else
+	file_ps = NULL;
       
       do_cleanups (cleanup_list);
 
     }
 
-  /* If the user passed us a real filename and we couldn't find it, that is an error.  But
-     "" or current frame, could point to a file or objfile with no debug info.  In which
-     case we should just return an empty list.  */
+  /* If the user passed us a real filename and we couldn't find it,
+     that is an error.  But "" or current frame, could point to a file
+     or objfile with no debug info.  In which case we should just
+     return an empty list.  */
 
   if (file_ps == NULL)
     {
@@ -616,7 +706,8 @@ mi_cmd_file_list_statics (char *command, char **argv, int argc)
 	  return MI_CMD_DONE;
 	}
       else
-	error ("mi_cmd_file_list_statics: Could not get symtab for file \"%s\".", filename);
+	error ("mi_cmd_file_list_statics: "
+	       "Could not get symtab for file \"%s\".", filename);
     }
   
   file_symtab = PSYMTAB_TO_SYMTAB (file_ps);
@@ -630,7 +721,7 @@ mi_cmd_file_list_statics (char *command, char **argv, int argc)
   
   cleanup_list = make_cleanup_ui_out_list_begin_end (uiout, "statics");
   
-  print_syms_for_block (block, NULL, stb, -1, values, filterp);
+  print_syms_for_block (block, NULL, stb, -1, consts, values, filterp);
   
   do_cleanups (cleanup_list);
   ui_out_stream_delete (stb);
@@ -639,10 +730,11 @@ mi_cmd_file_list_statics (char *command, char **argv, int argc)
 }
 
 
-void
+static void
 print_globals_for_symtab (struct symtab *file_symtab, 
 			  struct ui_stream *stb,
-			  enum print_values values, 
+			  enum print_values values,
+			  int consts,
 			  struct re_pattern_buffer *filter)
 {
   struct block *block;
@@ -652,7 +744,7 @@ print_globals_for_symtab (struct symtab *file_symtab,
 
   cleanup_list = make_cleanup_ui_out_list_begin_end (uiout, "globals");
 
-  print_syms_for_block (block, NULL, stb, -1, values, filter);
+  print_syms_for_block (block, NULL, stb, -1, consts, values, filter);
 
   do_cleanups (cleanup_list);
 }
@@ -678,33 +770,14 @@ mi_cmd_file_list_globals (char *command, char **argv, int argc)
   struct symtab *file_symtab;
   struct ui_stream *stb;
   struct re_pattern_buffer *filterp;
+  int consts = 1;
 
-  if (argc < 3 || argc > 4)
-    {
-      error ("mi_cmd_file_list_globals: Usage: FILE SHLIB PRINT_VALUES"
-	     " [FILTER]");
-    }
+  if (!parse_statics_globals_args (argv, argc, &filename, &shlibname, &values, 
+				   &filterp, &consts))
+    error ("mi_cmd_file_list_globals: Usage: -file FILE -shlib SHLIB"
+	   " VALUES"
+	   " [-filter FILTER] [-constants 0/1]");
   
-  
-  values = mi_decode_print_values (argv[2]);
-  if (values == PRINT_BAD_INPUT) 
-    error ("%s", print_values_bad_input_string);
-
-  filename = argv[0];
-  shlibname = argv[1];
-
-  if (argc == 4)
-    {
-      const char *msg;
-
-      msg = re_compile_pattern (argv[3], strlen (argv[3]), &mi_symbol_filter);
-      if (msg)
-	error ("Error compiling regexp: \"%s\"", msg);
-      filterp = &mi_symbol_filter;
-    }
-  else
-    filterp = NULL;
-
   stb = ui_out_stream_new (uiout);
 
   if (*filename != '\0')
@@ -716,7 +789,7 @@ mi_cmd_file_list_globals (char *command, char **argv, int argc)
 	  cleanup_list = make_cleanup_restrict_to_shlib (shlibname);
 	  if (cleanup_list == (void *) -1)
 	    {
-	      error ("mi_cmd_file_list_statics: "
+	      error ("mi_cmd_file_list_globals: "
 		     "Could not find shlib \"%s\".", 
 		     shlibname);
 	    }
@@ -742,7 +815,7 @@ mi_cmd_file_list_globals (char *command, char **argv, int argc)
       
       file_symtab = PSYMTAB_TO_SYMTAB (file_ps);
       print_globals_for_symtab (file_symtab, stb, values, 
-				filterp);
+				consts, filterp);
     }
   else
     {
@@ -753,7 +826,7 @@ mi_cmd_file_list_globals (char *command, char **argv, int argc)
 
 	  ALL_OBJFILES (ofile)
 	    {
-	      if (objfile_matches_name (ofile, shlibname))
+	      if (objfile_matches_name (ofile, shlibname) != objfile_no_match)
 		{
 		  requested_ofile = ofile;
 		  break;
@@ -781,7 +854,7 @@ mi_cmd_file_list_globals (char *command, char **argv, int argc)
 		  ui_out_field_string (uiout, "filename", 
 				       file_symtab->filename);
 		  print_globals_for_symtab (file_symtab, stb, values, 
-					    filterp);
+					    consts, filterp);
 		  do_cleanups (file_cleanup);
 		}
 	    }
@@ -820,7 +893,7 @@ mi_cmd_file_list_globals (char *command, char **argv, int argc)
 					   file_symtab->filename);
 		      print_globals_for_symtab (file_symtab, stb, 
 						values, 
-						filterp);
+						consts, filterp);
 		      do_cleanups (file_cleanup);
 		    }
 		}
@@ -842,6 +915,8 @@ mi_cmd_file_list_globals (char *command, char **argv, int argc)
      1 - print locals AND statics.  
      0 - print args.  
      -1  - print statics. 
+   CONSTS - whether to print const symbols.  Const pointers are
+   always printed anyway.
    STB is the ui-stream to which the results are printed.  
    And FI, if non-null, is the frame to bind the varobj to.  
    If FILTER is non-null, then we only print expressions matching
@@ -852,6 +927,7 @@ print_syms_for_block (struct block *block,
 		      struct frame_info *fi, 
 		      struct ui_stream *stb,
 		      int locals, 
+		      int consts,
 		      enum print_values values,
 		      struct re_pattern_buffer *filter)
 {
@@ -871,6 +947,10 @@ print_syms_for_block (struct block *block,
     {
       print_me = 0;
 
+      /* If this is a const, and we aren't printing consts, then skop this one. 
+	 However, we always print const pointers, 'cause they are interesting even
+	 if plain int/char/etc consts aren't.  */
+
       switch (SYMBOL_CLASS (sym))
 	{
 	default:
@@ -884,7 +964,7 @@ print_syms_for_block (struct block *block,
 	case LOC_OPTIMIZED_OUT:	/* optimized out         */
 	  print_me = 0;
 	  break;
-
+	  
 	case LOC_ARG:	/* argument              */
 	case LOC_REF_ARG:	/* reference arg         */
 	case LOC_REGPARM:	/* register arg          */
@@ -895,11 +975,11 @@ print_syms_for_block (struct block *block,
 	  if (locals == 0)
 	    print_me = 1;
 	  break;
-
+	  
 	case LOC_STATIC:	/* static                */
-          if (locals == -1 || locals == 1)
-            print_me = 1;
-          break;
+	  if (locals == -1 || locals == 1)
+	    print_me = 1;
+	  break;
 	case LOC_LOCAL:	/* stack local           */
 	case LOC_BASEREG:	/* basereg local         */
 	case LOC_REGISTER:	/* register              */
@@ -909,9 +989,17 @@ print_syms_for_block (struct block *block,
 	  break;
 	}
 
+      /* If we were asked not to print consts, make sure we don't.  */
+
+      if (print_me 
+	  && !consts && (SYMBOL_TYPE (sym) != NULL) 
+	  && TYPE_CONST (check_typedef (SYMBOL_TYPE (sym)))
+	  && (!(TYPE_CODE (check_typedef (SYMBOL_TYPE (sym))) == TYPE_CODE_PTR)))
+	print_me = 0;
+      
       if (print_me)
 	{
-	  struct symbol *sym2;
+          struct symbol *sym2;
 	  int len = strlen (DEPRECATED_SYMBOL_NAME (sym));
 
 	  /* If we are about to print, compare against the regexp.  */

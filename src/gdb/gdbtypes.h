@@ -748,7 +748,7 @@ struct badness_vector
 /* The default value of TYPE_CPLUS_SPECIFIC(T) points to the
    this shared static structure. */
 
-extern const struct cplus_struct_type cplus_struct_default;
+extern struct cplus_struct_type cplus_struct_default;
 
 extern void allocate_cplus_struct_type (struct type *);
 

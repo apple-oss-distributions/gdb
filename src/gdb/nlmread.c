@@ -198,7 +198,7 @@ nlm_symfile_read (struct objfile *objfile, int mainline)
   do_cleanups (back_to);
 
   stabsect_build_psymtabs (objfile, mainline, ".stab",
-			   ".stabstr", ".text", NULL, ".data", ".bss");
+			   ".stabstr", ".text");
 
   mainsym = lookup_symbol (main_name (), NULL, VAR_DOMAIN, NULL, NULL);
 

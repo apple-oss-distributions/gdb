@@ -38,7 +38,8 @@ typedef enum bfd_mach_o_ppc_thread_flavour
     BFD_MACH_O_PPC_THREAD_STATE = 1,
     BFD_MACH_O_PPC_FLOAT_STATE = 2,
     BFD_MACH_O_PPC_EXCEPTION_STATE = 3,
-    BFD_MACH_O_PPC_VECTOR_STATE = 4
+    BFD_MACH_O_PPC_VECTOR_STATE = 4,
+    BFD_MACH_O_PPC_THREAD_STATE_64 = 5
   }
 bfd_mach_o_ppc_thread_flavour;
 
@@ -88,9 +89,12 @@ typedef enum bfd_mach_o_load_command_type
     BFD_MACH_O_LC_PREBIND_CKSUM = 0x17, /* Prebind checksum.  */
     /* Load a dynamically linked shared library that is allowed to be
        missing (weak).  */
-    BFD_MACH_O_LC_LOAD_WEAK_DYLIB = 0x18
+    BFD_MACH_O_LC_LOAD_WEAK_DYLIB = 0x18,
+    BFD_MACH_O_LC_SEGMENT_64 = 0x19	/* 64-bit segment of this file to be mapped. */
   }
 bfd_mach_o_load_command_type;
+
+#define BFD_MACH_O_CPU_IS64BIT 0x1000000
 
 typedef enum bfd_mach_o_cpu_type
   {
@@ -106,9 +110,16 @@ typedef enum bfd_mach_o_cpu_type
     BFD_MACH_O_CPU_TYPE_I860 = 15,
     BFD_MACH_O_CPU_TYPE_ALPHA = 16,
     BFD_MACH_O_CPU_TYPE_POWERPC = 18,
-    BFD_MACH_O_CPU_TYPE_POWERPC_64 = 19
+    BFD_MACH_O_CPU_TYPE_POWERPC_64 = 18 | BFD_MACH_O_CPU_IS64BIT
   }
 bfd_mach_o_cpu_type;
+
+typedef enum bfd_mach_o_cpu_subtype
+  {
+    BFD_MACH_O_CPU_SUBTYPE_POWERPC_ALL = 0,
+    BFD_MACH_O_CPU_SUBTYPE_POWERPC_970 = 100
+  }
+bfd_mach_o_cpu_subtype;
 
 typedef enum bfd_mach_o_filetype
   {
@@ -174,15 +185,15 @@ typedef enum bfd_mach_o_section_type
     BFD_MACH_O_S_MOD_TERM_FUNC_POINTERS = 0xa,
 
     /* Section contains symbols that are to be coalesced. */
-    BFD_MACH_O_S_COALESCED = 0xb
+    BFD_MACH_O_S_COALESCED = 0xb,
 
-  }
+    /* zero fill on demand section (that can be larger than 4 gigabytes) */
+    BFD_MACH_O_S_GB_ZEROFILL = 0xd
+}
 bfd_mach_o_section_type;
 
 #define BFD_MACH_O_SECTION_TYPE_MASK 0x000000ff
 #define BFD_MACH_O_SECTION_ATTRIBUTES_MASK 0xffffff00
-
-typedef unsigned long bfd_mach_o_cpu_subtype;
 
 typedef struct bfd_mach_o_header
 {
@@ -193,6 +204,8 @@ typedef struct bfd_mach_o_header
   unsigned long ncmds;
   unsigned long sizeofcmds;
   unsigned long flags;
+  unsigned int reserved;
+  unsigned int version;
   enum bfd_endian byteorder;
 }
 bfd_mach_o_header;
@@ -211,6 +224,7 @@ typedef struct bfd_mach_o_section
   unsigned long flags;
   unsigned long reserved1;
   unsigned long reserved2;
+  unsigned long reserved3;
 }
 bfd_mach_o_section;
 
@@ -220,7 +234,9 @@ typedef struct bfd_mach_o_segment_command
   bfd_vma vmaddr;
   bfd_vma vmsize;
   bfd_vma fileoff;
-  unsigned long filesize;
+  bfd_vma filesize;
+  unsigned long maxprot;
+  unsigned long initprot;
   unsigned long nsects;
   unsigned long flags;
   bfd_mach_o_section *sections;
@@ -254,7 +270,7 @@ bfd_mach_o_symtab_command;
    In this load command there are offsets and counts to each of the three groups
    of symbols.
 
-   This load command contains a the offsets and sizes of the following new
+   This load command contains the offsets and sizes of the following new
    symbolic information tables:
        table of contents
        module table
@@ -301,12 +317,12 @@ typedef struct bfd_mach_o_dysymtab_command
   unsigned long iundefsym;    /* Index to undefined symbols.  */
   unsigned long nundefsym;    /* Number of undefined symbols.  */
 
-  /* For the for the dynamic binding process to find which module a symbol
+  /* For the dynamic binding process to find which module a symbol
      is defined in the table of contents is used (analogous to the ranlib
      structure in an archive) which maps defined external symbols to modules
      they are defined in.  This exists only in a dynamically linked shared
      library file.  For executable and object modules the defined external
-     symbols are sorted by name and is use as the table of contents.  */
+     symbols are sorted by name and are used as the table of contents.  */
 
   unsigned long tocoff;       /* File offset to table of contents.  */
   unsigned long ntoc;         /* Number of entries in table of contents.  */
@@ -328,7 +344,7 @@ typedef struct bfd_mach_o_dysymtab_command
      reference symbol table for the symbols that the module references.
      This exists only in a dynamically linked shared library file.  For
      executable and object modules the defined external symbols and the
-     undefined external symbols indicates the external references.  */
+     undefined external symbols indicate the external references.  */
 
   unsigned long extrefsymoff;  /* Offset to referenced symbol table.  */
   unsigned long nextrefsyms;   /* Number of referenced symbol table entries.  */
@@ -350,7 +366,7 @@ typedef struct bfd_mach_o_dysymtab_command
      accessed efficiently.  Since the relocation entries can't be accessed
      through the section headers for a library file they are separated into
      groups of local and external entries further grouped by module.  In this
-     case the presents of this load command who's extreloff, nextrel,
+     case the presents of this load command whose extreloff, nextrel,
      locreloff and nlocrel fields are non-zero indicates that the relocation
      entries of non-merged sections are not referenced through the section
      structures (and the reloff and nreloc fields in the section headers are
@@ -474,6 +490,9 @@ mach_o_data_struct;
 
 typedef struct mach_o_data_struct bfd_mach_o_data_struct;
 
+
+unsigned int bfd_mach_o_version
+  PARAMS ((bfd *));
 bfd_boolean bfd_mach_o_valid
   PARAMS ((bfd *));
 int bfd_mach_o_scan_read_symtab_symbol

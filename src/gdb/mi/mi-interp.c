@@ -75,6 +75,10 @@ static void mi3_command_loop (void);
 static void mi2_command_loop (void);
 static void mi1_command_loop (void);
 
+/* APPLE LOCAL: We need to preserve the mi0 interpreter, because
+   that's what CodeWarrior 9 uses (though it just requests "mi".  */
+static void mi0_command_loop (void);
+
 static char *
 mi_interp_read_one_line_hook (char *prompt, int repeat, char *anno);
 
@@ -158,7 +162,9 @@ mi_interpreter_resume (void *data)
   else if (current_interp_named_p (INTERP_MI3))
     command_loop_hook = mi3_command_loop;
   else
-    command_loop_hook = mi2_command_loop;
+    /* APPLE LOCAL: The default needs to be mi0,
+       because that's what CodeWarrior expects.  */
+    command_loop_hook = mi0_command_loop;
   set_gdb_event_hooks (&mi_async_hooks);
 
   return 1;
@@ -517,9 +523,14 @@ mi_command_loop (int mi_version)
   gdb_stdlog = gdb_stderr;
   /* Route target output through the MI. */
   gdb_stdtarg = mi_console_file_new (raw_stdout, "@", '"');
+  /* APPLE LOCAL: Don't make a new uiout.  There's already one in
+     the mi_interp we are starting up, and we need to use that one
+     or we won't get hook messages from interpreter-exec.  */
+#if 0
   /* HACK: Poke the ui_out table directly.  Should we be creating a
      mi_out object wired up to the above gdb_stdout / gdb_stderr? */
   uiout = mi_out_new (mi_version);
+#endif
   /* HACK: Override any other interpreter hooks.  We need to create a
      real event table and pass in that. */
   init_ui_hook = 0;
@@ -545,6 +556,9 @@ mi_command_loop (int mi_version)
   show_load_progress = mi_load_progress;
   print_frame_more_info_hook = mi_print_frame_more_info;
 
+  /* Set the uiout to the interpreter's uiout.  */
+  uiout = interp_ui_out (NULL);
+  
   /* Turn off 8 bit strings in quoted output.  Any character with the
      high bit set is printed using C's octal format. */
   sevenbit_strings = 1;
@@ -655,5 +669,9 @@ _initialize_mi_interp (void)
 
   /* "mi" selects the most recent released version.  "mi2" was
      released as part of GDB 6.0.  */
-  interp_add (interp_new (INTERP_MI, NULL, mi_out_new (2), &procs));
+
+  /* APPLE LOCAL: Set this back to mi0, since CodeWarrior just asks for
+     the "mi" and doesn't specify a version, but chokes on mi2.  */
+
+  interp_add (interp_new (INTERP_MI, NULL, mi_out_new (0), &procs));
 }

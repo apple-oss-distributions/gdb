@@ -1321,6 +1321,45 @@ bfd_get_section_contents_in_window (abfd, section, w, offset, count)
 
 /*
 FUNCTION
+	bfd_get_section_contents_in_window_with_mode
+
+SYNOPSIS
+	bfd_boolean bfd_get_section_contents_in_window_with_mode
+        (bfd *abfd, asection *section, bfd_window *window,
+         file_ptr offset, bfd_size_type count, bfd_boolean mode);
+
+DESCRIPTION
+	Read data from @var{section} in BFD @var{abfd}
+	into memory starting at @var{location}. The data is read at an
+	offset of @var{offset} from the start of the input section,
+	and is read for @var{count} bytes.  If @var{mode} is TRUE,
+	and we are using mmap, the section is mapped read/write,
+	if it is FALSE it is mapped read only.
+
+	If the contents of a constructor with the <<SEC_CONSTRUCTOR>>
+	flag set are requested or if the section does not have the
+	<<SEC_HAS_CONTENTS>> flag set, then the @var{location} is filled
+	with zeroes. If no errors occur, <<true>> is returned, else
+	<<false>>.
+
+
+
+*/
+bfd_boolean
+bfd_get_section_contents_in_window_with_mode (abfd, section, w, offset, count, mode)
+     bfd *abfd;
+     sec_ptr section;
+     bfd_window *w;
+     file_ptr offset;
+     bfd_size_type count;
+     bfd_boolean mode;
+{
+  return BFD_SEND (abfd, _bfd_get_section_contents_in_window_with_mode,
+		   (abfd, section, w, offset, count, mode));
+}
+
+/*
+FUNCTION
 	bfd_copy_private_section_data
 
 SYNOPSIS

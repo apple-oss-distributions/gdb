@@ -96,17 +96,89 @@ struct ppc_stack_context
   CORE_ADDR sp;
 };
 
+
+/* APPLE LOCAL: This function hides a bit of complexity with 64 bit
+   PPC Darwin.  32 bit apps on PPC 64 systems can access all 64 bits
+   of the registers, but only store 32 bits on the stack.  So wordsize
+   is 4, but the register size is 8, and we have to make sure we get
+   the data in the right part of the register.  FIXME: I didn't do
+   this for LE PPC...  */
+
+static void
+ppc_copy_into_greg (struct regcache *regcache, int regno, int wordsize, 
+		    int len, const char *contents)
+{
+  int reg_size = register_size (current_gdbarch, regno);
+
+  if (reg_size == wordsize)
+    {
+      memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (regno)],
+		  contents, len);
+    }
+  else
+    {
+      int upper_half_size = reg_size - wordsize;
+      int num_regs = (len/wordsize);
+      int i;
+
+      if (num_regs == 0)
+	num_regs = 1;
+
+      
+      for (i = 0; i < num_regs; i++)
+	{
+	  char buf[8];
+	  memset (buf, 0, 8);
+	  memcpy (buf + upper_half_size, contents, wordsize);
+	  regcache_cooked_write (regcache, regno + i,
+				 (const bfd_byte *) buf);
+
+	  contents += wordsize;
+	}
+    }
+}
+
+static void
+ppc_copy_from_greg (struct regcache *regcache, int regno, int wordsize, 
+		    int len, bfd_byte *buf)
+{
+  /* Write just the bottom part of the register. */
+  int reg_size = register_size (current_gdbarch, regno);
+  int num_regs = len / wordsize;
+
+  if (reg_size == wordsize)
+    {
+      int i;
+      for (i = 0; i < num_regs; i++)
+	regcache_cooked_read (regcache, regno + i, buf + i * wordsize);
+    }
+  else
+    {
+      char tmpbuf[8];
+      int i;
+
+      for (i = 0; i < num_regs; i++)
+	{
+	  regcache_cooked_read (regcache, regno + i, tmpbuf);
+	  memcpy (buf + i * wordsize, tmpbuf + (reg_size - wordsize), wordsize);
+	}
+    }
+}
+
+/* END APPLE LOCAL */
+
 /* Push the single argument ARG onto C, using the rules in ABI.  The
    parameter ARGNO is used for printing error and diagnostic messages.
    If DO_COPY is set, actually copy the data onto the stack/registers;
    otherwise just pre-flight the pushing to learn the appropriate
    offsets.  If FLOATONLY is set, we are scanning recursively through
-   a structure to push floating-point arguments into floating-point registers. */
+   a structure to push floating-point arguments into floating-point
+   registers. */
 
 static void
-ppc_push_argument
-(struct ppc_stack_abi *abi, struct ppc_stack_context *c, struct value *arg,
- int argno, int do_copy, int floatonly)
+ppc_push_argument (struct ppc_stack_abi *abi, 
+		   struct ppc_stack_context *c, struct value *arg,
+		   int argno, int do_copy, int floatonly)
 {
   struct gdbarch_tdep *tdep = gdbarch_tdep (current_gdbarch);
 
@@ -123,26 +195,46 @@ ppc_push_argument
     {
       if (c->freg <= abi->last_freg)
 	{
-	  struct value *rval = value_cast (builtin_type_double, arg);
-	  struct type *rtype = check_typedef (VALUE_TYPE (rval));
-	  int rlen = TYPE_LENGTH (rtype);
+	  struct value *rval;
+	  struct type *rtype;
+	  int rlen;
+	  /* APPLE LOCAL: If the thing is already a long double type,
+	     don't cast it to a builtin type double, since there are two
+	     long double types, and we will pass an 16 byte long double
+	     wrong if we assume it is an 8 byte double.  */
+	  if (strcmp (TYPE_NAME (type), "long double") != 0)
+	    {
+	      rval  = value_cast (builtin_type_double, arg);
+	      rtype = check_typedef (VALUE_TYPE (rval));
+	      rlen = TYPE_LENGTH (rtype);
+	    }
+	  else
+	    {
+	      rval = arg;
+	      rtype = type;
+	      rlen = len;
+	    }
 
-	  if ((len != 4) && (len != 8))
+	  /* APPLE LOCAL: GCC 4.0 has 16 byte long doubles */
+	  if ((len != 4) && (len != 8) && (len != 16))
 	    error ("floating point parameter had unexpected size");
 
-	  if (rlen != 8)
+	  if (rlen != 8 && rlen != 16)
 	    error ("floating point parameter had unexpected size");
 
 	  if (do_copy)
 	    memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (FP0_REGNUM + c->freg)],
 		    VALUE_CONTENTS (rval), rlen);
 	  if (do_copy && ! floatonly && abi->fregs_shadow_gregs)
-	    memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (c->greg)],
-		    VALUE_CONTENTS (arg), len);
+	    ppc_copy_into_greg (current_regcache, c->greg, tdep->wordsize, len, VALUE_CONTENTS (arg));
 	  if (do_copy && ! floatonly && abi->regs_shadow_stack)
 	    write_memory (c->sp + c->argoffset, VALUE_CONTENTS (arg), len);
 
 	  c->freg++;
+	  /* APPLE LOCAL: We took up two registers...  */
+	  if (rlen == 16)
+	    c->freg++;
+
 	  if (! floatonly && (abi->fregs_shadow_gregs) && (c->greg <= abi->last_greg))
 	    c->greg += len / 4;
 	  if (! floatonly && abi->regs_shadow_stack)
@@ -150,7 +242,7 @@ ppc_push_argument
 	}
       else if (! floatonly)
 	{
-	  if ((len != 4) && (len != 8))
+	  if ((len != 4) && (len != 8) && (len != 16))
 	    error ("floating point parameter had unexpected size");
 
 	  c->argoffset = ROUND_UP (c->argoffset, len);
@@ -167,36 +259,58 @@ ppc_push_argument
   case TYPE_CODE_REF:
     {
       int nregs;
+      char *value_contents;
 
       if (floatonly)
 	break;
+
+      /* APPLE LOCAL: Huge Hack...  The problem is that if we are a 32 bit app on Mac OS X,
+	 the registers are really 64 bits, but we don't want to pass all 64 bits.  So if we
+	 get passed a value that came from a register, and it's length is > the wordsize,
+	 cast it to the wordsize first before passing it in.  */
+      if (arg->regno != -1 && len == 8 && tdep->wordsize == 4)
+	{
+	  len = 4;
+	  value_contents = ((char *) VALUE_CONTENTS (arg)) + 4;
+	}
+      else
+	value_contents = (char *) VALUE_CONTENTS (arg);
+      /* END APPLE LOCAL  */
 
       nregs = (len <= 4) ? 1 : 2;
       if ((len != 1) && (len != 2) && (len != 4) && (len != 8))
 	error ("integer parameter had unexpected size");
 
-      c->greg = abi->first_greg + (ROUND_UP ((c->greg - abi->first_greg), nregs));
-      c->argoffset = ROUND_UP (c->argoffset, nregs * 4);
-	    
-      if ((c->greg + nregs) > (abi->last_greg + 1))
+      if (c->greg <= abi->last_greg)
 	{
-	  c->greg = abi->last_greg + 1;
+	  /* If the parameter fits in the remaining argument registers, write it to
+	     the registers, and to the stack if the abi requires it. */
 
 	  if (do_copy)
-	    write_memory (c->sp + c->argoffset, (char *) VALUE_CONTENTS (arg), len);
-	  c->argoffset += (nregs * 4);
-	}
-      else
-	{
-	  if (do_copy)
-	    memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (c->greg)],
-		    VALUE_CONTENTS (arg), nregs * 4);
+	    {
+	      /* Split the argument between registers & the stack if it
+		 doesn't fit in the remaining registers.  */
+	      int regs_avaliable = abi->last_greg - c->greg + 1;
+	      if (regs_avaliable >= nregs)
+		regs_avaliable = nregs;
+
+	      ppc_copy_into_greg (current_regcache, c->greg, 
+				  tdep->wordsize, regs_avaliable * 4, value_contents);
+	    }
 	  if (do_copy && abi->regs_shadow_stack)
-	    write_memory (c->sp + c->argoffset, (char *) VALUE_CONTENTS (arg), len);
+	    write_memory (c->sp + c->argoffset, value_contents, len);
 
 	  c->greg += nregs;
 	  if (abi->regs_shadow_stack)
 	    c->argoffset += (nregs * 4);
+	}
+      else 
+	{
+	  /* If we've filled up the registers, then just write it on the stack. */
+	
+	  if (do_copy)
+	    write_memory (c->sp + c->argoffset, value_contents, len);
+	  c->argoffset += (nregs * 4);
 	}
       break;
     }
@@ -232,7 +346,7 @@ ppc_push_argument
 	  if (c->greg <= abi->last_greg)
 	    {
 	      if (do_copy)
-		memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (c->greg)], buf, 4);
+		ppc_copy_into_greg (current_regcache, c->greg, tdep->wordsize, 4, buf);
 	      c->greg++;
 	    }
 	  else
@@ -273,8 +387,8 @@ ppc_push_argument
 		    memcpy (buf, ptr, len);
 		  ptr = buf;
 		}
-	      memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (c->greg)], ptr,
-		      (writereg < 4) ? 4 : writereg);
+	      ppc_copy_into_greg (current_regcache, c->greg, 
+				  tdep->wordsize, (writereg < 4) ? 4 : writereg, ptr);
 	      write_memory (c->sp + c->argoffset, ptr,
 			    (writestack < 4) ? 4 : writestack);
 	    }
@@ -400,7 +514,8 @@ ppc_push_arguments (struct ppc_stack_abi *abi, int nargs, struct value **args,
   if (struct_return)
     {
       store_unsigned_integer (buf, 4, struct_addr);
-      memcpy (&deprecated_registers[DEPRECATED_REGISTER_BYTE (write.greg)], buf, 4);
+      ppc_copy_into_greg (current_regcache, write.greg, 
+			  gdbarch_tdep (current_gdbarch)->wordsize, 4, buf);
       write.greg++;
       if (abi->regs_shadow_stack)
 	write.argoffset += 4;
@@ -830,24 +945,43 @@ do_ppc_sysv_return_value (struct gdbarch *gdbarch, struct type *type,
 	}
       return RETURN_VALUE_REGISTER_CONVENTION;
     }
+  /* APPLE LOCAL: gcc 3.3 had 8 byte long doubles, but gcc 4.0 uses 16 byte
+     long doubles even for 32 bit ppc.  They are stored across f1 & f2. */
+  /* Big floating point values get stored in adjacent floating
+     point registers.  */
+  if (TYPE_CODE (type) == TYPE_CODE_FLT
+      && (TYPE_LENGTH (type) == 16 || TYPE_LENGTH (type) == 32))
+    {
+      if (writebuf || readbuf != NULL)
+	{
+	  int i;
+	  for (i = 0; i < TYPE_LENGTH (type) / 8; i++)
+	    {
+	      if (writebuf != NULL)
+		regcache_cooked_write (regcache, FP0_REGNUM + 1 + i,
+				       (const bfd_byte *) writebuf + i * 8);
+	      if (readbuf != NULL)
+		regcache_cooked_read (regcache, FP0_REGNUM + 1 + i,
+				      (bfd_byte *) readbuf + i * 8);
+	    }
+	}
+      return RETURN_VALUE_REGISTER_CONVENTION;
+    }
+  /* END APPLE LOCAL */
   if ((TYPE_CODE (type) == TYPE_CODE_INT && TYPE_LENGTH (type) == 8)
       || (TYPE_CODE (type) == TYPE_CODE_FLT && TYPE_LENGTH (type) == 8))
     {
       if (readbuf)
 	{
 	  /* A long long, or a double stored in the 32 bit r3/r4.  */
-	  regcache_cooked_read (regcache, tdep->ppc_gp0_regnum + 3,
-				(bfd_byte *) readbuf + 0);
-	  regcache_cooked_read (regcache, tdep->ppc_gp0_regnum + 4,
-				(bfd_byte *) readbuf + 4);
+	  ppc_copy_from_greg (regcache, tdep->ppc_gp0_regnum + 3, 
+			      tdep->wordsize, 8, (bfd_byte *) readbuf);
 	}
       if (writebuf)
 	{
 	  /* A long long, or a double stored in the 32 bit r3/r4.  */
-	  regcache_cooked_write (regcache, tdep->ppc_gp0_regnum + 3,
-				 (const bfd_byte *) writebuf + 0);
-	  regcache_cooked_write (regcache, tdep->ppc_gp0_regnum + 4,
-				 (const bfd_byte *) writebuf + 4);
+	  ppc_copy_into_greg (regcache, tdep->ppc_gp0_regnum + 3, 
+			      tdep->wordsize, 8, writebuf);
 	}
       return RETURN_VALUE_REGISTER_CONVENTION;
     }
@@ -961,13 +1095,9 @@ do_ppc_sysv_return_value (struct gdbarch *gdbarch, struct type *type,
 	  /* This matches SVr4 PPC, it does not match GCC.  */
 	  /* The value is right-padded to 8 bytes and then loaded, as
 	     two "words", into r3/r4.  */
-	  char regvals[MAX_REGISTER_SIZE * 2];
-	  regcache_cooked_read (regcache, tdep->ppc_gp0_regnum + 3,
-				regvals + 0 * tdep->wordsize);
-	  if (TYPE_LENGTH (type) > tdep->wordsize)
-	    regcache_cooked_read (regcache, tdep->ppc_gp0_regnum + 4,
-				  regvals + 1 * tdep->wordsize);
-	  memcpy (readbuf, regvals, TYPE_LENGTH (type));
+
+	  ppc_copy_from_greg (regcache, tdep->ppc_gp0_regnum + 3, 
+			      tdep->wordsize, TYPE_LENGTH (type), readbuf);
 	}
       if (writebuf)
 	{
@@ -993,12 +1123,24 @@ ppc_darwin_abi_return_value (struct gdbarch *gdbarch, struct type *valtype,
 			     struct regcache *regcache, void *readbuf,
 			     const void *writebuf)
 {
+  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+
   if (TYPE_CODE (valtype) == TYPE_CODE_STRUCT
       || TYPE_CODE (valtype) == TYPE_CODE_UNION)
-    return RETURN_VALUE_STRUCT_CONVENTION;
-
-  return do_ppc_sysv_return_value (gdbarch, valtype, regcache, readbuf,
-				   writebuf, 0);
+    {
+      if (readbuf != NULL)
+	{
+	  CORE_ADDR addr;
+	  
+	  regcache_cooked_read (regcache, tdep->ppc_gp0_regnum + 3, &addr);
+	  read_memory (addr, readbuf, TYPE_LENGTH (valtype));
+	  
+	}
+      return RETURN_VALUE_ABI_RETURNS_ADDRESS;
+    }
+  else
+    return do_ppc_sysv_return_value (gdbarch, valtype, regcache, readbuf,
+				     writebuf, 0);
 }
 
 enum return_value_convention

@@ -67,6 +67,8 @@
 
 #define bfd_elfNN_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define bfd_elfNN_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 #ifndef elf_backend_got_symbol_offset
 #define elf_backend_got_symbol_offset (bfd_vma) 0

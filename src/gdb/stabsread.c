@@ -51,6 +51,7 @@ static int os9k_stabs = 0;
 #include "doublest.h"
 #include "cp-abi.h"
 #include "cp-support.h"
+#include "gdb_assert.h"
 
 #include <ctype.h>
 
@@ -587,7 +588,7 @@ symbol_reference_defined (char **string)
 }
 
 struct symbol *
-define_symbol (CORE_ADDR valu, char *string, char *prefix, 
+define_symbol (CORE_ADDR valu, char *string, const char *prefix, 
                int desc, int type, struct objfile *objfile)
 {
   struct symbol *sym;
@@ -1247,7 +1248,22 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
           	}
 	    }
 	  else
-	    TYPE_NAME (SYMBOL_TYPE (sym)) = DEPRECATED_SYMBOL_NAME (sym);
+	    {
+	      struct type *symtype = SYMBOL_TYPE (sym);
+	      TYPE_NAME (SYMBOL_TYPE (sym)) = DEPRECATED_SYMBOL_NAME (sym);
+	      /* APPLE LOCAL: This is a bit of a hack.  On Mac OS X, there are two
+		 possible long double's , the 8 byte one from gcc-3.3, and the 16 byte
+		 one from gcc-4.0.  I don't have the time to extend gdb's default float
+		 format handling right now to take care of this.  So if I see a long
+		 double type that's different from the TARGET one, I fix it up here.
+		 Turns out the ieee long doubl format works for all types, so this
+		 is trivial...  */
+	      if (TYPE_CODE (symtype) == TYPE_CODE_FLT 
+		  && TYPE_NAME (symtype) != NULL
+		  && strcmp (TYPE_NAME (symtype), "long double") == 0
+		  && TYPE_LENGTH (symtype) * TARGET_CHAR_BIT != TARGET_LONG_DOUBLE_BIT)
+		TYPE_FLOATFORMAT (symtype) = gdbarch_long_double_format (current_gdbarch);
+	    }
 	}
 
       add_symbol_to_list (sym, &file_symbols);
@@ -3411,6 +3427,34 @@ read_struct_type (char **pp, struct type *type, enum type_code type_code,
     if (nbits != 0)
       return error_type (pp, objfile);
   }
+
+  /* APPLE LOCAL: If there is a const or volatile type hanging off of
+     this type, we need to update the length field.  The length field
+     was moved out of the main_type field by kbuettner on 2003-02-07,
+     so we don't get the updated length for free through sharing the
+     main_type.
+
+     See the comments in gdbtypes.c:replace_type for more details.
+ 
+     This problem can come about, for instance, if we make a const
+     type of another type which is only known by reference. Then we get a
+     length of 0 for both types at creation.  We need to fix up not
+     only the actual type but all the variants here.  
+
+     The same bug exists in potentia in FSF gdb, but since they don't
+     use -gused it doesn't show up very often.  */
+  {
+    struct type *chain;
+
+    chain = type;
+    do {
+      gdb_assert(TYPE_ADDRESS_CLASS_ALL (chain) == 0);
+
+      TYPE_LENGTH (chain) = TYPE_LENGTH (type);
+      chain = TYPE_CHAIN (chain);
+    } while (chain != type);
+  }
+  /* END APPLE LOCAL */
 
   /* Now read the baseclasses, if any, read the regular C struct or C++
      class member fields, attach the fields to the type, read the C++

@@ -276,7 +276,7 @@ send_gdb "break main\n"
 gdb_expect_list "break at 28" "$gdb_prompt$" {
     "\r\n\032\032post-prompt\r\n"
     "\r\n\032\032breakpoints-invalid\r\n"
-    "Breakpoint 4 at 0x\[0-9a-z\]+: file .*annota3.c, line 32.\r\n"
+    "Breakpoint . at 0x\[0-9a-z\]+: file .*annota3.c, line 32.\r\n"
 }
 
 #
@@ -311,32 +311,41 @@ gdb_expect {
 # Test that breakpoints-invalid is issued once and only once for
 # breakpoint ignore count changes, after annotation stopped.
 #
+
+# APPLE LOCAL gdb_expect_list doesn't allow you to capture subexpressions...
+# I have to get the breakpoint number here, because the printf breakpoint might
+# generate an "equivalent breakpoint" somewhere else, putting off the count.
+
 send_gdb "break 46\n"
-gdb_expect_list  "break at 46" "$gdb_prompt$" {
-    "\r\n\032\032post-prompt\r\n"
-    "\r\n\032\032breakpoints-invalid\r\n"
-    "Breakpoint 5 at 0x\[0-9a-z\]+: file .*annota3.c, line 46.\r\n"
+gdb_expect {
+    -re "Breakpoint (.) at $hex: file .*$srcfile, line 46.*$gdb_prompt$" {
+	set break_46 $expect_out(1,string)
+	pass "break at 46"
+    }
+    -re ".*$gdb_prompt$" { fail "break at 46" }
+    timeout { fail "break at 46 (timeout)" }
 }
 
-send_gdb "ignore 5 4\n"
-gdb_expect_list "ignore 5 4" "$gdb_prompt$" {
+
+send_gdb "ignore $break_46 4\n"
+gdb_expect_list "ignore $break_46 4" "$gdb_prompt$" [format {
     "\r\n\032\032post-prompt\r\n"
-    "Will ignore next 4 crossings of breakpoint 5"
+    "Will ignore next 4 crossings of breakpoint %d"
     "\r\n\032\032breakpoints-invalid\r\n"
     "\r\n"
-}
+} $break_46]
 
 send_gdb "continue\n"
-gdb_expect_list "annotate ignore count change" "$gdb_prompt$" {
+gdb_expect_list "annotate ignore count change" "$gdb_prompt$" [format {
     "\r\n\032\032post-prompt\r\n"
     "\(\r\n\032\032frames-invalid\r\n\)+"
-    "\r\n\032\032breakpoint 5\r\n"
-    "Breakpoint 5, main \\(\\) at .*annota3.c:46\r\n"
+    "\r\n\032\032breakpoint %d\r\n"
+    "Breakpoint %d, main \\(\\) at .*annota3.c:46\r\n"
     "\r\n\032\032source .*annota3.c:46:\[0-9\]+:beg:0x\[0-9a-z\]+\r\n"
     "1: value = 11\r\n"
     "\r\n\032\032stopped\r\n"
     "\r\n\032\032breakpoints-invalid\r\n"
-}
+} $break_46 $break_46]
 
 # check that ignore command is working, or the above can provide
 # misleading assurance ...

@@ -1727,7 +1727,9 @@ check_stub_method_group (struct type *type, int method_id)
     }
 }
 
-const struct cplus_struct_type cplus_struct_default;
+/* APPLE LOCAL: Not const because we assign random
+   junk to it via the NONULL macros over in gdbtypes.h */
+struct cplus_struct_type cplus_struct_default;
 
 void
 allocate_cplus_struct_type (struct type *type)
@@ -1771,6 +1773,20 @@ init_type (enum type_code code, int length, int flags, char *name,
 
   if (name && strcmp (name, "char") == 0)
     TYPE_FLAGS (type) |= TYPE_FLAG_NOSIGN;
+
+  /* APPLE LOCAL: gcc 3.3 uses 8 byte long doubles, but
+     gcc 4.0 uses 16 byte long doubles.  But there is only one
+     TARGET_LONG_DOUBLE_BIT & TARGET_LONG_DOUBLE_FORMAT available.
+     So we have to patch another one into the format here.  */
+  if (code == TYPE_CODE_FLT && name && strcmp (name, "long double") == 0)
+    {
+      if (length * TARGET_CHAR_BIT != TARGET_LONG_DOUBLE_BIT)
+	{
+	  TYPE_FLOATFORMAT(type) = gdbarch_long_double_format (current_gdbarch); 
+	}
+    }
+
+  /* END APPLE LOCAL */
 
   if (code == TYPE_CODE_STRUCT || code == TYPE_CODE_UNION
       || code == TYPE_CODE_NAMESPACE)

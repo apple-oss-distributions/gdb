@@ -246,7 +246,7 @@ gdb_expect {
 #
 send_gdb "continue\n"
 gdb_expect {
-  -re "\r\n\032\032post-prompt\r\nContinuing.\r\n\r\n\032\032starting\r\n\r\n\032\032frames-invalid\r\n\r\n\032\032breakpoint 3\r\n\r\nBreakpoint 3, \r\n\032\032frame-begin 0 $hex\r\n\r\n(\032\032frame-address\r\n$hex\r\n\032\032frame-address-end\r\n in \r\n)*\032\032frame-function-name\r\nprintf\r\n\032\032frame-args\r\n.*\032\032frame-end\r\n\r\n\032\032stopped\r\n$gdb_prompt$" \
+  -re "\r\n\032\032post-prompt\r\nContinuing.\r\n\r\n\032\032starting\r\n\r\n\032\032(frames-invalid\r\n\r\n\032\032)+breakpoint .\r\n\r\nBreakpoint ., \r\n\032\032frame-begin 0 $hex\r\n\r\n(\032\032frame-address\r\n$hex\r\n\032\032frame-address-end\r\n in \r\n)*\032\032frame-function-name\r\nprintf\r\n\032\032frame-args\r\n.*\032\032frame-end\r\n\r\n\032\032stopped\r\n$gdb_prompt$" \
 	  { pass "continue to printf" }
   -re ".*$gdb_prompt$"     { fail "continue to printf" }
   timeout	            { fail "continue to printf (timeout)" }
@@ -341,9 +341,9 @@ gdb_expect {
 #
 send_gdb "break main\n"
 gdb_expect {
-    -re "post-prompt.*\032\032breakpoints-invalid.*Breakpoint 4 at $hex: file ${escapedsrcfile}, line $main_line.*$gdb_prompt$" \
+    -re "post-prompt.*\032\032breakpoints-invalid.*Breakpoint . at $hex: file ${escapedsrcfile}, line $main_line.*$gdb_prompt$" \
 	     { pass "break at 28" }
-    -re "post-prompt.*\032\032breakpoints-invalid.*Breakpoint 4 at $hex: file .*${srcfile}, line $main_line.*$gdb_prompt$" \
+    -re "post-prompt.*\032\032breakpoints-invalid.*Breakpoint . at $hex: file .*${srcfile}, line $main_line.*$gdb_prompt$" \
 	     { setup_xfail "*-*-*" 1270
                fail "break at 28" }
      -re ".*$gdb_prompt$"  { fail "break at 28" }
@@ -393,20 +393,21 @@ gdb_expect {
 #
 send_gdb "break 46\n"
 gdb_expect {
-    -re "Breakpoint 5 at $hex: file .*$srcfile, line 46.*$gdb_prompt$" {
+    -re "Breakpoint (.) at $hex: file .*$srcfile, line 46.*$gdb_prompt$" {
+	set break_46 $expect_out(1,string)
 	pass "break at 46"
     }
     -re ".*$gdb_prompt$" { fail "break at 46" }
     timeout { fail "break at 46 (timeout)" }
 }
 
-send_gdb "ignore 5 4\n"
+send_gdb "ignore $break_46 4\n"
 gdb_expect {
-    -re "Will ignore next 4 crossings of breakpoint 5.*$gdb_prompt$" {
-	pass "ignore 5 4"
+    -re "Will ignore next 4 crossings of breakpoint $break_46.*$gdb_prompt$" {
+	pass "ignore $break_46 4"
     }
-    -re ".*$gdb_prompt$" { fail "ignore 5 4" }
-    timeout { fail "ignore 5 4 (timeout)" }
+    -re ".*$gdb_prompt$" { fail "ignore $break_46 4" }
+    timeout { fail "ignore $break_46 4 (timeout)" }
 }
 
 send_gdb "continue\n"

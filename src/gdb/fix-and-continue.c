@@ -53,13 +53,16 @@
 #include "dictionary.h"
 #include "block.h"
 #include <readline/readline.h>
+#include "osabi.h"
 
 #if defined(TARGET_POWERPC)
 #include "ppc-macosx-frameinfo.h"
 #include "ppc-macosx-tdep.h"
 #endif /* TARGET_POWERPC */
 
+#ifdef NM_NEXTSTEP
 #include "macosx-nat-dyld-process.h"
+#endif
 
 
 /* A list of all active threads, and the functions those threads
@@ -304,8 +307,6 @@ static void free_half_finished_fixinfo (struct fixinfo *);
 
 static void mark_previous_fixes_obsolete (struct fixinfo *);
 
-static void fix_command_helper (const char *, const char *, const char *);
-
 static const char *getbasename (const char *);
 
 static int inferior_is_zerolinked_p (void);
@@ -334,6 +335,8 @@ static struct symtab *find_original_symtab (struct fixinfo *);
 
 static struct partial_symtab *find_original_psymtab (struct fixinfo *);
 
+static struct objfile *raise_objfile_load_level (struct objfile *);
+
 
 
 int fix_and_continue_debug_flag = 0;
@@ -346,9 +349,7 @@ static void
 fix_command (char *args, int from_tty)
 {
   char **argv;
-  char *filename;
   char *object_filename, *source_filename, *bundle_filename;
-  char tmpbuf[MAXPATHLEN];
   struct cleanup *cleanups;
   const char *usage = "Usage: fix bundle-filename source-filename [object-filename]";
 
@@ -370,17 +371,8 @@ fix_command (char *args, int from_tty)
       (strlen (argv[2]) == 0 || argv[3] != NULL))
     error ("%s", usage);
 
-  /* Get first argument: Bundle file name */
-
-  filename = tilde_expand (argv[0]);
-  realpath (filename, tmpbuf);
-  bundle_filename = (char *) xmalloc (strlen (tmpbuf) + 1);
-  strcpy (bundle_filename, tmpbuf);
-  xfree (filename);
-
-  /* Get second argument:  Source file name */
-  
-  source_filename = tilde_expand (argv[1]);
+  bundle_filename = argv[0];
+  source_filename = argv[1];
 
   if (!source_filename || strlen (source_filename) == 0 ||
       !bundle_filename || strlen (bundle_filename) == 0)
@@ -388,12 +380,9 @@ fix_command (char *args, int from_tty)
 
   /* Get third argument:  Object file name (only needed for ZeroLink) */
 
-  if (argv[2] != NULL)
-    object_filename = tilde_expand (argv[2]);
-  else
-    object_filename = NULL;
+  object_filename = argv[2];
 
-  fix_command_helper (source_filename, bundle_filename, object_filename);
+  fix_command_1 (source_filename, bundle_filename, object_filename, NULL);
 
   if (!ui_out_is_mi_like_p (uiout) && from_tty)
     {
@@ -408,13 +397,84 @@ fix_command (char *args, int from_tty)
    filename should be run through realpath() before getting here so
    it's the same form that dyld will report.  */
 
-static void
-fix_command_helper (const char *source_filename,
-                    const char *bundle_filename,
-                    const char *object_filename)
+void
+fix_command_1 (const char *source_filename,
+               const char *bundle_filename,
+               const char *object_filename,
+               const char *solib_filename)
 {
   struct fixinfo *cur;
   struct cleanup *wipe;
+  char tmpbuf[MAXPATHLEN];
+  char *fn;
+
+  /* source_filename and bundle_filename must be set.  */
+
+  if (source_filename == NULL || *source_filename == '\0' ||
+      bundle_filename == NULL || *bundle_filename == '\0')
+    error ("Source or bundle filename not provided.");
+
+  /* object_filename and bundle_filename are needed in certain circumstances;
+     F&C can potentially work without them.  Canonicalize them to NULL if 
+     they're empty. */
+
+  if (object_filename && *object_filename == '\0')
+    object_filename = NULL;
+
+  if (bundle_filename && *bundle_filename == '\0')
+    bundle_filename = NULL;
+  
+  /* Don't realpath() the source filename or the object filename.
+     In the case of the source filename, this has to match the stabs generated
+     by gcc, which aren't realpathed.
+     In the case of the object filename, this has to match what ZeroLink
+     knows, which isn't realpathed.
+     To text, copy a project like Sketch into /tmp and try fixing it over
+     there.  (with /tmp really being a soft-link to /private/tmp). */
+
+  /* tilde_expand () from readline returns xmalloc'ed memory.  */
+
+  source_filename = tilde_expand (source_filename);
+  if (source_filename == NULL)
+    error ("Source filename not found.");
+  
+  fn = tilde_expand (bundle_filename);
+  if (fn)
+    {
+      char *ret = realpath (fn, tmpbuf);
+      if (ret)
+        bundle_filename = xstrdup (ret);
+      else
+        bundle_filename = NULL;
+      xfree (fn);
+    }
+  else
+    error ("Bundle filename '%s' not found.", bundle_filename);
+  if (bundle_filename == NULL)
+    error ("Bundle filename not found.");
+  
+  if (object_filename && *object_filename != '\0')
+    object_filename = tilde_expand (object_filename);
+  else
+    object_filename = NULL;
+  
+  if (solib_filename)
+    {
+      fn = tilde_expand (solib_filename);
+      if (fn)
+        {
+          char *ret = realpath (fn, tmpbuf);
+          if (ret)
+            solib_filename = xstrdup (ret);
+          else
+            solib_filename = NULL;
+          xfree (fn);
+        }
+      else
+        error ("Dylib filename '%s' not found.", solib_filename);
+      if (solib_filename == NULL)
+        error ("Dylib not found.");
+    }
 
   if (!file_exists_p (source_filename))
     error ("Source file '%s' not found.", source_filename);
@@ -424,6 +484,9 @@ fix_command_helper (const char *source_filename,
 
   if (object_filename && !file_exists_p (object_filename))
     error ("Object '%s' not found.", object_filename);
+
+  if (solib_filename && !file_exists_p (solib_filename))
+    error ("Dylib/executable '%s' not found.", solib_filename);
 
   if (find_objfile_by_name (bundle_filename))
     error ("Bundle '%s' has already been loaded.", bundle_filename);
@@ -440,6 +503,11 @@ fix_command_helper (const char *source_filename,
   cur->object_filename = object_filename;
 
   tell_zerolink (cur);
+
+  /* Make sure the original objfile that we're 'fixing'
+     has its load level set so debug info is being read in.. */
+  if (solib_filename)
+    raise_objfile_load_level (find_objfile_by_name (solib_filename));
 
   find_original_object_file_name (cur);
 
@@ -758,7 +826,11 @@ get_fixed_file (struct fixinfo *cur)
     }
 
   if (fixedobj_objfile == NULL)
-    error ("Unable to load fixed object file.");
+    error ("Unable to load fixed object file '%s'.", fixedobj->bundle_filename);
+
+  /* We need all of the debug symbols for the loaded objfile; override any
+     load-rules that might have affected it. */
+  fixedobj_objfile = raise_objfile_load_level (fixedobj_objfile);
 
   /* Throw fixedobj on to the cur->fixed_object_files linked list.  */
 
@@ -1382,6 +1454,9 @@ do_final_fix_fixups_static_syms (struct block *newstatics,
   struct symbol *cursym, *newsym;         
   struct objfile *original_objfile = find_original_object_file (curfixinfo);
 
+  if (!oldobj)
+    return;
+
   ALL_BLOCK_SYMBOLS (newstatics, j, cursym)
     {
       newsym = lookup_block_symbol (newstatics, SYMBOL_PRINT_NAME (cursym),
@@ -1392,9 +1467,6 @@ do_final_fix_fixups_static_syms (struct block *newstatics,
 
       /* FIXME - skip over non-function syms */
       if (TYPE_CODE (SYMBOL_TYPE (newsym)) != TYPE_CODE_FUNC)
-        continue;
-
-      if (!oldobj)
         continue;
 
       ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (oldobj, oldsymtab)
@@ -1512,6 +1584,10 @@ pre_load_and_check_file (struct fixinfo *cur)
   object_bfd = symfile_bfd_open_safe (cur->bundle_filename, 0);
   new_objfile = symbol_file_add_bfd_safe (object_bfd, 0, 0, 0, 0, 
                                           OBJF_SYM_ALL, (CORE_ADDR) NULL, NULL);
+
+  /* We need all of the debug symbols for the pre-loaded objfile;
+     override any load-rules that might have affected it.  */
+  new_objfile = raise_objfile_load_level (new_objfile);
 
   cleanups = make_cleanup (free_objfile_cleanup, new_objfile);
 
@@ -1884,13 +1960,13 @@ check_restrictions_locals (struct fixinfo *cur, struct objfile *newobj)
 
           active = in_active_func (funcname, cur->active_functions);
 
+          foundmatch = 0;
           ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (oldobj, oldsymtab)
             {
               if (oldsymtab->primary != 1)
                 continue;
 
               oldbv = BLOCKVECTOR (oldsymtab);
-              foundmatch = 0;
               for (j = FIRST_LOCAL_BLOCK; j < BLOCKVECTOR_NBLOCKS (oldbv); j++)
                 {
                   oldblock = BLOCKVECTOR_BLOCK (oldbv, j);
@@ -1901,21 +1977,25 @@ check_restrictions_locals (struct fixinfo *cur, struct objfile *newobj)
                       check_restrictions_function (funcname, active,
                                                    oldblock, newblock);
                       foundmatch = 1;
+                      break;
                     }
                 }
-              /* This picks up the case where the function was coalesced into
-                 another symtab within the same objfile ("C++").  */
-              if (foundmatch == 0)
+              if (foundmatch)
+                break;
+            }
+
+          /* This picks up the case where the function was coalesced into
+             another symtab within the same objfile ("C++").  */
+          if (!foundmatch)
+            {
+              oldsym = search_for_coalesced_symbol (oldobj, 
+                                                BLOCK_FUNCTION (newblock));
+              if (oldsym) 
                 {
-                  oldsym = search_for_coalesced_symbol (oldobj, 
-                                                    BLOCK_FUNCTION (newblock));
-                  if (oldsym) 
-                    {
-                      oldblock = SYMBOL_BLOCK_VALUE (oldsym);
-                      if (oldblock != newblock)
-                        check_restrictions_function (funcname, active,
-                                                     oldblock, newblock);
-                    }
+                  oldblock = SYMBOL_BLOCK_VALUE (oldsym);
+                  if (oldblock != newblock)
+                    check_restrictions_function (funcname, active,
+                                                 oldblock, newblock);
                 }
             }
         }
@@ -2032,7 +2112,7 @@ check_restriction_cxx_zerolink (struct objfile *obj)
   ALL_OBJFILE_SYMTABS (obj, s)
     if (s->primary && 
         (s->language == language_cplus || s->language == language_objcplus))
-      error ("Target is a C++ program that has not using ZeroLink.  "
+      error ("Target is a C++ program that is not using ZeroLink.  "
              "This is not supported.  To use Fix and Continue on a C++ program, "
              "enable ZeroLink.");
 }
@@ -2635,6 +2715,60 @@ find_original_psymtab (struct fixinfo *cur)
   error ("Unable to find original source file '%s'!  "
          "Target compiled without debug information?", 
          cur->canonical_source_filename);
+}
+
+/* Raise the load level of a struct objfile to OBJF_SYM_ALL if it isn't
+   already, and return a pointer to the (potentially new) objfile.
+   When the symbol load level is raised a new objfile is created,
+   so be sure to not hold on to a pointer to the old one.  Either re-find
+   the objfile, or use the return value of this function.  
+   When the objfile's load level is raised from e.g. OBJF_SYM_EXTERN,
+   the new OBJF_SYM_ALL objfile will have the usual psymtabs set up and
+   ready for the usual expansions.  */
+
+static struct objfile *
+raise_objfile_load_level (struct objfile *obj)
+{
+  const char *name;
+  struct cleanup *wipe;
+  if (obj == NULL || obj->symflags == OBJF_SYM_ALL)
+    return obj;
+
+  name = xstrdup (obj->name);
+  wipe = make_cleanup (xfree, (char *) name);
+
+  objfile_set_load_state (obj, OBJF_SYM_ALL, 1);
+ 
+  obj = find_objfile_by_name (name);
+  do_cleanups (wipe);
+  return (obj);
+}
+
+/* This function returns 1 if fix and continue is supported, 0 if it
+   isn't supported, and -1 if it is unable to make the determination. */
+
+int
+fix_and_continue_supported (void)
+{
+
+  /* F&C is not supported on non-ppc arches yet. */
+
+#if !defined (TARGET_POWERPC)
+  return 0;
+#endif
+
+  /* Don't have a binary specified OR we've attached to a process and
+     exec_bfd hasn't been set up for us. */
+
+  if (exec_bfd == NULL)
+    return -1;
+
+  /* F&C is not supported on ppc64 yet. */
+
+  if (gdbarch_lookup_osabi (exec_bfd) == GDB_OSABI_DARWIN64)
+    return 0;
+
+  return 1;
 }
 
 void

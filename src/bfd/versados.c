@@ -708,6 +708,8 @@ versados_get_section_contents (abfd, section, location, offset, count)
 
 #define versados_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define versados_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 static bfd_boolean
 versados_set_section_contents (abfd, section, location, offset, bytes_to_do)

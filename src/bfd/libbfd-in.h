@@ -203,6 +203,8 @@ extern bfd_boolean _bfd_generic_get_section_contents
   (bfd *, asection *, void *, file_ptr, bfd_size_type);
 extern bfd_boolean _bfd_generic_get_section_contents_in_window
   (bfd *, asection *, bfd_window *, file_ptr, bfd_size_type);
+extern bfd_boolean _bfd_generic_get_section_contents_in_window_with_mode
+  (bfd *, asection *, bfd_window *, file_ptr, bfd_size_type, bfd_boolean);
 
 /* Generic routines to use for BFD_JUMP_TABLE_COPY.  Use
    BFD_JUMP_TABLE_COPY (_bfd_generic).  */

@@ -1,18 +1,18 @@
 #ifndef __GDB_PPC_MACOSX_REGNUMS_H__
 #define __GDB_PPC_MACOSX_REGNUMS_H__
 
-#define PPC_MACOSX_SP_REGNUM 1		/* Contains address of top of stack */
+#define PPC_MACOSX_SP_REGNUM 1  /* Contains address of top of stack */
 
-#define PPC_MACOSX_PC_REGNUM 96		/* Program counter (instruction address %iar) */
-#define PPC_MACOSX_PS_REGNUM 97		/* Processor (or machine) status (%msr) */
-#define	PPC_MACOSX_CR_REGNUM 98		/* Condition register */
-#define	PPC_MACOSX_LR_REGNUM 99		/* Link register */
-#define	PPC_MACOSX_CTR_REGNUM 100		/* Count register */
-#define	PPC_MACOSX_XER_REGNUM 101		/* Fixed point exception registers */
-#define	PPC_MACOSX_MQ_REGNUM 102		/* Multiply/quotient register */
-#define PPC_MACOSX_FPSCR_REGNUM 103	/* Floating-point status register */
-#define PPC_MACOSX_VSCR_REGNUM 104		/* AltiVec status register */
-#define PPC_MACOSX_VRSAVE_REGNUM 105	/* AltiVec save register */
+#define PPC_MACOSX_PC_REGNUM 96 /* Program counter (instruction address %iar) */
+#define PPC_MACOSX_PS_REGNUM 97 /* Processor (or machine) status (%msr) */
+#define PPC_MACOSX_CR_REGNUM 98 /* Condition register */
+#define PPC_MACOSX_LR_REGNUM 99 /* Link register */
+#define PPC_MACOSX_CTR_REGNUM 100       /* Count register */
+#define PPC_MACOSX_XER_REGNUM 101       /* Fixed point exception registers */
+#define PPC_MACOSX_MQ_REGNUM 102        /* Multiply/quotient register */
+#define PPC_MACOSX_FPSCR_REGNUM 103     /* Floating-point status register */
+#define PPC_MACOSX_VSCR_REGNUM 104      /* AltiVec status register */
+#define PPC_MACOSX_VRSAVE_REGNUM 105    /* AltiVec save register */
 
 #define PPC_MACOSX_FIRST_GP_REGNUM 0
 #define PPC_MACOSX_LAST_GP_REGNUM 31
@@ -61,7 +61,7 @@
 #define PPC_MACOSX_IS_FSP_REGNUM(regno) ((regno >= PPC_MACOSX_FIRST_FSP_REGNUM) && (regno <= PPC_MACOSX_LAST_FSP_REGNUM))
 #define PPC_MACOSX_IS_VSP_REGNUM(regno) (((regno >= PPC_MACOSX_FIRST_VSP_REGNUM) && (regno <= PPC_MACOSX_LAST_VSP_REGNUM)) && (regno != PPC_MACOSX_VRSAVE_REGNUM))
 
-#define	PPC_MACOSX_DEFAULT_LR_SAVE 8
+#define PPC_MACOSX_DEFAULT_LR_SAVE 8
 
 #define PPC_MACOSX_REGISTER_TYPE unsigned int
 #define PPC_MACOSX_FP_REGISTER_TYPE double

@@ -47,11 +47,11 @@ proc get_thread_list { } {
     -re "info threads\r\n" {
       exp_continue
     }
-    -re "^\\*  *(\[0-9\]*) Thread \[^\n\]*main\[^\n\]*\n" {
+    -re "^\\*  *(\[0-9\]*) (Thread|process) \[^\n\]*main\[^\n\]*\n" {
       set thr_list "$expect_out(1,string) $thr_list"
       exp_continue
     }
-    -re "^  *(\[0-9\]*) Thread \[^\n\]*\n" {
+    -re "^  *(\[0-9\]*) (Thread|process) \[^\n\]*\n" {
       lappend thr_list $expect_out(1,string)
       exp_continue
     }

@@ -85,7 +85,8 @@ struct mi_cmd mi_cmds[] =
   { "file-exec-and-symbols", { "file", 1 }, NULL, NULL },
   { "file-exec-file", { "exec-file", 1 }, NULL, NULL },
   /* APPLE LOCAL fix-and-continue */
-  { "file-fix-file", { "fix", 1 }, NULL, NULL },
+  { "file-fix-file", { NULL, 0 }, NULL, mi_cmd_file_fix_file },
+  { "file-fix-file-is-grooved", { NULL, 0 }, NULL, mi_cmd_file_fix_file_is_grooved },
   { "file-list-exec-sections", { NULL, 0 }, NULL, NULL },
   { "file-list-exec-source-file", { NULL, 0 }, 0, mi_cmd_file_list_exec_source_file},
   { "file-list-exec-source-files", { NULL, 0 }, NULL, NULL },
@@ -124,7 +125,7 @@ struct mi_cmd mi_cmds[] =
   { "overlay-on", { NULL, 0 }, NULL, NULL },
   { "overlay-unmap", { NULL, 0 }, NULL, NULL },
   /* APPLE LOCAL: Xcode needs -pid-info to find the inferior's pid.  */
-  { "pid-info", { "info pid", 0 }, NULL, NULL },
+  { "pid-info", { NULL, 0 }, NULL, mi_cmd_pid_info },
   { "signal-handle", { NULL, 0 }, NULL, NULL },
   { "signal-list-handle-actions", { NULL, 0 }, NULL, NULL },
   { "signal-list-signal-types", { NULL, 0 }, NULL, NULL },

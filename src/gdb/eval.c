@@ -54,7 +54,7 @@ static struct value *evaluate_subexp_for_sizeof (struct expression *, int *);
 static struct value *evaluate_subexp_for_address (struct expression *,
 						  int *, enum noside);
 
-struct value *evaluate_subexp (struct type *, struct expression *,
+static struct value *evaluate_subexp (struct type *, struct expression *,
 				      int *, enum noside);
 
 static char *get_label (struct expression *, int *);
@@ -728,7 +728,10 @@ evaluate_subexp_standard (struct type *expect_type,
 	struct symbol *sym = NULL;
 	CORE_ADDR addr = 0;
 
-	selector = exp->elts[pc + 1].longconst;
+        /* APPLE LOCAL: FIXME: selector can be sign-extended because .longconst
+           is signed; mask off the upper 32 bits for now.  Must be fixed for
+           ObjC 64-bit programs.  */
+	selector = exp->elts[pc + 1].longconst & 0xffffffff;
 	nargs = exp->elts[pc + 2].longconst;
 	argvec = (struct value **) alloca (sizeof (struct value *) 
 					   * (nargs + 5));
@@ -748,12 +751,6 @@ evaluate_subexp_standard (struct type *expect_type,
 	
 	if (! cached_values)
 	  {
-	    struct type *type;
-	    type = lookup_pointer_type (builtin_type_void);
-	    type = lookup_function_type (type);
-	    type = lookup_pointer_type (type);
-	    type = lookup_function_type (type);
-	    type = lookup_pointer_type (type);
 
 	    if (lookup_minimal_symbol ("objc_msg_lookup", 0, 0))
 	      gnu_runtime = 1;
@@ -768,19 +765,49 @@ evaluate_subexp_standard (struct type *expect_type,
 	       only).  */
 	    if (gnu_runtime)
 	      {
-		msg_send = create_cached_function ("objc_msg_lookup", type);
-		/* Special dispatcher for methods returning structs */
-		msg_send_stret = create_cached_function ("objc_msg_lookup", type);
-	      }
-	    else
-	      {
-		msg_send = create_cached_function ("objc_msgSend", type);
-		/* Special dispatcher for methods returning structs */
-		msg_send_stret = create_cached_function ("objc_msgSend_stret", type);
-	      }
 
-	    cached_values = 1;
-	  }
+		/* APPLE LOCAL: FIXME - it seems innocent enough to give
+		   a type to the msg_send function here.  But the code 
+		   below this will use the type of the cached function 
+		   value as the type of the method call if debug symbols
+		   for the call can't be found.  Look particularly where
+		   we check for (!method) and then inherit called_method
+		   from there.  I think THAT code is what is actually 
+		   wrong, but it works correctly if you don't set the 
+		   type here.  
+		   So don't be tempted to move this bit of code out to the
+		   Apple Runtime part of the code without fixing the
+		   way called_method is used below.  */
+	 
+                struct type *type;
+                type = lookup_pointer_type (builtin_type_void);
+                type = lookup_function_type (type);
+                type = lookup_pointer_type (type);
+                type = lookup_function_type (type);
+                type = lookup_pointer_type (type);
+                msg_send = create_cached_function ("objc_msg_lookup", type);
+                /* Special dispatcher for methods returning structs */
+                msg_send_stret = create_cached_function ("objc_msg_lookup", type);
+	      }
+            else
+              {
+                msg_send = create_cached_function ("objc_msgSend", NULL);
+                /* Special dispatcher for methods returning structs */
+                msg_send_stret = create_cached_function ("objc_msgSend_stret", NULL);
+              }
+
+            cached_values = 1;
+          }
+
+        /* APPLE LOCAL: Instead of calling into the inferior two times
+           before calling the method itself, let's just grope around in
+           the ObjC runtime like we do elsewhere and speed everything up. */
+
+        addr = find_implementation (value_as_address (target), selector);
+        if (addr == 0)
+          error ("Target does not respond to this message selector.");
+
+#if 0 /* APPLE LOCAL: skip all this code */
 
 	/* Verify the target object responds to this method. The
 	   standard top-level 'Object' class uses a different name for
@@ -856,6 +883,9 @@ evaluate_subexp_standard (struct type *expect_type,
 	/* ret should now be the selector.  */
 
 	addr = value_as_long (ret);
+
+#endif /* #if 0 APPLE LOCAL: skip all this code */
+
 	if (addr)
 	  {
 	    struct symbol *sym = NULL;

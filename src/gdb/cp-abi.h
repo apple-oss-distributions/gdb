@@ -166,7 +166,6 @@ struct cp_abi_ops
 
 
 extern int register_cp_abi (struct cp_abi_ops *abi);
-extern int switch_to_cp_abi (const char *short_name);
 extern void set_cp_abi_as_auto_default (const char *short_name);
 extern int cp_abi_is_auto_p ();
 

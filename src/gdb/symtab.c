@@ -3028,12 +3028,20 @@ search_symbols (char *regexp, domain_enum kind, int nfiles, char *files[],
 		       function lookup_symbol_minsym that found the
 		       symbol associated to a given minimal symbol (if
 		       any).  */
-		    if (kind == FUNCTIONS_DOMAIN
-			|| lookup_symbol (SYMBOL_LINKAGE_NAME (msymbol),
+		    if (kind == FUNCTIONS_DOMAIN)
+		      {
+			found_misc = 1;
+		      }
+		    else
+		      {
+			struct symbol *sym;
+			sym = lookup_symbol (SYMBOL_LINKAGE_NAME (msymbol),
 					  (struct block *) NULL,
 					  VAR_DOMAIN,
-					0, (struct symtab **) NULL) == NULL)
-		      found_misc = 1;
+					     0, (struct symtab **) NULL);
+			  if (!sym || SYMBOL_VALUE_ADDRESS (sym) != SYMBOL_VALUE_ADDRESS (msymbol))
+			    found_misc = 1;
+		      }
 		  }
 	      }
 	  }
@@ -3132,9 +3140,11 @@ search_symbols (char *regexp, domain_enum kind, int nfiles, char *files[],
 		    (0 == find_pc_symtab (SYMBOL_VALUE_ADDRESS (msymbol))))
 		  {
 		    /* Variables/Absolutes:  Look up by name */
-		    if (lookup_symbol (SYMBOL_LINKAGE_NAME (msymbol),
+		    struct symbol *sym;
+		    sym = lookup_symbol (SYMBOL_LINKAGE_NAME (msymbol),
 				       (struct block *) NULL, VAR_DOMAIN,
-				       0, (struct symtab **) NULL) == NULL)
+					 0, (struct symtab **) NULL); 
+		    if (sym == NULL || SYMBOL_VALUE_ADDRESS (sym) != SYMBOL_VALUE_ADDRESS (msymbol))
 		      {
 			/* match */
 			psr = (struct symbol_search *) xmalloc (sizeof (struct symbol_search));
@@ -3313,7 +3323,18 @@ rbreak_command (char *regexp, int from_tty)
     {
       if (p->msymbol == NULL)
 	{
-	  char *string = alloca (strlen (p->symtab->filename)
+	  char *shlib_ptr = NULL;
+	  int shlib_len = 0;
+
+	  if (p->symtab->objfile != NULL && p->symtab->objfile->name != NULL)
+	    {
+	      shlib_ptr = p->symtab->objfile->name;
+	      shlib_len = strlen (p->symtab->objfile->name)
+		+ strlen("-shlib \"\" ");
+	    }
+
+	  char *string = alloca (shlib_len
+				 + strlen (p->symtab->filename)
 				 + strlen (SYMBOL_LINKAGE_NAME (p->symbol))
 				 + 4);
           /* APPLE LOCAL: To make it easier for decode_line_1() to decode
@@ -3328,7 +3349,17 @@ rbreak_command (char *regexp, int from_tty)
              be OK.  cf
                  http://sources.redhat.com/ml/gdb-patches/2003-09/msg00053.html
           */
-          strcpy (string, "\"");
+	  if (shlib_ptr != NULL) 
+	    {
+	      strcpy (string, "-shlib \"");
+	      strcat (string, p->symtab->objfile->name);
+	      strcat (string, "\" \"");
+	    }
+	  else
+	    {
+	      strcpy (string, "\"");
+	    }
+
 	  strcat (string, p->symtab->filename);
 	  strcat (string, ":");
 	  strcat (string, SYMBOL_LINKAGE_NAME (p->symbol));

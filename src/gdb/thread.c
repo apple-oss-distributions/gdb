@@ -35,6 +35,7 @@
 #include "regcache.h"
 #include "gdb.h"
 #include "gdb_string.h"
+#include "wrapper.h"
 
 #include <ctype.h>
 #include <sys/types.h>
@@ -568,7 +569,11 @@ thread_apply_all_command (char *cmd, int from_tty)
 	printf_filtered ("\nThread %d (%s):\n", tp->num,
 			 target_pid_to_str (inferior_ptid));
 #endif
-	execute_command (cmd, from_tty);
+	/* APPLE LOCAL: Use safe_execute_command for this.  If the command 
+	   has an error for one thread, that's no reason not to run it for
+	   the next thread.  */
+
+	safe_execute_command (uiout, cmd, from_tty);
 	strcpy (cmd, saved_cmd);	/* Restore exact command used previously */
       }
 

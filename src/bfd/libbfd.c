@@ -721,6 +721,11 @@ _bfd_generic_get_section_contents (bfd *abfd,
   return TRUE;
 }
 
+/* APPLE LOCAL: Add a way to pass in the writeable mode.
+   This is only used if you are mmapping in the window.  
+   FIXME: I didn't propagate this to ALL the BFD targets,
+   just to the ones we build.  */
+
 bfd_boolean
 _bfd_generic_get_section_contents_in_window
   (bfd *abfd ATTRIBUTE_UNUSED,
@@ -728,6 +733,21 @@ _bfd_generic_get_section_contents_in_window
    bfd_window *w ATTRIBUTE_UNUSED,
    file_ptr offset ATTRIBUTE_UNUSED,
    bfd_size_type count ATTRIBUTE_UNUSED)
+{
+
+  return _bfd_generic_get_section_contents_in_window_with_mode 
+    (abfd, section, w, offset, count, FALSE);
+}
+
+bfd_boolean
+_bfd_generic_get_section_contents_in_window_with_mode
+  (bfd *abfd ATTRIBUTE_UNUSED,
+   sec_ptr section ATTRIBUTE_UNUSED,
+   bfd_window *w ATTRIBUTE_UNUSED,
+   file_ptr offset ATTRIBUTE_UNUSED,
+   bfd_size_type count ATTRIBUTE_UNUSED,
+   bfd_boolean mode ATTRIBUTE_UNUSED)
+
 {
   if (count == 0)
     return TRUE;
@@ -758,11 +778,13 @@ _bfd_generic_get_section_contents_in_window
     }
 
   if ((bfd_size_type) (offset+count) > section->_raw_size
-      || (! bfd_get_file_window (abfd, section->filepos + offset, count, w, TRUE)))
+      || (! bfd_get_file_window (abfd, section->filepos + offset, count, w, mode)))
     return FALSE;
 
   return TRUE;
 }
+
+/* END APPLE LOCAL */
 
 /* This generic function can only be used in implementations where creating
    NEW sections is disallowed.  It is useful in patching existing sections

@@ -60,6 +60,7 @@
 #define bfd_pef_bfd_final_link                      _bfd_generic_final_link
 #define bfd_pef_bfd_link_split_section              _bfd_generic_link_split_section
 #define bfd_pef_get_section_contents_in_window      _bfd_generic_get_section_contents_in_window
+#define bfd_pef_get_section_contents_in_window_with_mode      _bfd_generic_get_section_contents_in_window_with_mode
 
 static void bfd_pef_print_symbol               PARAMS ((bfd *, PTR, asymbol *, bfd_print_symbol_type));
 static void bfd_pef_convert_architecture       PARAMS ((unsigned long, enum bfd_architecture *, unsigned long *));
@@ -1139,6 +1140,7 @@ const bfd_target pef_vec =
 #define bfd_pef_xlib_get_section_contents _bfd_generic_get_section_contents
 #define bfd_pef_xlib_set_section_contents _bfd_generic_set_section_contents
 #define bfd_pef_xlib_get_section_contents_in_window _bfd_generic_get_section_contents_in_window
+#define bfd_pef_xlib_get_section_contents_in_window_with_mode _bfd_generic_get_section_contents_in_window_with_mode
 #define bfd_pef_xlib_set_section_contents_in_window _bfd_generic_set_section_contents_in_window
 
 static int

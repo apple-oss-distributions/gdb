@@ -23,6 +23,9 @@
 #if !defined (SYMFILE_H)
 #define SYMFILE_H
 
+/* APPLE LOCAL: Need domain_enum decl from symtab.h */
+#include "symtab.h"
+
 /* This file requires that you first include "bfd.h".  */
 
 /* Opaque declarations.  */

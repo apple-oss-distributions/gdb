@@ -313,7 +313,7 @@ mi_gdb_test "-var-delete weird" \
 
 # Stop in "do_special_tests"
 mi_gdb_test "200-break-insert do_special_tests" \
-	"200\\^done,bkpt=\{number=\"2\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"do_special_tests\",file=\".*var-cmd.c\",line=\"282\",times=\"0\"\}" \
+	"200\\^done,bkpt=\{number=\"2\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"do_special_tests\",file=\".*var-cmd.c\",line=\"282\",shlib=\"$binfile\",times=\"0\"\}" \
 	"break-insert operation"
 
 mi_continue_to 2 do_special_tests {} {.*var-cmd.c} 282 {continue to do_special_tests}
@@ -564,7 +564,7 @@ gdb_expect {
 }
 
 mi_gdb_test "200-break-insert incr_a" \
-	"200\\^done,bkpt=\{number=\"3\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"incr_a\",file=\".*var-cmd.c\",line=\"85\",times=\"0\"\}" \
+	"200\\^done,bkpt=\{number=\"3\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"incr_a\",file=\".*var-cmd.c\",line=\"85\",shlib=\"$binfile\",times=\"0\"\}" \
 	"break-insert operation"
 
 mi_continue_to 3 incr_a {} {.*var-cmd.c} {.*} {continue to incr_a}

@@ -442,10 +442,9 @@ cd_command (char *dir, int from_tty)
 void
 source_command (char *args, int from_tty)
 {
-  FILE *stream;
-  struct cleanup *old_cleanups;
   char *file;
   char **argv;
+  struct cleanup *old_cleanups;
 
   if (args == NULL)
     {
@@ -460,7 +459,24 @@ source_command (char *args, int from_tty)
 
   file = tilde_expand (*argv);
   old_cleanups = make_cleanup (xfree, file);
+  source_file (file, from_tty);  /* APPLE LOCAL */
+  do_cleanups (old_cleanups);
+}
+
+/* APPLE LOCAL: We split the file-source code out of the CLI command
+   that sources the file so that main.c can call source_file_attach with
+   a filename with embedded whitespace and the argv expander won't
+   expand it into multiple arguments.  I just copied Klee's scheme
+   from corefile.c and core_file_command -> core_file_attach.  
+   This would more properly be up in ../top.c because it's specifically
+   not the CLI command, but that would probably make FSF<->Apple merging
+   more work, so here it stays.  */
 
+void
+source_file (char *file, int from_tty)
+{
+  FILE *stream;
+  
   stream = fopen (file, FOPEN_RT);
   if (!stream)
     {
@@ -471,8 +487,6 @@ source_command (char *args, int from_tty)
     }
 
   script_from_file (stream, file);
-
-  do_cleanups (old_cleanups);
 }
 
 static void
@@ -1007,8 +1021,9 @@ apropos_command (char *searchstr, int from_tty)
 
 /* Print a list of files and line numbers which a user may choose from
    in order to list a function which was specified ambiguously (as with
-   `list classname::overloadedfuncname', for example).  The vector in
-   SALS provides the filenames and line numbers.  */
+   `list classname::overloadedfuncname', or 'list objectiveCSelector:).
+   The vector in SALS provides the filenames and line numbers.
+   NOTE: some of the SALS may have no filename or line information! */
 
 static void
 ambiguous_line_spec (struct symtabs_and_lines *sals)
@@ -1016,8 +1031,13 @@ ambiguous_line_spec (struct symtabs_and_lines *sals)
   int i;
 
   for (i = 0; i < sals->nelts; ++i)
-    printf_filtered ("file: \"%s\", line number: %d\n",
-		     sals->sals[i].symtab->filename, sals->sals[i].line);
+    if (sals->sals[i].symtab != 0)
+      printf_filtered ("file: \"%s\", line number: %d\n",
+		       sals->sals[i].symtab->filename != NULL 
+		       ? sals->sals[i].symtab->filename : "<Unknown File>",
+		       sals->sals[i].line);
+    else
+      printf_filtered ("No file and line information for pc: 0x%s.\n", paddr_nz (sals->sals[i].pc));
 }
 
 static void

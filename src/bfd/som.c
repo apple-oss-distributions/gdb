@@ -6340,6 +6340,8 @@ som_bfd_link_split_section (abfd, sec)
 #define som_minisymbol_to_symbol	_bfd_generic_minisymbol_to_symbol
 #define som_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define som_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 #define som_bfd_get_relocated_section_contents \
  bfd_generic_get_relocated_section_contents

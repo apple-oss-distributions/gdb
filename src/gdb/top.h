@@ -35,6 +35,8 @@ extern char gdbinit_global[];
 extern void print_gdb_version (struct ui_file *);
 
 extern void source_command (char *, int);
+extern void source_file (char *, int); /* APPLE LOCAL cf cli/cli-cmds.c */
+
 extern void cd_command (char *, int);
 extern void read_command_file (FILE *);
 extern void init_history (void);

@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 static int foo (int input)
 {
   return input * 5;

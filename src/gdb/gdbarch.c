@@ -5931,6 +5931,10 @@ deprecated_current_gdbarch_select_hack (struct gdbarch *new_gdbarch)
   current_gdbarch_swap_out_hack ();
   current_gdbarch_swap_in_hack (new_gdbarch);
   architecture_changed_event ();
+/* APPLE LOCAL: Notify the regsize cache that we have a new arch.
+   The observer system may have facilities to do this in our next
+   FSF merge, but for now I'll resort to this hack.  2004-11-01/jsm */
+  reg_cache_hack__architecture_changed_hook ();
 }
 
 extern void _initialize_gdbarch (void);

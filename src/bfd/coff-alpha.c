@@ -2354,6 +2354,8 @@ static const struct ecoff_backend_data alpha_ecoff_backend_data =
 /* Handling file windows is generic.  */
 #define _bfd_ecoff_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define _bfd_ecoff_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 /* Relaxing sections is generic.  */
 #define _bfd_ecoff_bfd_relax_section bfd_generic_relax_section

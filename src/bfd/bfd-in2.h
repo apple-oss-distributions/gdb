@@ -1520,6 +1520,10 @@ bfd_boolean bfd_get_section_contents_in_window
    (bfd *abfd, asection *section, bfd_window *window,
     file_ptr offset, bfd_size_type count);
 
+bfd_boolean bfd_get_section_contents_in_window_with_mode
+   (bfd *abfd, asection *section, bfd_window *window,
+    file_ptr offset, bfd_size_type count, bfd_boolean mode);
+
 bfd_boolean bfd_copy_private_section_data
    (bfd *ibfd, asection *isec, bfd *obfd, asection *osec);
 
@@ -4207,7 +4211,8 @@ typedef struct bfd_target
   NAME##_bfd_free_cached_info, \
   NAME##_new_section_hook, \
   NAME##_get_section_contents, \
-  NAME##_get_section_contents_in_window
+  NAME##_get_section_contents_in_window, \
+  NAME##_get_section_contents_in_window_with_mode
 
   /* Called when the BFD is being closed to do any necessary cleanup.  */
   bfd_boolean (*_close_and_cleanup) (bfd *);
@@ -4220,6 +4225,8 @@ typedef struct bfd_target
     (bfd *, sec_ptr, void *, file_ptr, bfd_size_type);
   bfd_boolean (*_bfd_get_section_contents_in_window)
     (bfd *, sec_ptr, bfd_window *, file_ptr, bfd_size_type);
+  bfd_boolean (*_bfd_get_section_contents_in_window_with_mode)
+    (bfd *, sec_ptr, bfd_window *, file_ptr, bfd_size_type, bfd_boolean);
 
   /* Entry points to copy private data.  */
 #define BFD_JUMP_TABLE_COPY(NAME) \

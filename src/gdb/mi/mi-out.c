@@ -321,8 +321,9 @@ mi_flush (struct ui_out *uiout)
   gdb_flush (data->buffer);
 }
 
-struct ui_file *notify_buffer;
-struct ui_file *notify_suspended_buffer;
+static struct ui_file *notify_buffer;
+static struct ui_out_data notify_suspended_data;
+static int notify_suspended = 0;
 
 static void 
 mi_notify_begin (struct ui_out *uiout, char *class)
@@ -331,20 +332,23 @@ mi_notify_begin (struct ui_out *uiout, char *class)
   if (notify_buffer != NULL)
     {
       /* This should not happen, but try to recover... */
-      if (notify_suspended_buffer != NULL)
+      if (notify_suspended)
         {
           ui_file_delete (notify_buffer);
           notify_buffer = NULL;
-          data->buffer = notify_suspended_buffer;
-          notify_suspended_buffer = NULL;
+          *data = notify_suspended_data;
+          notify_suspended = 0;
         }
       error ("Called to start an mi notify with a notify already started.");
       return;
     }
     
-  notify_suspended_buffer = data->buffer;
+  notify_suspended = 1;
+  notify_suspended_data = *data;
   notify_buffer = mem_fileopen();
   data->buffer = notify_buffer;
+  data->suppress_field_separator = 0;
+  data->suppress_output = 0;
   fprintf_unfiltered (data->buffer, "=%s", class);
 }
 
@@ -358,8 +362,8 @@ mi_notify_end (struct ui_out *uiout)
 
   ui_file_delete (data->buffer);
   notify_buffer = NULL;
-  data->buffer = notify_suspended_buffer;
-  notify_suspended_buffer = NULL;
+  *data = notify_suspended_data;
+  notify_suspended = 0;
 }
 
 /* local functions */

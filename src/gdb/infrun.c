@@ -46,6 +46,8 @@
 #include "observer.h"
 #include "language.h"
 #include "gdb_assert.h"
+/* APPLE LOCAL: need objfile.h for pc_set_load_state.  */
+#include "objfiles.h"
 
 /* APPLE LOCAL: codewarrior support */
 int metrowerks_stepping = 0;
@@ -1273,6 +1275,8 @@ init_execution_control_state (struct execution_control_state *ecs)
   ecs->current_symtab = ecs->sal.symtab;
   ecs->infwait_state = infwait_normal_state;
   ecs->waiton_ptid = pid_to_ptid (-1);
+  /* APPLE LOCAL: Set code to -1 - means nothing interesting here.  */
+  ecs->ws.code = -1;
   ecs->wp = &(ecs->ws);
 }
 
@@ -1451,6 +1455,12 @@ handle_step_into_function (struct execution_control_state *ecs)
      numbers.  find_pc_line handles this.  */
   {
     struct symtab_and_line tmp_sal;
+
+    /* APPLE LOCAL: We need to up the symbol loading level
+       before looking to see if we have file & line info here.  */
+
+    pc_set_load_state (ecs->stop_func_start, OBJF_SYM_ALL, 0);
+    /* END APPLE LOCAL */
 
     tmp_sal = find_pc_line (ecs->stop_func_start, 0);
     if (tmp_sal.line != 0)
@@ -2281,6 +2291,19 @@ process_event_stop_test:
 	  printed = 1;
 	  target_terminal_ours_for_output ();
 	  print_stop_reason (SIGNAL_RECEIVED, stop_signal);
+#ifdef NM_NEXTSTEP
+	  /* APPLE LOCAL: We have more interesting info on the target
+	     side to print here.  If you want to do this correctly,
+	     you would change print_stop_reason to take the full
+	     target_waitstatus, and then pass that down to the
+	     target_signal_to_string so it can print the extra bits.
+	     But that's lots of diffs for no real benefit.  */
+	  
+extern void macosx_print_extra_stop_info (int, CORE_ADDR);
+
+	  if (ecs->ws.code != -1) 
+	    macosx_print_extra_stop_info (ecs->ws.code, ecs->ws.address);
+#endif	  
 	}
       if (signal_stop[stop_signal])
 	{

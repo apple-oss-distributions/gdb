@@ -250,11 +250,13 @@ exec_file_attach (char *filename, int from_tty)
 	     O_RDWR | O_BINARY : O_RDONLY | O_BINARY, 0, &scratch_pathname);
 	}
 #endif
+
 #ifdef NM_NEXTSTEP
       if (scratch_chan < 0)
 	{
-	  /* Look for a wrapped executable of the form Foo.app/Contents/MacOS/Foo,
-	     where the user gave us up to Foo.app.  The ".app" is optional. */
+	  /* APPLE LOCAL: Look for a wrapped executable of the form
+	     Foo.app/Contents/MacOS/Foo, where the user gave us up to
+	     Foo.app.  The ".app" is optional. */
 
 	  char *wrapped_filename = macosx_filename_in_bundle (filename, 1);
 
@@ -267,6 +269,7 @@ exec_file_attach (char *filename, int from_tty)
 	    }
 	}
 #endif
+
       if (scratch_chan < 0)
 	perror_with_name (filename);
       exec_bfd = bfd_fdopenr (scratch_pathname, gnutarget, scratch_chan);
@@ -282,43 +285,32 @@ exec_file_attach (char *filename, int from_tty)
       scratch_pathname = xstrdup (scratch_pathname);
       make_cleanup (xfree, scratch_pathname);
 
+      /* APPLE LOCAL: If the file is an archive file (i.e. fat
+	 binary), look for sub-files that match the current osabi. */
+
       if (bfd_check_format (exec_bfd, bfd_archive))
- 	{
- 	  bfd *abfd = NULL;
-#if defined (TARGET_POWERPC)
- 	  const bfd_arch_info_type *thisarch = bfd_lookup_arch (bfd_arch_powerpc, 0);
-#elif defined (TARGET_I386)
- 	  const bfd_arch_info_type *thisarch = bfd_lookup_arch (bfd_arch_i386, 0);
-#else
- 	  const bfd_arch_info_type *thisarch = bfd_lookup_arch (bfd_arch_powerpc, 0);
-#endif
- 	  for (;;)
- 	    {
- 	      abfd = bfd_openr_next_archived_file (exec_bfd, abfd);
- 	      if (abfd == NULL)
- 		{
- 		  break;
- 		}
- 	      if (!bfd_check_format (abfd, bfd_object))
- 		{
- 		  abfd = NULL;
- 		  break;
- 		}
- 	      if (thisarch == NULL)
- 		{
- 		  abfd = NULL;
- 		  break;
- 		}
- 	      if (bfd_default_compatible (bfd_get_arch_info (abfd), thisarch))
- 		{
- 		  break;
- 		}
- 	    }
- 	  if (abfd != NULL)
- 	    {
- 	      exec_bfd = abfd;
- 	    }
- 	}
+	{
+	  enum gdb_osabi osabi = GDB_OSABI_UNINITIALIZED;
+	  bfd *abfd = NULL;
+
+	  osabi = gdbarch_osabi (current_gdbarch);
+	  if ((osabi <= GDB_OSABI_UNKNOWN) || (osabi >= GDB_OSABI_INVALID))
+	    osabi = gdbarch_lookup_osabi (exec_bfd);
+
+	  for (;;)
+	    {
+	      abfd = bfd_openr_next_archived_file (exec_bfd, abfd);
+	      if (abfd == NULL)
+		break;
+	      if (! bfd_check_format (abfd, bfd_object))
+		continue;
+	      if (osabi == gdbarch_lookup_osabi (abfd))
+		{
+		  exec_bfd = abfd;
+		  break;
+		}
+	    }
+	}
       
       if (!bfd_check_format (exec_bfd, bfd_object))
 	{

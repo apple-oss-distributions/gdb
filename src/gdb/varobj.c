@@ -1198,7 +1198,6 @@ varobj_set_value (struct varobj *var, char *expression)
   struct expression *exp;
   struct value *value;
   int saved_input_radix = input_radix;
-  enum scheduler_locking_mode old_mode;
   int ret_val = 1;
   struct cleanup *schedlock_chain;
 
@@ -2950,7 +2949,7 @@ c_value_of_variable (struct varobj *var)
 	    val_print (VALUE_TYPE (var->value),
 		       VALUE_CONTENTS_RAW (var->value), 0,
 		       VALUE_ADDRESS (var->value), stb,
-		       format_code[(int) var->format], 1, 0, 0);
+		       format_code[(int) var->format], 0, 0, 0);
 	    thevalue = ui_file_xstrdup (stb, &dummy);
 	    do_cleanups (old_chain);
 	return thevalue;

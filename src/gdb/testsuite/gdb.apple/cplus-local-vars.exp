@@ -51,7 +51,7 @@ gdb_expect -re "$gdb_prompt $"
 
 gdb_test "break [gdb_get_line_number "put a breakpoint 1 here"]" "Breakpoint 1 at $hex: file.*, line.*\\." "Set breakpoint on line  'put a breakpoint 1 here'"
 
-gdb_test "run" "Starting program: $binfile *\r\n\Reading symbols for shared libraries . done.*Breakpoint 1, foo.*" "continue to breakpoint in foo()"
+gdb_test "run" "Starting program: $binfile *\r\n\Reading symbols for shared libraries \(\[.+\]\)+ done.*Breakpoint 1, foo.*" "continue to breakpoint in foo()"
 
 send_gdb "list\n" 
 

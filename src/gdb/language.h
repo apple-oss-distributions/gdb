@@ -334,6 +334,7 @@ language_mode;
 
 extern void language_info (int);
 
+struct cleanup * make_cleanup_restore_language (enum language new_lang);
 extern enum language set_language (enum language);
 
 

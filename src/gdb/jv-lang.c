@@ -82,7 +82,7 @@ get_dynamics_objfile (void)
   if (dynamics_objfile == NULL)
     {
 #ifndef FSF_OBJFILES
-      dynamics_objfile = allocate_objfile (NULL, 0, 0, 0);
+      dynamics_objfile = allocate_objfile (NULL, 0, 0, 0, NULL);
 #else
       dynamics_objfile = allocate_objfile (NULL, 0);
 #endif

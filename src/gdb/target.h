@@ -145,6 +145,15 @@ struct target_waitstatus
 	int syscall_id;
       }
     value;
+
+    /* APPLE LOCAL: The EXC_BAD_ACCESS actually has more useful information
+       that we would like to convey, namely the PID, and the access violation
+       subtype.  It would be nice to add this as a void * pointer, but it is not
+       at all clear how to track the life-cycle of this field (since it gets copied
+       all over in get_last_wait_status.)  So I am just tacking on a couple of extra
+       fields.  For now code == -1 means there's no interesting data here.  */
+    int code;
+    CORE_ADDR address;
   };
 
 /* Possible types of events that the inferior handler will have to
@@ -427,6 +436,10 @@ struct target_ops
        safe to call 0 if unsafe, and -1 if there was an error
        checking.  */
     int (*to_check_safe_call) ();
+    /* APPLE LOCAL: Check whether the objfile has been loaded into
+       the inferior's process (so it is safe to set breakpoints
+       from that objfile.)  */
+    int (*to_check_is_objfile_loaded) (struct objfile *objfile);
 
     int to_magic;
     /* Need sub-structure for target machine related rather than comm related?
@@ -1032,11 +1045,19 @@ extern void (*target_new_objfile_hook) (struct objfile *);
      (current_target.to_bind_function) (NAME)
 
 /*
- * Check whether it is safe to call functions on this thread 
+ * APPLE LOCAL: Check whether it is safe to call functions on this thread 
  */
 
 #define target_check_safe_call \
     (current_target.to_check_safe_call)
+
+/*
+ * APPLE LOCAL: Check whether OBJFILE has been loaded or
+ * not.
+ */
+
+#define target_check_is_objfile_loaded(OBJFILE) \
+    (current_target.to_check_is_objfile_loaded) (OBJFILE)
 
 /* Thread-local values.  */
 #define target_get_thread_local_address \
@@ -1284,7 +1305,5 @@ extern void push_remote_target (char *name, int from_tty);
 void target_ignore (void);
 
 void update_current_target (void);
-
-void cleanup_target (struct target_ops *);
 
 #endif /* !defined (TARGET_H) */

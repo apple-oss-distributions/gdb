@@ -363,6 +363,16 @@ throw_exception (enum return_reason reason)
   bpstat_clear_actions (stop_bpstat);	/* Clear queued breakpoint commands */
 
   disable_current_display ();
+
+  /* APPLE LOCAL: Just a comment: If you add any more cleanups to the
+     cleanups done by throw_exception, you have to make sure that you
+     save & restore them in the catcher.  Otherwise somebody may be
+     left holding a bad pointer into the cleanup chain.  
+     FIXME: There probably ought to be some more automatic way of
+     doing this.  
+     FIXME: However DON'T try to save exec_error_cleanups.  See note
+     in the catcher function.  */
+
   do_cleanups (ALL_CLEANUPS);
   if (event_loop_p && target_can_async_p () && !target_executing)
     do_exec_cleanups (ALL_CLEANUPS);
@@ -460,10 +470,9 @@ catcher (catch_exceptions_ftype *func,
   uiout = func_uiout;
 
   /* Prevent error/quit during FUNC from calling cleanups established
-     prior to here. */
+     prior to here.  */
 
   saved_cleanup_chain = save_cleanups ();
-
   /* Call FUNC, catching error/quit events. */
 
   saved_catch = catch_return;
@@ -493,7 +502,6 @@ catcher (catch_exceptions_ftype *func,
      builder, to their original states. */
 
   restore_cleanups (saved_cleanup_chain);
-
 
   /* But what if I *want* a command to change the current uiout? */
 
@@ -1995,5 +2003,3 @@ gdb_init (char *argv0)
   if (init_ui_hook)
     init_ui_hook (argv0);
 }
-
-void _initialize_symread () {}

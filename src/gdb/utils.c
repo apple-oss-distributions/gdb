@@ -112,6 +112,32 @@ static void set_width_command (char *, int, struct cmd_list_element *);
 static struct cleanup *cleanup_chain;	/* cleaned up after a failed command */
 static struct cleanup *final_cleanup_chain;	/* cleaned up when gdb exits */
 static struct cleanup *run_cleanup_chain;	/* cleaned up on each 'run' */
+
+/* APPLE LOCAL: Comment on the exec_cleanup_chain.  This is different
+   from the standard cleanup chain, in that it is NOT preserved across
+   calls to catch_exceptions the way the cleanup_chain is.  That means
+   you really should NEVER hold onto a pointer into the cleanup chain
+   across code that might error.  Otherwise, in the throw_exceptions
+   code the exec_cleanup chain will get emptied, and when you go to
+   call do_exec_cleanups with your preserved old_chain pointer, the
+   exec_cleanup chain will already be NULL & gdb will crash.
+
+   Unfortunately, there are several places where this is done in the
+   generic code, and it isn't clear how to fix them.
+
+   I tried preserving the exec_cleanup_chain in the catcher function,
+   but that didn't work because the only place you actually know to do
+   exec cleanups is in the continuation for the command that started
+   the target running, and you only get one shot at that.  If you have
+   split the chain into two pieces across a catch call, the part that
+   was stored away in the catcher will never get done.
+
+   In the end, I fixed this by making do_exec_cleanups check first
+   whether the cleanup chain was NULL before actually trying to do the
+   cleanup.  This only happens when throw_exceptions has already done
+   the cleanup, so while potentially incorrect (because out of order)
+   this is benign.  */
+
 static struct cleanup *exec_cleanup_chain;	/* cleaned up on each execution command */
 /* cleaned up on each error from within an execution command */
 static struct cleanup *exec_error_cleanup_chain;
@@ -347,6 +373,16 @@ do_run_cleanups (struct cleanup *old_chain)
 void
 do_exec_cleanups (struct cleanup *old_chain)
 {
+  /* APPLE LOCAL: We can't assume that the exec_cleanup_chain has been
+     preserved across catch_exceptions calls, so we need to check
+     whether it is NULL before we pass it into do_my_cleanups.
+
+     See the comment before the def'n of exec_cleanup_chain for more
+     details.  */
+
+  if (exec_cleanup_chain == NULL)
+    return;
+
   do_my_cleanups (&exec_cleanup_chain, old_chain);
 }
 

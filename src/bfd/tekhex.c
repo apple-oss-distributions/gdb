@@ -1011,6 +1011,8 @@ tekhex_print_symbol (abfd, filep, symbol, how)
 
 #define tekhex_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define tekhex_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 const bfd_target tekhex_vec =
 {

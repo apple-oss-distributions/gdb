@@ -280,6 +280,25 @@ struct breakpoint_ops
   void (*print_mention) (struct breakpoint *);
 };
 
+/* APPLE LOCAL: the set states for bp_set_state. */
+enum bp_set_state
+  {
+    bp_state_unset, /* Breakpoint hasn't been set yet. */
+    bp_state_set,   /* Breakpoint is all ready to be 
+		       inserted into the target.  */
+    bp_state_waiting_load /* We were able to find the breakpoint 
+			     in an objfile, but that objfile wasn't
+			     loaded into the target yet.  We need
+			     this extra state because breakpoint 
+			     resetting can happen between restarting
+			     the target and loading the objfile,
+			     at which point we can't read program text
+			     and so can't do things like move the
+			     breakpoint over the prologue.  So we want
+			     to make sure we try the breakpoint again
+			     when the target's text is loaded into memory.  */
+  };
+
 /* Note that the ->silent field is not currently used by any commands
    (though the code is in there if it was to be, and set_raw_breakpoint
    does set it to 0).  I implemented it because I thought it would be
@@ -420,7 +439,7 @@ struct breakpoint
     int original_flags;
 
     /* Has this breakpoint been successfully set yet? */
-    int bp_set_p;
+    enum bp_set_state bp_set_state;
   };
 
 /* The following stuff is an abstract data type "bpstat" ("breakpoint

@@ -2677,6 +2677,7 @@ const bfd_target rs6000coff64_vec =
     coff_new_section_hook,
     _bfd_generic_get_section_contents,
     _bfd_generic_get_section_contents_in_window,
+    _bfd_generic_get_section_contents_in_window_with_mode,
 
     /* Copy */
     _bfd_xcoff_copy_private_bfd_data,
@@ -2920,6 +2921,7 @@ const bfd_target aix5coff64_vec =
     coff_new_section_hook,
     _bfd_generic_get_section_contents,
     _bfd_generic_get_section_contents_in_window,
+    _bfd_generic_get_section_contents_in_window_with_mode,
 
     /* Copy */
     _bfd_xcoff_copy_private_bfd_data,

@@ -542,7 +542,6 @@ gdb_expect {
           {pass "step over breakpoint"}
   timeout {fail "(timeout) step over breakpoint"}
 }
-send_gdb "info break\n"
 send_gdb "clear 81\n"
 gdb_expect {
   -re "No breakpoint at 81..*$gdb_prompt $"\

@@ -57,6 +57,9 @@ struct dummy_frame
      [LO..HI) (after allowing for DECR_PC_AFTER_BREAK).  */
   CORE_ADDR call_lo;
   CORE_ADDR call_hi;
+
+  /* APPLE LOCAL: The thread on whose stack we are running this frame.  */
+  struct ptid ptid;
 };
 
 static struct dummy_frame *dummy_frame_stack = NULL;
@@ -76,6 +79,10 @@ find_dummy_frame (CORE_ADDR pc, CORE_ADDR fp)
   for (dummyframe = dummy_frame_stack; dummyframe != NULL;
        dummyframe = dummyframe->next)
     {
+      /* APPLE LOCAL: does the ptid match? */
+      if (!ptid_equal (dummyframe->ptid, inferior_ptid))
+	continue;
+
       /* Does the PC fall within the dummy frame's breakpoint
          instruction.  If not, discard this one.  */
       if (!(pc >= dummyframe->call_lo && pc < dummyframe->call_hi))
@@ -163,7 +170,9 @@ pc_in_dummy_frame (CORE_ADDR pc)
        dummyframe != NULL;
        dummyframe = dummyframe->next)
     {
-      if ((pc >= dummyframe->call_lo)
+      /* APPLE LOCAL: Check the ptid here as well as the address.  */
+      if (ptid_equal (dummyframe->ptid, inferior_ptid) &&
+	  (pc >= dummyframe->call_lo)
 	  && (pc < dummyframe->call_hi + DECR_PC_AFTER_BREAK))
 	return 1;
     }
@@ -216,7 +225,9 @@ generic_push_dummy_frame (void)
 
   dummy_frame = dummy_frame_stack;
   while (dummy_frame)
-    if (INNER_THAN (dummy_frame->fp, fp))	/* stale -- destroy! */
+    /* APPLE LOCAL: Check the ptid as well as the frame.  */
+    if (ptid_equal (dummy_frame->ptid, inferior_ptid) 
+	&& INNER_THAN (dummy_frame->fp, fp))	/* stale -- destroy! */
       {
 	dummy_frame_stack = dummy_frame->next;
 	regcache_xfree (dummy_frame->regcache);
@@ -235,6 +246,8 @@ generic_push_dummy_frame (void)
   dummy_frame->fp = fp;
   dummy_frame->id = get_frame_id (get_current_frame ());
   regcache_cpy (dummy_frame->regcache, current_regcache);
+  /* APPLE LOCAL: Initialize this frames ptid.  */
+  dummy_frame->ptid = inferior_ptid;
   dummy_frame->next = dummy_frame_stack;
   dummy_frame_stack = dummy_frame;
 }
@@ -270,15 +283,36 @@ generic_pop_current_frame (void (*popper) (struct frame_info * frame))
 }
 
 /* Discard the innermost dummy frame from the dummy frame stack
-   (passed in as a parameter).  */
 
-static void
-discard_innermost_dummy (struct dummy_frame **stack)
+   APPLE LOCAL: Also pass in a dummy_ptid so we can restrict out
+   attention to only the current thread.   */
+
+static int
+discard_innermost_dummy (struct dummy_frame **stack, struct ptid dummy_ptid)
 {
   struct dummy_frame *tbd = (*stack);
-  (*stack) = (*stack)->next;
+  struct dummy_frame *prev = (*stack);
+  
+  while (!ptid_equal (tbd->ptid, dummy_ptid))
+    {
+      prev = tbd;
+      tbd = tbd->next;
+      if (tbd == NULL)
+	{
+	  fprintf_unfiltered (gdb_stderr, "No dummy frame to push for the current thread\n");
+	  return 0;
+	}
+    }
+  
+  if (tbd == *stack)
+    (*stack) = (*stack)->next;
+  else
+    prev->next = tbd->next;
+  
   regcache_xfree (tbd->regcache);
   xfree (tbd);
+  
+  return 1;
 }
 
 void
@@ -294,7 +328,8 @@ generic_pop_dummy_frame (void)
   regcache_cpy (current_regcache, dummy_frame->regcache);
   flush_cached_frames ();
 
-  discard_innermost_dummy (&dummy_frame_stack);
+  /* APPLE LOCAL: Pass in the current thread as well.  */
+  discard_innermost_dummy (&dummy_frame_stack, inferior_ptid);
 }
 
 /* Given a call-dummy dummy-frame, return the registers.  Here the

@@ -1,7 +1,47 @@
+2005-01-19  Jason Molenda  (jmolenda@apple.com)
+
+	* Makefile (GDB_VERSION): Update to reflect the actual date of the
+	last FSF merge.
+
+2004-12-06  Jason Molenda  (jmolenda@apple.com)
+
+	* Info-template.plist: It looks like CFBundleDevelopmentRegion needs
+	to be defined; whatever.  Looking at two installed frameworks I see 
+	English is an acceptable setting, so there we go.  These are just 
+	private framework header files used for building gdb plug-ins anyway.
+
+2004-08-09  Klee Dienes  <kdienes@apple.com>
+
+	* Makefile: Post-process the man page to refer to
+	$(SYSTEM_DEVELOPER_TOOLS_DOC_DIR) instead of hard-coding (see
+	change to gdb/gdb.1).
+
+2004-06-16  Jason Molenda  (jmolenda@apple.com)
+
+	* ntbuild.sh, ntconfig.sh: Removed.
+	* dpkg/control: Removed.
+	* ChangeLog.binutils: Removed.
+
+2004-06-16  Jason Molenda  (jmolenda@apple.com)
+
+	* Makefile: Don't install binutils, unnecessary frameworks.
+	Don't create /usr/lib, /usr/libexec/binutils directories.
+
 2004-06-11  Jason Molenda  (jmolenda@apple.com)
 
 	* Makefile: Quote documentation directory pathnames in case
 	a space character is added.
+
+2004-06-08  Jim Ingham  <jingham@apple.com>
+
+        * cache-symfiles.sh: For now, don't emit cached symfiles
+        if the original library has any stabs.  gdb crashes when
+        these are present (Radar 3418798)
+        Also deleted the setting of "name" in the second (library)
+        search, since we don't actually use it.
+	Also, run the script far enough to delete the old symfile
+	directory, since then gdb won't bother to look at a bunch
+	of symfiles which it surely can't use.
 	
 2004-06-08  Jason Molenda  (jmolenda@apple.com)
 

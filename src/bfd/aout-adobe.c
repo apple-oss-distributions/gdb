@@ -514,6 +514,7 @@ aout_adobe_sizeof_headers (ignore_abfd, ignore)
 #define aout_32_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define aout_32_get_section_contents_in_window _bfd_generic_get_section_contents_in_window
+#define aout_32_get_section_contents_in_window_with_mode _bfd_generic_get_section_contents_in_window_with_mode
 #define aout_32_bfd_relax_section       bfd_generic_relax_section
 #define aout_32_bfd_gc_sections         bfd_generic_gc_sections
 #define aout_32_bfd_merge_sections	bfd_generic_merge_sections

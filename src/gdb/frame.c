@@ -309,14 +309,19 @@ frame_id_eq (struct frame_id l, struct frame_id r)
   else if (l.stack_addr != r.stack_addr)
     /* If .stack addresses are different, the frames are different.  */
     eq = 0;
+#if 0 /* APPLE LOCAL */
   else if (l.code_addr == 0 || r.code_addr == 0)
     /* A zero code addr is a wild card, always succeed.  */
     /* APPLE LOCAL: zero-as-wild-card fails in the case where the
        program has jumped to a NULL function address.  The NULL
        function is (correctly) determined to be frameless, so the only
        way to distinguish the two frames is by the value of $pc.  But
-       if 0 is treated as a wild-card, this will fail.  */
-    eq = 0;
+       if 0 is treated as a wild-card, this will fail.  
+       HOWEVER, if both are zero, then we need to match, 'cause in this
+       case we are probably doing "dunno where this function is".  
+       So I am disabling this whole block.  */
+      eq = 0;
+#endif
   else if (l.code_addr != r.code_addr)
     /* If .code addresses are different, the frames are different.  */
     eq = 0;

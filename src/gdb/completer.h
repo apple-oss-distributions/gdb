@@ -34,9 +34,7 @@ extern char **command_completer (char *, char *);
 extern char *get_gdb_completer_quote_characters (void);
 
 extern char *gdb_completer_word_break_characters;
-extern char *gdb_completer_command_word_break_characters;
 extern char *gdb_completer_filename_word_break_characters;
-extern char *gdb_completer_quote_characters;
 
 /* Exported to linespec.c */
 

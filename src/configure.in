@@ -339,7 +339,10 @@ case "${target}" in
 
 # APPLE LOCAL: Customize our platform configuration a bit.
   powerpc-*-darwin* | *-*-darwin*)
-    noconfigdirs="$noconfigdirs ld gas gprof"
+# The system-installed tcl & expect work fine; let's skip building our 
+# own older versions.  utils sim etc don't do anything useful for us; 
+# don't bother configuring them at all.
+    noconfigdirs="$noconfigdirs tcl expect ld gas gprof utils sim etc"
     enable_shared=no
     enable_64_bit_bfd=yes
     enable_softfloat=no

@@ -1245,16 +1245,6 @@ typedef void (gdbarch_swap_ftype) (void);
 extern void deprecated_register_gdbarch_swap (void *data, unsigned long size, gdbarch_swap_ftype *init);
 #define DEPRECATED_REGISTER_GDBARCH_SWAP(VAR) deprecated_register_gdbarch_swap (&(VAR), sizeof ((VAR)), NULL)
 
-extern int target_byte_order;
-#ifndef TARGET_BYTE_ORDER
-#define TARGET_BYTE_ORDER (target_byte_order + 0)
-#endif
-
-extern int target_byte_order_auto;
-#ifndef TARGET_BYTE_ORDER_AUTO
-#define TARGET_BYTE_ORDER_AUTO (target_byte_order_auto + 0)
-#endif
-
 /* Set the dynamic target-system-dependent parameters (architecture,
    byte-order, ...) using information found in the BFD */
 

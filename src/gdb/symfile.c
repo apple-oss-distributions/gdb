@@ -48,6 +48,7 @@
 #include "readline/readline.h"
 #include "gdb_assert.h"
 #include "block.h"
+#include "objc-lang.h"  /* APPLE LOCAL: for objfile_changed func. */
 
 #include <sys/types.h>
 #include <fcntl.h>
@@ -61,6 +62,11 @@
 #define TEXT_SECTION_NAME ".text"
 #endif
 
+/* APPLE LOCAL */
+#ifndef TEXT_SEGMENT_NAME
+#define TEXT_SEGMENT_NAME TEXT_SECTION_NAME
+#endif
+
 #ifndef DATA_SECTION_NAME
 #define DATA_SECTION_NAME ".data"
 #endif
@@ -71,6 +77,7 @@
 
 #ifdef NM_NEXTSTEP
 #include "macosx-nat-dyld.h"
+#include "macosx-nat-dyld-process.h"
 #endif
 
 #define MAPPED_SYMFILES (USE_MMALLOC && HAVE_MMAP)
@@ -617,7 +624,10 @@ syms_from_objfile (struct objfile *objfile,
       /* Find lowest loadable section to be used as starting point for 
          continguous sections. FIXME!! won't work without call to find
 	 .text first, but this assumes text is lowest section. */
-      lower_sect = bfd_get_section_by_name (objfile->obfd, TEXT_SECTION_NAME);
+      /* APPLE LOCAL: Look for the text segment ("__TEXT"), not the section
+         ("__TEXT.__text") because what we're really looking for is the load
+         address of the image, and the section address is offset a bit. */
+      lower_sect = bfd_get_section_by_name (objfile->obfd, TEXT_SEGMENT_NAME);
       if (lower_sect == NULL)
 	bfd_map_over_sections (objfile->obfd, find_lowest_section,
 			       &lower_sect);
@@ -1058,7 +1068,40 @@ symbol_file_add_main (char *args, int from_tty)
 static void
 symbol_file_add_main_1 (char *args, int from_tty, int flags)
 {
-  symbol_file_add (args, from_tty, NULL, 1, flags);
+  int symflags = OBJF_SYM_ALL;
+
+#ifdef NM_NEXTSTEP
+
+  /* APPLE LOCAL: We need to check the desired load rules for type
+     'exec' to determine the correct load level for symfile_objfile.
+     The dyld code will eventually be notified of the change since
+     'mainline' is set to 1 in symbol_file_add_with_addrs_or_offsets.
+
+     Ideally, we would better unify the FSF and Apple shared-library
+     layers, so this call-down wouldn't be necessary. */
+
+  struct dyld_objfile_entry e;
+
+  dyld_objfile_entry_clear (&e);
+  e.allocated = 1;
+
+  e.load_flag = -1;
+
+  e.reason = dyld_reason_executable;
+
+  e.text_name = args;
+  e.text_name_valid = 1;
+
+  e.loaded_name = e.text_name;
+  e.loaded_from_memory = 0;
+  e.loaded_addr = 0;
+  e.loaded_addrisoffset = 1;
+
+  symflags = dyld_default_load_flag (NULL, &e) | dyld_minimal_load_flag (NULL, &e);
+#endif
+
+  symbol_file_add_with_addrs_or_offsets
+    (args, from_tty, NULL, 0, 0, 1, flags, symflags, 0, NULL);
 
 #ifdef HPUXHPPA
   RESET_HP_UX_GLOBALS ();
@@ -1376,12 +1419,14 @@ symfile_bfd_open (const char *name, int mainline)
 		    0, &absolute_name);
     }
 #endif
+
 #ifdef NM_NEXTSTEP
   if (desc < 0)
     {
-      /* Look for a wrapped executable of the form Foo.app/Contents/MacOS/Foo,
-	 where the user gave us up to Foo.app.  The ".app" is optional. */
-      
+      /* APPLE LOCAL: Look for a wrapped executable of the form
+	 Foo.app/Contents/MacOS/Foo, where the user gave us up to
+	 Foo.app.  The ".app" is optional. */
+
       char *wrapped_filename = macosx_filename_in_bundle (name, mainline);
       
       if (wrapped_filename != NULL)
@@ -1425,25 +1470,33 @@ symfile_bfd_open (const char *name, int mainline)
     }
 #endif /* HAVE_MMAP */
 
+  /* APPLE LOCAL: If the file is an archive file (i.e. fat
+     binary), look for sub-files that match the current osabi. */
+
   if (bfd_check_format (sym_bfd, bfd_archive))
     {
+      enum gdb_osabi osabi = GDB_OSABI_UNINITIALIZED;
       bfd *abfd = NULL;
+
+      osabi = gdbarch_osabi (current_gdbarch);
+      if ((osabi <= GDB_OSABI_UNKNOWN) || (osabi >= GDB_OSABI_INVALID))
+	osabi = gdbarch_lookup_osabi (sym_bfd);
+
       for (;;)
 	{
 	  abfd = bfd_openr_next_archived_file (sym_bfd, abfd);
 	  if (abfd == NULL)
-	      break;
+	    break;
 	  if (! bfd_check_format (abfd, bfd_object))
+	    continue;
+	  if (osabi == gdbarch_lookup_osabi (abfd))
 	    {
-	      abfd = NULL;
+	      sym_bfd = abfd;
 	      break;
 	    }
-	  if (bfd_default_compatible (bfd_get_arch_info (abfd), gdbarch_bfd_arch_info (current_gdbarch)))
-	      break;
 	}
-      if (abfd != NULL)
-	sym_bfd = abfd;
     }
+
   bfd_set_cacheable (sym_bfd, 0);
 
   if (!bfd_check_format (sym_bfd, bfd_object))
@@ -1800,6 +1853,7 @@ add_symbol_file_command (char *args, int from_tty)
   int argcnt = 0;
   int sec_num = 0;
   int i;
+  struct objfile *o;   /* APPLE LOCAL */
   const char *const usage_string =
     "usage (%s): add-symbol-file <filename> <text address> [-mapped] [-readnow] [-s <secname> <addr>]*";
 
@@ -1899,7 +1953,10 @@ add_symbol_file_command (char *args, int from_tty)
       if (section_index >= 16)
 	error (usage_string, "too many sections specified.");
 
-      sect_opts[section_index].name = TEXT_SECTION_NAME;
+      /* APPLE LOCAL: Look for the text segment ("__TEXT"), not the section
+         ("__TEXT.__text") because what we're really looking for is the load
+         address of the image, and the section address is offset a bit. */
+      sect_opts[section_index].name = TEXT_SEGMENT_NAME;
       sect_opts[section_index].value = address;
       section_index++;
     }
@@ -1921,39 +1978,48 @@ add_symbol_file_command (char *args, int from_tty)
     printf_filtered (" at\n");
   else 
     printf_filtered ("? ");
-  section_addrs = alloc_section_addr_info (section_index);
-  make_cleanup (xfree, section_addrs);
-  for (i = 0; i < section_index; i++)
+  if (section_index == 0)
     {
-      CORE_ADDR addr;
-      char *val = sect_opts[i].value;
-      char *sec = sect_opts[i].name;
- 
-      addr = parse_and_eval_address (val);
-
-      /* Here we store the section offsets in the order they were
-         entered on the command line. */
-      section_addrs->other[sec_num].name = sec;
-      section_addrs->other[sec_num].addr = addr;
-      printf_unfiltered ("\t%s_addr = %s\n",
-		       sec, 
-		       local_hex_string ((unsigned long)addr));
-      sec_num++;
-
-      /* The object's sections are initialized when a 
-	 call is made to build_objfile_section_table (objfile).
-	 This happens in reread_symbols. 
-	 At this point, we don't know what file type this is,
-	 so we can't determine what section names are valid.  */
+      section_addrs = NULL;
+    }
+  else
+    {
+      section_addrs = alloc_section_addr_info (section_index);
+      make_cleanup (xfree, section_addrs);
+      for (i = 0; i < section_index; i++)
+	{
+	  CORE_ADDR addr;
+	  char *val = sect_opts[i].value;
+	  char *sec = sect_opts[i].name;
+	  
+	  addr = parse_and_eval_address (val);
+	  
+	  /* Here we store the section offsets in the order they were
+	     entered on the command line. */
+	  section_addrs->other[sec_num].name = sec;
+	  section_addrs->other[sec_num].addr = addr;
+	  printf_unfiltered ("\t%s_addr = %s\n",
+			     sec, 
+			     local_hex_string ((unsigned long)addr));
+	  sec_num++;
+	  
+	  /* The object's sections are initialized when a 
+	     call is made to build_objfile_section_table (objfile).
+	     This happens in reread_symbols. 
+	     At this point, we don't know what file type this is,
+	     so we can't determine what section names are valid.  */
+	}
     }
 
   if (from_tty && (!query ("%s", "")))
     error ("Not confirmed.");
 
- 
-  symbol_file_add_with_addrs_or_offsets
-    (filename, from_tty, section_addrs, NULL, 0, 0, flags, symflags, mapaddr, prefix);
   
+  /* APPLE LOCAL: Save return'ed objfile, set the syms_only_objfile flag */
+  o = symbol_file_add_with_addrs_or_offsets
+    (filename, from_tty, section_addrs, NULL, 0, 0, flags, symflags, mapaddr, prefix);
+  o->syms_only_objfile = 1; 
+
 #ifdef NM_NEXTSTEP
   update_section_tables ();
 #endif
@@ -2041,6 +2107,7 @@ reread_symbols (void)
 		 objfile. */
 
 	      tell_breakpoints_objfile_changed (objfile);
+	      tell_objc_msgsend_cacher_objfile_changed (objfile);
 
 	      /* APPLE LOCAL: Remove it's obj_sections from the 
 		 ordered_section list.  */
@@ -2058,41 +2125,31 @@ reread_symbols (void)
 		error ("Can't open %s to read symbols.", objfile->name);
 	      /* bfd_openr sets cacheable to true, which is what we want.  */
 
+	      /* APPLE LOCAL: If the file is an archive file (i.e. fat
+		 binary), look for sub-files that match the current
+		 osabi. */
+
 	      if (bfd_check_format (objfile->obfd, bfd_archive))
 		{
+		  enum gdb_osabi osabi = GDB_OSABI_UNINITIALIZED;
 		  bfd *abfd = NULL;
-#if defined (TARGET_POWERPC)
-		  const bfd_arch_info_type *thisarch = bfd_lookup_arch (bfd_arch_powerpc, 0);
-#elif defined (TARGET_I386)
-		  const bfd_arch_info_type *thisarch = bfd_lookup_arch (bfd_arch_i386, 0);
-#else
-		  const bfd_arch_info_type *thisarch = bfd_lookup_arch (bfd_arch_powerpc, 0);
-#endif
+
+		  osabi = gdbarch_osabi (current_gdbarch);
+		  if ((osabi <= GDB_OSABI_UNKNOWN) || (osabi >= GDB_OSABI_INVALID))
+		    error ("no osabi currently specified");
+
 		  for (;;)
 		    {
 		      abfd = bfd_openr_next_archived_file (objfile->obfd, abfd);
 		      if (abfd == NULL)
+			break;
+		      if (! bfd_check_format (abfd, bfd_object))
+			continue;
+		      if (osabi == gdbarch_lookup_osabi (abfd))
 			{
+			  objfile->obfd = abfd;
 			  break;
 			}
-		      if (!bfd_check_format (abfd, bfd_object))
-			{
-			  abfd = NULL;
-			  break;
-			}
-		      if (thisarch == NULL)
-			{
-			  abfd = NULL;
-			  break;
-			}
-		      if (bfd_default_compatible (bfd_get_arch_info (abfd), thisarch))
-			{
-			  break;
-			}
-		    }
-		  if (abfd != NULL)
-		    {
-		      objfile->obfd = abfd;
 		    }
 		}
 
@@ -2128,6 +2185,9 @@ reread_symbols (void)
 	      objfile->psymbol_cache = bcache_xmalloc (NULL);
 	      bcache_xfree (objfile->macro_cache);
 	      objfile->macro_cache = bcache_xmalloc (NULL);
+	      /* APPLE LOCAL: Also delete the table of equivalent symbols.  */
+	      equivalence_table_delete (objfile);
+	      /* END APPLE LOCAL */
 	      if (objfile->demangled_names_hash != NULL)
 		{
 		  htab_delete (objfile->demangled_names_hash);
@@ -2303,6 +2363,7 @@ remove_symbol_file_command (args, from_tty)
     }
 
   tell_breakpoints_objfile_changed (objfile);
+  tell_objc_msgsend_cacher_objfile_changed (objfile);
   free_objfile (objfile);
 
   clear_symtab_users ();

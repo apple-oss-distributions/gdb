@@ -1500,6 +1500,8 @@ oasys_sizeof_headers (abfd, exec)
 
 #define oasys_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define oasys_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 #define oasys_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents

@@ -269,6 +269,12 @@
 /* Define to 1 if you have the `w' library (-lw). */
 #undef HAVE_LIBW
 
+/* Define to 1 if you have the <libxml/parser.h> header file. */
+#undef HAVE_LIBXML_PARSER_H
+
+/* Define to 1 if you have the <libxml/tree.h> header file. */
+#undef HAVE_LIBXML_TREE_H
+
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
 
@@ -546,6 +552,9 @@
 
 /* Define as const if the declaration of iconv() needs const. */
 #undef ICONV_CONST
+
+/* libxml2 on this system is usable */
+#undef LIBXML2_IS_USABLE
 
 /* Force mmcheck */
 #undef MMCHECK_FORCE

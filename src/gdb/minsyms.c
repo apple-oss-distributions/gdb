@@ -278,6 +278,7 @@ lookup_minimal_symbol_text (const char *name, struct objfile *objf)
 
   unsigned int hash = msymbol_hash (name) % MINIMAL_SYMBOL_HASH_SIZE;
 
+#if 0  /* APPLE LOCAL - dunno what this is for, it doesn't compile... */
 #ifdef SOFUN_ADDRESS_MAYBE_MISSING
   if (sfile != NULL)
     {
@@ -285,6 +286,7 @@ lookup_minimal_symbol_text (const char *name, struct objfile *objf)
       if (p != NULL)
 	sfile = p + 1;
     }
+#endif
 #endif
 
   for (objfile = objfile_get_first ();
@@ -410,8 +412,8 @@ lookup_minimal_symbol_by_pc_section_from_objfile
      this function often gets called in a loop, or with the ordered_sections
      lookup after we had already determined that the pc WAS in some section,
      I removed that call, and now require the caller to do that check.  See
-     for instance the use in lookup_minimal_symbol_by_pc_section (which is in
-     fact at present this functions only use.)  JCI 07/22/2003  */
+     for instance the use in lookup_minimal_symbol_by_pc_section (which is, in
+     fact, at present this function's only use.)  JCI 07/22/2003  */
 
 #if 0
   pc_section = find_pc_section (pc);
@@ -436,7 +438,7 @@ lookup_minimal_symbol_by_pc_section_from_objfile
          or equal to the desired pc value, we accomplish two things:
          (1) the case where the pc value is larger than any minimal
          symbol address is trivially solved, (2) the address associated
-         with the hi index is always the one we want when the interation
+         with the hi index is always the one we want when the iteration
          terminates.  In essence, we are iterating the test interval
          down until the pc value is pushed out of it from the high end.
 
@@ -489,21 +491,26 @@ lookup_minimal_symbol_by_pc_section_from_objfile
 	  /* If "section" specified, skip any symbol from wrong section */
 	  /* This is the new code that distinguishes it from the old function */
 	  if (section)
-	    while (hi >= 0
-		   /* Some types of debug info, such as COFF,
-		      don't fill the bfd_section member, so don't
-		      throw away symbols on those platforms.  */
-		   && SYMBOL_BFD_SECTION (&msymbol[hi]) != NULL
-		   && SYMBOL_BFD_SECTION (&msymbol[hi]) != section)
-	      --hi;
-
-	  if (hi >= 0
-	      && ((best_symbol == NULL) ||
-		  (SYMBOL_VALUE_ADDRESS (best_symbol) <
-		   SYMBOL_VALUE_ADDRESS (&msymbol[hi]))))
 	    {
-	      best_symbol = &msymbol[hi];
+	      while (hi >= 0 
+		     /* Some types of debug info, such as COFF,
+			don't fill the bfd_section member, so don't
+			throw away symbols on those platforms.  */
+		     /* APPLE LOCAL: On MacOS X the only symbols which
+			don't have sections are eh frame info, and we
+			pretty much never want to find them accidentally.
+			&& SYMBOL_BFD_SECTION (&msymbol[hi]) != NULL */
+		     && SYMBOL_BFD_SECTION (&msymbol[hi]) != section)
+		--hi;
+	      /* If there are NO section matches at all, return NULL
+		 rather than accidentally returning the lowest msymbol
+		 in the objfile. */
+	      if (hi == 0 
+		  && SYMBOL_BFD_SECTION (&msymbol[hi]) != section)
+		return NULL;
 	    }
+	  if (hi >= 0)
+	      best_symbol = &msymbol[hi];
 	}
     }
   return (best_symbol);
@@ -717,6 +724,32 @@ prim_record_minimal_symbol_and_info (const char *name, CORE_ADDR address,
   msym_bunch_index++;
   msym_count++;
   OBJSTAT (objfile, n_minsyms++);
+
+
+#ifdef NM_NEXTSTEP
+  /* APPLE LOCAL: We build a table of correspondence for symbols that are the
+     Posix compatiblity variants of symbols that exist in the library.  These 
+     are supposed to be always of the form <original symbol>$BUNCH_OF_JUNK.  
+     BUT, versions of the symbol with an _ in front are actually alternate
+     entry points, so we don't look at those.  
+     Also, don't add the stub table entries...  */
+  /* FIXME: There should really be some host specific method that we call
+     out to to test for equivalence.  Should clean this up if we ever want
+     to submit this stuff back.  */
+
+  if (objfile->check_for_equivalence)
+    {
+      char *name_end;
+
+      if (name[0] != '_')
+	{
+	  char *name_end = strchr(name, '$');
+	  if (name_end != NULL && strstr(name, "dyld_stub") != name)
+	      equivalence_table_add (objfile, name, name_end, msymbol);
+	}
+    }
+#endif
+
   return msymbol;
 }
 

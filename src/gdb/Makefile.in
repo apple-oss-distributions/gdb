@@ -142,6 +142,11 @@ INTL_CFLAGS = -I$(INTL_DIR) -I$(INTL_SRC)
 # Where is the ICONV library?  This can be empty if libc has iconv.
 LIBICONV = @LIBICONV@
 
+# APPLE LOCAL: location of libxml header files & libraries
+
+LIBXML2_CFLAGS = @LIBXML2_INCLUDES@
+LIBXML2_LDFLAGS = @LIBXML2_LIBS@
+
 # Did the user give us a --with-sysroot option?
 TARGET_SYSTEM_ROOT = @TARGET_SYSTEM_ROOT@
 TARGET_SYSTEM_ROOT_DEFINE = @TARGET_SYSTEM_ROOT_DEFINE@
@@ -352,6 +357,7 @@ INTERNAL_WARN_CFLAGS = \
 	$(BFD_CFLAGS) $(INCLUDE_CFLAGS) \
 	$(MMALLOC_CFLAGS) \
 	$(INTL_CFLAGS) $(ENABLE_CFLAGS) \
+	$(LIBXML2_CFLAGS) \
 	$(GDB_WARN_CFLAGS)
 INTERNAL_CFLAGS = $(INTERNAL_WARN_CFLAGS) $(GDB_WERROR_CFLAGS)
 
@@ -380,6 +386,7 @@ CLIBS = $(SIM) $(BFD) $(READLINE) $(OPCODES) $(INTL) $(LIBIBERTY) \
 	$(XM_CLIBS) $(TM_CLIBS) $(NAT_CLIBS) $(GDBTKLIBS) $(LIBIBERTY) \
 	@LIBS@ \
 	$(LIBICONV) \
+        $(LIBXML2_LDFLAGS) \
 	$(MMALLOC) $(WIN32LIBS)
 
 CDEPS = $(XM_CDEPS) $(TM_CDEPS) $(NAT_CDEPS) $(SIM) $(BFD_DEP) $(READLINE_DEP) \
@@ -394,7 +401,7 @@ DIST=gdb
 LINT=/usr/5bin/lint
 LINTFLAGS= $(GDB_CFLAGS) $(OPCODES_CFLAGS) $(READLINE_CFLAGS) \
 	$(BFD_CFLAGS) $(INCLUDE_CFLAGS) \
-	$(INTL_CFLAGS)
+	$(INTL_CFLAGS) $(LIBXML2_CFLAGS)
 
 RUNTEST = `if [ -f $${rootsrc}/../dejagnu/runtest ] ; then \
 		echo $${rootsrc}/../dejagnu/runtest ; else echo runtest; \
@@ -1148,7 +1155,7 @@ gdb$(EXEEXT): gdb.o libgdb.a $(CONFIG_OBS) $(ADD_DEPS) $(CDEPS) $(TDEPLIBS)
 		$(TDEPLIBS) $(TUI_LIBRARY) $(CLIBS) $(LOADLIBES)
 	echo "stripping __objcInit";
 	echo "__objcInit" > /tmp/macosx-syms-to-remove;
-	if [ -f .libs/gdb$(EXEEXT) ]; then \
+	-if [ -f .libs/gdb$(EXEEXT) ]; then \
 		strip -R /tmp/macosx-syms-to-remove -X .libs/gdb$(EXEEXT); \
 	else \
 		strip -R /tmp/macosx-syms-to-remove -X gdb$(EXEEXT); \
@@ -2663,7 +2670,7 @@ insight$(EXEEXT): gdbtk-main.o libgdb.a $(ADD_DEPS) \
 		$(TDEPLIBS) $(TUI_LIBRARY) $(CLIBS) $(LOADLIBES)
 	echo "stripping __objcInit";
 	echo "__objcInit" > /tmp/macosx-syms-to-remove;
-	strip -R /tmp/macosx-syms-to-remove -X gdb$(EXEEXT)
+	-strip -R /tmp/macosx-syms-to-remove -X gdb$(EXEEXT)
 	rm -f /tmp/macosx-syms-to-remove;
 
 gdbres.o: $(srcdir)/gdbtk/gdb.rc $(srcdir)/gdbtk/gdbtool.ico

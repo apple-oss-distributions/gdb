@@ -815,9 +815,25 @@ process_next_line (char *p, struct command_line **command)
   /* Check for while, if, break, continue, etc and build a new command
      line structure for them.  */
   if (p1 - p > 5 && !strncmp (p, "while", 5))
-    *command = build_command_line (while_control, p + 6);
+    {
+      /* APPLE LOCAL: correctly handle "while(expression)" without
+         a space char, submitted to the FSF 2004-09-08:
+	http://sources.redhat.com/ml/gdb-patches/2004-09/msg00129.html */
+      char *first_arg;
+      first_arg = p + 5;
+      while (first_arg < p1 && isspace (*first_arg))
+        first_arg++;
+      *command = build_command_line (while_control, first_arg);
+    }
   else if (p1 - p > 2 && !strncmp (p, "if", 2))
-    *command = build_command_line (if_control, p + 3);
+    {
+      /* APPLE LOCAL: Ibid.  */
+      char *first_arg;
+      first_arg = p + 2;
+      while (first_arg < p1 && isspace (*first_arg))
+        first_arg++;
+      *command = build_command_line (if_control, first_arg);
+    }
   else if (p1 - p == 10 && !strncmp (p, "loop_break", 10))
     {
       *command = (struct command_line *)

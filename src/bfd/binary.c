@@ -348,6 +348,8 @@ binary_sizeof_headers (abfd, exec)
 #define binary_bfd_link_split_section _bfd_generic_link_split_section
 #define binary_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define binary_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 const bfd_target binary_vec =
 {

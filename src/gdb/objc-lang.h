@@ -45,6 +45,10 @@ extern char *objc_demangle (const char *mangled, int options);
 
 extern int find_objc_msgcall (CORE_ADDR pc, CORE_ADDR *new_pc);
 
+void tell_objc_msgsend_cacher_objfile_changed (struct objfile *);
+
+CORE_ADDR find_implementation (CORE_ADDR object, CORE_ADDR sel);
+
 extern char *parse_selector (char *method, char **selector);
 
 extern char *parse_method (char *method, char *type, 

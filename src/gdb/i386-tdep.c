@@ -520,24 +520,34 @@ i386_analyze_frame_setup (CORE_ADDR pc, CORE_ADDR current_pc,
 	 Because of the symmetry, there are actually two ways to
 	 encode these instructions; with opcode bytes 0x29 and 0x2b
 	 for `subl' and opcode bytes 0x31 and 0x33 for `xorl'.
+	
+	We also check for
+	
+	    movl $XXX, reg
 
 	 Make sure we only skip these instructions if we later see the
 	 `movl %esp, %ebp' that actually sets up the frame.  */
-      while (op == 0x29 || op == 0x2b || op == 0x31 || op == 0x33)
+      while (op == 0x29 || op == 0x2b || op == 0x31 || op == 0x33 || op == 0xba)
 	{
-	  op = read_memory_unsigned_integer (pc + skip + 2, 1);
 	  switch (op)
 	    {
-	    case 0xdb:	/* %ebx */
-	    case 0xc9:	/* %ecx */
-	    case 0xd2:	/* %edx */
-	    case 0xc0:	/* %eax */
-	      skip += 2;
+	    case 0xba:
+	      skip += 5;
 	      break;
 	    default:
-	      return pc + 1;
+	      op = read_memory_unsigned_integer (pc + skip + 2, 1);
+	      switch (op)
+		{
+		case 0xdb:      /* %ebx */
+		case 0xc9:      /* %ecx */
+		case 0xd2:      /* %edx */
+		case 0xc0:      /* %eax */
+		  skip += 2;
+		  break;
+		default:
+		  return pc + 1;
+		}
 	    }
-
 	  op = read_memory_unsigned_integer (pc + skip + 1, 1);
 	}
 
@@ -1975,6 +1985,11 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   /* Allocate space for the new architecture.  */
   tdep = XMALLOC (struct gdbarch_tdep);
   gdbarch = gdbarch_alloc (&info, tdep);
+
+  /* APPLE LOCAL: This cpu family is only 32 bit, but we use wordsize to 
+     distinguish between ppc32 and ppc64 -- so to allow for generic code,
+     we have wordsize over here, too.  */
+  tdep->wordsize = 4;
 
   /* General-purpose registers.  */
   tdep->gregset = NULL;

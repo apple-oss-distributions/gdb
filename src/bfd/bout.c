@@ -1489,8 +1489,10 @@ b_out_bfd_get_relocated_section_contents (output_bfd, link_info, link_order,
 #define b_out_bfd_merge_sections  bfd_generic_merge_sections
 #define b_out_bfd_discard_group bfd_generic_discard_group
 
-#define aout_32_get_section_contents_in_window \
+#define aout_32_get_section_contents_in_window  \
   _bfd_generic_get_section_contents_in_window
+#define aout_32_get_section_contents_in_window_with_mode  \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 extern const bfd_target b_out_vec_little_host;
 

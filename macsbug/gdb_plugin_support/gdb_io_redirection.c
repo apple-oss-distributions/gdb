@@ -550,7 +550,11 @@ GDB_FILE *gdb_open_output(FILE *f, gdb_output_filter_ftype filter, void *data)
  An example illustrating a use for redirection is discussed in the comments for
  gdb_fprintf().
 */
- 
+
+static int my_disasm_fprintf(struct ui_file *stream, const char *fmt, ...);
+static int my_query_hook(char *format, va_list ap);
+static void my_rl_startup_hook(void);
+
 GDB_FILE *gdb_redirect_output(GDB_FILE *stream)
 {
     struct gdb_file    *output;
@@ -560,11 +564,7 @@ GDB_FILE *gdb_redirect_output(GDB_FILE *stream)
     
     static struct ui_out  *default_gdb_uiout;
     static void (*default_gdb_completion_hook)(char **matches, int len, int max);
-    
-    static int my_disasm_fprintf(struct ui_file *stream, const char *fmt, ...);
-    static int my_query_hook(char *format, va_list ap);
-    static void my_rl_startup_hook(void);
-        
+            
     if (firsttime) {
 
 	gdb_default_stdout 	    = (GDB_FILE *)INITIAL_GDB_VALUE(gdb_stdout, gdb_stdout);
@@ -819,9 +819,10 @@ void gdb_fflush(GDB_FILE *stream)
 	  gdb_define_raw_input_handler() to reestablish your raw input handler.
 */
  
+static char *my_command_line_input_hook(char *, int , char *);
+
 void gdb_define_raw_input_handler(Gdb_Raw_Input_Handler theInputHandler)
 {
-    static char *my_command_line_input_hook(char *, int , char *);
     
     if (theInputHandler)
     	command_line_input_hook = my_command_line_input_hook;

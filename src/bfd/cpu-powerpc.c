@@ -298,8 +298,8 @@ const bfd_arch_info_type bfd_powerpc_archs[] =
     &bfd_powerpc_archs[15]
   },
   {
-    32,       /* 32 bits in a word */
-    32,       /* 32 bits in an address */
+    64,       /* 32 bits in a word */
+    64,       /* 32 bits in an address */
     8,        /* 8 bits in a byte */
     bfd_arch_powerpc,
     bfd_mach_ppc_970,

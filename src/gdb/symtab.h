@@ -1415,4 +1415,12 @@ extern struct cleanup *make_cleanup_free_search_symbols (struct symbol_search
 extern void set_main_name (const char *name);
 extern /*const */ char *main_name (void);
 
+/* APPLE LOCAL: Defines for the machinery to handle Darwin symbol versioning
+   in libSystem.  */
+
+void equivalence_table_delete (struct objfile *);
+void equivalence_table_add (struct objfile *, char *, char *, struct minimal_symbol *);
+struct minimal_symbol **find_equivalent_msymbol (struct minimal_symbol *msymbol);
+/* END APPLE LOCAL */
+
 #endif /* !defined(SYMTAB_H) */

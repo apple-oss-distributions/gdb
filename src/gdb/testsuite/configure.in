@@ -115,6 +115,7 @@ AC_CONFIG_SUBDIRS($configdirs)
 
 case "${target}" in
     *-*-darwin*) AC_OUTPUT([gdb.apple/Makefile])
+                 AC_OUTPUT([gdb.apple/xcode/Makefile]) ;;
 esac
 
 AC_OUTPUT([Makefile gdb.arch/Makefile gdb.asm/Makefile gdb.base/Makefile \

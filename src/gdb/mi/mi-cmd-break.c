@@ -32,6 +32,7 @@
 #include "interps.h"
 #include "gdb.h"
 #include "gdbcmd.h" /* For print_command_lines.  */
+#include "filenames.h"
 
 enum
   {
@@ -80,6 +81,14 @@ enum bp_type
    If this is a path, the full path must match, otherwise the base
    filename must match.  This can be given in combination with
    the other options above.
+
+   You can also specify a list of indices which will be applied to the
+   list of matches that gdb builds up for the breakpoint if there are
+   multiple matches.  If the first element of the list is "-1" ALL
+   matches will be accepted.
+
+   -break-insert -l "<NUM> <NUM> ... " <expression>
+
 */
 
 enum mi_cmd_result
@@ -92,12 +101,14 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
   int ignore_count = 0;
   char *condition = NULL;
   char *requested_shlib = NULL;
+  char realpath_buf[PATH_MAX];
   enum gdb_rc rc;
+  int *indices = NULL;
   struct gdb_events *old_hooks;
   enum opt
     {
       HARDWARE_OPT, TEMP_OPT, FUTURE_OPT /*, REGEXP_OPT */ , CONDITION_OPT,
-      IGNORE_COUNT_OPT, THREAD_OPT, SHLIB_OPT
+      IGNORE_COUNT_OPT, THREAD_OPT, SHLIB_OPT, LIST_OPT
     };
   static struct mi_opt opts[] =
   {
@@ -108,6 +119,7 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
     {"i", IGNORE_COUNT_OPT, 1},
     {"p", THREAD_OPT, 1},
     {"s", SHLIB_OPT, 1},
+    {"l", LIST_OPT, 1},
     0
   };
 
@@ -115,6 +127,8 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
      to denote the end of the option list. */
   int optind = 0;
   char *optarg;
+  struct cleanup *indices_cleanup = NULL;
+
   while (1)
     {
       int opt = mi_getopt ("mi_cmd_break_insert", argc, argv, opts, &optind, &optarg);
@@ -141,6 +155,9 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
 	  break;
 	case IGNORE_COUNT_OPT:
 	  ignore_count = atol (optarg);
+          /* APPLE LOCAL: Same behavior as set_ignore_count().  */
+          if (ignore_count < 0)
+            ignore_count = 0;
 	  break;
 	case THREAD_OPT:
 	  thread = atol (optarg);
@@ -148,6 +165,50 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
         case SHLIB_OPT:
           requested_shlib = optarg;
           break;
+	case LIST_OPT:
+	  {
+	    char *numptr;
+	    int nelem = 0, i;
+	    /* First count the number of elements, which is the
+	       number of spaces plus one.  */
+	    numptr = optarg;
+	    while (*numptr)
+	      {
+		if (*numptr != ' ')
+		  {
+		    nelem++;
+		    while (*numptr != ' ' && *numptr != '\0')
+		      numptr++;
+		  }
+		else
+		  numptr++;
+	      }
+
+	    if (nelem == 0)
+	      error ("mi_cmd_break_insert: Got index with no elements");
+
+	    indices = (int *) xmalloc ((nelem + 1) * sizeof (int *));
+	    indices_cleanup = make_cleanup (xfree, indices);
+
+	    /* Now extract the elements.  */
+
+	    numptr = optarg;
+	    i = 0;
+	    errno = 0;
+	    while (*numptr != '\0')
+	      {
+		indices[i++] = strtol (numptr, &numptr, 10);
+		if (errno == EINVAL)
+		    error ("mi_cmd_break_insert: bad index at \"%s\"", numptr);
+	      }
+
+	    /* Since we aren't passing a number of elements, we terminate the
+	       indices by putting in a -1 element.  */
+	    
+	    indices[i] = -1;
+
+	    break;
+	  }
 	}
     }
 
@@ -157,6 +218,18 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
     error ("mi_cmd_break_insert: Garbage following <location>");
   address = argv[optind];
 
+  /* APPLE LOCAL: realpath() the incoming shlib name, as we do with all
+     objfile/dylib/executable names.  NB this condition is incorrect if
+     we're passed something like "./foo.dylib", "../foo.dylib", or
+     "~/bin/foo.dylib", but that shouldn't happen....  */
+  if (requested_shlib && IS_ABSOLUTE_PATH (requested_shlib))
+    {
+      realpath (requested_shlib, realpath_buf);
+      /* It'll be xstrdup()'ed down in the breakpoint command, so just point
+         to the stack array until then. */
+      requested_shlib = realpath_buf; 
+    }
+
   /* Now we have what we need, let's insert the breakpoint! */
   old_hooks = set_gdb_event_hooks (&breakpoint_hooks);
   switch (type)
@@ -165,19 +238,19 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
       rc = gdb_breakpoint (address, condition,
 			   0 /*hardwareflag */ , temp_p,
 			   0 /* futureflag */, thread, 
-			   ignore_count, requested_shlib);
+			   ignore_count, indices, requested_shlib);
       break;
     case HW_BP:
       rc = gdb_breakpoint (address, condition,
 			   1 /*hardwareflag */ , temp_p,
 			   0 /* futureflag */, thread, 
-			   ignore_count, requested_shlib);
+			   ignore_count, indices, requested_shlib);
       break;
     case FUT_BP:
       rc = gdb_breakpoint (address, condition,
 			   0, temp_p,
 			   1 /* futureflag */, thread, 
-			   ignore_count, requested_shlib);
+			   ignore_count, indices, requested_shlib);
       break;
 
 #if 0
@@ -194,6 +267,9 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
 		      "mi_cmd_break_insert: Bad switch.");
     }
   set_gdb_event_hooks (old_hooks);
+
+  if (indices_cleanup != NULL)
+    do_cleanups (indices_cleanup);
 
   if (rc == GDB_RC_FAIL)
     return MI_CMD_CAUGHT_ERROR;

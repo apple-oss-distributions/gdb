@@ -426,6 +426,7 @@ print_frame_info (struct frame_info *fi, int level, int source, int args)
   int source_print;
   int location_print;
 
+  
   if (get_frame_type (fi) == DUMMY_FRAME
       || get_frame_type (fi) == SIGTRAMP_FRAME)
     {
@@ -466,6 +467,11 @@ print_frame_info (struct frame_info *fi, int level, int source, int args)
       do_cleanups (uiout_cleanup);
       return;
     }
+  
+  /* APPLE LOCAL: if we find a frame in a backtrace, increase the load level
+     to ALL...  */
+
+  pc_set_load_state (get_frame_pc (fi), OBJF_SYM_ALL, 0);
 
   /* If fi is not the innermost frame, that normally means that fi->pc
      points to *after* the call instruction, and we want to get the

@@ -60,7 +60,6 @@ extern void mi_output_async_notification (char *notification);
 extern void mi_interp_create_breakpoint_hook (struct breakpoint *bpt);
 extern void mi_interp_delete_breakpoint_hook (struct breakpoint *bpt);
 extern void mi_interp_modify_breakpoint_hook (struct breakpoint *bpt);
-extern int mi_interp_query_hook (const char *ctlstr, va_list ap);
 extern void mi_interp_stack_changed_hook (void);
 extern void mi_interp_frame_changed_hook (int new_frame_number);
 extern void mi_interp_context_hook (int thread_id);

@@ -35,6 +35,7 @@
 #include "block.h"
 #include "objc-lang.h"
 #include "linespec.h"
+#include "language.h"
 #include "ui-out.h" /* for ui_out_is_mi_like_p */
 
 extern int metrowerks_ignore_breakpoint_errors_flag;
@@ -138,9 +139,13 @@ symtabs_and_lines symbol_found (int funfirstline,
 				struct symtab *file_symtab,
 				struct symtab *sym_symtab);
 
+/* APPLE LOCAL: Added the canonical arg, since we might find an
+   "equivalent" symbol as well, and thus set more than one breakpoint,
+   we need to get the names right.  */
 static struct
 symtabs_and_lines minsym_found (int funfirstline,
-				struct minimal_symbol *msymbol);
+				struct minimal_symbol *msymbol,
+				char ***canonical);
 
 /* Helper functions. */
 
@@ -206,6 +211,16 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
   int i1 = 0;
   int ibase;
   char *class_name = type_name_no_tag (t);
+  struct cleanup *old_chain;
+
+  /* APPLE LOCAL: The whole point of this exercise is to look for
+     C++ methods, so let's set the language to cplusplus before trying.  
+     FIXME: Dunno whether this will break Java or not, but since we 
+     don't use our gdb for Java, this isn't that big a deal.  The comment
+     at the start of the function says this is g++ specific anyway...
+  */
+  old_chain = make_cleanup_restore_language (language_cplus);
+
 
   /* Ignore this class if it doesn't have a name.  This is ugly, but
      unless we figure out how to get the physname without the name of
@@ -267,6 +282,9 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
   if (i1 == 0)
     for (ibase = 0; ibase < TYPE_N_BASECLASSES (t); ibase++)
       i1 += find_methods (TYPE_BASECLASS (t, ibase), name, sym_arr + i1);
+
+  /* APPLE LOCAL - restore the language.  */
+  do_cleanups (old_chain);
 
   return i1;
 }
@@ -564,6 +582,9 @@ decode_line_2 (struct symbol *sym_arr[], int nelts, int nsyms, int funfirstline,
       values.sals[i].line = 0;
       values.sals[i].end = 0;
       values.sals[i].pc = SYMBOL_VALUE_ADDRESS (sym_arr[i]);
+      if (funfirstline)
+	values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+
       values.sals[i].section = SYMBOL_BFD_SECTION (sym_arr[i]);
       if (!accept_all)
         printf_filtered ("[%d]    %s\n",
@@ -1191,7 +1212,10 @@ decode_objc (char **argptr, int funfirstline, struct symtab *file_symtab,
 	  values.sals[0].line = 0;
 	  values.sals[0].end = 0;
 	  values.sals[0].pc = SYMBOL_VALUE_ADDRESS (sym_arr[0]);
-	  values.sals[2].section = SYMBOL_BFD_SECTION (sym_arr[0]);
+          if (funfirstline)
+	    values.sals[0].pc = SKIP_PROLOGUE (values.sals[0].pc);
+	    
+	  values.sals[0].section = SYMBOL_BFD_SECTION (sym_arr[0]);
 	}
       return values;
     }
@@ -1589,8 +1613,6 @@ symtab_from_filename (char **argptr, char *p, int is_quote_enclosed,
   file_symtab = lookup_symtab (copy);
   if (file_symtab == 0)
     {
-      if (!have_full_symbols () && !have_partial_symbols ())
-	error ("No symbol table is loaded.  Use the \"file\" command.");
       if (not_found_ptr)
 	{
 	  *not_found_ptr = 1;
@@ -1603,7 +1625,10 @@ symtab_from_filename (char **argptr, char *p, int is_quote_enclosed,
 	     that have not yet been loaded.  */
 	  error_silent ("No source file named %s.", copy);
 	}
-      error ("No source file named %s.", copy);
+      else if (!have_full_symbols () && !have_partial_symbols ())	
+	error ("No symbol table is loaded.  Use the \"file\" command.");
+      else
+	error ("No source file named %s.", copy);
     }
 
   /* Discard the file name from the arg.  */
@@ -1801,8 +1826,9 @@ decode_dollar (char *copy, int funfirstline, struct symtab *default_symtab,
       /* If symbol was not found, look in minimal symbol tables.  */
       msymbol = lookup_minimal_symbol (copy, NULL, NULL);
       /* Min symbol was found --> jump to minsym processing.  */
+      /* APPLE LOCAL: We have to pass in canonical as well.  */
       if (msymbol)
-	return minsym_found (funfirstline, msymbol);
+	return minsym_found (funfirstline, msymbol, canonical);
 
       /* Not a user variable or function -- must be convenience variable.  */
       need_canonical = (file_symtab == 0) ? 1 : 0;
@@ -1858,12 +1884,18 @@ decode_variable (char *copy, int funfirstline, char ***canonical,
 
   msymbol = lookup_minimal_symbol (copy, NULL, NULL);
 
+  /* APPLE LOCAL: We pass in the "canonical" argument.  */
   if (msymbol != NULL)
-    return minsym_found (funfirstline, msymbol);
+    return minsym_found (funfirstline, msymbol, canonical);
 
   if (!have_full_symbols () &&
       !have_partial_symbols () && !have_minimal_symbols ())
-    error ("No symbol table is loaded.  Use the \"file\" command.");
+    {
+      /* APPLE LOCAL: This is properly a "file not found" error as well.  */
+      if (not_found_ptr)
+	*not_found_ptr = 1;
+      error ("No symbol table is loaded.  Use the \"file\" command.");
+    }
 
   if (metrowerks_ignore_breakpoint_errors_flag)
     {
@@ -1958,23 +1990,76 @@ symbol_found (int funfirstline, char ***canonical, char *copy,
 
 /* We've found a minimal symbol MSYMBOL to associate with our
    linespec; build a corresponding struct symtabs_and_lines.  */
-
+/* APPLE LOCAL, we pass in the "canonical" argument, so we can
+   get the names right for equivalent symbols. */
 static struct symtabs_and_lines
-minsym_found (int funfirstline, struct minimal_symbol *msymbol)
+minsym_found (int funfirstline, struct minimal_symbol *msymbol, 
+	      char ***canonical)
 {
   struct symtabs_and_lines values;
+  struct minimal_symbol **equiv_msymbols, **pointer;
+  int nsymbols, i;
+  struct cleanup *equiv_cleanup;
+
+  /* APPLE LOCAL: If there is an "equivalent symbol" we need to add
+     that one as well here.  */
+  equiv_msymbols = find_equivalent_msymbol (msymbol);
+
+  nsymbols = 1;
+
+  if (equiv_msymbols != NULL)
+    {
+      for (pointer = equiv_msymbols; *pointer != NULL; 
+	   nsymbols++, pointer++) {;}
+      equiv_cleanup = make_cleanup (xfree, equiv_msymbols);
+    }
+  else
+    equiv_cleanup = make_cleanup (null_cleanup, NULL);
 
   values.sals = (struct symtab_and_line *)
-    xmalloc (sizeof (struct symtab_and_line));
-  values.sals[0] = find_pc_sect_line (SYMBOL_VALUE_ADDRESS (msymbol),
-				      msymbol->ginfo.bfd_section, 0);
-  values.sals[0].section = SYMBOL_BFD_SECTION (msymbol);
-  if (funfirstline)
+	xmalloc (nsymbols * sizeof (struct symtab_and_line));
+  
+  for (i = 0; i < nsymbols; i++)
     {
-      values.sals[0].pc += FUNCTION_START_OFFSET;
-      values.sals[0].pc = SKIP_PROLOGUE (values.sals[0].pc);
+      struct minimal_symbol *msym;
+      if (i == 0)
+	msym = msymbol;
+      else
+	msym = equiv_msymbols[i - 1];
+
+      values.sals[i] = find_pc_sect_line (SYMBOL_VALUE_ADDRESS (msym),
+					  msym->ginfo.bfd_section, 0);
+      values.sals[i].section = SYMBOL_BFD_SECTION (msym);
+      if (funfirstline)
+	{
+	  values.sals[i].pc += FUNCTION_START_OFFSET;
+	  values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+	}
     }
-  values.nelts = 1;
+
+  /* APPLE LOCAL: If we found "equivalent symbols" we need to add
+     them to the "canonical" array, so the printer will know the
+     real names of the functions.  */
+
+  if (nsymbols > 1 && canonical != (char ***) NULL)
+    {
+      char **canonical_arr;
+      canonical_arr = (char **) xmalloc (nsymbols * sizeof (char *));
+      *canonical = canonical_arr;
+      for (i = 0; i < nsymbols; i++)
+	{
+	  struct minimal_symbol *msym;
+	  if (i == 0)
+	    msym = msymbol;
+	  else
+	    msym = equiv_msymbols[i - 1];
+	  canonical_arr[i] = xstrdup (SYMBOL_LINKAGE_NAME (msym));
+	}
+    }
+
+  values.nelts = nsymbols;
+  do_cleanups (equiv_cleanup);
+
   return values;
 }
 

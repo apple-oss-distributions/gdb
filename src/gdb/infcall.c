@@ -372,9 +372,6 @@ push_dummy_code (struct gdbarch *gdbarch,
 				    args, nargs, value_type, real_pc, bp_addr);
 }
 
-#if defined (NM_NEXTSTEP)
-extern void macosx_setup_registers_before_hand_call ();
-#endif
 
 /* All this stuff with a dummy frame may seem unnecessarily complicated
    (why not just save registers in GDB?).  The purpose of pushing a dummy
@@ -439,6 +436,7 @@ hand_function_call (struct value *function, struct type *expect_type,
   retbuf_cleanup = make_cleanup_regcache_xfree (retbuf);
 
 #if defined (NM_NEXTSTEP)
+#include "macosx-nat-infthread.h"
   macosx_setup_registers_before_hand_call ();
 #endif
 

@@ -1,6 +1,6 @@
 /* MI Command Set.
 
-   Copyright 2000, 2001, 2002, 2003, 2004 Free Software Foundation,
+   Copyright 2000, 2001, 2002, 2003, 2004, 2005 Free Software Foundation,
    Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
@@ -54,6 +54,7 @@
 #include "wrapper.h"
 #include "source.h"
 #include "mi-main.h"
+#include "block.h"
 
 enum
   {
@@ -441,33 +442,71 @@ mi_cmd_thread_select (char *command, char **argv, int argc)
 
    If you specify a linespec that is outside the current function, the
    command will return an error, and not reset the pc.  To force it to
-   set the pc anyway, add "-f" before any of the other arguments. */
+   set the pc anyway, add "-f" before any of the other arguments. 
+
+   If a line in the prologue is specified, the first line with non-prologue
+   code is returned.  This behavior can be suppressed by passing the -n
+   (erm, "-no-prologue-skip"..? Yeah, that's it) option in which case you
+   can move anywhere you want.
+
+   Optional -f flag may be provided, preceding other arguments.
+   First argument is the thread #.
+   Second argument is a FILENAME:LINENO specification.
+
+   Lesson learned: Don't do write MI commands that take their arguments
+   like this (positional, multiple bits of data suck together).  
+   Use separate flags for each piece of individual information e.g.
+   cf mi_cmd_disassemble().  For instance, it'd be that much easier to
+   parse if -thread-set-pc took things like "-f -t 5 -s foo.c -l 35",
+   and future expansion would be easier to implement as well.
+   */
 
 enum mi_cmd_result
 mi_cmd_thread_set_pc (char *command, char **argv, int argc)
 {
   enum gdb_rc rc;
-  struct symtabs_and_lines sals;
+  struct symtab *s;
   struct symtab_and_line sal;
   ptid_t current_ptid = inferior_ptid;
   struct cleanup *old_cleanups;
   struct symbol *old_fun = NULL, *new_fun = NULL;
   int stay_in_function = 1;
+  int avoid_prologue = 1;
+  const char *filename;
+  int lineno;
+  CORE_ADDR new_pc;
 
-  if (argc == 3)
+  /* yay hand-written argv parsers, just what we need more of. */
+
+  /* If the command starts with a -f or -n, record the fact and
+     strip them.  */
+
+  if (argc >= 3)
     {
-      if (strcmp (argv[0], "-f") == 0)
-	{
-	  stay_in_function = 0;
-	  argc--;
-	  argv++;
-	}
+      while (argc > 2)
+        if (argv[0][0] == '-')
+          {
+            if (argv[0][1] == 'f')
+	      {
+	        stay_in_function = 0;
+	        argc--;
+	        argv++;
+	      }
+            else if (argv[0][1] == 'n')
+	      {
+	        avoid_prologue = 0;
+	        argc--;
+	        argv++;
+	      }
+          }
+        else
+          break;
     }
       
   if (argc != 2)
     {
       xasprintf (&mi_error_message,
-		 "mi_cmd_thread_select: USAGE: <-f> threadnum pc.");
+		 "mi_cmd_thread_select: USAGE: [-f] [-n] threadnum file:line");
       return MI_CMD_ERROR;
     }
 
@@ -481,48 +520,72 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
   else if ((int) rc >= 0 && rc == GDB_RC_FAIL)
     return MI_CMD_ERROR;
 
-  /* Okay, we set the thread, now set the pc: */
+  /* Okay, we set the thread, now set the pc.  Find the filename
+     and the line number parts; skip over quoting that may be put
+     around them.  */
 
-  sals = decode_line_spec_1 (argv[1], 1);
-  if (sals.nelts == 0)
-    error ("Error resolving line spec \"%s\".", argv[1]);
+  /* FIXME: If a filename begins with a quote character, we're
+     going to skip over it.  e.g if this is set:
+       -thread-set-pc 1 "\"file with quote.c:20"
+     the following loop does the wrong thing.  */
+  filename = argv[1];
+  while (filename != NULL && (*filename == '"' || *filename == '\\'))
+    filename++;
 
-  if (sals.nelts != 1)
-    {
-      xfree (sals.sals);
-      error ("Line spec \"%s\" resolved to more than one location.", argv[1]);
-    }
+  char *c = strrchr (filename, ':');
+  if (c == NULL)
+    error ("mi_cmd_thread_set_pc: Unable to find colon character in last argument, '%s'.", argv[1]);
 
-  sal = sals.sals[0];
-  xfree (sals.sals);
-
-  if (sal.symtab == 0 && sal.pc == 0)
-    error ("No source file has been specified.");
-
-  resolve_sal_pc (&sal);
+  errno = 0;
+  lineno = strtol (c + 1, NULL, 10);
+  if (errno != 0)
+    error ("mi_cmd_thread_set_pc: Error parsing line number part of argument, '%s'.", argv[1]);
   
+  *c = '\0';
+  s = lookup_symtab (filename);
+  if (s == NULL)
+    error ("mi_cmd_thread_set_pc: Unable to find source file name '%s'.", filename);
+  if (!find_line_pc (s, lineno, &new_pc))
+    error ("mi_cmd_thread_set_pc: Invalid line number '%d'", lineno);
+
+  /* Get a sal for the new PC for later in the function where we want
+     to set the CLI default source/line #'s and such.  */
+  sal = find_pc_line (new_pc, 0);
+  if (sal.symtab != s)
+    error ("mi_cmd_thread_set_pc: Found symtab '%s' by filename lookup, but symtab '%s' by PC lookup.", s->filename, sal.symtab->filename);
+
+  /* By default we don't want to let someone set the PC into the middle
+     of the prologue or the quality of their debugging experience will 
+     be diminished.  So bump it to the first non-prologue line.  We'll
+     surely still lose in optimized code, but then anyone moving the PC
+     around in optimized code is cruising for a brusing.  */
+
+  new_fun = find_pc_function (new_pc);
+  if (avoid_prologue && new_fun 
+      && BLOCK_START (SYMBOL_BLOCK_VALUE (new_fun)) == new_pc)
+    {
+      sal = find_function_start_sal (new_fun, 1);
+      new_pc = sal.pc;
+    }
   if (stay_in_function)
     {
       old_fun = get_frame_function (get_current_frame());
       if (old_fun == NULL)
-	error ("Can't find the function for old_pc: 0x%lx.",
-	       (unsigned long) get_frame_pc (get_current_frame ()));
-      new_fun = find_pc_function (sal.pc);
+	error ("Can't find the function for old_pc: 0x%s",
+	       paddr_nz (get_frame_pc (get_current_frame ())));
       if (new_fun == NULL)
-	error ("Can't find the function for new pc 0x%lx.",
-	       (unsigned long) sal.pc);
+	error ("Can't find the function for new pc 0x%s", paddr_nz (new_pc));
       if (!SYMBOL_MATCHES_NATURAL_NAME (old_fun, SYMBOL_NATURAL_NAME (new_fun)))
-	error ("New pc: 0x%lx outside of current function", 
-	       (unsigned long) sal.pc);
+	error ("New pc: 0x%s outside of current function", paddr_nz (new_pc));
     }
 
-  write_pc (sal.pc);
+  write_pc (new_pc);
 
   /* We have to set the stop_pc to the pc that we moved to as well, so
      that if we are stopped at a breakpoint in the new location, we will
      properly step over it. */
 
-  stop_pc = sal.pc;
+  stop_pc = new_pc;
 
   /* Update the current source location as well, so 'list' will do the right
      thing.  */
@@ -532,7 +595,7 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
   /* Update the current breakpoint location as well, so break commands will
      do the right thing.  */
 
-  set_default_breakpoint (1, sal.pc, sal.symtab, sal.line);
+  set_default_breakpoint (1, new_pc, sal.symtab, sal.line);
 
   /* Is this a Fix and Continue situation, i.e. do we have two
      identically named functions which are different?  We have
@@ -555,6 +618,133 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
   print_stack_frame (deprecated_selected_frame, 0, LOC_AND_ADDRESS);
 
   do_cleanups (old_cleanups);
+  return MI_CMD_DONE;
+}
+
+
+/* There are two invocations styles for -file-fix-file; the original 
+   (deprecated) fall-through to the CLI which was invoked as
+      -file-fix-file BUNDLE-NAME SOURCE-NAME [OBJECT-NAME]
+
+   And the new, better MI way,
+      -file-fix-file -b BUNDLE -f SOURCE -o OBJECT -s SOLIB
+
+   -f SOURCE specifies the source filename that is being fixed.
+   -b BUNDLE specifies the name of the fixed bundle that we'll load in.
+   -o OBJECT is only needed when the inferior is a ZeroLink executable;
+             the object filename is given to the ZL stub to page in the 
+             original functions if they haven't already been paged in.
+   -s SOLIB specifies the original executable/shared library that contains
+            the source file we're fixing.  This option is needed when gdb's 
+            load-levels are set to 'extern' by default (OBJF_SYM_EXTERN) so 
+            that we can raise the load-level on the original struct objfile 
+            that includes the fixed file (i.e. set it to OBJF_SYM_ALL & read 
+            in the psymtabs if we haven't already done so).
+            If this isn't done, gdb can't figure out which struct objfile
+            contains the given source file so it can't expand the psymtabs, etc.,
+            and the fix operation will fail.
+ */
+
+enum mi_cmd_result
+mi_cmd_file_fix_file (char *command, char **argv, int argc)
+{
+  char *source_filename = NULL;
+  char *bundle_filename = NULL;
+  char *object_filename = NULL;
+  char *solib_filename = NULL;
+  int optind = 0;
+  char *optarg;
+  struct cleanup *wipe;
+
+  enum fff_opt
+  {
+    BUNDLE_OPT, SOURCE_OPT, OBJECT_OPT, SOLIB_OPT
+  };
+  static struct mi_opt fff_opts[] = {
+    {"b", BUNDLE_OPT, 1},
+    {"f", SOURCE_OPT, 1},
+    {"o", OBJECT_OPT, 1},
+    {"s", SOLIB_OPT, 1},
+    {0, 0, 0}
+  };
+
+  /* Old style invocation?  */
+  if (argc == 2 || argc == 3)
+    {
+      bundle_filename = argv[0];
+      source_filename = argv[1];
+      if (argc == 3)
+        object_filename = argv[2];
+      fix_command_1 (source_filename, bundle_filename, object_filename, NULL);
+      return MI_CMD_DONE;
+    }
+
+  /* New style (argument flags) invocation */
+
+  wipe = make_cleanup (null_cleanup, NULL);
+  while (1)
+    {
+      int opt = mi_getopt ("mi_cmd_file_fix_file", argc, argv, fff_opts,
+                           &optind, &optarg);
+      if (opt < 0)
+        break;
+      switch ((enum fff_opt) opt)
+        {
+        case BUNDLE_OPT:
+          bundle_filename = xstrdup (optarg);
+          make_cleanup (xfree, bundle_filename);
+          break;
+        case SOURCE_OPT:
+          source_filename = xstrdup (optarg);
+          make_cleanup (xfree, source_filename);
+          break;
+        case OBJECT_OPT:
+          object_filename = xstrdup (optarg);
+          make_cleanup (xfree, object_filename);
+          break;
+        case SOLIB_OPT:
+          solib_filename = xstrdup (optarg);
+          make_cleanup (xfree, solib_filename);
+          break;
+        }
+     }
+   argv += optind;
+   argc -= optind;
+
+   if (source_filename == NULL || bundle_filename == NULL)
+     error ("mi_cmd_file_fix_file: Usage -f source-filename -b bundle-filename "
+            "[-o object-filename] [-s dylib-filename]");
+
+   fix_command_1 (source_filename, bundle_filename, object_filename, 
+                  solib_filename);
+
+   do_cleanups (wipe);
+   return MI_CMD_DONE;
+}
+
+/* APPLE LOCAL: Is Fix and Continue supported with the current 
+                architecture/osabi?  */
+
+enum mi_cmd_result
+mi_cmd_file_fix_file_is_grooved (char *command, char **argv, int argc)
+{
+  int retval = fix_and_continue_supported ();
+
+  /* For cases where we can't determine if F&C is supported (e.g. a
+     binary hasn't yet been specified), retval is -1 and we'll just
+     report "Supported" to our GUI and hope for the best. */
+
+  if (retval == 1 || retval == -1)
+    {
+      ui_out_field_int (uiout, "supported", 1);
+      ui_out_field_string (uiout, "details", "Yes grooved!");
+    }
+  else
+    {
+      ui_out_field_int (uiout, "supported", 0);
+      ui_out_field_string (uiout, "details", "Groove is gone.");
+    }
+
   return MI_CMD_DONE;
 }
 
@@ -1462,6 +1652,19 @@ mi_cmd_mi_verify_command (char *command, char **argv, int argc)
 
 
 enum mi_cmd_result
+mi_cmd_pid_info (char *command, char **argv, int argc)
+{
+  if (argc != 0)
+    {
+      error ("mi_cmd_pid_info: Usage: -pid-info");
+    }
+
+  pid_info (NULL, 1);
+
+  return MI_CMD_DONE;
+}
+
+enum mi_cmd_result
 mi_cmd_mi_no_op (char *command, char **argv, int argc)
 {
   /* how does one know when a bunch of MI commands have finished being processed?
@@ -1753,7 +1956,8 @@ static int
 mi_command_completes_while_target_executing (char *command)
 {
   if (strcmp (command, "exec-interrupt")
-      && strcmp (command, "exec-status"))
+      && strcmp (command, "exec-status")
+      && strcmp (command, "pid-info"))
     return 0;
   else
     return 1;
@@ -1884,11 +2088,11 @@ mi_execute_async_cli_command (char *mi, char *args, int from_tty)
       int retval;
 
       async_args = (char *) xmalloc (strlen (args) + 2);
-      old_cleanups = make_exec_cleanup (free, async_args);
+      old_cleanups = make_cleanup (free, async_args);
       strcpy (async_args, args);
       strcat (async_args, "&");
       xasprintf (&run, "%s %s", mi, async_args);
-      make_exec_cleanup (free, run);
+      make_cleanup (free, run);
 
       /* Transfer the command token to the continuation.  That
 	 will now print the results associated with this command. 
@@ -1897,11 +2101,12 @@ mi_execute_async_cli_command (char *mi, char *args, int from_tty)
          that might get added by execute_command, in which case the
          cleanups will be out of order. */
       
-      arg = mi_setup_continuation_arg (old_cleanups);
+      arg = mi_setup_continuation_arg (NULL);
       add_continuation (mi_exec_async_cli_cmd_continuation, 
 			(struct continuation_arg *) arg);
 
       retval = safe_execute_command (uiout, /*ui */ run, 0 /*from_tty */ );
+      do_cleanups (old_cleanups);
 
       if (target_executing)
 	{

@@ -1,3 +1,180 @@
+2005-01-21  Jim Ingham  <jingham@apple.com>
+
+	* gdb.base/maint.exp: We are now making breakpoints as -<n> 
+	internal breakpoints, rather than 0.  Change testsuite to
+	reflect that.
+	
+2005-01-13  Jason Molenda  (jmolenda@apple.com)
+
+        * gdb.base/relocate.exp: Expect __TEXT, not __text as per the
+        recent changes to symfile.c.
+
+2004-12-06  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/weak.exp: Update pattern text to recognize the
+	fix for r. 3586790.
+
+2004-11-29  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/slipnslide.exp: Update expected output text to
+	match what the new dyld interface puts out.
+
+2004-10-28  Jim Ingham  <jingham@apple.com>
+
+	* gdb.cp/cplus-local-vars.exp: We put out a "+" in the shared
+	library progress when we reread a shlib.  
+	* gdb.apple/file-statics.exp: Oops, I put in an actual hex
+	from one run.
+	* gdb.apple/inf-call-interrupt.exp: Add the shlib output
+	to the break-insert result.
+	* gdb.apple/mi1-varobj.exp: Ditto.
+	* gdb.apple/stack-list-frames-lite.exp: Ditto.
+	* gdb.apple/var-list-children.exp: Ditto.
+	* gdb.mi/mi-break.exp: Ditto.
+	* gdb.mi/mi-syn-frame.exp: Ditto.
+	* gdb.mi/mi2-syn-frame.exp: Ditto.
+	* gdb.mi/mi2-simplerun.exp: Ditto.
+	* gdb.mi/mi2-syn-frame.exp: Ditto.
+	* gdb.mi/mi2-until.exp: Ditto.
+	* gdb.mi/mi2-var-command.exp: Ditto.
+	* gdb.mi/mi2-var-display.exp: Ditto.
+	* gdb.mi/mi2-watch.exp: Ditto.
+	* lib/mi-support.exp: Ditto.
+	
+	* gdb.apple/slipnslide.exp: With the libSystem posix equivalent
+	symbol, break printf may make more than one breakpoint.
+	* gdb.base/annota1.exp: Ditto.
+	* gdb.base/annota1.exp: Ditto.
+	
+2004-10-12  Jim Ingham  <jingham@apple.com>
+
+	* gdb.apple/mi1-varobj.exp: gcc 4.0 calls "id" 
+	struct objc_object * and Class struct objc_class *...
+	
+2004-10-11  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/cfm.c, dylib-loader.c, libmylib.c, libmysecondlib.c, 
+	libweak.c, weak-prog.c: Include the necessary header files to get
+	prototypes for these test programs.
+
+2004-10-10  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.mi/gdb792.exp: Force to mi1.
+	* gdb.mi/mi-syn-frame.exp: Force to mi1.
+	* gdb.apple/fix-and-continue/small-c/mi-fix-small-c.exp:
+	Use remote_exec to build the binaries, not 'shell make' from within GDB.
+
+2004-10-08  Jim Ingham  <jingham@apple.com>
+
+	* gdb.apple/file-statics.c: New file.
+	* gdb-apple/more-statics.c: New file.
+	* gdb.apple/file-statics.exp: New file.
+	
+2004-10-01  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/info-pid.exp: Don't use mi_gdb_test to test
+	set-interpreter, because the double-prompt triggers a race
+	condition.  Instead, use a special-cased test.
+
+	* gdb.apple/fix-and-continue/small-c/mi-fix-small-c.exp: Use the
+	correct line number for the start of slurry() (it's the start of
+	the prologue, not the start of the first non-prologue
+	instruction).
+	
+2004-09-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/mi-fix-small-c.exp: Fix
+	expected output.
+
+2004-09-27  Jim Ingham  <jingham@apple.com>
+
+	* gdb.base/chng-syms.exp: Add a test expression to catch our
+	gdb's behavior.  We don't delete a breakpoint if we can't
+	evaluate it's condition.
+	
+2004-09-15  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-objc/Makefile: Use 
+	-freplace-objc-classes instead of using the old assembly stub
+	of our own creation to do the same.
+	* .../small-objc/reload-stub.s:  Add comment.
+	* .../fix-small-objc.exp: Update testsuite to expect new text.
+
+2004-09-13  Jim Ingham  <jingham@apple.com>
+
+	* gdb.base/maint.exp: Add a test for the longjmp breakpoints.
+	
+2004-09-10  Jim Ingham  <jingham@apple.com>
+
+	* gdb.apple/bp-cond-objc.exp: We now print the condition of a
+	breakpoint if we couldn't parse it, but we say we couldn't parse
+	it.
+
+	* gdb.apple/dynaload.exp: We are no longer complaining about
+	not being able to find shared libraries on future-break with -shlib.
+
+	* gdb.apple/po.exp: Adjust to changes in the NSLog "%@" printing
+	for Tiger.
+	
+2004-09-08  Jason Molenda  (jmolenda@apple.com)
+
+        * gdb.apple/ifnospace.exp: Two new tests to verify zero space chars
+        after 'if' and 'while' commands in a user-defined command is correctly
+        parsed.
+	Submitted to the FSF as a part of gdb.base/define.exp.
+
+2004-08-04  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/attach.exp: Recognize the "unable to locate
+	process" response to attaching to arbitrary strings.  Revert the
+	"don't specify filename" part of the patch on 2004-07-30.
+
+2004-08-04  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/corefile.exp: Refer to the corefil as ${corefile}
+	in all the various tests.
+
+2004-07-30  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.base/attach.exp: Generate a fat binary, to make sure GDB
+	is able to properly select the OSABI when attaching.  Don't specify
+	the filename explicitly on OSX; force GDB to determine it from the
+	process being attached to.
+
+2004-07-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/slipnslide.exp: Use $mi_gdb_prompt, not $gdb_prompt.
+
+2004-07-29  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/slipnslide.exp: Update to use new "description" field.
+
+2004-07-21  Jim Ingham <jingham@apple.com>
+
+	* gdb.base/break.exp: We were doing two send_gdb's in a
+	row followed by a gdb_expect that didn't match at all against
+	the first send_gdb.  That was causing a race that led to spurious
+	failures.  So I deleted the first send_gdb.
+	
+2004-07-19  Jason Molenda  (jmolenda@apple.com)
+
+	* configure.in: Emit a makefile in $objdir/gdb.apple/xcode/.
+
+2004-06-21  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/corefile.exp: Don't try to copy the corefile to
+	the dejagnu directory --- it takes forever and causes permissions
+	issues.  Mention permissions of /cores in the "things to check
+	if cores aren't being generated" message.
+
+2004-06-15  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/cachedsym-1.exp: Disable file.
+	* gdb.apple/dynaload.exp: Allow for negative slides.
+	* gdb.apple/slipnslide.exp: Allow for negative slides.
+	* gdb.apple/weak.exp: Convert to pending breakpoint output.
+	* gdb.apple/xcode/exec-abort.exp: Create the build directory, if it does not exist.
+
 2004-06-01  Jason Molenda  (jmolenda@apple.com)
 
 	* gdb.objc/nondebug.exp: Add APPLE LOCAL pattern tweak.

@@ -1305,10 +1305,12 @@ using_struct_return (struct type *value_type, int gcc_p)
 	return 0;
     }
 
+  /* APPLE LOCAL: Changed to >= to handle the other values in the
+     enum.  This will go away when we merge again.  */
   /* Probe the architecture for the return-value convention.  */
   return (gdbarch_return_value (current_gdbarch, value_type,
 				NULL, NULL, NULL)
-	  == RETURN_VALUE_STRUCT_CONVENTION);
+	  >= RETURN_VALUE_STRUCT_CONVENTION);
 }
 
 void

@@ -75,6 +75,15 @@ struct dbx_symfile_info
 
     /* Pointer to the separate ".stab" section, if there is one.  */
     asection *stab_section;
+
+    /* APPLE LOCAL: Record the # and offset of local stab nlist records and
+       non-local stab nlist records.  If this information is not provided
+       by the static link editor, these will have 0 values. */
+
+    file_ptr local_stab_offset;
+    int local_stab_count;
+    file_ptr nonlocal_stab_offset;
+    int nonlocal_stab_count;
   };
 
 #define DBX_SYMFILE_INFO(o)	((o)->sym_stab_info)
@@ -92,5 +101,11 @@ struct dbx_symfile_info
 #define DBX_DATA_SECTION(o)	(DBX_SYMFILE_INFO(o)->data_section)
 #define DBX_BSS_SECTION(o)	(DBX_SYMFILE_INFO(o)->bss_section)
 #define DBX_STAB_SECTION(o)	(DBX_SYMFILE_INFO(o)->stab_section)
+
+/* APPLE LOCAL: Accessors for the local / non-local stab nlist records */
+#define DBX_LOCAL_STAB_OFFSET(o) (DBX_SYMFILE_INFO(o)->local_stab_offset)
+#define DBX_LOCAL_STAB_COUNT(o) (DBX_SYMFILE_INFO(o)->local_stab_count)
+#define DBX_NONLOCAL_STAB_OFFSET(o) (DBX_SYMFILE_INFO(o)->nonlocal_stab_offset)
+#define DBX_NONLOCAL_STAB_COUNT(o) (DBX_SYMFILE_INFO(o)->nonlocal_stab_count)
 
 #endif /* GDBSTABS_H */

@@ -131,6 +131,11 @@ int ppc_floating_point_unit_p (struct gdbarch *gdbarch);
 
 struct gdbarch_tdep
   {
+    /* APPLE LOCAL: We use the wordsize to be the size of the 
+       GPR registers that are actually passed in the ABI.  So on 32 bit
+       PPC, wordsize is 4 & only the lower 4 bytes of the register are
+       passed (even though from assembly you can set & get the full 64 bits
+       or the registers on a G5.)  */
     int wordsize;              /* size in bytes of fixed-point word */
     int *regoff;               /* byte offsets in register arrays */
     const struct reg *regs;    /* from current variant */

@@ -628,7 +628,7 @@ extern int gdbtk_test (char *);
   if (!inhibit_gdbinit)
     {
       /* if (!SET_TOP_LEVEL ()) */
-	 source_command (gdbinit_global, 0);
+	 source_file (gdbinit_global, 0);
     }
   do_cleanups (ALL_CLEANUPS);
  
@@ -649,7 +649,7 @@ extern int gdbtk_test (char *);
       if (!inhibit_gdbinit)
 	if ((globalbuf.st_dev != homebuf.st_dev) || (globalbuf.st_ino != homebuf.st_ino))
 	  {
-	    catch_command_errors (source_command, homeinit, 0, RETURN_MASK_ALL);
+	    catch_command_errors (source_file, homeinit, 0, RETURN_MASK_ALL);
 	  }
     }
 
@@ -697,7 +697,7 @@ extern int gdbtk_test (char *);
 
   if (corearg != NULL)
     {
-      if (catch_command_errors (core_file_command, corearg, !batch, RETURN_MASK_ALL) == 0)
+      if (catch_command_errors (core_file_attach, corearg, !batch, RETURN_MASK_ALL) == 0)
 	{
 	  /* See if the core file is really a PID. */
 	  /* Be careful, we have quoted the corearg above... */
@@ -732,7 +732,7 @@ extern int gdbtk_test (char *);
     if (((globalbuf.st_dev != cwdbuf.st_dev) || (globalbuf.st_ino != cwdbuf.st_ino))
 	&& ((homebuf.st_dev != cwdbuf.st_dev) || (homebuf.st_ino != cwdbuf.st_ino)))
       {
-	catch_command_errors (source_command, gdbinit, 0, RETURN_MASK_ALL);
+	catch_command_errors (source_file, gdbinit, 0, RETURN_MASK_ALL);
       }
   
   /* These need to be set this late in the initialization to ensure that
@@ -761,11 +761,11 @@ extern int gdbtk_test (char *);
 	    read_command_file (stdin);
 	  else
 #endif
-	    source_command (cmdarg[i], !batch);
+	    source_file (cmdarg[i], !batch);
 	  do_cleanups (ALL_CLEANUPS);
 	}
 #endif
-      catch_command_errors (source_command, cmdarg[i], !batch, RETURN_MASK_ALL);
+      catch_command_errors (source_file, cmdarg[i], !batch, RETURN_MASK_ALL);
     }
   xfree (cmdarg);
 

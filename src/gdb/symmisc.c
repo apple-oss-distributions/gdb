@@ -1250,6 +1250,150 @@ extend_psymbol_list (struct psymbol_allocation_list *listp,
   listp->size = new_size;
 }
 
+/* APPLE LOCAL: This is the machinery to deal with the way Darwin does
+   versioned symbols in libSystem.  I copied the hash table from Klee's
+   hash for selectors.  Might be nice to formalize this at some
+   point.  
+   FIXME: We could probably use this for ELF versioned symbols as well,
+   but I didn't make the parts that find equivalent symbols generic.  */
+
+#define EQUIVALENCE_HASH_SIZE 127
+
+struct equivalence_entry
+{
+  char *name;
+  struct minimal_symbol *msymbol;
+  struct equivalence_entry *next;
+};
+
+static void 
+equivalence_table_initialize (struct objfile *ofile)
+{
+  ofile->equivalence_table 
+    = (void *) xcalloc (EQUIVALENCE_HASH_SIZE, 
+			sizeof (struct equivalence_table *));
+}
+
+void 
+equivalence_table_delete (struct objfile *ofile)
+{
+  struct equivalence_entry *entry;
+  struct equivalence_entry **table;
+  int i;
+
+  if (ofile->equivalence_table == NULL)
+    return;
+
+  table = (struct equivalence_entry **) ofile->equivalence_table;
+  for (i = 0; i < EQUIVALENCE_HASH_SIZE; i++)
+    {
+      entry = table[i];
+      while (entry != NULL)
+	{
+	  xfree (entry->name);
+	  entry = entry->next;
+	}
+    }
+  xfree (table);
+  ofile->equivalence_table = NULL;
+}
+
+/* This registers the msymbol MSYMBOL as an equivalent of the symbol
+   whose name is the substring of NAME that starts at NAME and ends
+   with NAME_END in the objfile OBJFILE.  */
+
+void 
+equivalence_table_add (struct objfile *ofile, char *name, 
+			       char *name_end, struct minimal_symbol *msymbol)
+{
+  struct equivalence_entry *new_entry;
+  struct equivalence_entry **table;
+  int hash;
+  int len = name_end - name;
+  
+  if (ofile->equivalence_table == NULL)
+    equivalence_table_initialize (ofile);
+  table = (struct equivalence_entry **) ofile->equivalence_table;
+
+  new_entry = (struct equivalence_entry *) 
+    xmalloc (sizeof (struct equivalence_entry));
+  new_entry->name = (char *) xmalloc (len + 1);
+  memcpy (new_entry->name, name, len);
+  new_entry->name[len] = '\0';
+  
+  new_entry->msymbol = msymbol;
+  
+  hash = msymbol_hash (new_entry->name) % EQUIVALENCE_HASH_SIZE;
+  new_entry->next = table[hash];
+  table[hash] = new_entry;
+
+}
+
+/* This returns a list of symbols equivalent to msymbol in the objfile
+   containing msymbol.  The list is terminated by a null element.  It
+   is allocated here, so the caller is responsible for freeing it. */
+
+struct minimal_symbol **
+find_equivalent_msymbol (struct minimal_symbol *msymbol)
+{
+  int hash;
+  struct equivalence_entry **table;
+  struct equivalence_entry *entry;
+  struct objfile *ofile;
+  struct obj_section *osect;
+  struct minimal_symbol **msymbol_list;
+  int nsyms = 0, max_nsyms = 5;
+  char *name = SYMBOL_LINKAGE_NAME (msymbol);
+  
+  if (name == NULL)
+    return NULL;
+
+  osect = find_pc_sect_section (SYMBOL_VALUE_ADDRESS (msymbol), 
+				SYMBOL_BFD_SECTION (msymbol));
+  if (osect == NULL)
+    return NULL;
+
+  ofile = osect->objfile;
+  table = (struct equivalence_entry **) ofile->equivalence_table;
+
+  if (table == NULL)
+    return NULL;
+
+  hash = msymbol_hash (name) % EQUIVALENCE_HASH_SIZE;
+
+  if (table[hash] == NULL)
+    return NULL;
+
+  msymbol_list = (struct minimal_symbol **) 
+    xcalloc (max_nsyms + 1, sizeof (struct minimal_symbol *));
+
+  for (entry = table[hash]; entry != NULL; entry = entry->next)
+    {
+      if (strcmp(name, entry->name) == 0)
+	{
+	  if (nsyms == max_nsyms)
+	    {
+	      int i;
+	      struct minimal_symbol **new_list;
+	      max_nsyms = max_nsyms * 2;
+	      new_list = (struct minimal_symbol **) 
+		xcalloc (max_nsyms + 1, sizeof (struct minimal_symbol *));
+
+	      for (i = 0; i < nsyms; i++)
+		  new_list[i] = msymbol_list[i];
+
+	      xfree (msymbol_list);
+	      msymbol_list = new_list;
+	    }
+	  msymbol_list[nsyms++] = entry->msymbol;
+	}
+    }
+
+  return msymbol_list;
+
+}
+
+/* End APPLE LOCAL */
 
 /* Do early runtime initializations. */
 void

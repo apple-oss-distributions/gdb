@@ -136,9 +136,7 @@ extern struct type **dbx_lookup_type (int[2], struct objfile *objfile);
 
 extern long read_number (char **, int);
 
-extern void add_undefined_type (struct type *);
-
-extern struct symbol *define_symbol (CORE_ADDR, char *, char *, int, int,
+extern struct symbol *define_symbol (CORE_ADDR, char *, const char *, int, int,
 				     struct objfile *);
 
 extern void stabsread_init (void);
@@ -197,8 +195,7 @@ extern void stabsect_build_psymtabs
   (struct objfile *objfile,
    int mainline,
    char *stab_name,
-   char *stabstr_name, char *text_name, char *coalesced_text_name,
-   char *data_name, char *bss_name);
+   char *stabstr_name, char *text_name);
 
 extern void elfstab_offset_sections (struct objfile *,
 				     struct partial_symtab *);

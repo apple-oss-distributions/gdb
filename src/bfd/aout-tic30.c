@@ -920,6 +920,9 @@ tic30_aout_set_arch_mach (abfd, arch, machine)
 #ifndef MY_get_section_contents_in_window
 #define MY_get_section_contents_in_window _bfd_generic_get_section_contents_in_window
 #endif
+#ifndef MY_get_section_contents_in_window_with_mode
+#define MY_get_section_contents_in_window_with_mode _bfd_generic_get_section_contents_in_window_with_mode
+#endif
 #ifndef MY_new_section_hook
 #define MY_new_section_hook NAME(aout,new_section_hook)
 #endif

@@ -439,6 +439,8 @@ gdb_expect {
 		{ pass "maint info breakpoints" }
 	-re "Num\[ \t\]+Type\[ \t\]+Disp\[ \t\]+Enb\[ \t\]+Address\[ \t\]+What\r\n1\[ \t\]+breakpoint\[ \t\]+keep\[ \t\]+y\[ \t\]+$hex in main at.*break.c:$bp_location6\r\n\[ \t\]+breakpoint already hit 1 time\r\n-1\[ \t\]+shlib events\[ \t\]+keep\[ \t\]+y\[ \t\]+$hex.*breakpoint already hit.*$gdb_prompt $"\
 		{ pass "maint info breakpoints (with shlib events)" }
+    -re "Num\[ \t\]+Type\[ \t\]+Disp\[ \t\]+Enb\[ \t\]+Address\[ \t\]+What\r\n(-\[0-9\]+.*longjmp.*\r\n)*1\[ \t\]+breakpoint\[ \t\]+keep\[ \t\]+y\[ \t\]+$hex in main at.*break.c:$bp_location6\r\n\[ \t\]+breakpoint already hit 1 time\r\n(-\[0-9\]+.*longjmp.*\r\n)*-\[0-9\]+\[ \t\]+shlib events\[ \t\]+keep\[ \t\]+y\[ \t\]+$hex.*breakpoint already hit.*$gdb_prompt $"\
+	        { pass "maint info breakpoints (with shlib events and longjmp)" }
 	-re ".*$gdb_prompt $"       { fail "maint info breakpoints" }
 	timeout         { fail "(timeout) maint info breakpoints" }
 }

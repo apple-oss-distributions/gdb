@@ -478,6 +478,8 @@ ppcboot_bfd_print_private_bfd_data (abfd, farg)
 #define ppcboot_bfd_link_split_section _bfd_generic_link_split_section
 #define ppcboot_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define ppcboot_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
 
 #define ppcboot_bfd_copy_private_bfd_data _bfd_generic_bfd_copy_private_bfd_data
 #define ppcboot_bfd_merge_private_bfd_data _bfd_generic_bfd_merge_private_bfd_data

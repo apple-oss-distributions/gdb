@@ -298,6 +298,30 @@ case "$host" in
 	;;
 esac
 
+# APPLE LOCAL begin: Get the libxml2 headers and libraries
+AC_PATH_PROG(LIBXML2_CONFIG, xml2-config, no)
+if test "x$LIBXML2_CONFIG" != "xno"
+then
+  AC_MSG_CHECKING([for libxml2 includes])
+  LIBXML2_INCLUDES=`$LIBXML2_CONFIG --cflags`
+  AC_MSG_RESULT($LIBXML2_INCLUDES)
+  AC_MSG_CHECKING([for libxml2 libraries])
+  LIBXML2_LIBS=`$LIBXML2_CONFIG --libs`
+  AC_MSG_RESULT($LIBXML2_LIBS)
+  CPPFLAGS="$CPPFLAGS $LIBXML2_INCLUDES"
+  AC_CHECK_HEADERS(libxml/parser.h libxml/tree.h)
+  AC_CHECK_LIB(xml2, xmlParseFile)
+fi
+if test "x$ac_cv_header_libxml_tree_h" = "xyes" -a \
+     "x$ac_cv_header_libxml_parser_h" = "xyes" -a \
+     "x$ac_cv_lib_xml2_xmlParseFile" = "xyes"
+then
+  AC_DEFINE(LIBXML2_IS_USABLE, 1, [libxml2 on this system is usable])
+fi
+AC_SUBST(LIBXML2_INCLUDES)
+AC_SUBST(LIBXML2_LIBS)
+# APPLE LOCAL end: Get the libxml2 headers and libraries
+
 # We need to link with -lw to get `wctype' on Solaris before Solaris
 # 2.6.  Solaris 2.6 and beyond have this function in libc, and have a
 # libw that some versions of the GNU linker cannot hanle (GNU ld 2.9.1
@@ -1115,8 +1139,8 @@ AC_ARG_WITH(mmalloc,
 esac],[want_mmalloc=${mmalloc_default_value}])dnl
 
 if test x$want_mmalloc = xtrue; then
-   AC_DEFINE(USE_MMALLOC, [], [Use mmalloc])
-   AC_DEFINE(MMCHECK_FORCE, [], [Force mmcheck])
+   AC_DEFINE(USE_MMALLOC, 1, [Use mmalloc])
+   AC_DEFINE(MMCHECK_FORCE, 1, [Force mmcheck])
    MMALLOC_CFLAGS="-I$srcdir/../mmalloc"
    MMALLOC='../mmalloc/libmmalloc.a'
 fi

@@ -1775,16 +1775,21 @@ yylex ()
     /* See if it's an ObjC classname.  */
     if (!sym)
       {
-	CORE_ADDR Class = lookup_objc_class(tmp);
-	if (Class)
-	  {
-	    yylval.class.class = Class;
-	    if ((sym = lookup_struct_typedef (tmp, 
-					      expression_context_block, 
-					      1)))
-	      yylval.class.type = SYMBOL_TYPE (sym);
-	    return CLASSNAME;
-	  }
+        extern struct symbol *lookup_struct_typedef ();
+        sym = lookup_struct_typedef (tmp, expression_context_block, 1);
+        if (sym)
+          {
+	    CORE_ADDR Class = lookup_objc_class(tmp);
+	    if (Class)
+	      {
+	        yylval.class.class = Class;
+	        if ((sym = lookup_struct_typedef (tmp, 
+					          expression_context_block, 
+					          1)))
+	          yylval.class.type = SYMBOL_TYPE (sym);
+	        return CLASSNAME;
+	      }
+          }
       }
 
     /* Input names that aren't symbols but ARE valid hex numbers,

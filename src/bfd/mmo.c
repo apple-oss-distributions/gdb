@@ -3271,6 +3271,9 @@ mmo_canonicalize_reloc (abfd, section, relptr, symbols)
 
 #define mmo_get_section_contents_in_window \
   _bfd_generic_get_section_contents_in_window
+#define mmo_get_section_contents_in_window_with_mode \
+  _bfd_generic_get_section_contents_in_window_with_mode
+
 #define mmo_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
 #define mmo_bfd_gc_sections bfd_generic_gc_sections

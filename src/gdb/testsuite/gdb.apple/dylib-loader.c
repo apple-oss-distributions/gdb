@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <mach-o/dyld.h>
 #include <unistd.h>
+#include <stdlib.h>
 
  /* This program dynamically loads a shared library (dylib) at run-time,
     looks up a function called foo(), and calls that function. */

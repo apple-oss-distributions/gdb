@@ -385,7 +385,7 @@ mi_gdb_test "-var-assign lsimple.integer 333" \
 #####
 
 mi_gdb_test "-break-insert subroutine1" \
-	"\\^done,bkpt=\{number=\"2\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"subroutine1\",file=\".*var-cmd.c\",line=\"146\",times=\"0\"\}" \
+	"\\^done,bkpt=\{number=\"2\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",addr=\"$hex\",func=\"subroutine1\",file=\".*var-cmd.c\",line=\"146\",shlib=\"$binfile\",times=\"0\"\}" \
 	"break-insert subroutine1"
 mi_continue_to "2" "subroutine1" \
 	"\{name=\"i\",value=\"4321\"\},\{name=\"l\",value=\"$hex\"\}" \

@@ -320,6 +320,9 @@ extern void continue_command (char *, int);
 
 extern void interrupt_target_command (char *args, int from_tty);
 
+/* APPLE LOCAL: Need to use this in the MI: */
+extern void pid_info (char *args, int from_tty);
+
 /* Last signal that the inferior received (why it stopped).  */
 
 extern enum target_signal stop_signal;

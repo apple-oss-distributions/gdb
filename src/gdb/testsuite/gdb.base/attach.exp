@@ -59,15 +59,43 @@ remote_exec build "rm -f ${binfile} ${binfile2}"
 # APPLE LOCAL: remove; does this script even exist?
 #remote_exec build "${cleanupfile}"
 
+# APPLE LOCAL: We need to test that the OSABI-selection code works
+# properly when attaching, which in turn means that we need to create
+# fat binaries.  To avoid a dependence on a specific build
+# environment, just create a "fake" fat binary using a 0-length file
+# as the hppa architecture (which, surely, no-one will ever use again).
+
+proc gdb_compile_fake_fat { source dest type options } {
+
+    set ret [ remote_exec build "arch" ]
+    if { [ lindex $ret 0 ] != 0 } { return $ret }
+    regsub "\r\n$" [ lindex $ret 1 ] "" arch
+
+    set ret [ gdb_compile "${source}" "${dest}.${arch}" ${type} ${options} ]
+    if { ${ret} != "" } { return $ret }
+
+    set ret [ remote_exec build "rm -f ${dest}.hppa" ]
+    if { [ lindex $ret 0 ] != 0 } { return $ret }
+
+    set ret [ remote_exec build "touch ${dest}.hppa" ]
+    if { [ lindex $ret 0 ] != 0 } { return $ret }
+
+    set ret [ remote_exec build "lipo -create -o ${dest} -arch hppa ${dest}.hppa -arch ${arch} ${dest}.${arch}" ]
+    if { [ lindex $ret 0 ] != 0 } { return $ret }
+
+    set ret [ remote_exec build "chmod a+x ${dest}" ]
+    if { [ lindex $ret 0 ] != 0 } { return $ret }
+}
+
 # build the first test case
 #
-if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
+if  { [gdb_compile_fake_fat "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
 # Build the in-system-call test
 
-if  { [gdb_compile "${srcdir}/${subdir}/${srcfile2}" "${binfile2}" executable {debug}] != "" } {
+if  { [gdb_compile_fake_fat "${srcdir}/${subdir}/${srcfile2}" "${binfile2}" executable {debug}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
@@ -94,11 +122,11 @@ proc do_attach_tests {} {
    # Verify that we cannot attach to nonsense.
    #
 
-   # APPLE LOCAL: Our gdb's attach cmd can take a process name.
-   setup_xfail "*-apple-darwin*"
-
    send_gdb "attach abc\n"
    gdb_expect {
+      # Response expected on Mac OS X
+      -re ".*Unable to locate process named \"abc\"\."
+                      {pass "attach to nonsense is prohibited"}
       -re ".*Illegal process-id: abc.*$gdb_prompt $"\
                       {pass "attach to nonsense is prohibited"}
       -re "Attaching to.*, process .*couldn't open /proc file.*$gdb_prompt $"\
@@ -147,7 +175,7 @@ proc do_attach_tests {} {
        }
        -re "Unable to access task for process-id $boguspid: \\\(os/kern\\\) failure.*$gdb_prompt $"\
                {
-           # Response expected on MacOS X 10.2
+           # Response expected on Mac OS X
            pass "attach to nonexistent process is prohibited"
        }
        -re "$gdb_prompt $" {fail "attach to nonexistent process is prohibited"}
@@ -164,6 +192,7 @@ proc do_attach_tests {} {
    # for us.  So, we must also be prepared to be asked if we want
    # to discard an existing set of symbols.)
    #
+
    send_gdb "file $binfile\n"
    gdb_expect {
       -re "Load new symbol table from.*y or n.*$" {
@@ -428,7 +457,12 @@ proc do_call_attach_tests {} {
 gdb_exit
 gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
-gdb_load ${binfile}
+
+# APPLE LOCAL: shouldn't need to specify a binary file if we are attaching
+if { ! [ istarget "*-apple-darwin*" ] } {
+    print "need to load"
+    gdb_load ${binfile}
+}
 
 # This is a test of gdb's ability to attach to a running process.
 #
