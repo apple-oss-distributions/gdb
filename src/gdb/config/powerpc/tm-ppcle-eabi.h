@@ -1,6 +1,6 @@
 /* Macro definitions for Power PC running embedded ABI
    in little endian mode.
-   Copyright 1995 Free Software Foundation, Inc.
+   Copyright 1995, 1998 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,6 +26,6 @@
 #include "powerpc/tm-ppc-eabi.h"
 
 #undef  TARGET_BYTE_ORDER_DEFAULT
-#define TARGET_BYTE_ORDER_DEFAULT	LITTLE_ENDIAN
+#define TARGET_BYTE_ORDER_DEFAULT BFD_ENDIAN_LITTLE
 
 #endif /* TM_PPCLE_EABI_H */

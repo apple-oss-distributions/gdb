@@ -37,8 +37,8 @@ void fetch_inferior_registers (int regno)
   int current_pid;
   thread_t current_thread;
 
-  next_thread_list_lookup_by_id
-    (next_status, inferior_pid, &current_pid, &current_thread);
+  current_pid = ptid_get_pid (inferior_ptid);
+  current_thread = ptid_get_tid (inferior_ptid);
 
   if ((regno == -1) || IS_GP_REGNUM (regno) || IS_GSP_REGNUM (regno)) {
     int i;
@@ -79,8 +79,8 @@ void store_inferior_registers (int regno)
   int current_pid;
   thread_t current_thread;
 
-  next_thread_list_lookup_by_id
-    (next_status, inferior_pid, &current_pid, &current_thread);
+  current_pid = ptid_get_pid (inferior_ptid);
+  current_thread = ptid_get_tid (inferior_ptid);
 
   validate_inferior_registers (regno);
 

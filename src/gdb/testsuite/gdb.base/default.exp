@@ -1,4 +1,5 @@
-#   Copyright (C) 1988, 1990, 1991, 1992, 1994, 1997, 1998
+#   Copyright 1988, 1990, 1991, 1992, 1994, 1995, 1996, 1997, 1998, 1999,
+#   2000, 2001
 #   Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
@@ -52,11 +53,11 @@ gdb_expect {
     timeout { fail "(timeout) attach" }
 }
 
-# FIXME: attach kills the udi connection
-if { [istarget "a29k-*-udi"] } {
-    gdb_exit
-    gdb_start
-}
+# OBSOLETE # FIXME: attach kills the udi connection
+# OBSOLETE if { [istarget "a29k-*-udi"] } {
+# OBSOLETE     gdb_exit
+# OBSOLETE     gdb_start
+# OBSOLETE }
 
 if ![target_info exists use_gdb_stub] {
     gdb_test "break" "No default breakpoint address now." "break"
@@ -65,7 +66,8 @@ if ![target_info exists use_gdb_stub] {
     }
 
     
-    setup_xfail "mips-idt-*" "a29k-*-udi"
+    setup_xfail "mips-idt-*"
+    # OBSOLETE setup_xfail "a29k-*-udi"
     gdb_test "backtrace" "No stack."
 
     # ba and bac are no longer unique command prefixes. So these tests
@@ -73,7 +75,8 @@ if ![target_info exists use_gdb_stub] {
     # GDB needs to be fixed to map unique alias here for ba bac.
     #
     foreach i "bt ba bac" {
-	setup_xfail "mips-idt-*" "a29k-*-udi"
+	setup_xfail "mips-idt-*"
+	# OBSOLETE setup_xfail "a29k-*-udi"
 	gdb_test $i "No stack." "backtrace \"$i\" abbreviation"
     }
 } else {
@@ -82,17 +85,17 @@ if ![target_info exists use_gdb_stub] {
 
 # This works on the MIPS IDT board, but confuses future tests.
 if ![istarget "mips-idt-*"] then {
-    setup_xfail "a29k-*-udi"
+    # OBSOLETE setup_xfail "a29k-*-udi"
     gdb_test "continue" "The program is not being run." "continue"
-    setup_xfail "a29k-*-udi"
+    # OBSOLETE setup_xfail "a29k-*-udi"
     gdb_test "c" "The program is not being run." "continue \"c\" abbreviation"
 }
 
-# FIXME: continue kills the udi connection
-if [istarget "a29k-*-udi"] then {
-    gdb_exit
-    gdb_start
-}
+# OBSOLETE # FIXME: continue kills the udi connection
+# OBSOLETE if [istarget "a29k-*-udi"] then {
+# OBSOLETE     gdb_exit
+# OBSOLETE     gdb_start
+# OBSOLETE }
 
 #test call
 gdb_test "call" "The history is empty..*" "call"
@@ -141,11 +144,11 @@ gdb_expect {
 #test detach
 gdb_test "detach" "" "detach"
 
-# FIXME: continue kills the udi connection
-if [istarget "a29k-*-udi"] then {
-    gdb_exit
-    gdb_start
-}
+# OBSOLETE # FIXME: continue kills the udi connection
+# OBSOLETE if [istarget "a29k-*-udi"] then {
+# OBSOLETE     gdb_exit
+# OBSOLETE     gdb_start
+# OBSOLETE }
 if [istarget "h8300-*-hms"] then {
     gdb_exit
     gdb_start
@@ -223,13 +226,13 @@ gdb_expect {
 }
 
 #test frame "f" abbreviation
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "f" "No stack." "frame \"f\" abbreviation"
 #test frame
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "frame" "No stack." "frame"
 #test fg
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "fg" "The program is not being run." "fg"
 # FIXME: fg kills the udi connection
 #test file
@@ -250,7 +253,7 @@ gdb_expect {
 }
 
 #test finish
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "finish" "The program is not running." "finish"
 #test forward-search
 # The message here comes from the regexp library, not gdb, and so can
@@ -271,7 +274,7 @@ gdb_test "ignore" "Argument required .a breakpoint number.*" "ignore"
 #test info address
 gdb_test "info address" "Argument required." "info address"
 #test info all-registers
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "info all-registers" "The program has no registers now." "info all-registers"
 #test info args
 gdb_test "info args" "No frame selected." "info args"
@@ -314,19 +317,21 @@ gdb_test "info functions" "All defined functions:" "info functions"
 #test info locals
 gdb_test "info locals" "No frame selected." "info locals"
 #test info program
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "info program" "The program being debugged is not being run." "info program"
 #test info registers
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "info registers" "The program has no registers now." "info registers"
 #test info stack "s" abbreviation
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "info s" "No stack." "info stack \"s\" abbreviation"
 #test info stack
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "info stack" "No stack." "info stack"
 #test info set
 # FIXME -- needs to match the entire output
+# FIXME -- on native solaris 2.8, this test fails due to this line:
+#  prompt:  Gdb's prompt is "(gdb) ".^M
 gdb_test "info set" "confirm:  Whether to confirm potentially dangerous operations is o\[a-z\]*..*\[\r\n\]+history filename:  The filename in which to record the command history is .*\[\r\n\]+listsize:  Number of source lines gdb will list by default is 10.*" "info set"
 gdb_test "info symbol" "Argument required .address.."
 #test info source
@@ -342,14 +347,13 @@ gdb_test "info types" "All defined types:" "info types"
 #test info variables
 gdb_test "info variables" "All defined variables:" "info variables"
 #test info warranty
-setup_xfail "hppa*-hp-hpux*"
 gdb_test "info warranty" "NO WARRANTY.*\[\r\n\]+  *11.  *BECAUSE THE PROGRAM IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY.*\[\r\n\]+FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW.  EXCEPT WHEN.*\[\r\n\]+OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES.*\[\r\n\]+PROVIDE THE PROGRAM \"AS IS\" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED.*\[\r\n\]+OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF.*\[\r\n\]+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.  THE ENTIRE RISK AS.*\[\r\n\]+TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU.  SHOULD THE.*\[\r\n\]+PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING,.*\[\r\n\]+REPAIR OR CORRECTION..*\[\r\n\]+  *12.  *IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING.*\[\r\n\]+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY MODIFY AND/OR.*\[\r\n\]+REDISTRIBUTE THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES,.*\[\r\n\]+INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING.*\[\r\n\]+OUT OF THE USE OR INABILITY TO USE THE PROGRAM .INCLUDING BUT NOT LIMITED.*\[\r\n\]+TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY.*\[\r\n\]+YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER.*\[\r\n\]+PROGRAMS., EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE.*\[\r\n\]+POSSIBILITY OF SUCH DAMAGES.*" "info warranty"
 #test info watchpoints
 gdb_test "info watchpoints" "No breakpoints or watchpoints." "info watchpoints"
 #test inspect
 gdb_test "inspect" "The history is empty." "inspect"
 #test jump
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "jump" "The program is not being run." "jump"
 #test kill
 gdb_test "kill" "The program is not being run." "kill"
@@ -363,16 +367,16 @@ gdb_test "list" "No symbol table is loaded.  Use the \"file\" command.*" "list"
 # to deduce the filename from the exec file.
 gdb_test "load" "You can't do that when your target is `None'.*|The load command takes a file name.*|Must specify at least a file name with the load command.*|.*Use the .file. or .exec-file. command.*" "load"
 #test next "n" abbreviation
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "n" "The program is not being run." "next \"n\" abbreviation"
 #test next
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "next" "The program is not being run." "next"
 #test nexti "ni" abbreviation
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "ni" "The program is not being run." "nexti \"ni\" abbreviation"
 #test nexti
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "nexti" "The program is not being run." "nexti"
 #test output
 gdb_test "output" "Argument required .expression to compute.*" "output"
@@ -386,7 +390,7 @@ gdb_test "overlay auto"   ""
 gdb_test "overlay off"    ""
 gdb_test "overlay list"   "No sections are mapped."
 gdb_test "overlay map"    "Overlay debugging not enabled.*" "overlay map #1"
-gdb_test "overlay unmap"  "Overlay debugging not enabled.*" "overlay unmap #2"
+gdb_test "overlay unmap"  "Overlay debugging not enabled.*" "overlay unmap #1"
 gdb_test "overlay manual" "" "overlay manual #2"
 gdb_test "overlay map"    "Argument required: name of an overlay section." "overlay map #2"
 gdb_test "overlay unmap"  "Argument required: name of an overlay section." "overlay unmap #2"
@@ -467,18 +471,18 @@ No program loaded.*$gdb_prompt $"\
 gdb_test "rbreak" "" "rbreak"
 
 #test return
-# The middle case accommodates the a29k, where doing the "ni" above causes
-# an initial stack to be created.
+# The middle case accomodated the OBSOLETE a29k, where doing the "ni"
+# above causes an initial stack to be created.
 gdb_test "return" "No selected frame..*" "return"  "Make .* return now.*y or n. $" "y"
 
 
 #test reverse-search
 gdb_test "reverse-search" "No previous regular expression.*|There is no previous regular expression.*" "reverse-search"
 #test step "s" abbreviation
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "s" "The program is not being run." "step \"s\" abbreviation #1"
 #test step
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "step" "The program is not being run." "step #1"
 #test search
 gdb_test "search" "No previous regular expression.*|There is no previous regular expression.*" "search"
@@ -654,7 +658,6 @@ gdb_test "show values" "" "show values"
 #test show verbose
 gdb_test "show verbose" "Verbose printing of informational messages is o.*|Verbosity is off.*" "show verbose"
 #test show version
-setup_xfail "hppa*-hp-hpux*"
 gdb_test "show version" "GNU gdb \[0-9\.\]*.*\[\r\n\]+Copyright \[0-9\]* Free Software Foundation, Inc.*\[\r\n\]+GDB is free software, covered by the GNU General Public License, and you are.*\[\r\n\]+welcome to change it and/or distribute copies of it under certain conditions.*\[\r\n\]+Type \"show copying\" to see the conditions.*\[\r\n\]+There is absolutely no warranty for GDB.  Type \"show warranty\" for details.*\[\r\n\]+This GDB was configured as .*|GDB is free software and you are welcome to distribute copies of it.*\[\r\n\]+ under certain conditions; type \"show copying\" to see the conditions..*\[\r\n\]+There is absolutely no warranty for GDB; type \"show warranty\" for details..*\[\r\n\]+GDB.*Copyright \[0-9\]* Free Software Foundation, Inc.*" "show version"
 #test show width
 gdb_test "show width" "Number of characters gdb thinks are in a line is.*" "show width"
@@ -664,21 +667,21 @@ gdb_test "show write" "Writing into executable and core files is o.*" "show writ
 #test show
 gdb_test "show" "confirm:  *Whether to confirm potentially dangerous operations is on..*\[\r\n\]+history filename:  *The filename in which to record the command history is .*\[\r\n\]+history save:  *Saving of the history record on exit is on..*\[\r\n\]+history size:  *The size of the command history is.*\[\r\n\]+listsize:  *Number of source lines gdb will list by default is 10.*\[\r\n\]+print elements:  *Limit on string chars or array elements to print is 200..*" "show"
 #test stepi "si" abbreviation
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test  "si" "The program is not being run." "stepi \"si\" abbreviation"
 #test stepi
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "stepi" "The program is not being run." "stepi"
 #test signal
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "signal" "The program is not being run." "signal"
 #test source
 gdb_test "source" "source command requires pathname of file to source..*|No such file or directory.*" "source"
 #test step "s" abbreviation
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "s" "The program is not being run." "step \"s\" abbreviation #2"
 #test step
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "step" "The program is not being run." "step #2"
 #test symbol-file
 gdb_test "symbol-file" "" "symbol-file"
@@ -749,10 +752,10 @@ gdb_test "tbreak" "No default breakpoint address now." "tbreak"
 #test tty
 gdb_test "tty" "Argument required .terminal name for running target process.*" "tty"
 #test until "u" abbreviation
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "u" "The program is not running." "until \"u\" abbreviation"
 #test until
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "until" "The program is not running." "until"
 #test undisplay
 # FIXME -- need to dump full output to detailed log
@@ -795,7 +798,7 @@ gdb_test "watch" "Argument required .expression to compute.*" "watch"
 #test whatis
 gdb_test "whatis" "The history is empty." "whatis"
 #test where
-setup_xfail "a29k-*-udi"
+# OBSOLETE setup_xfail "a29k-*-udi"
 gdb_test "where" "No stack." "where"
 #test x
 #The case in which it prints a number is for vxgdb.

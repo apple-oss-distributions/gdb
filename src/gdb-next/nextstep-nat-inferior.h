@@ -16,15 +16,6 @@
 
 struct kinfo_proc;
 
-struct next_thread_entry
-{
-  struct next_thread_entry *next;
-  int pid;
-  thread_t thread;
-  int id;
-};
-typedef struct next_thread_entry next_thread_entry;
-
 struct next_inferior_status
 {
   int pid;
@@ -37,8 +28,6 @@ struct next_inferior_status
 
   thread_t last_thread;
 
-  struct next_thread_entry *thread_list;
-
   next_signal_thread_status signal_status;
   next_exception_thread_status exception_status;
 #if WITH_CFM
@@ -49,7 +38,9 @@ struct next_inferior_status
 typedef struct next_inferior_status next_inferior_status;
 
 void next_mach_check_new_threads ();
-int next_wait (struct next_inferior_status *inferior, struct target_waitstatus *status);
+ptid_t next_wait (struct next_inferior_status *inferior, 
+                  struct target_waitstatus *status,
+		  gdb_client_data client_data);
 
 extern int inferior_bind_exception_port_flag;
 extern int inferior_bind_notify_port_flag;

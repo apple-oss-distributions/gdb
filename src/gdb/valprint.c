@@ -1,5 +1,6 @@
 /* Print values for GDB, the GNU debugger.
-   Copyright 1986, 1988, 1989, 1991-1994, 1998, 2000
+   Copyright 1986, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
+   1997, 1998, 1999, 2000, 2001
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -29,9 +30,10 @@
 #include "target.h"
 #include "obstack.h"
 #include "language.h"
-#include "demangle.h"
 #include "annotate.h"
 #include "valprint.h"
+#include "floatformat.h"
+#include "doublest.h"
 
 #include <errno.h>
 
@@ -140,7 +142,7 @@ val_print (struct type *type, char *valaddr, int embedded_offset,
      only a stub and we can't find and substitute its complete type, then
      print appropriate string and return.  */
 
-  if (TYPE_FLAGS (real_type) & TYPE_FLAG_STUB)
+  if (TYPE_STUB (real_type))
     {
       fprintf_filtered (stream, "<incomplete type>");
       gdb_flush (stream);
@@ -157,7 +159,7 @@ val_print (struct type *type, char *valaddr, int embedded_offset,
    the number of string bytes printed.  */
 
 int
-value_print (value_ptr val, struct ui_file *stream, int format,
+value_print (struct value *val, struct ui_file *stream, int format,
 	     enum val_prettyprint pretty)
 {
   if (val == 0)
@@ -257,7 +259,7 @@ print_decimal (struct ui_file *stream, char *sign, int use_local,
 			sign, temp[2], temp[1], temp[0]);
       break;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
   return;
 }
@@ -360,7 +362,7 @@ print_longest (struct ui_file *stream, int format, int use_local,
       fprintf_filtered (stream, local_hex_format_custom ("016ll"), val_long);
       break;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 #else /* !CC_HAS_LONG_LONG || !PRINTF_HAS_LONG_LONG */
   /* In the following it is important to coerce (val_long) to a long. It does
@@ -407,7 +409,7 @@ print_longest (struct ui_file *stream, int format, int use_local,
 			(unsigned long) val_long);
       break;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 #endif /* CC_HAS_LONG_LONG || PRINTF_HAS_LONG_LONG */
 }
@@ -467,7 +469,7 @@ strcat_longest (int format, int use_local, LONGEST val_long, char *buf,
       sprintf (buf, local_hex_format_custom ("016ll"), val_long);
       break;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 #else /* !PRINTF_HAS_LONG_LONG */
   /* In the following it is important to coerce (val_long) to a long. It does
@@ -508,7 +510,7 @@ strcat_longest (int format, int use_local, LONGEST val_long, char *buf,
 	       ((long) val_long));
       break;
     default:
-      abort ();
+      internal_error (__FILE__, __LINE__, "failed internal consistency check");
     }
 
 #endif /* !PRINTF_HAS_LONG_LONG */
@@ -538,93 +540,35 @@ longest_to_int (LONGEST arg)
   return (rtnval);
 }
 
-
-/* Print a floating point value of type TYPE, pointed to in GDB by VALADDR,
-   on STREAM.  */
+/* Print a floating point value of type TYPE, pointed to in GDB by
+   VALADDR, on STREAM.  */
 
 void
 print_floating (char *valaddr, struct type *type, struct ui_file *stream)
 {
   DOUBLEST doub;
   int inv;
+  const struct floatformat *fmt = floatformat_from_type (type);
   unsigned len = TYPE_LENGTH (type);
 
-  /* Check for NaN's.  Note that this code does not depend on us being
-     on an IEEE conforming system.  It only depends on the target
-     machine using IEEE representation.  This means (a)
-     cross-debugging works right, and (2) IEEE_FLOAT can (and should)
-     be non-zero for systems like the 68881, which uses IEEE
-     representation, but is not IEEE conforming.  */
-  if (IEEE_FLOAT)
+  if (floatformat_is_nan (fmt, valaddr))
     {
-      unsigned long low, high;
-      /* Is the sign bit 0?  */
-      int nonnegative;
-      /* Is it is a NaN (i.e. the exponent is all ones and
-	 the fraction is nonzero)?  */
-      int is_nan;
-
-      /* For lint, initialize these two variables to suppress warning: */
-      low = high = nonnegative = 0;
-      if (len == 4)
-	{
-	  /* It's single precision.  */
-	  /* Assume that floating point byte order is the same as
-	     integer byte order.  */
-	  low = extract_unsigned_integer (valaddr, 4);
-	  nonnegative = ((low & 0x80000000) == 0);
-	  is_nan = ((((low >> 23) & 0xFF) == 0xFF)
-		    && 0 != (low & 0x7FFFFF));
-	  low &= 0x7fffff;
-	  high = 0;
-	}
-      else if (len == 8)
-	{
-	  /* It's double precision.  Get the high and low words.  */
-
-	  /* Assume that floating point byte order is the same as
-	     integer byte order.  */
-	  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
-	    {
-	      low = extract_unsigned_integer (valaddr + 4, 4);
-	      high = extract_unsigned_integer (valaddr, 4);
-	    }
-	  else
-	    {
-	      low = extract_unsigned_integer (valaddr, 4);
-	      high = extract_unsigned_integer (valaddr + 4, 4);
-	    }
-	  nonnegative = ((high & 0x80000000) == 0);
-	  is_nan = (((high >> 20) & 0x7ff) == 0x7ff
-		    && !((((high & 0xfffff) == 0)) && (low == 0)));
-	  high &= 0xfffff;
-	}
-      else
-	{
-#ifdef TARGET_ANALYZE_FLOATING
-	  TARGET_ANALYZE_FLOATING;
-#else
-	  /* Extended.  We can't detect extended NaNs for this target.
-	     Also note that currently extendeds get nuked to double in
-	     REGISTER_CONVERTIBLE.  */
-	  is_nan = 0;
-#endif 
-	}
-
-      if (is_nan)
-	{
-	  /* The meaning of the sign and fraction is not defined by IEEE.
-	     But the user might know what they mean.  For example, they
-	     (in an implementation-defined manner) distinguish between
-	     signaling and quiet NaN's.  */
-	  if (high)
-	    fprintf_filtered (stream, "-NaN(0x%lx%.8lx)" + !!nonnegative,
-			      high, low);
-	  else
-	    fprintf_filtered (stream, "-NaN(0x%lx)" + nonnegative, low);
-	  return;
-	}
+      if (floatformat_is_negative (fmt, valaddr))
+	fprintf_filtered (stream, "-");
+      fprintf_filtered (stream, "nan(");
+      fprintf_filtered (stream, local_hex_format_prefix ());
+      fprintf_filtered (stream, floatformat_mantissa (fmt, valaddr));
+      fprintf_filtered (stream, local_hex_format_suffix ());
+      fprintf_filtered (stream, ")");
+      return;
     }
+
+  /* FIXME: cagney/2002-01-15: The simpler extract_typed_floating()
+     routine could be used here only that routine has no way of
+     indicating that the floating point it extracted was invalid (As
+     indicated by INVALID_FLOAT).  Instead, this code here could call
+     something like floating_invalid() to check for an invalid
+     floating point.  */
 
   doub = unpack_double (type, valaddr, &inv);
   if (inv)
@@ -632,6 +576,13 @@ print_floating (char *valaddr, struct type *type, struct ui_file *stream)
       fprintf_filtered (stream, "<invalid float value>");
       return;
     }
+
+  /* FIXME: kettenis/2001-01-20: The following code makes too much
+     assumptions about the host and target floating point format.  */
+
+  /* FIXME: cagney/2002-01-15: The floatformat pointed to by FMT
+     should contain all the information needed to print the
+     floating-point value without host dependencies.  */
 
   if (len < sizeof (double))
       fprintf_filtered (stream, "%.9g", (double) doub);
@@ -641,7 +592,8 @@ print_floating (char *valaddr, struct type *type, struct ui_file *stream)
 #ifdef PRINTF_HAS_LONG_DOUBLE
     fprintf_filtered (stream, "%.35Lg", doub);
 #else
-    /* This at least wins with values that are representable as doubles */
+    /* This at least wins with values that are representable as
+       doubles.  */
     fprintf_filtered (stream, "%.17g", (double) doub);
 #endif
 }
@@ -665,7 +617,7 @@ print_binary_chars (struct ui_file *stream, unsigned char *valaddr,
   /* FIXME: We should be not printing leading zeroes in most cases.  */
 
   fprintf_filtered (stream, local_binary_format_prefix ());
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = valaddr;
 	   p < valaddr + len;
@@ -752,7 +704,7 @@ print_octal_chars (struct ui_file *stream, unsigned char *valaddr, unsigned len)
   carry = 0;
 
   fprintf_filtered (stream, local_octal_format_prefix ());
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = valaddr;
 	   p < valaddr + len;
@@ -866,11 +818,11 @@ print_decimal_chars (struct ui_file *stream, unsigned char *valaddr,
 #define CARRY_LEFT( x ) ((x) % TEN)
 #define SHIFT( x )      ((x) << 4)
 #define START_P \
-        ((TARGET_BYTE_ORDER == BIG_ENDIAN) ? valaddr : valaddr + len - 1)
+        ((TARGET_BYTE_ORDER == BFD_ENDIAN_BIG) ? valaddr : valaddr + len - 1)
 #define NOT_END_P \
-        ((TARGET_BYTE_ORDER == BIG_ENDIAN) ? (p < valaddr + len) : (p >= valaddr))
+        ((TARGET_BYTE_ORDER == BFD_ENDIAN_BIG) ? (p < valaddr + len) : (p >= valaddr))
 #define NEXT_P \
-        ((TARGET_BYTE_ORDER == BIG_ENDIAN) ? p++ : p-- )
+        ((TARGET_BYTE_ORDER == BFD_ENDIAN_BIG) ? p++ : p-- )
 #define LOW_NIBBLE(  x ) ( (x) & 0x00F)
 #define HIGH_NIBBLE( x ) (((x) & 0x0F0) >> 4)
 
@@ -887,8 +839,6 @@ print_decimal_chars (struct ui_file *stream, unsigned char *valaddr,
    */
   decimal_len = len * 2 * 2;
   digits = (unsigned char *) xmalloc (decimal_len);
-  if (digits == NULL)
-    error ("Can't allocate memory for conversion to decimal.");
 
   for (i = 0; i < decimal_len; i++)
     {
@@ -990,7 +940,7 @@ print_decimal_chars (struct ui_file *stream, unsigned char *valaddr,
     {
       fprintf_filtered (stream, "%1d", digits[i]);
     }
-  free (digits);
+  xfree (digits);
 
   fprintf_filtered (stream, local_decimal_format_suffix ());
 }
@@ -1005,7 +955,7 @@ print_hex_chars (struct ui_file *stream, unsigned char *valaddr, unsigned len)
   /* FIXME: We should be not printing leading zeroes in most cases.  */
 
   fprintf_filtered (stream, local_hex_format_prefix ());
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = valaddr;
 	   p < valaddr + len;
@@ -1202,7 +1152,7 @@ val_print_string (CORE_ADDR addr, int len, int width, struct ui_file *stream)
     {
       buffer = (char *) xmalloc (len * width);
       bufptr = buffer;
-      old_chain = make_cleanup (free, buffer);
+      old_chain = make_cleanup (xfree, buffer);
 
       nfetch = partial_memory_read (addr, bufptr, len * width, &errcode)
 	/ width;
@@ -1225,7 +1175,7 @@ val_print_string (CORE_ADDR addr, int len, int width, struct ui_file *stream)
 	      buffer = (char *) xrealloc (buffer, (nfetch + bufsize) * width);
 	    }
 
-	  old_chain = make_cleanup (free, buffer);
+	  old_chain = make_cleanup (xfree, buffer);
 	  bufptr = buffer + bufsize * width;
 	  bufsize += nfetch;
 

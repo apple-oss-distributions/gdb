@@ -1,5 +1,6 @@
 /* Data structures associated with breakpoints in GDB.
-   Copyright (C) 1992, 93, 94, 95, 96, 98, 1999 Free Software Foundation, Inc.
+   Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,6 +26,8 @@
 #include "value.h"
 
 #include "gdb-events.h"
+
+struct value;
 
 /* This is the maximum number of bytes a breakpoint instruction can take.
    Feel free to increase it.  It's just used in a few places to size
@@ -141,21 +144,21 @@ enum bptype
 
 /* States of enablement of breakpoint. */
 
-enum enable
+enum enable_state
   {
-    disabled,		/* The eventpoint is inactive, and cannot trigger. */
-    enabled,		/* The eventpoint is active, and can trigger. */
-    shlib_disabled,	/* The eventpoint's address is in an unloaded solib.
+    bp_disabled,	/* The eventpoint is inactive, and cannot trigger. */
+    bp_enabled,		/* The eventpoint is active, and can trigger. */
+    bp_shlib_disabled,	/* The eventpoint's address is in an unloaded solib.
 			   The eventpoint will be automatically enabled 
 			   and reset when that solib is loaded. */
-    call_disabled,	/* The eventpoint has been disabled while a call 
+    bp_call_disabled,	/* The eventpoint has been disabled while a call 
 			   into the inferior is "in flight", because some 
 			   eventpoints interfere with the implementation of 
 			   a call on some targets.  The eventpoint will be 
 			   automatically enabled and reset when the call 
 			   "lands" (either completes, or stops at another 
 			   eventpoint). */
-    permanent		/* There is a breakpoint instruction hard-wired into
+    bp_permanent	/* There is a breakpoint instruction hard-wired into
 			   the target's code.  Don't try to write another
 			   breakpoint instruction on top of it, or restore
 			   its value.  Step over it using the architecture's
@@ -167,10 +170,10 @@ enum enable
 
 enum bpdisp
   {
-    del,			/* Delete it */
-    del_at_next_stop,		/* Delete at next stop, whether hit or not */
-    disable,			/* Disable it */
-    donttouch			/* Leave it alone */
+    disp_del,			/* Delete it */
+    disp_del_at_next_stop,	/* Delete at next stop, whether hit or not */
+    disp_disable,		/* Disable it */
+    disp_donttouch		/* Leave it alone */
   };
 
 enum target_hw_bp_type
@@ -195,22 +198,23 @@ struct breakpoint
     /* Type of breakpoint. */
     enum bptype type;
     /* Zero means disabled; remember the info but don't break here.  */
-    enum enable enable;
+    enum enable_state enable_state;
     /* What to do with this breakpoint after we hit it. */
     enum bpdisp disposition;
     /* Number assigned to distinguish breakpoints.  */
     int number;
 
-    /* Address to break at, or NULL if not a breakpoint.  */
+    /* Address to break at.
+       Note that zero is a perfectly valid code address on some
+       platforms (for example, the mn10200 and mn10300 simulators).
+       NULL is not a special value for this field.  */
     CORE_ADDR address;
 
-    /* Line number of this address.  Only matters if address is
-       non-NULL.  */
+    /* Line number of this address.  */
 
     int line_number;
 
-    /* Source file name of this address.  Only matters if address is
-       non-NULL.  */
+    /* Source file name of this address.  */
 
     char *source_file;
 
@@ -225,11 +229,10 @@ struct breakpoint
        control of the target insert_breakpoint and remove_breakpoint routines.
        No other code should assume anything about the value(s) here.  */
     char shadow_contents[BREAKPOINT_MAX];
-    /* Nonzero if this breakpoint is now inserted.  Only matters if address
-       is non-NULL.  */
+    /* Nonzero if this breakpoint is now inserted.  */
     char inserted;
     /* Nonzero if this is not the first breakpoint in the list
-       for the given address.  Only matters if address is non-NULL.  */
+       for the given address.  */
     char duplicate;
     /* Chain of command lines to execute when this breakpoint is hit.  */
     struct command_line *commands;
@@ -239,8 +242,7 @@ struct breakpoint
     /* Conditional.  Break only if this expression's value is nonzero.  */
     struct expression *cond;
 
-    /* String we used to set the breakpoint (malloc'd).  Only matters if
-       address is non-NULL.  */
+    /* String we used to set the breakpoint (malloc'd).  */
     char *addr_string;
     /* Language we used to set the breakpoint.  */
     enum language language;
@@ -258,10 +260,10 @@ struct breakpoint
        valid anywhere (e.g. consists just of global symbols).  */
     struct block *exp_valid_block;
     /* Value of the watchpoint the last time we checked it.  */
-    value_ptr val;
+    struct value *val;
 
     /* Holds the value chain for a hardware watchpoint expression.  */
-    value_ptr val_chain;
+    struct value *val_chain;
 
     /* Holds the address of the related watchpoint_scope breakpoint
        when using watchpoints on local variables (might the concept
@@ -491,7 +493,7 @@ struct bpstats
     /* Commands left to be done.  */
     struct command_line *commands;
     /* Old value associated with a watchpoint.  */
-    value_ptr old_val;
+    struct value *old_val;
 
     /* Nonzero if this breakpoint tells us to print the frame.  */
     char print;
@@ -536,7 +538,7 @@ extern int breakpoint_inserted_here_p (CORE_ADDR);
 
 extern int frame_in_dummy (struct frame_info *);
 
-extern int breakpoint_thread_match (CORE_ADDR, int);
+extern int breakpoint_thread_match (CORE_ADDR, ptid_t);
 
 extern void until_break_command (char *, int);
 
@@ -615,7 +617,7 @@ extern void update_breakpoints_after_exec (void);
    be detached and allowed to run free.
 
    It is an error to use this function on the process whose id is
-   inferior_pid.  */
+   inferior_ptid.  */
 extern int detach_breakpoints (int);
 
 extern void enable_longjmp_breakpoint (void);
@@ -713,4 +715,6 @@ extern void delete_command (char *arg, int from_tty);
    remove fails. */
 extern int remove_hw_watchpoints (void);
 
+extern struct breakpoint *find_finish_breakpoint (void);
 #endif /* !defined (BREAKPOINT_H) */
+

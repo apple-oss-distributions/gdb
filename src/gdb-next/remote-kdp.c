@@ -18,14 +18,20 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
+/* HISTORY:
+ * Aug 2001: Derek Kumar
+ *           Added breakpoint packets, kdp-reattach and versioning support
+ *           and kdp_mourn_inferior()
+ */
 #include "ppc-reg.h"
 
 #include "defs.h"
 #include "inferior.h"
 #include "gdbcmd.h"
-#include "event-top.h"
 #include "event-loop.h"
+#include "event-top.h"
 #include "inf-loop.h"
+#include "regcache.h"
 
 #include "kdp-udp.h"
 #include "kdp-transactions.h"
@@ -64,6 +70,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define KDP_REMOTE_ID 3
 #endif
 
+#define KDP_MAX_BREAKPOINTS 100
+
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
@@ -83,6 +91,8 @@ static int kdp_host_type = -1;
 static int kdp_stopped = 0;
 static int kdp_timeout = 5000;
 static int kdp_retries = 10;
+static int remote_kdp_version = 0;
+static int remote_kdp_feature = 0;
 
 struct target_ops kdp_ops;
 
@@ -158,6 +168,64 @@ static int convert_host_type (unsigned int mach_type)
   }
 }
 
+static void kdp_reattach_command(char *args, int from_tty)
+{
+  kdp_return_t kdpret;
+  char **argv;
+  char *host;
+  unsigned int seqno;
+  
+  argv = buildargv (args);
+
+  if ((argv == NULL) || (argv[0] == NULL) || (argv[1] != NULL))
+    error ("usage: kdp-reattach <hostname>");
+
+  host = argv[0];
+
+  kdp_open(NULL, 0);
+
+  kdp_reset(&c);
+
+#if TARGET_POWERPC
+  kdp_set_little_endian (&c);
+#elif TARGET_I386
+  kdp_set_big_endian (&c);
+#else
+#error "unsupported architecture"
+#endif
+
+  kdpret = kdp_create (&c, logger, argv[0], kdp_default_port, kdp_timeout, kdp_retries);
+  if (kdpret != RR_SUCCESS) 
+    error ("unable to create connection for host \"%s\": %s", args, kdp_return_string (kdpret));
+  
+  c.request->reattach_req.hdr.request = KDP_REATTACH;
+  c.request->reattach_req.req_reply_port = c.reqport;
+
+  kdpret = kdp_transaction (&c, c.request, c.response, "kdp_reattach");
+  c.connected = 0;
+  if (kdpret != RR_SUCCESS) 
+    warning ("unable to disconnect host: %s", kdp_return_string (kdpret));
+      if (kdp_is_bound (&c)) 
+	{
+	  kdpret = kdp_destroy (&c);
+	  if (kdpret != RR_SUCCESS)
+	    error ("unable to deallocate KDP connection: %s", kdp_return_string (kdpret));
+	}
+
+  kdp_ops.to_has_all_memory = 0;
+  kdp_ops.to_has_memory = 0;
+  kdp_ops.to_has_stack = 0;
+  kdp_ops.to_has_registers = 0;
+  kdp_ops.to_has_execution = 0;
+
+  update_current_target ();
+  cleanup_target (&current_target);
+
+  kdp_mourn_inferior();
+
+  kdp_open(NULL, 0);
+  kdp_attach(host, 0);
+}
 static void
 kdp_detach_command (args, from_tty)
      char *args;
@@ -206,6 +274,63 @@ kdp_detach_command (args, from_tty)
   if (kdpret != RR_SUCCESS) {
     error ("unable to destroy connection: %s", kdp_return_string (kdpret));
   }
+}
+
+static int
+kdp_insert_breakpoint(CORE_ADDR addr, char *contents_cache)
+{
+  kdp_return_t kdpret;
+
+  if (! kdp_is_connected (&c)) {
+    logger (KDP_LOG_DEBUG, "kdp_insert_breakpoint: unable to set breakpoint - (not connected)");
+    return -1;
+  }
+  
+  c.request->breakpoint_req.hdr.request = KDP_BREAKPOINT_SET;
+  c.request->breakpoint_req.address = addr;
+  kdpret = kdp_transaction (&c, c.request, c.response, "kdp_insert_breakpoint");
+  logger (KDP_LOG_DEBUG, "kdp_insert_breakpoint: kdp_transaction returned %d\n", kdpret);
+  if (c.response->breakpoint_reply.error != RR_SUCCESS)
+    {
+      /* We've reached the maximum number of breakpoints the kernel can support
+	 so revert to the old model of directly writing to memory */
+      if (c.response->breakpoint_reply.error == KDP_MAX_BREAKPOINTS)
+	{
+	    kdp_ops.to_insert_breakpoint = memory_insert_breakpoint;
+	    kdp_ops.to_remove_breakpoint = memory_remove_breakpoint;
+	    printf_unfiltered("Max number of kernel breakpoints reached,"
+			      "Reverting to memory_insert_breakpoint.\n");
+	    memory_insert_breakpoint(addr, contents_cache);
+	    return 0;
+	}
+      kdpret = c.response->breakpoint_reply.error;
+      logger (KDP_LOG_DEBUG, "kdp_insert_breakpoint: response contained error code %d\n", kdpret);
+      return -1;
+    }
+  return 0;
+}
+
+static int
+kdp_remove_breakpoint(CORE_ADDR addr, char *contents_cache)
+{
+  kdp_return_t kdpret;
+
+  if (! kdp_is_connected (&c)) {
+    logger (KDP_LOG_DEBUG, "kdp_remove_breakpoint: unable to remove breakpoint - (not connected)");
+    return -1;
+  }
+  
+  c.request->breakpoint_req.hdr.request = KDP_BREAKPOINT_REMOVE;
+  c.request->breakpoint_req.address = addr;
+  kdpret = kdp_transaction (&c, c.request, c.response, "kdp_remove_breakpoint");
+  logger (KDP_LOG_DEBUG, "kdp_remove_breakpoint: kdp_transaction returned %d\n", kdpret);
+  if (c.response->breakpoint_reply.error != RR_SUCCESS)
+    {
+      kdpret = c.response->breakpoint_reply.error;
+      logger (KDP_LOG_DEBUG, "kdp_remove_breakpoint: response contained error code %d\n", kdpret);
+      return -1;
+    }
+  return 0;
 }
 
 static void
@@ -292,13 +417,34 @@ kdp_attach (args, from_tty)
 
     kdp_host_type = convert_host_type (c.response->hostinfo_reply.cpu_type);
 
+
     if (kdp_host_type == -1) {
       warning ("kdp_attach: unknown host type 0x%lx; trying default (0x%lx)\n",
 	       (unsigned long) c.response->hostinfo_reply.cpu_type,
 	       (unsigned long) kdp_default_host_type);
       kdp_host_type = convert_host_type (kdp_default_host_type);
     }
-    
+
+    c.request->readregs_req.hdr.request = KDP_VERSION;
+
+    kdpret = kdp_transaction (&c, c.request, c.response, "kdp_attach");
+    if (kdpret != RR_SUCCESS) {
+      kdpret2 = kdp_disconnect (&c);
+      if (kdpret2 != RR_SUCCESS) {
+	warning ("unable to disconnect from host after error determining protocol version: %s",
+		 kdp_return_string (kdpret2));
+      }
+      kdpret2 = kdp_destroy (&c);
+      if (kdpret2 != RR_SUCCESS) {
+	warning ("unable to destroy host connection after error determining protocol version: %s",
+		 kdp_return_string (kdpret2));
+      }
+      error ("kdp_attach: unable to determine protocol version: %s", kdp_return_string (kdpret));
+    }
+
+    remote_kdp_version = c.response->version_reply.version;
+    remote_kdp_feature = c.response->version_reply.feature;
+
     if (kdp_host_type == -1) {
       kdpret2 = kdp_disconnect (&c);
       if (kdpret2 != RR_SUCCESS) {
@@ -310,10 +456,16 @@ kdp_attach (args, from_tty)
 	warning ("unable to destroy host connection after error determining cpu type: %s",
 		 kdp_return_string (kdpret2));
       }
-      error ("kdp_attach: unknown host type 0x%lx\n", c.response->hostinfo_reply.cpu_type);
+      error ("kdp_attach: unknown host type");
     }
   }
-  
+
+  /* Use breakpoint packets only if the kernel supports them */
+  if ((remote_kdp_version >= 10) && (remote_kdp_feature & KDP_FEATURE_BP))
+    {
+      kdp_ops.to_insert_breakpoint = kdp_insert_breakpoint;
+      kdp_ops.to_remove_breakpoint = kdp_remove_breakpoint;
+    }
   kdp_ops.to_has_all_memory = 1;
   kdp_ops.to_has_memory = 1;
   kdp_ops.to_has_stack = 1;
@@ -323,8 +475,10 @@ kdp_attach (args, from_tty)
   update_current_target ();
   cleanup_target (&current_target);
 
-  inferior_pid = KDP_REMOTE_ID;
+  inferior_ptid = pid_to_ptid (KDP_REMOTE_ID);
   kdp_stopped = 1;
+
+  printf_unfiltered("Connected.\n");
 }
 
 static void
@@ -349,7 +503,7 @@ kdp_detach (args, from_tty)
 
   update_current_target ();
   cleanup_target (&current_target);
-  
+
   if (kdp_is_bound (&c)) {
     kdpret = kdp_destroy (&c);
     if (kdpret != RR_SUCCESS) {
@@ -357,6 +511,8 @@ kdp_detach (args, from_tty)
     }
   }
   kdp_mourn_inferior();
+
+  printf_unfiltered("Disconnected.\n");
 }
 
 static void
@@ -401,7 +557,8 @@ kdp_set_trace_bit (int step)
 
 static void
 kdp_resume (pid, step, sig)
-     int pid, step;
+     ptid_t pid;
+     int step;
      enum target_signal sig;
 {
   kdp_return_t kdpret;
@@ -417,7 +574,11 @@ kdp_resume (pid, step, sig)
   }
     
   c.request->resumecpus_req.hdr.request = KDP_RESUMECPUS;
-  c.request->resumecpus_req.cpu_mask = ~0L;
+
+  if (proceed_to_finish || (step_over_calls != STEP_OVER_UNDEBUGGABLE))
+    c.request->resumecpus_req.cpu_mask = 1L;
+  else
+    c.request->resumecpus_req.cpu_mask = ~0L;
 	
   kdpret = kdp_transaction (&c, c.request, c.response, "kdp_resume");
   if (kdpret != RR_SUCCESS) {
@@ -433,18 +594,16 @@ kdp_resume (pid, step, sig)
     target_executing = 1;
 }
 
-static int
-kdp_wait (pid, status)
-     int pid;
-     struct target_waitstatus *status;
+static ptid_t
+kdp_wait (ptid_t pid, struct target_waitstatus *status, gdb_client_data client_data)
 {
   kdp_return_t kdpret;
 
-  if (pid == -1) { pid = KDP_REMOTE_ID; }
-  if (pid != KDP_REMOTE_ID) {
+  if (PIDGET (pid) == -1) { pid = pid_to_ptid (KDP_REMOTE_ID); }
+  if (PIDGET (pid) != KDP_REMOTE_ID) {
     error ("kdp: unable to switch to process-id %d", pid);
   }
-  
+
   if (! kdp_is_connected (&c)) {
     error ("kdp: unable to wait for activity (not connected)");
   }
@@ -456,6 +615,7 @@ kdp_wait (pid, status)
   }
   
   kdpret = kdp_exception_wait (&c, c.response, 0);
+
   if (kdpret != RR_SUCCESS) {
     error ("unable to wait for result from host: %s\n",
 	   kdp_return_string (kdpret));
@@ -953,8 +1113,8 @@ async_remote_interrupt_twice (gdb_client_data arg)
 {
   if (target_executing)
     {
-      interrupt_query ();
       signal (SIGINT, handle_remote_sigint);
+      interrupt_query ();
     }
 }
 
@@ -1025,22 +1185,12 @@ kdp_file_handler (int error, gdb_client_data client_data)
   async_client_callback (INF_REG_EVENT, async_client_context);
 }
 
-typedef struct gdb_event gdb_event;
-typedef void (event_handler_func) (int);
-
-struct gdb_event
-  {
-    event_handler_func *proc;	/* Procedure to call to service this event. */
-    int fd;			/* File descriptor that is ready. */
-    struct gdb_event *next_event;	/* Next in list of events or NULL. */
-  };
-
 static void
 kdp_async (void (*callback) (enum inferior_event_type event_type, 
 			      void *context), void *context)
 {
   if (current_target.to_async_mask_value == 0)
-    internal_error ("Calling remote_async when async is masked");
+    internal_error (__FILE__, __LINE__, "Calling remote_async when async is masked");
 
   if (callback != NULL)
     {
@@ -1061,12 +1211,8 @@ kdp_async (void (*callback) (enum inferior_event_type event_type,
 
   if ((callback != NULL) && (c.saved_exception_pending)) {
 
-    gdb_event *event;
+    gdb_queue_event (kdp_file_handler, (void *) 0, TAIL);
 
-    event = (gdb_event *) xmalloc (sizeof (gdb_event));
-    event->proc = kdp_file_handler;
-    event->fd = 0;
-    async_queue_event (event, TAIL);
   }
 }
 
@@ -1076,10 +1222,7 @@ init_kdp_ops ()
   kdp_ops.to_shortname = "remote-kdp";
   kdp_ops.to_longname = "Remote NeXT or Mac OS X system via KDP";
   kdp_ops.to_doc = "Remotely debug a NeXT or Mac OS X system using KDP\n\
-Arguments are\n\
-`hostname [port-number]'\n\
-    To connect via the network, where hostname and port-number specify the\n\
-    host and port where you can connect via KDP.";
+    Use the attach <hostname> command subsequently to connect via KDP.";
   kdp_ops.to_open = kdp_open;
   kdp_ops.to_close = kdp_close;
   kdp_ops.to_attach = kdp_attach;
@@ -1139,6 +1282,8 @@ _initialize_remote_kdp ()
   init_kdp_ops ();
   add_target (&kdp_ops);
 
+  add_com ("kdp-reattach", class_run, kdp_reattach_command,
+	   "Re-attach to a (possibly connected) remote NeXT or Mac OS X kernel.\nThe kernel must support the reattach packet.");
   add_com ("kdp-detach", class_run, kdp_detach_command,
 	   "Reset a (possibly disconnected) remote NeXT or Mac OS X kernel.\n");
 

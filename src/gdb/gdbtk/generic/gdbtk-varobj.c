@@ -1,5 +1,5 @@
 /* Variable user interface layer for GDB, the GNU debugger.
-   Copyright 1999 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,7 +24,7 @@
 
 #include <tcl.h>
 #include "gdbtk.h"
-
+#include "gdbtk-cmds.h"
 
 /*
  * Public functions defined in this file
@@ -61,11 +61,11 @@ static int variable_type (Tcl_Interp *, int, Tcl_Obj * CONST[],
 static int variable_value (Tcl_Interp *, int, Tcl_Obj * CONST[],
 			   struct varobj *);
 
-static Tcl_Obj *variable_update (Tcl_Interp * interp, struct varobj *var);
+static Tcl_Obj *variable_update (Tcl_Interp * interp, struct varobj **var);
 
 /* Helper functions for the above subcommands. */
 
-static void install_variable (Tcl_Interp *, char *, struct varobj *);
+static void install_variable (Tcl_Interp *, char *);
 
 static void uninstall_variable (Tcl_Interp *, char *);
 
@@ -89,7 +89,7 @@ gdb_variable_init (interp)
 
   if (!initialized)
     {
-      result = Tcl_CreateObjCommand (interp, "gdb_variable", call_wrapper,
+      result = Tcl_CreateObjCommand (interp, "gdb_variable", gdbtk_call_wrapper,
 				   (ClientData) gdb_variable_command, NULL);
       if (result == NULL)
 	return TCL_ERROR;
@@ -201,8 +201,16 @@ variable_obj_command (clientData, interp, objc, objv)
     "update",
     NULL
   };
-  struct varobj *var = (struct varobj *) clientData;
+  struct varobj *var;
+  char *varobj_name;
   int index, result;
+  
+  /* Get the current handle for this variable token (name). */
+  varobj_name = Tcl_GetStringFromObj (objv[0], NULL);
+  if (varobj_name == NULL)
+    return TCL_ERROR;
+  var = varobj_get_handle (varobj_name);
+  
 
   if (objc < 2)
     {
@@ -270,7 +278,7 @@ variable_obj_command (clientData, interp, objc, objv)
     case VARIABLE_UPDATE:
       /* Only root variables can be updated */
       {
-	Tcl_Obj *obj = variable_update (interp, var);
+	Tcl_Obj *obj = variable_update (interp, &var);
 	Tcl_SetObjResult (interp, obj);
       }
       break;
@@ -356,7 +364,7 @@ variable_create (interp, objc, objv)
 	  {
 	    char *str;
 	    str = Tcl_GetStringFromObj (objv[1], NULL);
-	    frame = parse_and_eval_address (str);
+	    frame = string_to_core_addr (str);
 	    how_specified = USE_SPECIFIED_FRAME;
 	    objc--;
 	    objv++;
@@ -378,7 +386,7 @@ variable_create (interp, objc, objv)
     {
       /* Install a command into the interpreter that represents this
          object */
-      install_variable (interp, obj_name, var);
+      install_variable (interp, obj_name);
       Tcl_SetObjResult (interp, Tcl_NewStringObj (obj_name, -1));
       result_ptr->flags |= GDBTK_IN_TCL_RESULT;
 
@@ -436,7 +444,7 @@ variable_children (interp, var)
       /* Add child to result list and install the Tcl command for it. */
       Tcl_ListObjAppendElement (NULL, list,
 				Tcl_NewStringObj (childname, -1));
-      install_variable (interp, childname, *vc);
+      install_variable (interp, childname);
       vc++;
     }
 
@@ -450,7 +458,7 @@ variable_children (interp, var)
 static Tcl_Obj *
 variable_update (interp, var)
      Tcl_Interp *interp;
-     struct varobj *var;
+     struct varobj **var;
 {
   Tcl_Obj *changed;
   struct varobj **changelist;
@@ -502,11 +510,9 @@ variable_format (interp, objc, objv, var)
 	varobj_set_display_format (var, FORMAT_OCTAL);
       else
 	{
-	  Tcl_Obj *obj = Tcl_NewStringObj (NULL, 0);
-	  Tcl_AppendStringsToObj (obj, "unknown display format \"",
-				  fmt, "\": must be: \"natural\", \"binary\""
-		      ", \"decimal\", \"hexadecimal\", or \"octal\"", NULL);
-	  Tcl_SetObjResult (interp, obj);
+	  gdbtk_set_result (interp, "unknown display format \"",
+		      fmt, "\": must be: \"natural\", \"binary\""
+		      ", \"decimal\", \"hexadecimal\", or \"octal\"");
 	  return TCL_ERROR;
 	}
     }
@@ -589,9 +595,9 @@ variable_value (interp, objc, objv, var)
 	  s = Tcl_GetStringFromObj (objv[2], NULL);
 	  if (!varobj_set_value (var, s))
             {
-              r = error_last_message ();
-              Tcl_SetObjResult (interp, Tcl_NewStringObj (r, -1));
-              FREEIF (r);
+	      r = error_last_message();
+	      gdbtk_set_result (interp, "%s", r);
+	      xfree (r);
 	      return TCL_ERROR;
             }
 	}
@@ -603,7 +609,12 @@ variable_value (interp, objc, objv, var)
   r = varobj_get_value (var);
 
   if (r == NULL)
-    return TCL_ERROR;
+    {
+      char *err = error_last_message ();
+      gdbtk_set_result (interp, "%s", err);
+      xfree (err);
+      return TCL_ERROR;
+    }
   else
     {
       Tcl_SetObjResult (interp, Tcl_NewStringObj (r, -1));
@@ -617,13 +628,12 @@ variable_value (interp, objc, objv, var)
 /* Install the given variable VAR into the tcl interpreter with
    the object name NAME. */
 static void
-install_variable (interp, name, var)
+install_variable (interp, name)
      Tcl_Interp *interp;
      char *name;
-     struct varobj *var;
 {
   Tcl_CreateObjCommand (interp, name, variable_obj_command,
-			(ClientData) var, NULL);
+			NULL, NULL);
 }
 
 /* Unistall the object VAR in the tcl interpreter. */

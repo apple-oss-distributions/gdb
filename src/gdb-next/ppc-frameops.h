@@ -8,14 +8,6 @@ struct frame_saved_regs;
 struct value;
 struct type;
 
-#define INSTRUCTION_SIZE 4
-
-#define CALL_DUMMY_START_OFFSET      ((32 + 6) * INSTRUCTION_SIZE)
-#define	TOC_ADDR_OFFSET              CALL_DUMMY_START_OFFSET
-#define	TARGET_ADDR_OFFSET           (CALL_DUMMY_START_OFFSET + (2 * INSTRUCTION_SIZE))
-#define CALL_DUMMY_BREAKPOINT_OFFSET (CALL_DUMMY_START_OFFSET + (6 * INSTRUCTION_SIZE))
-#define CALL_DUMMY_LENGTH            ((32 + 16 + 32) * INSTRUCTION_SIZE)
-
 void ppc_push_dummy_frame PARAMS (());
 
 void ppc_pop_frame PARAMS (());

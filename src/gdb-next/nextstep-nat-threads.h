@@ -4,6 +4,7 @@
 #if defined (USE_PTHREADS)
 
 #include <pthread.h>
+#include <sched.h>
 
 typedef void* (*pthread_fn_t) (void *arg);
 

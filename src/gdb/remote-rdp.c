@@ -1,5 +1,7 @@
 /* Remote debugging for the ARM RDP interface.
-   Copyright 1994, 1995 Free Software Foundation, Inc.
+
+   Copyright 1994, 1995, 1998, 1999, 2000, 2001, 2002 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,7 +40,6 @@
 
 #include "defs.h"
 #include "inferior.h"
-#include "gdb_wait.h"
 #include "value.h"
 #include "callback.h"
 #include "command.h"
@@ -48,13 +49,15 @@
 #include "remote-utils.h"
 #include "gdb_string.h"
 #include "gdbcore.h"
+#include "regcache.h"
+#include "serial.h"
 
 #ifdef HAVE_TIME_H
 #include <time.h>
 #endif
 
 extern struct target_ops remote_rdp_ops;
-static serial_t io;
+static struct serial *io;
 static host_callback *callback = &default_callback;
 
 struct
@@ -167,10 +170,10 @@ static int timeout = 2;
 static char *commandline = NULL;
 
 static int
-remote_rdp_xfer_inferior_memory (CORE_ADDR memaddr,
-				 char *myaddr,
-				 int len,
-				 int write, struct target_ops *target);
+remote_rdp_xfer_inferior_memory (CORE_ADDR memaddr, char *myaddr, int len,
+				 int write, 
+				 struct mem_attrib *attrib,
+				 struct target_ops *target);
 
 
 /* Stuff for talking to the serial layer. */
@@ -178,7 +181,7 @@ remote_rdp_xfer_inferior_memory (CORE_ADDR memaddr,
 static unsigned char
 get_byte (void)
 {
-  int c = SERIAL_READCHAR (io, timeout);
+  int c = serial_readchar (io, timeout);
 
   if (remote_debug)
     fprintf_unfiltered (gdb_stdlog, "[%02x]\n", c);
@@ -215,7 +218,7 @@ put_byte (char val)
 {
   if (remote_debug)
     fprintf_unfiltered (gdb_stdlog, "(%02x)\n", val);
-  SERIAL_WRITE (io, &val, 1);
+  serial_write (io, &val, 1);
 }
 
 static void
@@ -231,7 +234,7 @@ put_word (int val)
   if (remote_debug)
     fprintf_unfiltered (gdb_stdlog, "(%04x)", val);
 
-  SERIAL_WRITE (io, b, 4);
+  serial_write (io, b, 4);
 }
 
 
@@ -262,8 +265,8 @@ rdp_init (int cold, int tty)
       int restype;
       QUIT;
 
-      SERIAL_FLUSH_INPUT (io);
-      SERIAL_FLUSH_OUTPUT (io);
+      serial_flush_input (io);
+      serial_flush_output (io);
 
       if (tty)
 	printf_unfiltered ("Trying to connect at %d baud.\n", baudtry);
@@ -275,7 +278,7 @@ rdp_init (int cold, int tty)
       if (cold)
 	{
 	  put_byte (RDP_RESET);
-	  while ((restype = SERIAL_READCHAR (io, 1)) > 0)
+	  while ((restype = serial_readchar (io, 1)) > 0)
 	    {
 	      switch (restype)
 		{
@@ -302,7 +305,7 @@ rdp_init (int cold, int tty)
       put_byte (type | RDP_OPEN_TYPE_RETURN_SEX);
       put_word (0);
 
-      while (!sync && (restype = SERIAL_READCHAR (io, 1)) > 0)
+      while (!sync && (restype = serial_readchar (io, 1)) > 0)
 	{
 	  if (remote_debug)
 	    fprintf_unfiltered (gdb_stdlog, "[%02x]\n", restype);
@@ -313,13 +316,13 @@ rdp_init (int cold, int tty)
 	      break;
 
 	    case RDP_RESET:
-	      while ((restype = SERIAL_READCHAR (io, 1)) == RDP_RESET)
+	      while ((restype = serial_readchar (io, 1)) == RDP_RESET)
 		;
 	      do
 		{
 		  printf_unfiltered ("%c", isgraph (restype) ? restype : ' ');
 		}
-	      while ((restype = SERIAL_READCHAR (io, 1)) > 0);
+	      while ((restype = serial_readchar (io, 1)) > 0);
 
 	      if (tty)
 		{
@@ -337,7 +340,7 @@ rdp_init (int cold, int tty)
 
 	    case RDP_RES_VALUE:
 	      {
-		int resval = SERIAL_READCHAR (io, 1);
+		int resval = serial_readchar (io, 1);
 
 		if (remote_debug)
 		  fprintf_unfiltered (gdb_stdlog, "[%02x]\n", resval);
@@ -347,11 +350,11 @@ rdp_init (int cold, int tty)
 		  case SERIAL_TIMEOUT:
 		    break;
 		  case RDP_RES_VALUE_LITTLE_ENDIAN:
-		    target_byte_order = LITTLE_ENDIAN;
+		    target_byte_order = BFD_ENDIAN_LITTLE;
 		    sync = 1;
 		    break;
 		  case RDP_RES_VALUE_BIG_ENDIAN:
-		    target_byte_order = BIG_ENDIAN;
+		    target_byte_order = BFD_ENDIAN_BIG;
 		    sync = 1;
 		    break;
 		  default:
@@ -457,13 +460,13 @@ send_rdp (char *template,...)
 	  pc = va_arg (alist, char *);
 	  val = va_arg (alist, int);
 	  dst = buf;
-	  SERIAL_WRITE (io, pc, val);
+	  serial_write (io, pc, val);
 	  break;
 	case '-':
 	  /* Send whats in the queue */
 	  if (dst != buf)
 	    {
-	      SERIAL_WRITE (io, buf, dst - buf);
+	      serial_write (io, buf, dst - buf);
 	      dst = buf;
 	    }
 	  break;
@@ -472,13 +475,13 @@ send_rdp (char *template,...)
 	  *pi = get_byte ();
 	  break;
 	default:
-	  abort ();
+	  internal_error (__FILE__, __LINE__, "failed internal consistency check");
 	}
     }
   va_end (alist);
 
   if (dst != buf)
-    abort ();
+    internal_error (__FILE__, __LINE__, "failed internal consistency check");
 }
 
 
@@ -696,15 +699,9 @@ rdp_set_command_line (char *command, char *args)
    */
 
   if (commandline != NULL)
-    free (commandline);
+    xfree (commandline);
 
-  commandline = malloc (strlen (command) + strlen (args) + 2);
-  if (commandline != NULL)
-    {
-      strcpy (commandline, command);
-      strcat (commandline, " ");
-      strcat (commandline, args);
-    }
+  xasprintf (&commandline, "%s %s", command, args);
 }
 
 static void
@@ -873,7 +870,7 @@ exec_swi (int swi, argsin *args)
 	char *copy = alloca (args[2].n);
 	int done = callback->read (callback, args[0].n, copy, args[2].n);
 	if (done > 0)
-	  remote_rdp_xfer_inferior_memory (args[1].n, copy, done, 1, 0);
+	  remote_rdp_xfer_inferior_memory (args[1].n, copy, done, 1, 0, 0);
 	args->n = args[2].n - done;
 	return 1;
       }
@@ -905,10 +902,10 @@ exec_swi (int swi, argsin *args)
 	      commandline[255] = '\0';
 	    }
 	  remote_rdp_xfer_inferior_memory (args[0].n,
-					   commandline, len + 1, 1, 0);
+					   commandline, len + 1, 1, 0, 0);
 	}
       else
-	remote_rdp_xfer_inferior_memory (args[0].n, "", 1, 1, 0);
+	remote_rdp_xfer_inferior_memory (args[0].n, "", 1, 1, 0, 0);
       return 1;
 
     default:
@@ -955,6 +952,7 @@ handle_swi (void)
 					       buf,
 					       len,
 					       0,
+					       0,
 					       0);
 	    }
 	  else
@@ -998,12 +996,12 @@ rdp_execute_finish (void)
   while (running)
     {
       int res;
-      res = SERIAL_READCHAR (io, 1);
+      res = serial_readchar (io, 1);
       while (res == SERIAL_TIMEOUT)
 	{
 	  QUIT;
 	  printf_filtered ("Waiting for target..\n");
-	  res = SERIAL_READCHAR (io, 1);
+	  res = serial_readchar (io, 1);
 	}
 
       switch (res)
@@ -1114,12 +1112,12 @@ remote_rdp_open (char *args, int from_tty)
 
   target_preopen (from_tty);
 
-  io = SERIAL_OPEN (args);
+  io = serial_open (args);
 
   if (!io)
     perror_with_name (args);
 
-  SERIAL_RAW (io);
+  serial_raw (io);
 
   rdp_init (1, from_tty);
 
@@ -1177,7 +1175,7 @@ remote_rdp_close (int quitting)
 {
   callback->shutdown (callback);
   if (io)
-    SERIAL_CLOSE (io);
+    serial_close (io);
   io = 0;
 }
 
@@ -1187,7 +1185,7 @@ remote_rdp_close (int quitting)
    to the target, or zero for no signal.  */
 
 static void
-remote_rdp_resume (int pid, int step, enum target_signal siggnal)
+remote_rdp_resume (ptid_t ptid, int step, enum target_signal siggnal)
 {
   if (step)
     rdp_step ();
@@ -1199,8 +1197,8 @@ remote_rdp_resume (int pid, int step, enum target_signal siggnal)
    or -1 in case of error; store status through argument pointer STATUS,
    just as `wait' would.  */
 
-static int
-remote_rdp_wait (int pid, struct target_waitstatus *status)
+static ptid_t
+remote_rdp_wait (ptid_t ptid, struct target_waitstatus *status)
 {
   switch (ds.rdi_stopped_status)
     {
@@ -1226,7 +1224,7 @@ remote_rdp_wait (int pid, struct target_waitstatus *status)
 #endif
     }
 
-  return inferior_pid;
+  return inferior_ptid;
 }
 
 /* Get ready to modify the registers array.  On machines which store
@@ -1249,7 +1247,8 @@ remote_rdp_prepare_to_store (void)
 
 static int
 remote_rdp_xfer_inferior_memory (CORE_ADDR memaddr, char *myaddr, int len,
-				 int write, struct target_ops *target)
+				 int write, struct mem_attrib *attrib,
+				 struct target_ops *target)
 {
   /* I infer from D Taylor's code that there's a limit on the amount
      we can transfer in one chunk.. */
@@ -1350,7 +1349,7 @@ remote_rdp_create_inferior (char *exec_file, char *allargs, char **env)
   /* This gives us a chance to set up the command line */
   rdp_set_command_line (exec_file, allargs);
 
-  inferior_pid = 42;
+  inferior_ptid = pid_to_ptid (42);
   insert_breakpoints ();	/* Needed to get correct instruction in cache */
 
   /*
@@ -1435,7 +1434,6 @@ init_remote_rdp_ops (void)
   remote_rdp_ops.to_thread_alive = 0;
   remote_rdp_ops.to_stop = 0;
   remote_rdp_ops.to_pid_to_exec_file = NULL;
-  remote_rdp_ops.to_core_file_to_sym_file = NULL;
   remote_rdp_ops.to_stratum = process_stratum;
   remote_rdp_ops.DONT_USE = NULL;
   remote_rdp_ops.to_has_all_memory = 1;

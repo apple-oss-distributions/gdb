@@ -235,11 +235,7 @@ ppc_parse_instructions (start, end, props)
 	   is bits 6-31, with the last two bits zeroed, sign extended and
 	   added to the pc. */
 	
-	struct objfile *objfile;
-	struct obj_section *osect;
-	asection *sect;
 	struct minimal_symbol *msymbol;
-	CORE_ADDR sect_addr;
 	LONGEST branch_target;
 	int recognized_fn_in_prolog = 0;
 	
@@ -262,16 +258,9 @@ ppc_parse_instructions (start, end, props)
 
 	branch_target += pc + 4;
 	
-	ALL_OBJSECTIONS (objfile, osect)
+	msymbol = lookup_minimal_symbol_by_pc (branch_target);
+	if (msymbol)
 	  {
-	    sect = osect->the_bfd_section;
-	    sect_addr = overlay_mapped_address (branch_target, sect);
-	    
-	    if (osect->addr <= sect_addr 
-		&& sect_addr < osect->endaddr 
-		&& (msymbol = lookup_minimal_symbol_by_pc_section (sect_addr, 
-								   sect)))
-	      {
 		if (strcmp (SYMBOL_SOURCE_NAME (msymbol), "save_world") == 0)
 		  {
 		    /* save_world currently saves all the volatile registers,
@@ -304,7 +293,7 @@ ppc_parse_instructions (start, end, props)
 
 		    /* Decode the actual branch target to find the
 		       lowest register that is stored: */
-                     if (safe_read_memory_unsigned_integer (branch_target, 4, 
+		if (!safe_read_memory_unsigned_integer (branch_target, 4, 
                                                             &store_insn))
                        {
                          ppc_debug ("ppc_parse_instructions: Got an error reading at 0x%lx",
@@ -336,9 +325,7 @@ ppc_parse_instructions (start, end, props)
 
 		    recognized_fn_in_prolog = 1;
 		  }
-		break;
 	      }
-	  }
 	/* If we didn't recognize this function, we are probably not
 	   in the prologue, so let's get out of here... */
 	if (!recognized_fn_in_prolog)
@@ -383,6 +370,7 @@ ppc_parse_instructions (start, end, props)
           {
             props->lr_valid_again = pc;
           }
+	continue;
       }
     else if ((op & 0xfc1fffff) == 0x7c000026)  /* mfcr Rx */
       {

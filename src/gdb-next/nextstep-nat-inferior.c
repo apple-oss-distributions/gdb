@@ -1,17 +1,3 @@
-#include "nextstep-nat-dyld.h"
-#include "nextstep-nat-inferior.h"
-#include "nextstep-nat-infthread.h"
-#include "nextstep-nat-inferior-debug.h"
-#include "nextstep-nat-mutils.h"
-#include "nextstep-nat-sigthread.h"
-#include "nextstep-nat-threads.h"
-#include "nextstep-xdep.h"
-#include "nextstep-nat-inferior-util.h"
-
-#if WITH_CFM
-#include "nextstep-nat-cfm.h"
-#endif
-
 #include "defs.h"
 #include "top.h"
 #include "inferior.h"
@@ -22,6 +8,7 @@
 #include "gdbcmd.h"
 #include "gdbcore.h"
 #include "gdbthread.h"
+#include "regcache.h"
 #include "environ.h"
 #include "event-top.h"
 #include "event-loop.h"
@@ -39,6 +26,21 @@
 #include <ctype.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
+
+#include "nextstep-nat-dyld.h"
+#include "nextstep-nat-inferior.h"
+#include "nextstep-nat-infthread.h"
+#include "nextstep-nat-inferior-debug.h"
+#include "nextstep-nat-mutils.h"
+#include "nextstep-nat-excthread.h"
+#include "nextstep-nat-sigthread.h"
+#include "nextstep-nat-threads.h"
+#include "nextstep-xdep.h"
+#include "nextstep-nat-inferior-util.h"
+
+#if WITH_CFM
+#include "nextstep-nat-cfm.h"
+#endif
 
 #define _dyld_debug_make_runnable(a, b) DYLD_FAILURE
 #define _dyld_debug_restore_runnable(a, b) DYLD_FAILURE
@@ -68,25 +70,73 @@ int inferior_handle_all_events_flag = 1;
 struct target_ops next_child_ops;
 struct target_ops next_exec_ops;
 
+/* From inftarg.c */
+extern void init_child_ops (void);
+extern void init_exec_ops (void);
+
 #if WITH_CFM
 int inferior_auto_start_cfm_flag = 1;
 #endif /* WITH_CFM */
 
 int inferior_auto_start_dyld_flag = 1;
 
-static void next_handle_signal
-(next_signal_thread_message *msg, struct target_waitstatus *status);
+int next_fake_resume = 0;
 
-static void next_handle_exception
-(next_exception_thread_message *msg, struct target_waitstatus *status);
+enum next_source_type {
+  NEXT_SOURCE_NONE = 0x0,
+  NEXT_SOURCE_EXCEPTION = 0x1,
+  NEXT_SOURCE_SIGNAL = 0x2,
+  NEXT_SOURCE_CFM = 0x4,
+  NEXT_SOURCE_ALL = 0x7
+};
 
-static void next_process_events (struct next_inferior_status *ns, struct target_waitstatus *status, int timeout);
+struct next_pending_event
+{
+  enum next_source_type type;
+  unsigned char *buf;
+  struct next_pending_event *next;
+};
+
+struct next_pending_event *pending_event_chain, *pending_event_tail;
+
+static void (*async_client_callback) (enum inferior_event_type event_type, 
+				      void *context);
+static void *async_client_context;
+
+static enum next_source_type next_fetch_event (struct next_inferior_status *inferior, 
+					       unsigned char *buf, size_t len, 
+					       unsigned int flags, int timeout);
+
+static int next_service_event (enum next_source_type source,
+			       unsigned char *buf, 
+			       struct target_waitstatus *status);
+
+static void next_handle_signal (next_signal_thread_message *msg, 
+				struct target_waitstatus *status);
+
+static void next_handle_exception (next_exception_thread_message *msg, 
+				  struct target_waitstatus *status);
+
+static int next_process_events (struct next_inferior_status *ns, 
+				struct target_waitstatus *status, 
+				int timeout, int service_first_event);
+
+static void next_add_to_pending_events (enum next_source_type, unsigned char *buf);
+
+static int next_post_pending_event (void);
+static void next_pending_event_handler (void *data);
+static ptid_t next_process_pending_event (struct next_inferior_status *ns, 
+					  struct target_waitstatus *status,
+					  gdb_client_data client_data);
+
+static void next_clear_pending_events ();
 
 static void next_child_stop (void);
 
-static void next_child_resume (int tpid, int step, enum target_signal signal);
+static void next_child_resume (ptid_t ptid, int step, enum target_signal signal);
 
-static int next_mach_wait (int pid, struct target_waitstatus *status);
+static ptid_t next_mach_wait (ptid_t ptid, struct target_waitstatus *status, 
+			      gdb_client_data client_data);
 
 static void next_mourn_inferior ();
 
@@ -101,18 +151,22 @@ static void next_kill_inferior_safe ();
 
 static void next_ptrace_me ();
 
-static int next_ptrace_him (int pid);
+static void next_ptrace_him (int pid);
 
 static void next_child_create_inferior (char *exec_file, char *allargs, char **env);
 
 static void next_child_files_info (struct target_ops *ops);
 
-static char *next_mach_pid_to_str (int tpid);
+static char *next_mach_pid_to_str (ptid_t tpid);
 
-static int next_child_thread_alive (int tpid);
+static int next_child_thread_alive (ptid_t tpid);
 
-static void next_handle_signal
-(next_signal_thread_message *msg, struct target_waitstatus *status)
+static void next_set_auto_start_dyld (char *args, int from_tty, 
+				      struct cmd_list_element *c);
+
+static void 
+next_handle_signal (next_signal_thread_message *msg, 
+		    struct target_waitstatus *status)
 {
   kern_return_t kret;
 
@@ -121,27 +175,31 @@ static void next_handle_signal
   CHECK_FATAL (next_status->attached_in_ptrace);
   CHECK_FATAL (! next_status->stopped_in_ptrace);
 
-  if (inferior_debug_flag) {
-    next_signal_thread_debug_status (stderr, msg->status);
-  }
+  if (inferior_debug_flag) 
+    {
+      next_signal_thread_debug_status (stderr, msg->status);
+    }
 
-  if (msg->pid != next_status->pid) {
-    warning ("next_handle_signal: signal message was for pid %d, not for inferior process (pid %d)\n", 
-	     msg->pid, next_status->pid);
-    return;
-  }
+  if (msg->pid != next_status->pid) 
+    {
+      warning ("next_handle_signal: signal message was for pid %d, not for inferior process (pid %d)\n", 
+	       msg->pid, next_status->pid);
+      return;
+    }
   
-  if (WIFEXITED (msg->status)) {
-    status->kind = TARGET_WAITKIND_EXITED;
-    status->value.integer = WEXITSTATUS (msg->status);
-    return;
-  }
+  if (WIFEXITED (msg->status)) 
+    {
+      status->kind = TARGET_WAITKIND_EXITED;
+      status->value.integer = WEXITSTATUS (msg->status);
+      return;
+    }
 
-  if (! WIFSTOPPED (msg->status)) {
-    status->kind = TARGET_WAITKIND_SIGNALLED;
-    status->value.sig = target_signal_from_host (WTERMSIG (msg->status));
-    return;
-  }
+  if (!WIFSTOPPED (msg->status)) 
+    {
+      status->kind = TARGET_WAITKIND_SIGNALLED;
+      status->value.sig = target_signal_from_host (WTERMSIG (msg->status));
+      return;
+    }
 
   next_status->stopped_in_ptrace = 1;
 
@@ -154,21 +212,45 @@ static void next_handle_signal
   status->value.sig = target_signal_from_host (WSTOPSIG (msg->status));
 }
 
-static void next_handle_exception
-(next_exception_thread_message *msg, struct target_waitstatus *status)
+static void 
+next_handle_exception (next_exception_thread_message *msg, 
+		       struct target_waitstatus *status)
 {
   kern_return_t kret;
 
   CHECK_FATAL (status != NULL);
   CHECK_FATAL (next_status != NULL);
 
-  CHECK_FATAL (next_status->attached_in_ptrace);
-  CHECK_FATAL (! next_status->stopped_in_ptrace);
+  if (inferior_ptrace_flag)
+    {
+      CHECK_FATAL (next_status->attached_in_ptrace);
+      CHECK_FATAL (! next_status->stopped_in_ptrace);
+    }
 
-  if (inferior_debug_flag) {
-    inferior_debug (2, "next_handle_signal: received exception message: ");
-  }
+  if (inferior_debug_flag) 
+    {
+      inferior_debug (2, "next_handle_exception: received exception message\n");
+    }
   
+  if (msg->task_port != next_status->task)
+    {
+      /* If the exception was for a child other than the process being
+        debugged, reset the exception ports for the child back to
+        default, and resume.  Ideally the exception ports would never
+        have been set to the one as modified by GDB in the first
+        place, but this should work in most cases. */
+
+      inferior_debug (2, "next_handle_exception: exception was for child of process being debugged\n");
+
+      next_restore_exception_ports (msg->task_port, &next_status->exception_status.saved_exceptions);
+
+      kret = thread_resume (msg->thread_port);
+      MACH_CHECK_ERROR (kret);
+
+      status->kind = TARGET_WAITKIND_SUBPROCESS;
+      return;
+    }
+
   next_status->last_thread = msg->thread_port;
 
   kret = next_inferior_suspend_mach (next_status);
@@ -183,56 +265,56 @@ static void next_handle_exception
 
   status->kind = TARGET_WAITKIND_STOPPED;
 
-  switch (msg->exception_type) {
-  case EXC_BAD_ACCESS:
-    status->value.sig = TARGET_EXC_BAD_ACCESS;
-    break;
-  case EXC_BAD_INSTRUCTION:
-    status->value.sig = TARGET_EXC_BAD_INSTRUCTION;
-    break;
-  case EXC_ARITHMETIC:
-    status->value.sig = TARGET_EXC_ARITHMETIC;
-    break;
-  case EXC_EMULATION:
-    status->value.sig = TARGET_EXC_EMULATION;
-    break;
-  case EXC_SOFTWARE:
-    status->value.sig = TARGET_EXC_SOFTWARE;
-    break;
-  case EXC_BREAKPOINT:
-    /* Many internal GDB routines expect breakpoints to be reported
-       as TARGET_SIGNAL_TRAP, and will report TARGET_EXC_BREAKPOINT
-       as a spurious signal. */
+  switch (msg->exception_type) 
+    {
+    case EXC_BAD_ACCESS:
+      status->value.sig = TARGET_EXC_BAD_ACCESS;
+      break;
+    case EXC_BAD_INSTRUCTION:
+      status->value.sig = TARGET_EXC_BAD_INSTRUCTION;
+      break;
+    case EXC_ARITHMETIC:
+      status->value.sig = TARGET_EXC_ARITHMETIC;
+      break;
+    case EXC_EMULATION:
+      status->value.sig = TARGET_EXC_EMULATION;
+      break;
+    case EXC_SOFTWARE:
+      status->value.sig = TARGET_EXC_SOFTWARE;
+      break;
+    case EXC_BREAKPOINT:
+      /* Many internal GDB routines expect breakpoints to be reported
+	 as TARGET_SIGNAL_TRAP, and will report TARGET_EXC_BREAKPOINT
+	 as a spurious signal. */
 #if 0
-    status->value.sig = TARGET_EXC_BREAKPOINT;
+      status->value.sig = TARGET_EXC_BREAKPOINT;
 #else
-    status->value.sig = TARGET_SIGNAL_TRAP;
+      status->value.sig = TARGET_SIGNAL_TRAP;
 #endif
-    break;
-  default:
-    status->value.sig = TARGET_SIGNAL_UNKNOWN;
-    break;
-  }
+      break;
+    default:
+      status->value.sig = TARGET_SIGNAL_UNKNOWN;
+      break;
+    }
 }
 
-#define NEXT_SOURCE_NONE 0x0
-#define NEXT_SOURCE_EXCEPTION 0x1
-#define NEXT_SOURCE_SIGNAL 0x2
-#define NEXT_SOURCE_CFM 0x4
-#define NEXT_SOURCE_ALL 0x7
-
-static void next_add_to_port_set
-(struct next_inferior_status *inferior, fd_set *fds, unsigned int flags)
+static void 
+next_add_to_port_set (struct next_inferior_status *inferior, 
+		      fd_set *fds, int flags)
 {
   FD_ZERO (fds);
 
-  if ((flags & NEXT_SOURCE_EXCEPTION) && (inferior->exception_status.receive_fd > 0)) {
-    FD_SET (inferior->exception_status.receive_fd, fds);
-  }
+  if ((flags & NEXT_SOURCE_EXCEPTION) 
+      && (inferior->exception_status.receive_fd > 0)) 
+    {
+      FD_SET (inferior->exception_status.receive_fd, fds);
+    }
 
-  if ((flags & NEXT_SOURCE_SIGNAL) && (inferior->signal_status.receive_fd > 0)) {
-    FD_SET (inferior->signal_status.receive_fd, fds);
-  }
+  if ((flags & NEXT_SOURCE_SIGNAL) 
+      && (inferior->signal_status.receive_fd > 0)) 
+    {
+      FD_SET (inferior->signal_status.receive_fd, fds);
+    }
 }
 
 /* TIMEOUT is either -1, 0, or greater than 0.
@@ -243,10 +325,10 @@ static void next_add_to_port_set
    The kernel doesn't give better than ~1HZ (0.01 sec) resolution, so 
    don't use this as a high accuracy timer. */
 
-static unsigned int 
+static enum next_source_type 
 next_fetch_event (struct next_inferior_status *inferior, 
-		  unsigned char *buf, size_t len, 
-		  unsigned int flags, int timeout)
+                 unsigned char *buf, size_t len, 
+                 unsigned int flags, int timeout)
 {
   fd_set fds;
   int fd, ret;
@@ -270,18 +352,12 @@ next_fetch_event (struct next_inferior_status *inferior,
       continue;
     }
     if (ret < 0) {
-      internal_error ("unable to select: %s", strerror (errno));
+      internal_error (__FILE__, __LINE__, "unable to select: %s", strerror (errno));
     }
     if (ret == 0) {
       return NEXT_SOURCE_NONE;
     }
     break;
-  }
-
-  fd = inferior->exception_status.receive_fd;
-  if ((fd > 0) && FD_ISSET (fd, &fds)) {
-    read (fd, buf, sizeof (next_exception_thread_message));
-    return NEXT_SOURCE_EXCEPTION; 
   }
 
   fd = inferior->signal_status.receive_fd;
@@ -290,23 +366,184 @@ next_fetch_event (struct next_inferior_status *inferior,
     return NEXT_SOURCE_SIGNAL; 
   }
 
+  fd = inferior->exception_status.receive_fd;
+  if ((fd > 0) && FD_ISSET (fd, &fds)) {
+    read (fd, buf, sizeof (next_exception_thread_message));
+    return NEXT_SOURCE_EXCEPTION; 
+  }
+
   return NEXT_SOURCE_NONE;
 } 
 
-static void next_process_events
-(struct next_inferior_status *inferior, struct target_waitstatus *status, int timeout)
-{
-  for (;;) {
+/* This takes the data from an event and puts it on the tail of the
+   "pending event" chain. */
 
-    unsigned int source;
+static void 
+next_add_to_pending_events (enum next_source_type type, unsigned char *buf)
+{
+  struct next_pending_event *new_event;
+  struct next_pending_event *last_event;
+
+  new_event = (struct next_pending_event *) 
+    xmalloc (sizeof(struct next_pending_event));
+
+  new_event->type = type;
+
+  if (type == NEXT_SOURCE_SIGNAL)
+    {
+      next_signal_thread_message *mssg;
+      mssg = (next_signal_thread_message *) 
+	xmalloc (sizeof (next_signal_thread_message));
+      memcpy (mssg, buf, sizeof(next_signal_thread_message));
+      inferior_debug (1, "next_add_to_pending_events: adding a signal event to the pending events.\n");
+      new_event->buf = (void *) mssg;
+    }
+  else if (type == NEXT_SOURCE_EXCEPTION)
+    {
+      next_exception_thread_message *mssg;
+      mssg = (next_exception_thread_message *) 
+	xmalloc (sizeof (next_exception_thread_message));
+      memcpy (mssg, buf, sizeof(next_exception_thread_message));
+      inferior_debug (1, "next_add_to_pending_events: adding an exception event to the pending events.\n");
+      new_event->buf = (void *) mssg;
+    }
+
+  new_event->next = NULL;
+
+  if (pending_event_chain == NULL) 
+    {
+      pending_event_chain = new_event;
+      pending_event_tail = new_event;
+    }
+  else
+    {
+      pending_event_tail->next = new_event;
+      pending_event_tail = new_event;
+    }
+}
+
+static void
+next_clear_pending_events ()
+{
+  struct next_pending_event *event_ptr = pending_event_chain;
+  
+  while (event_ptr != NULL)
+    {
+      pending_event_chain = event_ptr->next;
+      xfree (event_ptr->buf);
+      xfree (event_ptr);
+      event_ptr = pending_event_chain;
+    }
+}
+
+/* This extracts the top of the pending event chain and posts a gdb event
+   with its content to the gdb event queue.  Returns 0 if there were no
+   pending events to be posted, 1 otherwise. */
+
+static int
+next_post_pending_event (void)
+{
+  struct next_pending_event *event;
+
+  if (pending_event_chain == NULL)
+    {
+      inferior_debug (1, "next_post_pending_event: no events to post\n");
+      return 0;
+    }
+  else
+    {
+
+      event = pending_event_chain;
+      pending_event_chain = pending_event_chain->next;
+      if (pending_event_chain == NULL)
+	pending_event_tail = NULL;
+
+      inferior_debug (1, "next_post_pending_event: pulled an event at: 0x%lx off the queue, next is 0x%lx\n",
+		      event, pending_event_chain);
+      gdb_queue_event (next_pending_event_handler, (void *) event, HEAD);
+
+      return 1;
+    }
+}
+
+static void
+next_pending_event_handler (void *data)
+{
+  inferior_debug (1, "Called in next_pending_event_handler\n");
+  async_client_callback (INF_REG_EVENT, data);
+}
+
+static int
+next_service_event (enum next_source_type source,
+		    unsigned char *buf, struct target_waitstatus *status)
+{
+  if (source == NEXT_SOURCE_EXCEPTION)
+    {
+      
+      inferior_debug (1, "next_service_events: got exception message\n");
+      CHECK_FATAL (inferior_bind_exception_port_flag);
+      next_handle_exception ((next_exception_thread_message *) buf, status);
+      
+      if (status->kind != TARGET_WAITKIND_SPURIOUS) 
+	{
+	  CHECK_FATAL (inferior_handle_exceptions_flag);
+	  return 1;
+	}
+    }
+  else if (source == NEXT_SOURCE_SIGNAL) 
+    {
+      
+      inferior_debug (2, "next_service_events: got signal message\n");
+      next_handle_signal ((next_signal_thread_message *) buf, status);
+      CHECK_FATAL (status->kind != TARGET_WAITKIND_SPURIOUS);
+      if (!inferior_handle_all_events_flag) 
+	{
+	  return 1;
+	}	    
+    }
+  else 
+    {
+      error ("got message from unknown source: 0x%08x\n", source);
+      return 0;
+    }
+  return 1;
+}
+
+/* This drains the event sources.  The first event found is directly
+   handled.  The rest are placed on the pending events queue, to be
+   handled the next time that the inferior is "run".
+
+   Returns: The number of events found. */
+
+static int
+next_process_events (struct next_inferior_status *inferior, 
+		     struct target_waitstatus *status, 
+		     int timeout, int service_first_event)
+{
+    enum next_source_type source;
     unsigned char buf[1024];
+    int event_count;
 
     CHECK_FATAL (status->kind == TARGET_WAITKIND_SPURIOUS);
 
-    source = next_fetch_event (inferior, buf, sizeof (buf), NEXT_SOURCE_ALL, timeout);
-    if (source == NEXT_SOURCE_NONE) {
-      return;
-    }
+    source = next_fetch_event (inferior, buf, sizeof (buf), 
+			       NEXT_SOURCE_ALL, timeout);
+    if (source == NEXT_SOURCE_NONE) 
+      {
+	return 0;
+      }
+
+    event_count = 1;
+
+    if (service_first_event)
+      {
+	if (next_service_event (source, buf, status) == 0)
+	  return 0;
+      } 
+    else
+      {
+	next_add_to_pending_events (source, buf);
+      }
 
     /* FIXME: we want to poll in next_fetch_event because otherwise we
        arbitrarily wait however long the wait quanta for select is
@@ -315,55 +552,28 @@ static void next_process_events
        any more exceptions available.  Normally this is okay, because
        there really IS only one message, but to be correct we need to
        use some thread synchronization. */
+    for (;;) 
+      {
+	source = next_fetch_event (inferior, buf, sizeof (buf), 
+				   NEXT_SOURCE_ALL, 0);
+	if (source == NEXT_SOURCE_NONE) 
+	  { 
+	    break;
+	  }
+	else
+	  {
+	    event_count++;
 
-    if (source == NEXT_SOURCE_EXCEPTION) {
-
-      for (;;) {
-
-	inferior_debug (1, "next_process_events: got exception message\n");
-	CHECK_FATAL (inferior_bind_exception_port_flag);
-	next_handle_exception ((next_exception_thread_message *) buf, status);
-  
-	source = next_fetch_event (inferior, buf, sizeof (buf), NEXT_SOURCE_EXCEPTION, 0);
-	if (source == 0) { 
-	  break;
-	}
+	    /* Stuff the remaining events onto the pending_events queue.
+	       These will be dispatched when we run again. */
+	    /* PENDING_EVENTS */
+	    next_add_to_pending_events (source, buf);
+	  }
       }
 
-      if (status->kind != TARGET_WAITKIND_SPURIOUS) {
-	CHECK_FATAL (inferior_handle_exceptions_flag);
-	break;
-      }
-    }
-
-    else if (source == NEXT_SOURCE_SIGNAL) {
-
-      for (;;) {
-
-	inferior_debug (2, "next_process_events: got signal message\n");
-	next_handle_signal ((next_signal_thread_message *) buf, status);
-	CHECK_FATAL (status->kind != TARGET_WAITKIND_SPURIOUS);
-	if (! inferior_handle_all_events_flag) {
-	  break;
-	}
-	source = next_fetch_event (inferior, buf, sizeof (buf), NEXT_SOURCE_SIGNAL, 0);
-	if (source == 0) {
-	  break;
-	}
-      }
-      
-      if (status->kind != TARGET_WAITKIND_SPURIOUS) {
-	break;
-      }
-    }
-
-    else {
-      error ("got message from unknown source: 0x%08x\n", source);
-      break;
-    }
-  }
-
-  inferior_debug (2, "next_process_events: returning with (status->kind == %d)\n", status->kind);
+    inferior_debug (2, "next_process_events: returning with (status->kind == %d)\n", 
+		  status->kind);
+    return event_count;
 }
 
 void next_mach_check_new_threads ()
@@ -379,9 +589,9 @@ void next_mach_check_new_threads ()
   MACH_CHECK_ERROR (kret);
   
   for (i = 0; i < nthreads; i++) {
-    int tpid = next_thread_list_insert (next_status, next_status->pid, thread_list[i]);
-    if (! in_thread_list (tpid)) {
-      add_thread (tpid);
+    ptid_t ptid = ptid_build (next_status->pid, 0, thread_list[i]);
+    if (! in_thread_list (ptid)) {
+      add_thread (ptid);
     }
   }
 
@@ -407,18 +617,22 @@ next_child_stop (void)
   ret = kill (inferior_process_group, SIGINT);
 }
 
-static void next_child_resume (int tpid, int step, enum target_signal signal)
+static void 
+next_child_resume (ptid_t ptid, int step, enum target_signal signal)
 {
   int nsignal = target_signal_to_host (signal);
   struct target_waitstatus status;
 
   int pid;
   thread_t thread;
+  int num_events;
 
-  if (tpid == -1) { 
-    tpid = inferior_pid;
+  if (ptid_equal (ptid, minus_one_ptid)) {
+    ptid = inferior_ptid;
   }
-  next_thread_list_lookup_by_id (next_status, tpid, &pid, &thread);
+
+  pid = ptid_get_pid (ptid);
+  thread = ptid_get_tid (ptid);
 
   CHECK_FATAL (tm_print_insn != NULL);
   CHECK_FATAL (next_status != NULL);
@@ -428,11 +642,14 @@ static void next_child_resume (int tpid, int step, enum target_signal signal)
     return;
   }
 
+  /* Check for pending events.  If we find any, then we won't really resume,
+     but rather we will extract the first event from the pending events
+     queue, and post it to the gdb event queue, and then "pretend" that we
+     have in fact resumed. */
   inferior_debug (2, "next_child_resume: checking for pending events\n");
   status.kind = TARGET_WAITKIND_SPURIOUS;
-  next_process_events (next_status, &status, 0);
-  CHECK_FATAL (status.kind == TARGET_WAITKIND_SPURIOUS);
-  
+  next_process_events (next_status, &status, 0, 0);
+    
   inferior_debug (1, "next_child_resume: %s process with signal %d\n", 
 		  step ? "stepping" : "continuing", nsignal);
 
@@ -450,6 +667,15 @@ static void next_child_resume (int tpid, int step, enum target_signal signal)
     fprintf (stdout, ")\n");
   }
   
+  if (next_post_pending_event())
+    {
+      /* QUESTION: Do I need to lie about target_executing here? */
+      next_fake_resume = 1;
+      if (target_is_async_p ())
+	target_executing = 1;
+      return;
+    }
+
   if (next_status->stopped_in_ptrace) {
     next_inferior_resume_ptrace (next_status, nsignal, PTRACE_CONT);
   }
@@ -459,7 +685,7 @@ static void next_child_resume (int tpid, int step, enum target_signal signal)
   }
 
   if (step) {
-    prepare_threads_before_run (next_status, step, thread, (tpid != -1));
+    prepare_threads_before_run (next_status, step, thread, 1);
   } else {
     prepare_threads_before_run (next_status, 0, THREAD_NULL, 0);
   }
@@ -473,45 +699,80 @@ static void next_child_resume (int tpid, int step, enum target_signal signal)
     target_executing = 1;
 }
 
-int next_wait (struct next_inferior_status *ns, struct target_waitstatus *status)
+static ptid_t 
+next_process_pending_event (struct next_inferior_status *ns, 
+			    struct target_waitstatus *status,
+			    gdb_client_data client_data)
+{
+  struct next_pending_event *event 
+    = (struct next_pending_event *) client_data;
+
+  inferior_debug (1, "Processing pending event type: %d\n", event->type);
+  next_service_event (event->type, (unsigned char *) event->buf, status);
+
+  return ptid_build (next_status->pid, 0, next_status->last_thread);
+}
+
+/*
+ * This fetches & processes events from the exception & signal file
+ * descriptors.  If client_data is not NULL, then the client data must
+ * hold a next_pending_event structure, and in that case, this just
+ * processes that event.  */
+ 
+ptid_t 
+next_wait (struct next_inferior_status *ns, 
+	   struct target_waitstatus *status,
+	   gdb_client_data client_data)
 {
   int thread_id;
 
   CHECK_FATAL (ns != NULL);
   
+  if (client_data != NULL) 
+    {
+      return next_process_pending_event (ns, status, client_data);
+    }
+
   set_sigint_trap ();
   set_sigio_trap ();
-
-  status->kind = TARGET_WAITKIND_SPURIOUS;
-  next_process_events (ns, status, -1);
+  
+  for (;;) {
+    status->kind = TARGET_WAITKIND_SPURIOUS;
+    next_process_events (ns, status, -1, 1);
+    if (status->kind != TARGET_WAITKIND_SUBPROCESS)
+      break;
+  }
   CHECK_FATAL (status->kind != TARGET_WAITKIND_SPURIOUS);
   
   clear_sigio_trap ();
   clear_sigint_trap();
 
-  if ((status->kind == TARGET_WAITKIND_EXITED) || (status->kind == TARGET_WAITKIND_SIGNALLED)) {
-    return 0;
-  }
+  if ((status->kind == TARGET_WAITKIND_EXITED) 
+      || (status->kind == TARGET_WAITKIND_SIGNALLED)) 
+    {
+      return null_ptid;
+    }
 
   next_mach_check_new_threads ();
 
-  if (! next_thread_valid (next_status->task, next_status->last_thread)) {
-    if (next_task_valid (next_status->task)) {
-      warning ("Currently selected thread no longer alive; selecting intial thread");
-      next_status->last_thread = next_primary_thread_of_task (next_status->task);
+  if (! next_thread_valid (next_status->task, next_status->last_thread)) 
+    {
+      if (next_task_valid (next_status->task)) 
+	{
+	  warning ("Currently selected thread no longer alive; selecting intial thread");
+	  next_status->last_thread = next_primary_thread_of_task (next_status->task);
+	}
     }
-  }
 
-  next_thread_list_lookup_by_info (next_status, next_status->pid, next_status->last_thread, &thread_id);
-  
-  inferior_debug (2, "next_wait: returning 0x%lx\n", thread_id);
-  return thread_id;
+  return ptid_build (next_status->pid, 0, next_status->last_thread);
 }
 
-static int next_mach_wait (int pid, struct target_waitstatus *status)
+static ptid_t 
+next_mach_wait (ptid_t pid, struct target_waitstatus *status, 
+		gdb_client_data client_data)
 {
   CHECK_FATAL (next_status != NULL);
-  return next_wait (next_status, status);
+  return next_wait (next_status, status, client_data);
 }
 
 static void next_mourn_inferior ()
@@ -520,7 +781,7 @@ static void next_mourn_inferior ()
   child_ops.to_mourn_inferior ();
   next_inferior_destroy (next_status);
 
-  inferior_pid = 0;
+  inferior_ptid = null_ptid;
   attach_flag = 0;
 
   /* We were doing this just so that we would reset the results of
@@ -549,6 +810,8 @@ static void next_mourn_inferior ()
       next_init_dyld_symfile (NULL); 
     }
 #endif
+
+  next_clear_pending_events();
 }
 
 void next_fetch_task_info (struct kinfo_proc **info, size_t *count)
@@ -758,6 +1021,42 @@ static int next_lookup_task (char *args, task_t *ptask, int *ppid)
   return 0;
 }
 
+static void
+next_set_auto_start_dyld (char *args, int from_tty,
+			  struct cmd_list_element *c)
+{
+
+  /* Don't want to bother with stopping the target to set this... */
+  if (target_executing)
+    return;
+
+  /* If we are so early on that the next_status hasn't gotten allocated
+     yet, this will fail, but we also won't have needed to do anything, 
+     so we can safely just exit. */
+  if (next_status == NULL)
+    return;
+
+  /* If we are turning off watching dyld, we need to remove
+     the breakpoint... */
+
+  if (!inferior_auto_start_dyld_flag)
+    {
+      next_clear_start_breakpoint ();
+      return;
+    }
+
+  /* If the inferior is not running, then all we have to do
+     is set the flag, which is done in generic code. */
+
+  if (ptid_equal (inferior_ptid, null_ptid))
+    return;
+
+  next_dyld_update (1);
+  next_set_start_breakpoint (exec_bfd);
+  next_dyld_update (0);
+  
+}
+
 static void next_child_attach (char *args, int from_tty)
 {
   struct target_waitstatus w;
@@ -820,14 +1119,14 @@ static void next_child_attach (char *args, int from_tty)
   
   next_mach_check_new_threads ();
 
-  next_thread_list_lookup_by_info (next_status, pid, next_status->last_thread, &inferior_pid);
+  inferior_ptid = ptid_build (pid, 0, next_status->last_thread);
   attach_flag = 1;
 
   push_target (&next_child_ops);
 
   if (next_status->attached_in_ptrace) {
     /* read attach notification */
-    next_wait (next_status, &w);
+    next_wait (next_status, &w, NULL);
   }
 
   if (inferior_auto_start_dyld_flag) {
@@ -841,7 +1140,7 @@ static void next_child_detach (char *args, int from_tty)
 {
   CHECK_FATAL (next_status != NULL);
 
-  if (inferior_pid == 0) {
+  if (ptid_equal (inferior_ptid, null_ptid)) {
     return;
   }
 
@@ -890,7 +1189,7 @@ static int next_kill_inferior (kern_return_t *errval)
   CHECK_FATAL (next_status != NULL);
   *errval = KERN_SUCCESS;
 
-  if (inferior_pid == 0) {
+  if (ptid_equal (inferior_ptid, null_ptid)) {
     return 1;
   }
 
@@ -935,8 +1234,8 @@ static void next_kill_inferior_safe ()
   kern_return_t kret;
   int ret;
 
-  ret = catch_errors
-    (next_kill_inferior, &kret, "error while killing target (killing anyway): ", RETURN_MASK_ALL);
+  ret = catch_errors (next_kill_inferior, &kret, 
+     "error while killing target (killing anyway): ", RETURN_MASK_ALL);
 
   if (ret == 0) {
     kret = task_terminate (next_status->task);
@@ -950,7 +1249,7 @@ static void next_ptrace_me ()
   call_ptrace (PTRACE_TRACEME, 0, 0, 0);
 }
 
-static int next_ptrace_him (int pid)
+static void next_ptrace_him (int pid)
 {
   task_t itask;
   kern_return_t kret;
@@ -987,13 +1286,13 @@ static int next_ptrace_him (int pid)
   traps_expected = (start_with_shell_flag ? 2 : 1);
   startup_inferior (traps_expected);
   
-  if (inferior_pid == 0) {
-    return 0;
+  if (ptid_equal (inferior_ptid, null_ptid)) {
+    return;
   }
 
   if (! next_task_valid (next_status->task)) {
     target_mourn_inferior ();
-    return 0;
+    return;
   }
 
   next_inferior_check_stopped (next_status);
@@ -1007,15 +1306,12 @@ static int next_ptrace_him (int pid)
     CHECK_FATAL (! next_status->attached_in_ptrace);
     CHECK_FATAL (! next_status->stopped_in_ptrace);
   }
-
-  next_thread_list_lookup_by_info (next_status, pid, next_status->last_thread, &pret);
-  return pret;
 }
 
 static void next_child_create_inferior (char *exec_file, char *allargs, char **env)
 {
   fork_inferior (exec_file, allargs, env, next_ptrace_me, next_ptrace_him, NULL, NULL);
-  if (inferior_pid == 0)
+  if (ptid_equal (inferior_ptid, null_ptid))
     return;
 
   next_clear_start_breakpoint ();
@@ -1038,26 +1334,20 @@ static void next_child_files_info (struct target_ops *ops)
   next_debug_inferior_status (next_status);
 }
 
-static char *next_mach_pid_to_str (int tpid)
+static char *next_mach_pid_to_str (ptid_t ptid)
 {
   static char buf[128];
-  int pid;
-  thread_t thread;
-
-  next_thread_list_lookup_by_id (next_status, tpid, &pid, &thread);
+  int pid = ptid_get_pid (ptid);
+  thread_t thread = ptid_get_tid (ptid);
+  
   sprintf (buf, "process %d thread 0x%lx", pid, (unsigned long) thread);
   return buf;
 }
 
-static int next_child_thread_alive (int tpid)
+static int 
+next_child_thread_alive (ptid_t ptid)
 {
-  int pid;
-  thread_t thread;
-
-  next_thread_list_lookup_by_id (next_status, tpid, &pid, &thread);
-  CHECK_FATAL (pid == next_status->pid);
-
-  return next_thread_valid (next_status->task, thread);
+  return next_thread_valid (next_status->task, ptid_get_tid (ptid));
 }
 
 void update_command (char *args, int from_tty)
@@ -1069,8 +1359,6 @@ void update_command (char *args, int from_tty)
 void next_create_inferior_for_task
 (struct next_inferior_status *inferior, task_t task, int pid)
 {
-  kern_return_t ret;
-
   CHECK_FATAL (inferior != NULL);
 
   next_inferior_destroy (inferior);
@@ -1095,7 +1383,7 @@ static void remote_interrupt_twice (int signo);
 static void remote_interrupt (int signo);
 static void handle_remote_sigint_twice (int sig);
 static void handle_remote_sigint (int sig);
-void async_remote_interrupt_twice (gdb_client_data arg);
+static void async_remote_interrupt_twice (gdb_client_data arg);
 static void async_remote_interrupt (gdb_client_data arg);
 
 static void
@@ -1214,9 +1502,6 @@ next_terminal_ours (void)
   remote_async_terminal_ours_p = 1;
 }
 
-static void (*async_client_callback) (enum inferior_event_type event_type, void *context);
-static void *async_client_context;
-
 static void
 next_file_handler (int error, gdb_client_data client_data)
 {
@@ -1228,7 +1513,7 @@ next_async (void (*callback) (enum inferior_event_type event_type,
 			      void *context), void *context)
 {
   if (current_target.to_async_mask_value == 0)
-    internal_error ("Calling remote_async when async is masked");
+    internal_error (__FILE__, __LINE__, "Calling remote_async when async is masked");
 
   if (callback != NULL)
     {
@@ -1345,6 +1630,7 @@ _initialize_next_inferior ()
 		     "Set if GDB should enable debugging of dyld shared libraries.",
 		     &setlist);
   add_show_from_set (cmd, &showlist);
+  cmd->function.sfunc = next_set_auto_start_dyld;
 
 #if WITH_CFM
   cmd = add_set_cmd ("inferior-auto-start-cfm", class_obscure, var_boolean, 

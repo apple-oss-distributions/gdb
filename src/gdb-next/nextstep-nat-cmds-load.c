@@ -2,6 +2,7 @@
 #include "top.h"
 #include "command.h"
 #include "gdbcmd.h"
+#include "completer.h"
 
 #include <stdio.h>
 #include <string.h>

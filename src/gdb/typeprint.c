@@ -1,5 +1,6 @@
 /* Language independent support for printing types for GDB, the GNU debugger.
-   Copyright 1986, 1988, 1989, 1991-1993, 1998, 2000 Free Software Foundation, Inc.
+   Copyright 1986, 1988, 1989, 1991, 1992, 1993, 1994, 1995, 1998, 1999,
+   2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -30,7 +31,7 @@
 #include "gdbcmd.h"
 #include "target.h"
 #include "language.h"
-#include "demangle.h"
+#include "cp-abi.h"
 
 #include "gdb_string.h"
 #include <errno.h>
@@ -125,7 +126,7 @@ static void
 whatis_exp (char *exp, int show)
 {
   struct expression *expr;
-  register value_ptr val;
+  struct value *val;
   register struct cleanup *old_chain = NULL;
   struct type *real_type = NULL;
   struct type *type;
@@ -332,7 +333,7 @@ print_type_scalar (struct type *type, LONGEST val, struct ui_file *stream)
 void
 maintenance_print_type (char *typename, int from_tty)
 {
-  register value_ptr val;
+  struct value *val;
   register struct type *type;
   register struct cleanup *old_chain;
   struct expression *expr;

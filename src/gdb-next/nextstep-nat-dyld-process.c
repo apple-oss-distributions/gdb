@@ -1,12 +1,3 @@
-#include "nextstep-nat-dyld-process.h"
-
-#include "nextstep-nat-dyld-info.h"
-#include "nextstep-nat-dyld-path.h"
-#include "nextstep-nat-dyld-io.h"
-#include "nextstep-nat-dyld.h"
-#include "nextstep-nat-inferior.h"
-#include "nextstep-nat-mutils.h"
-
 #include "defs.h"
 #include "inferior.h"
 #include "symfile.h"
@@ -14,7 +5,16 @@
 #include "gdbcmd.h"
 #include "objfiles.h"
 
-#include "gnu-regex.h"
+#include "gdb_regex.h"
+
+
+#include "nextstep-nat-dyld-info.h"
+#include "nextstep-nat-dyld-path.h"
+#include "nextstep-nat-dyld-io.h"
+#include "nextstep-nat-dyld.h"
+#include "nextstep-nat-inferior.h"
+#include "nextstep-nat-mutils.h"
+#include "nextstep-nat-dyld-process.h"
 
 #include <mach-o/nlist.h>
 #include <mach-o/loader.h>
@@ -108,6 +108,7 @@ void dyld_add_image_libraries
   for (i = 0; i < mdata->header.ncmds; i++) {
     struct bfd_mach_o_load_command *cmd = &mdata->commands[i];
     switch (cmd->type) {
+    case BFD_MACH_O_LC_LOAD_WEAK_DYLIB:
     case BFD_MACH_O_LC_LOAD_DYLINKER:
     case BFD_MACH_O_LC_ID_DYLINKER:
     case BFD_MACH_O_LC_LOAD_DYLIB:
@@ -124,7 +125,7 @@ void dyld_add_image_libraries
 	name = xmalloc (dcmd->name_len + 1);
             
 	bfd_seek (abfd, dcmd->name_offset, SEEK_SET);
-	if (bfd_read (name, 1, dcmd->name_len, abfd) != dcmd->name_len) {
+	if (bfd_bread (name, dcmd->name_len, abfd) != dcmd->name_len) {
 	  warning ("Unable to find library name for LC_LOAD_DYLINKER or LD_ID_DYLINKER command; ignoring");
 	  free (name);
 	  continue;
@@ -138,7 +139,7 @@ void dyld_add_image_libraries
 	name = xmalloc (dcmd->name_len + 1);
             
 	bfd_seek (abfd, dcmd->name_offset, SEEK_SET);
-	if (bfd_read (name, 1, dcmd->name_len, abfd) != dcmd->name_len) {
+	if (bfd_bread (name, dcmd->name_len, abfd) != dcmd->name_len) {
 	  warning ("Unable to find library name for LC_LOAD_DYLIB or LD_ID_DYLIB command; ignoring");
 	  free (name);
 	  continue;
@@ -365,23 +366,23 @@ dyld_resolve_load_flag (struct dyld_path_info *d, struct dyld_objfile_entry *e, 
 	return OBJF_SYM_NONE;
       }
 
-    ret = gdb_regcomp (&reasonbuf, matchreason, REG_NOSUB);
+    ret = regcomp (&reasonbuf, matchreason, REG_NOSUB);
     if (ret != 0) {
       warning ("unable to compile regular expression \"%s\"", matchreason);
       continue;
     }
     
-    ret = gdb_regcomp (&namebuf, matchname, REG_NOSUB);
+    ret = regcomp (&namebuf, matchname, REG_NOSUB);
     if (ret != 0) {
       warning ("unable to compile regular expression \"%s\"", matchreason);
       continue;
     }
 
-    ret = gdb_regexec (&reasonbuf, reason, 0, 0, 0);
+    ret = regexec (&reasonbuf, reason, 0, 0, 0);
     if (ret != 0)
       continue;
 
-    ret = gdb_regexec (&namebuf, name, 0, 0, 0);
+    ret = regexec (&namebuf, name, 0, 0, 0);
     if (ret != 0)
       continue;
 
@@ -428,6 +429,10 @@ void dyld_load_library (const struct dyld_path_info *d, struct dyld_objfile_entr
   if ((e->reason == dyld_reason_executable) && (symfile_objfile != NULL)) {
     e->abfd = symfile_objfile->obfd;
     return;
+  }
+
+  if (e->reason == dyld_reason_cfm) {
+    read_from_memory = 1;
   }
 
   if (dyld_always_read_from_memory_flag) {
@@ -860,7 +865,9 @@ static int dyld_libraries_compatible
   fname = dyld_entry_source_filename (f);
   lname = dyld_entry_source_filename (l);
 
-  if (strcmp (f->prefix, l->prefix) != 0) {
+  if ((f->prefix != NULL && l->prefix != NULL)
+      && ((f->prefix != l->prefix) 
+	  || (strcmp (f->prefix, l->prefix) != 0))) {
     return 0;
   }
 
@@ -912,6 +919,7 @@ void dyld_objfile_move_load_data
     l->load_flag = f->load_flag; 
   }
 
+  l->prefix = f->prefix;
   l->loaded_name = f->loaded_name;
   l->loaded_memaddr = f->loaded_memaddr;
   l->loaded_addr = f->loaded_addr;

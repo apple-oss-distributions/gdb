@@ -1,5 +1,7 @@
 /* GDB interface to ARM RDI library.
-   Copyright 1997, 1998 Free Software Foundation, Inc.
+
+   Copyright 1997, 1998, 1999, 2000, 2001, 2002 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,13 +28,14 @@
 #include "bfd.h"
 #include "symfile.h"
 #include "target.h"
-#include "gdb_wait.h"
 #include "gdbcmd.h"
 #include "objfiles.h"
 #include "gdb-stabs.h"
 #include "gdbthread.h"
 #include "gdbcore.h"
 #include "breakpoint.h"
+#include "completer.h"
+#include "regcache.h"
 
 #ifdef USG
 #include <sys/types.h>
@@ -52,13 +55,15 @@ static void arm_rdi_files_info (struct target_ops *ignore);
 
 static int arm_rdi_xfer_memory (CORE_ADDR memaddr, char *myaddr,
 				int len, int should_write,
+				struct mem_attrib *attrib,
 				struct target_ops *target);
 
 static void arm_rdi_prepare_to_store (void);
 
 static void arm_rdi_fetch_registers (int regno);
 
-static void arm_rdi_resume (int pid, int step, enum target_signal siggnal);
+static void arm_rdi_resume (ptid_t pid, int step,
+                            enum target_signal siggnal);
 
 static int arm_rdi_start_remote (char *dummy);
 
@@ -74,7 +79,7 @@ static void arm_rdi_mourn (void);
 
 static void arm_rdi_send (char *buf);
 
-static int arm_rdi_wait (int pid, struct target_waitstatus *status);
+static ptid_t arm_rdi_wait (ptid_t ptid, struct target_waitstatus *status);
 
 static void arm_rdi_kill (void);
 
@@ -240,7 +245,7 @@ device is attached to the remote system (e.g. /dev/ttya).");
   if (rslt != adp_ok)
     error ("Could not open device \"%s\"", name);
 
-  gdb_config.bytesex = 2 | (TARGET_BYTE_ORDER == BIG_ENDIAN ? 1 : 0);
+  gdb_config.bytesex = 2 | (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG ? 1 : 0);
   gdb_config.fpe = 1;
   gdb_config.rditype = 2;
   gdb_config.heartbeat_on = 1;
@@ -331,16 +336,16 @@ device is attached to the remote system (e.g. /dev/ttya).");
     for (entry = local_bp_list; entry != NULL; entry = entry->next)
       {
 	if (preventry)
-	  free (preventry);
+	  xfree (preventry);
       }
   }
 
   printf_filtered ("Connected to ARM RDI target.\n");
   closed_already = 0;
-  inferior_pid = 42;
+  inferior_ptid = pid_to_ptid (42);
 }
 
-/* Start an inferior process and set inferior_pid to its pid.
+/* Start an inferior process and set inferior_ptid to its pid.
    EXEC_FILE is the file to run.
    ARGS is a string containing the arguments to the program.
    ENV is the environment vector to pass.  Errors reported with error().
@@ -372,7 +377,7 @@ arm_rdi_create_inferior (char *exec_file, char *args, char **env)
   strcat (arg_buf, " ");
   strcat (arg_buf, args);
 
-  inferior_pid = 42;
+  inferior_ptid = pid_to_ptid (42);
   insert_breakpoints ();	/* Needed to get correct instruction in cache */
 
   if (env != NULL)
@@ -436,7 +441,7 @@ arm_rdi_close (int quitting)
 	  printf_filtered ("RDI_close: %s\n", rdi_error_message (rslt));
 	}
       closed_already = 1;
-      inferior_pid = 0;
+      inferior_ptid = null_ptid;
       Adp_CloseDevice ();
       generic_mourn_inferior ();
     }
@@ -445,7 +450,7 @@ arm_rdi_close (int quitting)
 /* Tell the remote machine to resume.  */
 
 static void
-arm_rdi_resume (int pid, int step, enum target_signal siggnal)
+arm_rdi_resume (ptid_t ptid, int step, enum target_signal siggnal)
 {
   int rslt;
   PointHandle point;
@@ -510,8 +515,8 @@ interrupt_query (void)
    STATUS just as `wait' would.  Returns "pid" (though it's not clear
    what, if anything, that means in the case of this target).  */
 
-static int
-arm_rdi_wait (int pid, struct target_waitstatus *status)
+static ptid_t
+arm_rdi_wait (ptid_t ptid, struct target_waitstatus *status)
 {
   status->kind = (execute_status == RDIError_NoError ?
 		  TARGET_WAITKIND_EXITED : TARGET_WAITKIND_STOPPED);
@@ -519,7 +524,7 @@ arm_rdi_wait (int pid, struct target_waitstatus *status)
   /* convert stopped code from target into right signal */
   status->value.sig = rdi_error_signal (execute_status);
 
-  return inferior_pid;
+  return inferior_ptid;
 }
 
 /* Read the remote registers into the block REGS.  */
@@ -627,7 +632,8 @@ arm_rdi_store_registers (int regno)
 /* ARGSUSED */
 static int
 arm_rdi_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len,
-		     int should_write, struct target_ops *target)
+		     int should_write, struct mem_attrib *attrib,
+		     struct target_ops *target)
 {
   int rslt, i;
 
@@ -773,7 +779,7 @@ arm_rdi_remove_breakpoint (CORE_ADDR addr, char *contents_cache)
 	{
 	  preventry->next = entry->next;
 	}
-      free (entry);
+      xfree (entry);
     }
   return 0;
 }
@@ -982,7 +988,7 @@ rdilogfile_command (char *arg, int from_tty)
     }
 
   if (log_filename)
-    free (log_filename);
+    xfree (log_filename);
 
   log_filename = xstrdup (arg);
 
@@ -1020,6 +1026,8 @@ rdilogenable_command (char *args, int from_tty)
 void
 _initialize_remote_rdi (void)
 {
+  struct cmd_list_element *c;
+
   init_rdi_ops ();
   add_target (&arm_rdi_ops);
 
@@ -1027,14 +1035,15 @@ _initialize_remote_rdi (void)
   Adp_SetLogfile (log_filename);
   Adp_SetLogEnable (log_enable);
 
-  add_cmd ("rdilogfile", class_maintenance,
-	   rdilogfile_command,
-	   "Set filename for ADP packet log.\n\
+  c = add_cmd ("rdilogfile", class_maintenance,
+	       rdilogfile_command,
+	       "Set filename for ADP packet log.\n\
 This file is used to log Angel Debugger Protocol packets.\n\
 With a single argument, sets the logfile name to that value.\n\
 Without an argument, shows the current logfile name.\n\
 See also: rdilogenable\n",
 	   &maintenancelist);
+  c->completer = filename_completer;
 
   add_cmd ("rdilogenable", class_maintenance,
 	   rdilogenable_command,

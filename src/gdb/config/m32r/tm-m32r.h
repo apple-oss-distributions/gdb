@@ -18,11 +18,13 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* Used by mswin.  */
 #define TARGET_M32R 1
 
-/* mvs_check TARGET_BYTE_ORDER BIG_ENDIAN */
-#define TARGET_BYTE_ORDER BIG_ENDIAN
+/* mvs_check TARGET_BYTE_ORDER BFD_ENDIAN_BIG */
+#define TARGET_BYTE_ORDER BFD_ENDIAN_BIG
 
 /* mvs_check REGISTER_NAMES */
 #define REGISTER_NAMES \

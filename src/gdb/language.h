@@ -1,5 +1,6 @@
 /* Source-language-related definitions for GDB.
-   Copyright 1991, 1992, 2000 Free Software Foundation, Inc.
+   Copyright 1991, 1992, 1993, 1994, 1995, 1998, 1999, 2000
+   Free Software Foundation, Inc.
    Contributed by the Department of Computer Science at the State University
    of New York at Buffalo.
 
@@ -288,7 +289,8 @@ language_mode;
 /* FIXME -- should be a setting in language_defn */
 #define CAST_IS_CONVERSION (current_language->la_language == language_c  || \
 			    current_language->la_language == language_cplus || \
-			    current_language->la_language == language_objc)
+			    current_language->la_language == language_objc || \
+			    current_language->la_language == language_objcplus)
 
 extern void language_info (int);
 

@@ -117,11 +117,11 @@ void prepare_threads_after_stop (struct next_inferior_status *inferior)
   
   for (i = 0; i < nthreads; i++) {
 
-    int tid;
+    ptid_t ptid;
     struct thread_info *tp = NULL;
 
-    next_thread_list_lookup_by_info (next_status, inferior->pid, thread_list[i], &tid);
-    tp = find_thread_id (tid);
+    ptid = ptid_build (inferior->pid, 0, thread_list[i]);
+    tp = find_thread_pid (ptid);
     CHECK_FATAL (tp != NULL);
     while (tp->gdb_suspend_count > 0) {
       thread_resume (thread_list[i]);
@@ -172,11 +172,11 @@ void prepare_threads_before_run
     MACH_CHECK_ERROR (kret);
     if ((step && stop_others) && (thread_list[i] != current)) {
 
-      int tid;
+      ptid_t ptid;
       struct thread_info *tp = NULL;
       
-      next_thread_list_lookup_by_info (next_status, inferior->pid, thread_list[i], &tid);
-      tp = find_thread_id (tid);
+      ptid = ptid_build (inferior->pid, 0, thread_list[i]);
+      tp = find_thread_pid (ptid);
       CHECK_FATAL (tp != NULL);
       kret = thread_suspend (thread_list[i]);
       MACH_CHECK_ERROR (kret);
@@ -260,36 +260,30 @@ void info_task_command (char *args, int from_tty)
 static thread_t parse_thread (char *tidstr)
 {
   int num;
-  int tpid;
+  ptid_t ptid;
   
-  int pid;
-  thread_t thread;
-
- if (inferior_pid == 0) {
+  if (ptid_equal (inferior_ptid, null_ptid)) {
     error ("The program being debugged is not being run.");
   }
  
  if (tidstr != NULL) {
 
     num = atoi (tidstr);
-    tpid = thread_id_to_pid (num);
+    ptid = thread_id_to_pid (num);
 
-    if (tpid < 0) {
+    if (ptid_equal (ptid, minus_one_ptid)) {
       error ("Thread ID %d not known.  Use the \"info threads\" command to\n"
              "see the IDs of currently known threads.", num);
     }
   } else {
-    tpid = inferior_pid;
+    ptid = inferior_ptid;
   }
 
-  if (! target_thread_alive (tpid)) {
+  if (! target_thread_alive (ptid)) {
     error ("Thread ID %d does not exist.\n", num);
   }
 
-  next_thread_list_lookup_by_id (next_status, tpid, &pid, &thread);
-  CHECK_FATAL (pid == next_status->pid);
-
-  return thread;
+  return ptid_get_tid (ptid);
 }
 
 void info_thread_command (char *tidstr, int from_tty)

@@ -1,5 +1,5 @@
 /* MI Command Set - varobj commands.
-   Copyright (C) 2000, Free Software Foundation, Inc.
+   Copyright 2000 Free Software Foundation, Inc.
    Contributed by Cygnus Solutions (a Red Hat company).
 
    This file is part of GDB.
@@ -56,7 +56,7 @@ mi_cmd_var_create (char *command, char **argv, int argc)
 
   if (argc != 3)
     {
-      /*      asprintf (&mi_error_message,
+      /*      xasprintf (&mi_error_message,
          "mi_cmd_var_create: Usage: .");
          return MI_CMD_ERROR; */
       error ("mi_cmd_var_create: Usage: NAME FRAME EXPRESSION.");
@@ -68,13 +68,13 @@ mi_cmd_var_create (char *command, char **argv, int argc)
   old_cleanups = make_cleanup (free_current_contents, &name);
 
   frame = xstrdup (argv[1]);
-  old_cleanups = make_cleanup (free, frame);
+  old_cleanups = make_cleanup (xfree, frame);
 
   expr = xstrdup (argv[2]);
 
   if (strcmp (name, "-") == 0)
     {
-      free (name);
+      xfree (name);
       name = varobj_gen_name ();
     }
   else if (!isalpha (*name))
@@ -138,7 +138,7 @@ mi_report_var_creation (struct ui_out *uiout, struct varobj *var)
     {
       ui_out_field_string (uiout, "type", type);
       print_typecode (uiout, var);
-      free (type);
+      xfree (type);
     }
 
   /* How could a newly created variable be out of scope, you ask?
@@ -275,9 +275,9 @@ mi_cmd_var_delete (char *command, char **argv, int argc)
       if (strcmp (name, "-c") != 0)
 	error ("mi_cmd_var_delete: Invalid option.");
       children_only_p = 1;
-      free (name);
+      xfree (name);
       name = xstrdup (expr);
-      free (expr);
+      xfree (expr);
     }
 
   /* If we didn't error out, now NAME contains the name of the
@@ -407,11 +407,11 @@ mi_cmd_var_list_children (char *command, char **argv, int argc)
   if (numchild <= 0)
     return MI_CMD_DONE;
 
-  ui_out_list_begin (uiout, "children");
+  ui_out_tuple_begin (uiout, "children");
   cc = childlist;
   while (*cc != NULL)
     {
-      ui_out_list_begin (uiout, "child");
+      ui_out_tuple_begin (uiout, "child");
       ui_out_field_string (uiout, "name", varobj_get_objname (*cc));
       ui_out_field_string (uiout, "exp", varobj_get_expression (*cc));
       ui_out_field_int (uiout, "numchild", varobj_get_num_children (*cc));
@@ -424,11 +424,11 @@ mi_cmd_var_list_children (char *command, char **argv, int argc)
 	}
       if (print_value)
 	ui_out_field_string (uiout, "value", varobj_get_value (*cc));
-      ui_out_list_end (uiout);
+      ui_out_tuple_end (uiout);
       cc++;
     }
-  ui_out_list_end (uiout);
-  free (childlist);
+  ui_out_tuple_end (uiout);
+  xfree (childlist);
   return MI_CMD_DONE;
 }
 
@@ -603,10 +603,10 @@ mi_cmd_var_update (char *command, char **argv, int argc)
   if ((argc == 1) && (*argv[0] == '*') && (*(argv[0] + 1) == '\0'))
     {
       nv = varobj_list (&rootlist);
-      ui_out_list_begin (uiout, "changelist");
+      ui_out_tuple_begin (uiout, "changelist");
       if (nv <= 0)
 	{
-	  ui_out_list_end (uiout);
+	  ui_out_tuple_end (uiout);
 	  return MI_CMD_DONE;
 	}
       cr = rootlist;
@@ -615,14 +615,14 @@ mi_cmd_var_update (char *command, char **argv, int argc)
 	  varobj_update_one (*cr);
 	  cr++;
 	}
-      free (rootlist);
-      ui_out_list_end (uiout);
+      xfree (rootlist);
+      ui_out_tuple_end (uiout);
     }
   else
     {
       int i;
-
-      ui_out_list_begin (uiout, "changelist");
+      
+      ui_out_tuple_begin (uiout, "changelist");
 
       for (i = 0; i < argc; i++)
 	{
@@ -633,8 +633,8 @@ mi_cmd_var_update (char *command, char **argv, int argc)
 	  
 	  varobj_update_one (var);
 	}
-
-      ui_out_list_end (uiout);
+      
+      ui_out_tuple_end (uiout);
     }
     return MI_CMD_DONE;
 }
@@ -650,7 +650,7 @@ varobj_update_one (struct varobj *var)
   struct varobj **cc;
   int nc;
 
-  nc = varobj_update (var, &changelist);
+  nc = varobj_update (&var, &changelist);
 
   /* nc == 0 means that nothing has changed.
      nc == -1 means that an error occured in updating the variable.
@@ -692,7 +692,7 @@ varobj_update_one (struct varobj *var)
 	  ui_out_list_end (uiout);
 	  cc++;
 	}
-      free (changelist);
+      xfree (changelist);
       return 1;
     }
   return 1;

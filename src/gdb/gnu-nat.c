@@ -1,5 +1,6 @@
 /* Interface GDB to the GNU Hurd.
-   Copyright (C) 1992, 95, 96, 97, 1999, 2000 Free Software Foundation, Inc.
+   Copyright 1992, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,13 +24,13 @@
    Boston, MA 02111-1307, USA.
  */
 
-#include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <stdio.h>
-#include <string.h>
+#include "gdb_string.h"
 #include <sys/ptrace.h>
 
 #include <mach.h>
@@ -60,6 +61,7 @@
 #include "gdbcmd.h"
 #include "gdbcore.h"
 #include "gdbthread.h"
+#include "gdb_assert.h"
 
 #include "gnu-nat.h"
 
@@ -261,7 +263,7 @@ proc_update_sc (struct proc *proc)
   if (proc->sc == 0 && proc->state_changed)
     /* Since PROC may start running, we must write back any state changes. */
     {
-      assert (proc_is_thread (proc));
+      gdb_assert (proc_is_thread (proc));
       proc_debug (proc, "storing back changed thread state");
       err = thread_set_state (proc->port, THREAD_STATE_FLAVOR,
 			 (thread_state_t) & proc->state, THREAD_STATE_SIZE);
@@ -317,7 +319,7 @@ proc_update_sc (struct proc *proc)
 void
 proc_abort (struct proc *proc, int force)
 {
-  assert (proc_is_thread (proc));
+  gdb_assert (proc_is_thread (proc));
 
   if (!proc->aborted)
     {
@@ -538,7 +540,7 @@ make_proc (struct inf *inf, mach_port_t port, int tid)
 {
   error_t err;
   mach_port_t prev_port = MACH_PORT_NULL;
-  struct proc *proc = malloc (sizeof (struct proc));
+  struct proc *proc = xmalloc (sizeof (struct proc));
 
   proc->port = port;
   proc->tid = tid;
@@ -627,7 +629,7 @@ _proc_free (struct proc *proc)
       mach_port_deallocate (mach_task_self (), proc->port);
     }
 
-  free (proc);
+  xfree (proc);
   return next;
 }
 
@@ -635,10 +637,7 @@ _proc_free (struct proc *proc)
 struct inf *
 make_inf (void)
 {
-  struct inf *inf = malloc (sizeof (struct inf));
-
-  if (!inf)
-    return 0;
+  struct inf *inf = xmalloc (sizeof (struct inf));
 
   inf->task = 0;
   inf->threads = 0;
@@ -1066,7 +1065,7 @@ inf_validate_procs (struct inf *inf)
 	    (last ? last->next : inf->threads) = thread;
 	    last = thread;
 	    proc_debug (thread, "new thread: %d", threads[i]);
-	    add_thread (thread->tid);	/* Tell GDB's generic thread code.  */
+	    add_thread (pid_to_ptid (thread->tid));	/* Tell GDB's generic thread code.  */
 	  }
       }
 
@@ -1156,7 +1155,7 @@ inf_suspend (struct inf *inf)
 void
 inf_set_step_thread (struct inf *inf, struct proc *thread)
 {
-  assert (!thread || proc_is_thread (thread));
+  gdb_assert (!thread || proc_is_thread (thread));
 
   if (thread)
     inf_debug (inf, "setting step thread: %d/%d", inf->pid, thread->tid);
@@ -1410,8 +1409,8 @@ struct inf *current_inferior = 0;
 struct inf *waiting_inf;
 
 /* Wait for something to happen in the inferior, returning what in STATUS. */
-static int
-gnu_wait (int tid, struct target_waitstatus *status)
+static ptid_t
+gnu_wait (ptid_t tid, struct target_waitstatus *status)
 {
   struct msg
     {
@@ -1428,7 +1427,7 @@ gnu_wait (int tid, struct target_waitstatus *status)
   extern int notify_server (mach_msg_header_t *, mach_msg_header_t *);
   extern int process_reply_server (mach_msg_header_t *, mach_msg_header_t *);
 
-  assert (inf->task);
+  gdb_assert (inf->task);
 
   if (!inf->threads && !inf->pending_execs)
     /* No threads!  Assume that maybe some outside agency is frobbing our
@@ -1442,7 +1441,7 @@ gnu_wait (int tid, struct target_waitstatus *status)
 
   waiting_inf = inf;
 
-  inf_debug (inf, "waiting for: %d", tid);
+  inf_debug (inf, "waiting for: %d", PIDGET (tid));
 
 rewait:
   if (proc_wait_pid != inf->pid && !inf->no_wait)
@@ -1578,20 +1577,20 @@ rewait:
 
   thread = inf->wait.thread;
   if (thread)
-    tid = thread->tid;
+    tid = pid_to_ptid (thread->tid);
   else
-    thread = inf_tid_to_thread (inf, tid);
+    thread = inf_tid_to_thread (inf, PIDGET (tid));
 
   if (!thread || thread->port == MACH_PORT_NULL)
     {
       /* TID is dead; try and find a new thread.  */
       if (inf_update_procs (inf) && inf->threads)
-	tid = inf->threads->tid; /* The first available thread.  */
+	tid = pid_to_ptid (inf->threads->tid); /* The first available thread.  */
       else
-	tid = inferior_pid;	/* let wait_for_inferior handle exit case */
+	tid = inferior_ptid;	/* let wait_for_inferior handle exit case */
     }
 
-  if (thread && tid >= 0 && status->kind != TARGET_WAITKIND_SPURIOUS
+  if (thread && PIDGET (tid) >= 0 && status->kind != TARGET_WAITKIND_SPURIOUS
       && inf->pause_sc == 0 && thread->pause_sc == 0)
     /* If something actually happened to THREAD, make sure we
        suspend it.  */
@@ -1600,7 +1599,7 @@ rewait:
       inf_update_suspends (inf);
     }
 
-  inf_debug (inf, "returning tid = %d, status = %s (%d)", tid,
+  inf_debug (inf, "returning tid = %d, status = %s (%d)", PIDGET (tid),
 	     status->kind == TARGET_WAITKIND_EXITED ? "EXITED"
 	     : status->kind == TARGET_WAITKIND_STOPPED ? "STOPPED"
 	     : status->kind == TARGET_WAITKIND_SIGNALLED ? "SIGNALLED"
@@ -1668,7 +1667,7 @@ S_exception_raise_request (mach_port_t port, mach_port_t reply_port,
 	      inf_debug (waiting_inf, "Handler is task exception port <%d>",
 			 inf->task->saved_exc_port);
 	      inf->wait.exc.handler = inf->task->saved_exc_port;
-	      assert (inf->task->exc_port == port);
+	      gdb_assert (inf->task->exc_port == port);
 	    }
 	  if (inf->wait.exc.handler != MACH_PORT_NULL)
 	    /* Add a reference to the exception handler. */
@@ -1927,12 +1926,12 @@ port_msgs_queued (mach_port_t port)
    in multiple events returned by wait).
  */
 static void
-gnu_resume (int tid, int step, enum target_signal sig)
+gnu_resume (ptid_t tid, int step, enum target_signal sig)
 {
   struct proc *step_thread = 0;
   struct inf *inf = current_inferior;
 
-  inf_debug (inf, "tid = %d, step = %d, sig = %d", tid, step, sig);
+  inf_debug (inf, "tid = %d, step = %d, sig = %d", PIDGET (tid), step, sig);
 
   inf_validate_procinfo (inf);
 
@@ -1960,17 +1959,17 @@ gnu_resume (int tid, int step, enum target_signal sig)
 
   inf_update_procs (inf);
 
-  if (tid < 0)
+  if (PIDGET (tid) < 0)
     /* Allow all threads to run, except perhaps single-stepping one.  */
     {
-      inf_debug (inf, "running all threads; tid = %d", inferior_pid);
-      tid = inferior_pid;	/* What to step. */
+      inf_debug (inf, "running all threads; tid = %d", PIDGET (inferior_ptid));
+      tid = inferior_ptid;	/* What to step. */
       inf_set_threads_resume_sc (inf, 0, 1);
     }
   else
     /* Just allow a single thread to run.  */
     {
-      struct proc *thread = inf_tid_to_thread (inf, tid);
+      struct proc *thread = inf_tid_to_thread (inf, PIDGET (tid));
       if (!thread)
 	error ("Can't run single thread id %d: no such thread!");
       inf_debug (inf, "running one thread: %d/%d", inf->pid, thread->tid);
@@ -1979,9 +1978,9 @@ gnu_resume (int tid, int step, enum target_signal sig)
 
   if (step)
     {
-      step_thread = inf_tid_to_thread (inf, tid);
+      step_thread = inf_tid_to_thread (inf, PIDGET (tid));
       if (!step_thread)
-	warning ("Can't step thread id %d: no such thread.", tid);
+	warning ("Can't step thread id %d: no such thread.", PIDGET (tid));
       else
 	inf_debug (inf, "stepping thread: %d/%d", inf->pid, step_thread->tid);
     }
@@ -2068,7 +2067,7 @@ gnu_create_inferior (char *exec_file, char *allargs, char **env)
     /* Now let the child run again, knowing that it will stop immediately
        because of the ptrace. */
     inf_resume (inf);
-    inferior_pid = inf_pick_first_thread ();
+    inferior_ptid = pid_to_ptid (inf_pick_first_thread ());
 
     startup_inferior ();
   }
@@ -2139,7 +2138,7 @@ gnu_attach (char *args, int from_tty)
   inf_attach (inf, pid);
   inf_update_procs (inf);
 
-  inferior_pid = inf_pick_first_thread ();
+  inferior_ptid = pid_to_ptid (inf_pick_first_thread ());
 
   attach_flag = 1;
   push_target (&gnu_ops);
@@ -2184,7 +2183,7 @@ gnu_detach (char *args, int from_tty)
 
   inf_detach (current_inferior);
 
-  inferior_pid = 0;
+  inferior_ptid = null_ptid;
 
   unpush_target (&gnu_ops);	/* Pop out of handling an inferior */
 }
@@ -2194,7 +2193,7 @@ gnu_detach (char *args, int from_tty)
 static void
 gnu_terminal_init_inferior (void)
 {
-  assert (current_inferior);
+  gdb_assert (current_inferior);
   terminal_init_inferior_with_pgrp (current_inferior->pid);
 }
 
@@ -2224,7 +2223,7 @@ gnu_stop (void)
 }
 
 static char *
-gnu_pid_to_exec_file (void)
+gnu_pid_to_exec_file (int pid)
 {
   error ("to_pid_to_exec_file target function not implemented");
   return NULL;
@@ -2232,10 +2231,10 @@ gnu_pid_to_exec_file (void)
 
 
 static int
-gnu_thread_alive (int tid)
+gnu_thread_alive (ptid_t tid)
 {
   inf_update_procs (current_inferior);
-  return !!inf_tid_to_thread (current_inferior, tid);
+  return !!inf_tid_to_thread (current_inferior, PIDGET (tid));
 }
 
 
@@ -2446,6 +2445,7 @@ out:
    is ignored. */
 static int
 gnu_xfer_memory (CORE_ADDR memaddr, char *myaddr, int len, int write,
+		 struct mem_attrib *attrib,
 		 struct target_ops *target)
 {
   task_t task = (current_inferior
@@ -2477,14 +2477,15 @@ proc_string (struct proc *proc)
     sprintf (tid_str, "process %d", proc->inf->pid);
   else
     sprintf (tid_str, "thread %d.%d",
-	     proc->inf->pid, pid_to_thread_id (proc->tid));
+	     proc->inf->pid, pid_to_thread_id (MERGEPID (proc->tid, 0)));
   return tid_str;
 }
 
 static char *
-gnu_pid_to_str (int tid)
+gnu_pid_to_str (ptid_t ptid)
 {
   struct inf *inf = current_inferior;
+  int tid = PIDGET (ptid);
   struct proc *thread = inf_tid_to_thread (inf, tid);
 
   if (thread)
@@ -2562,7 +2563,6 @@ init_gnu_ops (void)
   gnu_ops.to_pid_to_str = gnu_pid_to_str;   /* to_pid_to_str */
   gnu_ops.to_stop = gnu_stop;	/* to_stop */
   gnu_ops.to_pid_to_exec_file = gnu_pid_to_exec_file; /* to_pid_to_exec_file */
-  gnu_ops.to_core_file_to_sym_file = NULL;
   gnu_ops.to_stratum = process_stratum;		/* to_stratum */
   gnu_ops.DONT_USE = 0;			/* to_next */
   gnu_ops.to_has_all_memory = 1;	/* to_has_all_memory */
@@ -2655,7 +2655,7 @@ static struct proc *
 cur_thread (void)
 {
   struct inf *inf = cur_inf ();
-  struct proc *thread = inf_tid_to_thread (inf, inferior_pid);
+  struct proc *thread = inf_tid_to_thread (inf, PIDGET (inferior_ptid));
   if (!thread)
     error ("No current thread.");
   return thread;
@@ -2837,7 +2837,7 @@ set_sig_thread_cmd (char *args, int from_tty)
     inf->signal_thread = 0;
   else
     {
-      int tid = thread_id_to_pid (atoi (args));
+      int tid = PIDGET (thread_id_to_pid (atoi (args)));
       if (tid < 0)
 	error ("Thread ID %s not known.  Use the \"info threads\" command to\n"
 	       "see the IDs of currently known threads.", args);
@@ -2957,14 +2957,14 @@ static void
 info_port_rights (char *args, mach_port_type_t only)
 {
   struct inf *inf = active_inf ();
-  value_ptr vmark = value_mark ();
+  struct value *vmark = value_mark ();
 
   if (args)
     /* Explicit list of port rights.  */
     {
       while (*args)
 	{
-	  value_ptr val = parse_to_comma_and_eval (&args);
+	  struct value *val = parse_to_comma_and_eval (&args);
 	  long right = value_as_long (val);
 	  error_t err =
 	  print_port_info (right, 0, inf->task->port, PORTINFO_DETAILS,

@@ -1,3 +1,140 @@
+2002-03-21  Klee Dienes  <klee@apple.com>
+
+	* nextstep-nat-dyld.c (dyld_info_process_raw): The issue is that
+	when dyld goes to process DYLD_INSERT_LIBRARIES, it removes the
+	colons from the DYLD_INSERT_LIBRARIES string while parsing, loads
+	the libraries, then replaces the colons. The problem here is that
+	when GDB goes to read the namestring out of the inferior memory,
+	the colons have been replaced, and therefore GDB ends up with
+	multiple strings instead of just the one.  I've changed GDB to
+	treat ':' as a string terminator when processing all shared
+	library pathnames returned by DYLD.  I'm not sure this is the
+	ideal long-term solution though, since I suppose some day some
+	masochist will try to debug a program that uses a shared library
+	with a ':' in the name.
+ 
+2002-03-21  Klee Dienes  <klee@apple.com>
+
+	* nextstep-nat-inferior.c (next_handle_exception): Check incoming
+	exceptions --- if the task receiving the exception is not the same
+	as the one being debugged by GDB, it resets the exception ports of
+	the task back to the ones GDB saved for the target when it first
+	started debugging; then resumes the task.  This isn't quite
+	perfect, since ideally GDB would allow changes to the exception
+	ports made by the target be reflected in children of the target as
+	well; and also because it relies on being able to repeat an
+	exception by simply continuing the child without modifying the
+	program state (I think this should always work, but there may be
+	cases I haven't thought of).
+	(next_wait): If control returns due to an event of type
+	WAITKIND_SPURIOUS, continue waiting for a real event.
+
+2002-03-19  James Ingham  <jingham@inghji.apple.com>
+
+        * nextstep-nat-dyld-process.c: rearrange the include order to remove a few
+        compiler warnings.
+
+        * ppc-tdep.c (ppc_fast_show_stack_helper): Return 1 when you find only 1 frame, not 0
+        dummy...
+
+        * ppc-frameinfo.c (ppc_parse_instructions): Fix a bug with handling the
+        saveFP builtin function in prologues.
+
+2002-03-14  James Ingham  <jingham@inghji.apple.com>
+
+	* ppc-tdep.c (ppc_fast_show_stack_helper): Use lookup_minimal_symbol to find
+	_sigtramp, it is much more efficient than parse_and_eval_address...
+
+2002-03-05  James Ingham  <jingham@inghji.apple.com>
+
+	* nextstep-nat-dyld.c (dyld_starts_here_p): New function, does the memory
+	passed in actually contain dyld?
+	(next_locate_dyld): New function, find where dyld got loaded in this
+	executable.
+	(next_set_start_breakpoint): call next_locate_dyld.
+	(dyld_lookup_address): use the slide set by next_locate_dyld.
+
+	* nextstep-nat-cfm.h: add cfm_update to silence compiler warnings.
+	* nextstep-nat-dyld-info.h: add dyld_objfile_info_compare.
+	* nextstep-nat-dyld-process.h: add dyld_parse_load_level and
+	dyld_minimal_load_flag.
+	* nextstep-nat-dyld.h: remove next_mach_start_dyld - it is never used
+	or defined.
+
+2002-02-26  James Ingham  <jingham@inghji.apple.com>
+
+	* nextstep-nat-sigthread.c (next_signal_thread): Don't call pause in between pthread_testcancel calls, 
+	we never get a signal to wake us up...
+	
+	* nextstep-nat-inferior.c (next_clear_pending_events): New function, clears out the pending event chain.
+	(next_mourn_inferior): Call next_clear_pending_events.
+
+2002-02-21  James Ingham  <jingham@inghji.apple.com>
+
+	* remote-kdp.c (kdp_resume): Fix signature of kdp_resume - should be a ptid_t
+	for first argument, not an int...
+
+2002-02-06  James Ingham  <jingham@inghji.apple.com>
+
+	* nextstep-nat-dyld-process.c (dyld_libraries_compatible): The prefix may 
+	be NULL, check this before comparing the contents.
+	(dyld_objfile_move_load_data): copy the prefix over as well.
+	* nextstep-nat-dyld-info.c (dyld_objfile_entry_clear): The unset value for
+	the prefix should be NULL, not "".
+
+2002-01-25  James Ingham <jingham@inghji.apple.com>
+        Create a queue of "pending events" to handle the case where we get more
+	than one event from either Mach or BSD when the inferior stops.  If we
+	get more than one event, then we report them to the user serially, and
+	each call to next_child_resume will fetch the next pending event till
+	the queue is exhausted.  Only then do we really resume the inferior.
+	
+	* nextstep-nat-inferior-stubs.c: Fix child_wait to pass the client_data
+	field.
+	* nextstep-nat-inferior-util.c (next_inferior_suspend_ptrace): Fix call 
+	to next_wait.
+	* nextstep-nat-inferior.h: Change declaration of next_wait.
+	* nextstep-nat-inferior.c: Include regcache.h to remove compiler warnings.
+	Generalize the signal & exception handling functions so we can share them 
+	between the immediate event handling and the deferred servicing routines.
+	Add the next_pending_event struct, queue, and handling functions.
+	* kdp.c: change declaration of kdp_wait, and since the gdb_queue_event
+	function is now exported, remove the copy of it from here.
+	
+2002-01-18  James Ingham  <jingham@inghji.apple.com>
+
+	* i386-next-nat-exec.c (fetch_inferior_registers): Fix a reference to
+	the obsolete inferior_pid.
+	(store_inferior_registers): ditto
+
+2002-01-11  James Ingham  <jingham@inghji.apple.com>
+
+	* ppc-tdep.c (ppc_breakpoint_from_pc): Fixed a couple of places
+	where we needed to switch BIG_ENDIAN for BFD_BIG_ENDIAN.
+
+2001-12-07  James Ingham  <jingham@inghji.apple.com>
+
+	(From Bernard Semeria)
+	* remote-kdp.c (kdp_attach): Use the version packet rather than
+	hijacking the region packet to get the kdp version.
+	* kdp-protocol.c (kdp_marshall, kdp_unmarshall): ditto.
+	* kdp-protocol.h: ditto.
+
+2001-12-03  James Ingham  <jingham@inghji.apple.com>
+
+	* nextstep-nat-inferior.c: Format changes, more functions comply
+	with the GNU coding conventions.  Also added a few prototypes, and
+	extern'ed some functions from exec.c to remove compiler warnings.
+
+	* nextstep-nat-inferior.c (next_set_auto_start_dyld): New
+	function, used to dynamically switch the dyld breakpoint on and
+	off.
+	(_initialize_next_inferior): use next_set_auto_start_dyld.
+	
+	(next_process_events): drain both event sources here, not just the
+	one you got the first hit on.  We have more chance of handling
+	extraneous events here than in next_child_resume...
+	
 2001-11-01  James Ingham  <jingham@inghji.apple.com>
 
 	* ppc-tdep.c (ppc_fast_show_stack_helper): Move most of the
@@ -13,6 +150,34 @@
 	this doesn't build up the frame cache, it is much faster.
 	(ppc_frame_find_pc): We were looking in the wrong place for the
 	frame stored PC for signal frames.
+
+2001-10-30  Klee Dienes  <kdienes@apple.com>
+
+	* nextstep-nat-dyld-process.c (dyld_add_image_libraries): 
+	recognize BFD_MACH_O_LC_LOAD_WEAK_DYLIB; treat it like
+	LC_LOAD_DYLIB for now.
+
+2001-10-26  Klee Dienes  <kdienes@apple.com>
+
+	* nextstep-nat-dyld-info.c (dyld_entry_out): Send the basename as
+	the "path" field when talking via MI.  The ProjectBuilder shared
+	library dialog uses the pathname as the key for the table, so all
+	entries without a "path" field were getting collapsed into one
+	line in the table.  The correct fix for this is to have PB used a
+	different algorithm for building the table, but this fix should
+	work well for now.
+
+	* nextstep-nat-dyld-process.c (dyld_load_library): Automatically
+	load CFM fragments from memory, rather than trying to load from
+	disk first.  The only time we should be relying on the fragment
+	name to match a disk file is when looking for xSym files.  Trying
+	to read from disk was taking extra time in the cases where the
+	disk access failed, and the warning messages when it failed were
+	distracting.
+
+	* nextstep-nat-dyld-.c (inferior_bfd_generic): Handle the case
+	where a memory object is provided without a text string for the
+	name (previously it would crash).
 
 2001-10-23  James Ingham  <jingham@inghji.apple.com>
 
@@ -41,10 +206,10 @@
 
 2001-10-02  Jim Ingham (jingham@apple.com) and Jason Molenda (jmolenda@apple.com)
 
-	* nextstep-nat-inferior.c (next_fetch_event):  Accept a third
-	type of timeout:  Check for an event to read, but don't block if
-	there's nothing there.
-	(next_process_events, next_child_resume):  Update callers.
+       * nextstep-nat-inferior.c (next_fetch_event):  Accept a third
+       type of timeout:  Check for an event to read, but don't block if
+       there's nothing there.
+       (next_process_events, next_child_resume):  Update callers.
 
 2001-08-06  James Ingham  <jingham@inghji.apple.com>
 

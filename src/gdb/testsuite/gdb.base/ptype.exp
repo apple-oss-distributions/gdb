@@ -1,4 +1,5 @@
-#   Copyright (C) 1988, 1990, 1991, 1992, 1994, 1997 Free Software Foundation, Inc.
+#   Copyright 1988, 1990, 1991, 1992, 1994, 1995, 1996, 1997, 1999, 2000
+#   Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -172,7 +173,8 @@ gdb_test "ptype red" "type = enum \{red, green, blue\}.*" "ptype unnamed enumera
 # test both whatis and ptype for all the types, the tests should be
 # merged into whatis.exp, or else maintenance will be a royal pain -kingdon
 #setup_xfail "i960-*-*" 1821
-#setup_xfail "mips-idt-*" "mips-sgi-*" "a29k-*-*"
+#setup_xfail "mips-idt-*" "mips-sgi-*"
+# OBSOLETE #setup_xfail "a29k-*-*"
 #send "ptype v_char\n"
 #gdb_expect {
 #    -re "type = char.*$gdb_prompt $"	{ pass "ptype char" }
@@ -181,7 +183,8 @@ gdb_test "ptype red" "type = enum \{red, green, blue\}.*" "ptype unnamed enumera
 #}
 #
 #
-#setup_xfail "mips-*-*" "a29k-*-*"
+#setup_xfail "mips-*-*"
+# OBSOLETE #setup_xfail "a29k-*-*"
 #send "ptype v_signed_char\n"
 #gdb_expect {
 #    -re "type = signed char.*$gdb_prompt $"	{ pass "ptype signed char" }
@@ -277,7 +280,8 @@ gdb_test "ptype v_int" "type = int.*" "ptype int"
 # test ptype command with arrays
 #
 #setup_xfail "i960-*-*" 1821
-#setup_xfail "mips-idt-*" "mips-sgi-*" "a29k-*-*"
+#setup_xfail "mips-idt-*" "mips-sgi-*"
+# OBSOLETE #setup_xfail "a29k-*-*"
 #send "ptype v_char_array\n"
 #gdb_expect {
 #    -re "type = char .2..*$gdb_prompt $"	{ pass "ptype char array" }
@@ -286,7 +290,8 @@ gdb_test "ptype v_int" "type = int.*" "ptype int"
 #}
 #
 #
-#setup_xfail "mips-*-*" "a29k-*-*"
+#setup_xfail "mips-*-*"
+# OBSOLETE #setup_xfail "a29k-*-*"
 #send "ptype v_signed_char_array\n"
 #gdb_expect {
 #    -re "type = (|signed )char .2..*$gdb_prompt $"	{ pass "ptype signed char array" }
@@ -380,7 +385,8 @@ gdb_test "ptype t_char_array" "type = (|unsigned )char \\\[0?\\\]"
 ## test ptype command with pointers
 ##
 #setup_xfail "i960-*-*" 1821
-#setup_xfail "mips-idt-*" "mips-sgi-*" "a29k-*-*"
+#setup_xfail "mips-idt-*" "mips-sgi-*"
+# OBSOLETE #setup_xfail "a29k-*-*"
 #send "ptype v_char_pointer\n"
 #gdb_expect {
 #    -re "type = char \*.*$gdb_prompt $"	{ pass "ptype char pointer" }
@@ -389,7 +395,8 @@ gdb_test "ptype t_char_array" "type = (|unsigned )char \\\[0?\\\]"
 #}
 #
 #
-#setup_xfail "mips-*-*" "a29k-*-*"
+#setup_xfail "mips-*-*"
+# OBSOLETE #setup_xfail "a29k-*-*"
 #send "ptype v_signed_char_pointer\n"
 #gdb_expect {
 #    -re "type = (|signed )char \*.*$gdb_prompt $"

@@ -1,5 +1,6 @@
 /* Target-dependent code for GDB, the GNU debugger.
-   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 2000
+   Copyright 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
+   1998, 1999, 2000, 2001
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -29,6 +30,10 @@
 #include "symfile.h"
 #include "objfiles.h"
 #include "arch-utils.h"
+#include "regcache.h"
+#include "doublest.h"
+#include "value.h"
+#include "parser-defs.h"
 
 #include "bfd/libbfd.h"		/* for bfd_default_set_arch_mach */
 #include "coff/internal.h"	/* for libcoff.h */
@@ -36,6 +41,7 @@
 
 #include "elf-bfd.h"
 
+#include "solib-svr4.h"
 #include "ppc-tdep.h"
 
 /* If the kernel has to deliver a signal, it pushes a sigcontext
@@ -75,16 +81,6 @@ struct reg
     unsigned char sz32;		/* size on 32-bit arch, 0 if nonextant */
     unsigned char sz64;		/* size on 64-bit arch, 0 if nonextant */
     unsigned char fpr;		/* whether register is floating-point */
-  };
-
-/* Private data that this module attaches to struct gdbarch. */
-
-struct gdbarch_tdep
-  {
-    int wordsize;		/* size in bytes of fixed-point word */
-    int osabi;			/* OS / ABI from ELF header */
-    int *regoff;		/* byte offsets in register arrays */
-    const struct reg *regs;	/* from current variant */
   };
 
 /* Return the current architecture's gdbarch_tdep structure. */
@@ -200,7 +196,7 @@ rs6000_frame_args_address (struct frame_info *fi)
 static CORE_ADDR
 rs6000_saved_pc_after_call (struct frame_info *fi)
 {
-  return read_register (PPC_LR_REGNUM);
+  return read_register (gdbarch_tdep (current_gdbarch)->ppc_lr_regnum);
 }
 
 /* Calculate the destination of a branch/jump.  Return -1 if not a branch.  */
@@ -238,7 +234,7 @@ branch_dest (int opcode, int instr, CORE_ADDR pc, CORE_ADDR safety)
 
       if (ext_op == 16)		/* br conditional register */
 	{
-	  dest = read_register (PPC_LR_REGNUM) & ~3;
+          dest = read_register (gdbarch_tdep (current_gdbarch)->ppc_lr_regnum) & ~3;
 
 	  /* If we are about to return from a signal handler, dest is
 	     something like 0x3c90.  The current frame is a signal handler
@@ -257,13 +253,13 @@ branch_dest (int opcode, int instr, CORE_ADDR pc, CORE_ADDR safety)
 
       else if (ext_op == 528)	/* br cond to count reg */
 	{
-	  dest = read_register (PPC_CTR_REGNUM) & ~3;
+          dest = read_register (gdbarch_tdep (current_gdbarch)->ppc_ctr_regnum) & ~3;
 
 	  /* If we are about to execute a system call, dest is something
 	     like 0x22fc or 0x3b00.  Upon completion the system call
 	     will return to the address in the link register.  */
 	  if (dest < TEXT_SEGMENT_BASE)
-	    dest = read_register (PPC_LR_REGNUM) & ~3;
+            dest = read_register (gdbarch_tdep (current_gdbarch)->ppc_lr_regnum) & ~3;
 	}
       else
 	return -1;
@@ -287,7 +283,7 @@ rs6000_breakpoint_from_pc (CORE_ADDR *bp_addr, int *bp_size)
   static unsigned char big_breakpoint[] = BIG_BREAKPOINT;
   static unsigned char little_breakpoint[] = LITTLE_BREAKPOINT;
   *bp_size = 4;
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     return big_breakpoint;
   else
     return little_breakpoint;
@@ -297,13 +293,14 @@ rs6000_breakpoint_from_pc (CORE_ADDR *bp_addr, int *bp_size)
 /* AIX does not support PT_STEP. Simulate it. */
 
 void
-rs6000_software_single_step (unsigned int signal, int insert_breakpoints_p)
+rs6000_software_single_step (enum target_signal signal,
+			     int insert_breakpoints_p)
 {
 #define	INSNLEN(OPCODE)	 4
 
   static char le_breakp[] = LITTLE_BREAKPOINT;
   static char be_breakp[] = BIG_BREAKPOINT;
-  char *breakp = TARGET_BYTE_ORDER == BIG_ENDIAN ? be_breakp : le_breakp;
+  char *breakp = TARGET_BYTE_ORDER == BFD_ENDIAN_BIG ? be_breakp : le_breakp;
   int ii, insn;
   CORE_ADDR loc;
   CORE_ADDR breaks[2];
@@ -380,11 +377,63 @@ rs6000_software_single_step (unsigned int signal, int insert_breakpoints_p)
 
 #define GET_SRC_REG(x) (((x) >> 21) & 0x1f)
 
+/* Limit the number of skipped non-prologue instructions, as the examining
+   of the prologue is expensive.  */
+static int max_skip_non_prologue_insns = 10;
+
+/* Given PC representing the starting address of a function, and
+   LIM_PC which is the (sloppy) limit to which to scan when looking
+   for a prologue, attempt to further refine this limit by using
+   the line data in the symbol table.  If successful, a better guess
+   on where the prologue ends is returned, otherwise the previous
+   value of lim_pc is returned.  */
+static CORE_ADDR
+refine_prologue_limit (CORE_ADDR pc, CORE_ADDR lim_pc)
+{
+  struct symtab_and_line prologue_sal;
+
+  prologue_sal = find_pc_line (pc, 0);
+  if (prologue_sal.line != 0)
+    {
+      int i;
+      CORE_ADDR addr = prologue_sal.end;
+
+      /* Handle the case in which compiler's optimizer/scheduler
+         has moved instructions into the prologue.  We scan ahead
+	 in the function looking for address ranges whose corresponding
+	 line number is less than or equal to the first one that we
+	 found for the function.  (It can be less than when the
+	 scheduler puts a body instruction before the first prologue
+	 instruction.)  */
+      for (i = 2 * max_skip_non_prologue_insns; 
+           i > 0 && (lim_pc == 0 || addr < lim_pc);
+	   i--)
+        {
+	  struct symtab_and_line sal;
+
+	  sal = find_pc_line (addr, 0);
+	  if (sal.line == 0)
+	    break;
+	  if (sal.line <= prologue_sal.line 
+	      && sal.symtab == prologue_sal.symtab)
+	    {
+	      prologue_sal = sal;
+	    }
+	  addr = sal.end;
+	}
+
+      if (lim_pc == 0 || prologue_sal.end < lim_pc)
+	lim_pc = prologue_sal.end;
+    }
+  return lim_pc;
+}
+
+
 static CORE_ADDR
 skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
 {
   CORE_ADDR orig_pc = pc;
-  CORE_ADDR last_prologue_pc;
+  CORE_ADDR last_prologue_pc = pc;
   char buf[4];
   unsigned long op;
   long offset = 0;
@@ -394,6 +443,22 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
   int framep = 0;
   int minimal_toc_loaded = 0;
   int prev_insn_was_prologue_insn = 1;
+  int num_skip_non_prologue_insns = 0;
+
+  /* Attempt to find the end of the prologue when no limit is specified.
+     Note that refine_prologue_limit() has been written so that it may
+     be used to "refine" the limits of non-zero PC values too, but this
+     is only safe if we 1) trust the line information provided by the
+     compiler and 2) iterate enough to actually find the end of the
+     prologue.  
+     
+     It may become a good idea at some point (for both performance and
+     accuracy) to unconditionally call refine_prologue_limit().  But,
+     until we can make a clear determination that this is beneficial,
+     we'll play it safe and only use it to obtain a limit when none
+     has been specified.  */
+  if (lim_pc == 0)
+    lim_pc = refine_prologue_limit (pc, lim_pc);
 
   memset (fdata, 0, sizeof (struct rs6000_framedata));
   fdata->saved_gpr = -1;
@@ -402,19 +467,22 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
   fdata->frameless = 1;
   fdata->nosavedpc = 1;
 
-  pc -= 4;
-  while (lim_pc == 0 || pc < lim_pc - 4)
+  for (;; pc += 4)
     {
-      pc += 4;
-
       /* Sometimes it isn't clear if an instruction is a prologue
          instruction or not.  When we encounter one of these ambiguous
 	 cases, we'll set prev_insn_was_prologue_insn to 0 (false).
 	 Otherwise, we'll assume that it really is a prologue instruction. */
       if (prev_insn_was_prologue_insn)
 	last_prologue_pc = pc;
+
+      /* Stop scanning if we've hit the limit.  */
+      if (lim_pc != 0 && pc >= lim_pc)
+	break;
+
       prev_insn_was_prologue_insn = 1;
 
+      /* Fetch the instruction and convert it to an integer.  */
       if (target_read_memory (pc, buf, 4))
 	break;
       op = extract_signed_integer (buf, 4);
@@ -628,7 +696,31 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
 	}
       else
 	{
-	  break;
+	  /* Not a recognized prologue instruction.
+	     Handle optimizer code motions into the prologue by continuing
+	     the search if we have no valid frame yet or if the return
+	     address is not yet saved in the frame.  */
+	  if (fdata->frameless == 0
+	      && (lr_reg == -1 || fdata->nosavedpc == 0))
+	    break;
+
+	  if (op == 0x4e800020		/* blr */
+	      || op == 0x4e800420)	/* bctr */
+	    /* Do not scan past epilogue in frameless functions or
+	       trampolines.  */
+	    break;
+	  if ((op & 0xf4000000) == 0x40000000) /* bxx */
+	    /* Never skip branches. */
+	    break;
+
+	  if (num_skip_non_prologue_insns++ > max_skip_non_prologue_insns)
+	    /* Do not scan too many insns, scanning insns is expensive with
+	       remote targets.  */
+	    break;
+
+	  /* Continue scanning.  */
+	  prev_insn_was_prologue_insn = 0;
+	  continue;
 	}
     }
 
@@ -655,7 +747,7 @@ skip_prologue (CORE_ADDR pc, CORE_ADDR lim_pc, struct rs6000_framedata *fdata)
 	     function as well. */
 
 	  tmp = find_pc_misc_function (pc);
-	  if (tmp >= 0 && STREQ (misc_function_vector[tmp].name, "main"))
+	  if (tmp >= 0 && STREQ (misc_function_vector[tmp].name, main_name ()))
 	    return pc + 8;
 	}
     }
@@ -708,7 +800,7 @@ rs6000_pop_frame (void)
   else
     prev_sp = read_memory_addr (sp, wordsize);
   if (fdata.lr_offset == 0)
-    lr = read_register (PPC_LR_REGNUM);
+     lr = read_register (gdbarch_tdep (current_gdbarch)->ppc_lr_regnum);
   else
     lr = read_memory_addr (prev_sp + fdata.lr_offset, wordsize);
 
@@ -747,7 +839,7 @@ rs6000_pop_frame (void)
 
 static void
 rs6000_fix_call_dummy (char *dummyname, CORE_ADDR pc, CORE_ADDR fun,
-		       int nargs, value_ptr *args, struct type *type,
+		       int nargs, struct value **args, struct type *type,
 		       int gcc_p)
 {
 #define	TOC_ADDR_OFFSET		20
@@ -759,7 +851,8 @@ rs6000_fix_call_dummy (char *dummyname, CORE_ADDR pc, CORE_ADDR fun,
   if (rs6000_find_toc_address_hook != NULL)
     {
       CORE_ADDR tocvalue = (*rs6000_find_toc_address_hook) (fun);
-      write_register (PPC_TOC_REGNUM, tocvalue);
+      write_register (gdbarch_tdep (current_gdbarch)->ppc_toc_regnum,
+		      tocvalue);
     }
 }
 
@@ -780,7 +873,7 @@ rs6000_fix_call_dummy (char *dummyname, CORE_ADDR pc, CORE_ADDR fun,
    starting from r4. */
 
 static CORE_ADDR
-rs6000_push_arguments (int nargs, value_ptr *args, CORE_ADDR sp,
+rs6000_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
 		       int struct_return, CORE_ADDR struct_addr)
 {
   int ii;
@@ -791,7 +884,7 @@ rs6000_push_arguments (int nargs, value_ptr *args, CORE_ADDR sp,
   int f_argno = 0;		/* current floating point argno */
   int wordsize = TDEP->wordsize;
 
-  value_ptr arg = 0;
+  struct value *arg = 0;
   struct type *type;
 
   CORE_ADDR saved_sp;
@@ -871,7 +964,7 @@ rs6000_push_arguments (int nargs, value_ptr *args, CORE_ADDR sp,
 	}
       else
 	{			/* Argument can fit in one register. No problem. */
-	  int adj = TARGET_BYTE_ORDER == BIG_ENDIAN ? reg_size - len : 0;
+	  int adj = TARGET_BYTE_ORDER == BFD_ENDIAN_BIG ? reg_size - len : 0;
 	  memset (&registers[REGISTER_BYTE (ii + 3)], 0, reg_size);
 	  memcpy ((char *)&registers[REGISTER_BYTE (ii + 3)] + adj, 
 	          VALUE_CONTENTS (arg), len);
@@ -910,7 +1003,7 @@ ran_out_of_registers_for_arguments:
 
       for (; jj < nargs; ++jj)
 	{
-	  value_ptr val = args[jj];
+	  struct value *val = args[jj];
 	  space += ((TYPE_LENGTH (VALUE_TYPE (val))) + 3) & -4;
 	}
 
@@ -982,7 +1075,8 @@ ran_out_of_registers_for_arguments:
 static CORE_ADDR
 ppc_push_return_address (CORE_ADDR pc, CORE_ADDR sp)
 {
-  write_register (PPC_LR_REGNUM, CALL_DUMMY_ADDRESS ());
+  write_register (gdbarch_tdep (current_gdbarch)->ppc_lr_regnum,
+		  CALL_DUMMY_ADDRESS ());
   return sp;
 }
 
@@ -1017,7 +1111,7 @@ rs6000_extract_return_value (struct type *valtype, char *regbuf, char *valbuf)
   else
     {
       /* return value is copied starting from r3. */
-      if (TARGET_BYTE_ORDER == BIG_ENDIAN
+      if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG
 	  && TYPE_LENGTH (valtype) < REGISTER_RAW_SIZE (3))
 	offset = REGISTER_RAW_SIZE (3) - TYPE_LENGTH (valtype);
 
@@ -1034,19 +1128,55 @@ rs6000_extract_return_value (struct type *valtype, char *regbuf, char *valbuf)
 
 static CORE_ADDR rs6000_struct_return_address;
 
-/* Indirect function calls use a piece of trampoline code to do context
-   switching, i.e. to set the new TOC table. Skip such code if we are on
-   its first instruction (as when we have single-stepped to here). 
-   Also skip shared library trampoline code (which is different from
+/* Return whether handle_inferior_event() should proceed through code
+   starting at PC in function NAME when stepping.
+
+   The AIX -bbigtoc linker option generates functions @FIX0, @FIX1, etc. to
+   handle memory references that are too distant to fit in instructions
+   generated by the compiler.  For example, if 'foo' in the following
+   instruction:
+
+     lwz r9,foo(r2)
+
+   is greater than 32767, the linker might replace the lwz with a branch to
+   somewhere in @FIX1 that does the load in 2 instructions and then branches
+   back to where execution should continue.
+
+   GDB should silently step over @FIX code, just like AIX dbx does.
+   Unfortunately, the linker uses the "b" instruction for the branches,
+   meaning that the link register doesn't get set.  Therefore, GDB's usual
+   step_over_function() mechanism won't work.
+
+   Instead, use the IN_SOLIB_RETURN_TRAMPOLINE and SKIP_TRAMPOLINE_CODE hooks
+   in handle_inferior_event() to skip past @FIX code.  */
+
+int
+rs6000_in_solib_return_trampoline (CORE_ADDR pc, char *name)
+{
+  return name && !strncmp (name, "@FIX", 4);
+}
+
+/* Skip code that the user doesn't want to see when stepping:
+
+   1. Indirect function calls use a piece of trampoline code to do context
+   switching, i.e. to set the new TOC table.  Skip such code if we are on
+   its first instruction (as when we have single-stepped to here).
+
+   2. Skip shared library trampoline code (which is different from
    indirect function call trampolines).
+
+   3. Skip bigtoc fixup code.
+
    Result is desired PC to step until, or NULL if we are not in
-   trampoline code.  */
+   code that should be skipped.  */
 
 CORE_ADDR
 rs6000_skip_trampoline_code (CORE_ADDR pc)
 {
   register unsigned int ii, op;
+  int rel;
   CORE_ADDR solib_target_pc;
+  struct minimal_symbol *msymbol;
 
   static unsigned trampoline_code[] =
   {
@@ -1059,6 +1189,21 @@ rs6000_skip_trampoline_code (CORE_ADDR pc)
     0x4e800020,			/*    br                */
     0
   };
+
+  /* Check for bigtoc fixup code.  */
+  msymbol = lookup_minimal_symbol_by_pc (pc);
+  if (msymbol && rs6000_in_solib_return_trampoline (pc, SYMBOL_NAME (msymbol)))
+    {
+      /* Double-check that the third instruction from PC is relative "b".  */
+      op = read_memory_integer (pc + 8, 4);
+      if ((op & 0xfc000003) == 0x48000000)
+	{
+	  /* Extract bits 6-29 as a signed 24-bit relative word address and
+	     add it to the containing PC.  */
+	  rel = ((int)(op << 6) >> 6);
+	  return pc + 8 + rel;
+	}
+    }
 
   /* If pc is in a shared library trampoline, return its target.  */
   solib_target_pc = find_solib_trampoline_target (pc);
@@ -1145,7 +1290,7 @@ rs6000_frame_saved_pc (struct frame_info *fi)
     }
 
   if (fdata.lr_offset == 0)
-    return read_register (PPC_LR_REGNUM);
+    return read_register (gdbarch_tdep (current_gdbarch)->ppc_lr_regnum);
 
   return read_memory_addr (FRAME_CHAIN (fi) + fdata.lr_offset, wordsize);
 }
@@ -1216,12 +1361,14 @@ frame_get_saved_regs (struct frame_info *fi, struct rs6000_framedata *fdatap)
   /* If != 0, fdatap->cr_offset is the offset from the frame that holds
      the CR.  */
   if (fdatap->cr_offset != 0)
-    fi->saved_regs[PPC_CR_REGNUM] = frame_addr + fdatap->cr_offset;
+    fi->saved_regs[gdbarch_tdep (current_gdbarch)->ppc_cr_regnum] =
+      frame_addr + fdatap->cr_offset;
 
   /* If != 0, fdatap->lr_offset is the offset from the frame that holds
      the LR.  */
   if (fdatap->lr_offset != 0)
-    fi->saved_regs[PPC_LR_REGNUM] = frame_addr + fdatap->lr_offset;
+    fi->saved_regs[gdbarch_tdep (current_gdbarch)->ppc_lr_regnum] =
+      frame_addr + fdatap->lr_offset;
 }
 
 /* Return the address of a frame. This is the inital %sp value when the frame
@@ -1331,7 +1478,7 @@ rs6000_frame_chain (struct frame_info *thisframe)
   else
     fp = read_memory_addr ((thisframe)->frame, wordsize);
 
-  lr = read_register (PPC_LR_REGNUM);
+  lr = read_register (gdbarch_tdep (current_gdbarch)->ppc_lr_regnum);
   if (lr == entry_point_address ())
     if (fp != 0 && (fpp = read_memory_addr (fp, wordsize)) != 0)
       if (PC_IN_CALL_DUMMY (lr, fpp, fpp))
@@ -1383,15 +1530,6 @@ rs6000_register_raw_size (int n)
   return regsize (reg, tdep->wordsize);
 }
 
-/* Number of bytes of storage in the program's representation
-   for register N.  */
-
-static int
-rs6000_register_virtual_size (int n)
-{
-  return TYPE_LENGTH (REGISTER_VIRTUAL_TYPE (n));
-}
-
 /* Return the GDB type object for the "standard" data type
    of data in register N.  */
 
@@ -1401,9 +1539,24 @@ rs6000_register_virtual_type (int n)
   struct gdbarch_tdep *tdep = TDEP;
   const struct reg *reg = tdep->regs + n;
 
-  return reg->fpr ? builtin_type_double :
-    regsize (reg, tdep->wordsize) == 8 ? builtin_type_int64 :
-      builtin_type_int32;
+  if (reg->fpr)
+    return builtin_type_double;
+  else
+    {
+      int size = regsize (reg, tdep->wordsize);
+      switch (size)
+	{
+	case 8:
+	  return builtin_type_int64;
+	  break;
+	case 16:
+	  return builtin_type_vec128;
+	  break;
+	default:
+	  return builtin_type_int32;
+	  break;
+	}
+    }
 }
 
 /* For the PowerPC, it appears that the debug info marks float parameters as
@@ -1462,6 +1615,218 @@ rs6000_register_convert_to_raw (struct type *type, int n,
     memcpy (to, from, REGISTER_RAW_SIZE (n));
 }
 
+int
+altivec_register_p (int regno)
+{
+  struct gdbarch_tdep *tdep = gdbarch_tdep (current_gdbarch);
+  if (tdep->ppc_vr0_regnum < 0 || tdep->ppc_vrsave_regnum < 0)
+    return 0;
+  else
+    return (regno >= tdep->ppc_vr0_regnum && regno <= tdep->ppc_vrsave_regnum);
+}
+
+static void
+rs6000_do_altivec_registers (int regnum)
+{
+  int i;
+  char *raw_buffer = (char*) alloca (MAX_REGISTER_RAW_SIZE);
+  char *virtual_buffer = (char*) alloca (MAX_REGISTER_VIRTUAL_SIZE);
+  struct gdbarch_tdep *tdep = gdbarch_tdep (current_gdbarch);
+
+  for (i = tdep->ppc_vr0_regnum; i <= tdep->ppc_vrsave_regnum; i++)
+    {
+      /* If we want just one reg, check that this is the one we want. */
+      if (regnum != -1 && i != regnum)
+	continue;
+
+      /* If the register name is empty, it is undefined for this
+         processor, so don't display anything.  */
+      if (REGISTER_NAME (i) == NULL || *(REGISTER_NAME (i)) == '\0')
+        continue;
+
+      fputs_filtered (REGISTER_NAME (i), gdb_stdout);
+      print_spaces_filtered (15 - strlen (REGISTER_NAME (i)), gdb_stdout);
+
+      /* Get the data in raw format.  */
+      if (read_relative_register_raw_bytes (i, raw_buffer))
+        {
+          printf_filtered ("*value not available*\n");
+          continue;
+        }
+
+      /* Convert raw data to virtual format if necessary.  */
+      if (REGISTER_CONVERTIBLE (i))
+	REGISTER_CONVERT_TO_VIRTUAL (i, REGISTER_VIRTUAL_TYPE (i),
+				     raw_buffer, virtual_buffer);
+      else
+	memcpy (virtual_buffer, raw_buffer, REGISTER_VIRTUAL_SIZE (i));
+
+      /* Print as integer in hex only.  */
+      val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+                 gdb_stdout, 'x', 1, 0, Val_pretty_default);
+      printf_filtered ("\n");
+    }
+}
+
+static void
+rs6000_altivec_registers_info (char *addr_exp, int from_tty)
+{
+  int regnum, numregs;
+  register char *end;
+
+  if (!target_has_registers)
+    error ("The program has no registers now.");
+  if (selected_frame == NULL)
+    error ("No selected frame.");
+
+  if (!addr_exp)
+    {
+      rs6000_do_altivec_registers (-1);
+      return;
+    }
+
+  numregs = NUM_REGS + NUM_PSEUDO_REGS;
+  do
+    {
+      if (addr_exp[0] == '$')
+	addr_exp++;
+      end = addr_exp;
+      while (*end != '\0' && *end != ' ' && *end != '\t')
+	++end;
+
+      regnum = target_map_name_to_register (addr_exp, end - addr_exp);
+      if (regnum < 0)
+        {
+          regnum = numregs;
+          if (*addr_exp >= '0' && *addr_exp <= '9')
+	    regnum = atoi (addr_exp);	/* Take a number */
+          if (regnum >= numregs)	/* Bad name, or bad number */
+	    error ("%.*s: invalid register", end - addr_exp, addr_exp);
+	}
+
+      rs6000_do_altivec_registers (regnum);
+
+      addr_exp = end;
+      while (*addr_exp == ' ' || *addr_exp == '\t')
+	++addr_exp;
+    }
+  while (*addr_exp != '\0');
+}
+
+static void
+rs6000_do_registers_info (int regnum, int fpregs)
+{
+  register int i;
+  int numregs = NUM_REGS + NUM_PSEUDO_REGS;
+  char *raw_buffer = (char*) alloca (MAX_REGISTER_RAW_SIZE);
+  char *virtual_buffer = (char*) alloca (MAX_REGISTER_VIRTUAL_SIZE);
+
+  for (i = 0; i < numregs; i++)
+    {
+      /* Decide between printing all regs, nonfloat regs, or specific reg.  */
+      if (regnum == -1)
+        {
+          if ((TYPE_CODE (REGISTER_VIRTUAL_TYPE (i)) == TYPE_CODE_FLT && !fpregs)
+	      || (altivec_register_p (i) && !fpregs))
+            continue;
+        }
+      else
+        {
+          if (i != regnum)
+            continue;
+        }
+
+      /* If the register name is empty, it is undefined for this
+         processor, so don't display anything.  */
+      if (REGISTER_NAME (i) == NULL || *(REGISTER_NAME (i)) == '\0')
+        continue;
+
+      fputs_filtered (REGISTER_NAME (i), gdb_stdout);
+      print_spaces_filtered (15 - strlen (REGISTER_NAME (i)), gdb_stdout);
+
+      /* Get the data in raw format.  */
+      if (read_relative_register_raw_bytes (i, raw_buffer))
+        {
+          printf_filtered ("*value not available*\n");
+          continue;
+        }
+
+      /* Convert raw data to virtual format if necessary.  */
+      if (REGISTER_CONVERTIBLE (i))
+        REGISTER_CONVERT_TO_VIRTUAL (i, REGISTER_VIRTUAL_TYPE (i),
+				     raw_buffer, virtual_buffer);
+      else
+	memcpy (virtual_buffer, raw_buffer, REGISTER_VIRTUAL_SIZE (i));
+
+      /* If virtual format is floating, print it that way, and in raw hex.  */
+      if (TYPE_CODE (REGISTER_VIRTUAL_TYPE (i)) == TYPE_CODE_FLT)
+        {
+          register int j;
+
+#ifdef INVALID_FLOAT
+          if (INVALID_FLOAT (virtual_buffer, REGISTER_VIRTUAL_SIZE (i)))
+            printf_filtered ("<invalid float>");
+          else
+#endif
+            val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+                       gdb_stdout, 0, 1, 0, Val_pretty_default);
+
+          printf_filtered ("\t(raw 0x");
+          for (j = 0; j < REGISTER_RAW_SIZE (i); j++)
+            {
+              register int idx = TARGET_BYTE_ORDER == BFD_ENDIAN_BIG ? j
+		: REGISTER_RAW_SIZE (i) - 1 - j;
+              printf_filtered ("%02x", (unsigned char) raw_buffer[idx]);
+            }
+          printf_filtered (")");
+        }
+      else
+	{
+	  /* Print as integer in hex and in decimal.  */
+	  if (!altivec_register_p (i))
+	    {
+	      val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+			 gdb_stdout, 'x', 1, 0, Val_pretty_default);
+	      printf_filtered ("\t");
+	      val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+			 gdb_stdout, 0, 1, 0, Val_pretty_default);
+	    }
+	  else
+	    /* Print as integer in hex only.  */
+	    val_print (REGISTER_VIRTUAL_TYPE (i), virtual_buffer, 0, 0,
+		       gdb_stdout, 'x', 1, 0, Val_pretty_default);
+	}
+      printf_filtered ("\n");
+    }
+}
+
+/* Convert a dbx stab register number (from `r' declaration) to a gdb
+   REGNUM. */
+static int
+rs6000_stab_reg_to_regnum (int num)
+{
+  int regnum;
+  switch (num)
+    {
+    case 64: 
+      regnum = gdbarch_tdep (current_gdbarch)->ppc_mq_regnum;
+      break;
+    case 65: 
+      regnum = gdbarch_tdep (current_gdbarch)->ppc_lr_regnum;
+      break;
+    case 66: 
+      regnum = gdbarch_tdep (current_gdbarch)->ppc_ctr_regnum;
+      break;
+    case 76: 
+      regnum = gdbarch_tdep (current_gdbarch)->ppc_xer_regnum;
+      break;
+    default: 
+      regnum = num;
+      break;
+    }
+  return regnum;
+}
+
 /* Store the address of the place in which to copy the structure the
    subroutine will return.  This is called from call_function.
 
@@ -1493,8 +1858,8 @@ rs6000_store_return_value (struct type *type, char *valbuf)
 			  TYPE_LENGTH (type));
   else
     /* Everything else is returned in GPR3 and up. */
-    write_register_bytes (REGISTER_BYTE (PPC_GP0_REGNUM + 3), valbuf,
-			  TYPE_LENGTH (type));
+    write_register_bytes (REGISTER_BYTE (gdbarch_tdep (current_gdbarch)->ppc_gp0_regnum + 3),
+			  valbuf, TYPE_LENGTH (type));
 }
 
 /* Extract from an array REGBUF containing the (raw) register state
@@ -1601,6 +1966,10 @@ rs6000_convert_from_func_ptr_addr (CORE_ADDR addr)
    systems. */
 #define R8(name)	{ STR(name), 8, 8, 0 }
 
+/* Return a struct reg defining register NAME that's 128 bits on all
+   systems. */
+#define R16(name)       { STR(name), 16, 16, 0 }
+
 /* Return a struct reg defining floating-point register NAME. */
 #define F(name)		{ STR(name), 8, 8, 1 }
 
@@ -1651,6 +2020,14 @@ rs6000_convert_from_func_ptr_addr (CORE_ADDR addr)
   /* 112 */ R(srr0),   R(srr1),   R(tbl),    R(tbu),    \
   /* 116 */ R4(dec),   R(dabr),   R4(ear)
 
+/* AltiVec registers */
+#define PPC_ALTIVEC_REGS \
+  /*119*/R16(vr0), R16(vr1), R16(vr2), R16(vr3), R16(vr4), R16(vr5), R16(vr6), R16(vr7),  \
+  /*127*/R16(vr8), R16(vr9), R16(vr10),R16(vr11),R16(vr12),R16(vr13),R16(vr14),R16(vr15), \
+  /*135*/R16(vr16),R16(vr17),R16(vr18),R16(vr19),R16(vr20),R16(vr21),R16(vr22),R16(vr23), \
+  /*143*/R16(vr24),R16(vr25),R16(vr26),R16(vr27),R16(vr28),R16(vr29),R16(vr30),R16(vr31), \
+  /*151*/R4(vscr), R4(vrsave)
+
 /* IBM POWER (pre-PowerPC) architecture, user-level view.  We only cover
    user-level SPR's. */
 static const struct reg registers_power[] =
@@ -1664,7 +2041,8 @@ static const struct reg registers_power[] =
 static const struct reg registers_powerpc[] =
 {
   COMMON_UISA_REGS,
-  PPC_UISA_SPRS
+  PPC_UISA_SPRS,
+  PPC_ALTIVEC_REGS
 };
 
 /* IBM PowerPC 403. */
@@ -1795,6 +2173,21 @@ static const struct reg registers_750[] =
 };
 
 
+/* Motorola PowerPC 7400. */
+static const struct reg registers_7400[] =
+{
+  /* gpr0-gpr31, fpr0-fpr31 */
+  COMMON_UISA_REGS,
+  /* ctr, xre, lr, cr */
+  PPC_UISA_SPRS,
+  /* sr0-sr15 */
+  PPC_SEGMENT_REGS,
+  PPC_OEA_SPRS,
+  /* vr0-vr31, vrsave, vscr */
+  PPC_ALTIVEC_REGS
+  /* FIXME? Add more registers? */
+};
+
 /* Information about a particular processor variant.  */
 
 struct variant
@@ -1854,6 +2247,8 @@ static const struct variant variants[] =
    bfd_mach_ppc_860, num_registers (registers_860), registers_860},
   {"750", "Motorola/IBM PowerPC 750 or 740", bfd_arch_powerpc,
    bfd_mach_ppc_750, num_registers (registers_750), registers_750},
+  {"7400", "Motorola/IBM PowerPC 7400 (G4)", bfd_arch_powerpc,
+   bfd_mach_ppc_7400, num_registers (registers_7400), registers_7400},
 
   /* FIXME: I haven't checked the register sets of the following. */
   {"620", "Motorola PowerPC 620", bfd_arch_powerpc,
@@ -1944,8 +2339,9 @@ process_note_abi_tag_sections (bfd *abfd, asection *sect, void *obj)
 	      *os_ident_ptr = ELFOSABI_SOLARIS;
 	      break;
 	    default :
-	      internal_error (
-		"process_note_abi_sections: unknown OS number %d", os_number);
+	      internal_error (__FILE__, __LINE__,
+			      "process_note_abi_sections: unknown OS number %d",
+			      os_number);
 	      break;
 	    }
 	}
@@ -2012,8 +2408,8 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   osabi = get_elfosabi (info.abfd);
 
-  /* Check word size.  If INFO is from a binary file, infer it from that,
-     else use the previously-inferred size. */
+  /* Check word size.  If INFO is from a binary file, infer it from
+     that, else choose a likely default. */
   if (from_xcoff_exec)
     {
       if (xcoff_data (info.abfd)->xcoff64)
@@ -2030,11 +2426,7 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     }
   else
     {
-      tdep = TDEP;
-      if (tdep)
-	wordsize = tdep->wordsize;
-      else
-	wordsize = 4;
+      wordsize = 4;
     }
 
   /* Find a candidate among extant architectures. */
@@ -2060,7 +2452,7 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   if (!from_xcoff_exec)
     {
-      arch = info.bfd_architecture;
+      arch = info.bfd_arch_info->arch;
       mach = info.bfd_arch_info->mach;
     }
   else
@@ -2078,7 +2470,7 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Select instruction printer. */
   tm_print_insn = arch == power ? print_insn_rs6000 :
-    info.byte_order == BIG_ENDIAN ? print_insn_big_powerpc :
+    info.byte_order == BFD_ENDIAN_BIG ? print_insn_big_powerpc :
       print_insn_little_powerpc;
 
   /* Choose variant. */
@@ -2086,6 +2478,36 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   if (!v)
     v = find_variant_by_name (power ? "power" : "powerpc");
   tdep->regs = v->regs;
+
+  tdep->ppc_gp0_regnum = 0;
+  tdep->ppc_gplast_regnum = 31;
+  tdep->ppc_toc_regnum = 2;
+  tdep->ppc_ps_regnum = 65;
+  tdep->ppc_cr_regnum = 66;
+  tdep->ppc_lr_regnum = 67;
+  tdep->ppc_ctr_regnum = 68;
+  tdep->ppc_xer_regnum = 69;
+  if (v->mach == bfd_mach_ppc_601)
+    tdep->ppc_mq_regnum = 124;
+  else
+    tdep->ppc_mq_regnum = 70;
+
+  if (v->arch == bfd_arch_powerpc)
+    switch (v->mach)
+      {
+      case bfd_mach_ppc: 
+	tdep->ppc_vr0_regnum = 71;
+	tdep->ppc_vrsave_regnum = 104;
+	break;
+      case bfd_mach_ppc_7400:
+	tdep->ppc_vr0_regnum = 119;
+	tdep->ppc_vrsave_regnum = 153;
+	break;
+      default:
+	tdep->ppc_vr0_regnum = -1;
+	tdep->ppc_vrsave_regnum = -1;
+	break;
+      }   
 
   /* Calculate byte offsets in raw register array. */
   tdep->regoff = xmalloc (v->nregs * sizeof (int));
@@ -2112,9 +2534,10 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_register_byte (gdbarch, rs6000_register_byte);
   set_gdbarch_register_raw_size (gdbarch, rs6000_register_raw_size);
   set_gdbarch_max_register_raw_size (gdbarch, 8);
-  set_gdbarch_register_virtual_size (gdbarch, rs6000_register_virtual_size);
+  set_gdbarch_register_virtual_size (gdbarch, generic_register_virtual_size);
   set_gdbarch_max_register_virtual_size (gdbarch, 8);
   set_gdbarch_register_virtual_type (gdbarch, rs6000_register_virtual_type);
+  set_gdbarch_do_registers_info (gdbarch, rs6000_do_registers_info);
 
   set_gdbarch_ptr_bit (gdbarch, wordsize * TARGET_CHAR_BIT);
   set_gdbarch_short_bit (gdbarch, 2 * TARGET_CHAR_BIT);
@@ -2124,6 +2547,7 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_float_bit (gdbarch, 4 * TARGET_CHAR_BIT);
   set_gdbarch_double_bit (gdbarch, 8 * TARGET_CHAR_BIT);
   set_gdbarch_long_double_bit (gdbarch, 8 * TARGET_CHAR_BIT);
+  set_gdbarch_char_signed (gdbarch, 0);
 
   set_gdbarch_use_generic_dummy_frames (gdbarch, 1);
   set_gdbarch_call_dummy_length (gdbarch, 0);
@@ -2146,6 +2570,7 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_register_convertible (gdbarch, rs6000_register_convertible);
   set_gdbarch_register_convert_to_virtual (gdbarch, rs6000_register_convert_to_virtual);
   set_gdbarch_register_convert_to_raw (gdbarch, rs6000_register_convert_to_raw);
+  set_gdbarch_stab_reg_to_regnum (gdbarch, rs6000_stab_reg_to_regnum);
 
   set_gdbarch_extract_return_value (gdbarch, rs6000_extract_return_value);
   
@@ -2185,6 +2610,8 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
       set_gdbarch_memory_remove_breakpoint (gdbarch,
 	                                    ppc_linux_memory_remove_breakpoint);
+      set_solib_svr4_fetch_link_map_offsets 
+	(gdbarch, ppc_linux_svr4_fetch_link_map_offsets);
     }
   else
     {
@@ -2211,6 +2638,14 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   return gdbarch;
 }
 
+static struct cmd_list_element *info_powerpc_cmdlist = NULL;
+
+static void
+rs6000_info_powerpc_command (char *args, int from_tty)
+{
+  help_list (info_powerpc_cmdlist, "info powerpc ", class_info, gdb_stdout);
+}
+
 /* Initialization code.  */
 
 void
@@ -2218,4 +2653,14 @@ _initialize_rs6000_tdep (void)
 {
   register_gdbarch_init (bfd_arch_rs6000, rs6000_gdbarch_init);
   register_gdbarch_init (bfd_arch_powerpc, rs6000_gdbarch_init);
+
+  /* Add root prefix command for "info powerpc" commands */
+  add_prefix_cmd ("powerpc", class_info, rs6000_info_powerpc_command,
+		  "Various POWERPC info specific commands.",
+		  &info_powerpc_cmdlist, "info powerpc ", 0, &infolist);
+
+  add_cmd ("altivec", class_info, rs6000_altivec_registers_info,
+	   "Display the contents of the AltiVec registers.",
+	   &info_powerpc_cmdlist);
+
 }

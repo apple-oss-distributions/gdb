@@ -1,5 +1,6 @@
 /* Definitions to target GDB to ARM embedded systems.
-   Copyright 1986-1989, 1991, 1993-1999 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1988, 1989, 1991, 1993, 1994, 1995, 1996, 1997,
+   1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,6 +24,10 @@
 
 /* Include the common ARM definitions. */
 #include "arm/tm-arm.h"
+
+/* The remote stub should be able to single-step. */
+#undef SOFTWARE_SINGLE_STEP_P
+#define SOFTWARE_SINGLE_STEP_P() 0
 
 /* I don't know the real values for these.  */
 #define TARGET_UPAGES UPAGES

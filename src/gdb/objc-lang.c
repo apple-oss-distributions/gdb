@@ -23,9 +23,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "expression.h"
 #include "parser-defs.h"
 #include "language.h"
+#include "c-lang.h"
 #include "objc-lang.h"
 #include "complaints.h"
 #include "value.h"
+#include "gdb_regex.h"
 #include "symfile.h"
 #include "objfiles.h"
 #include "string.h"		/* for strchr */
@@ -33,6 +35,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "gdbcore.h"
 #include "gdbcmd.h"
 #include "frame.h"
+#include "regcache.h"
 
 #include <ctype.h>
 
@@ -107,8 +110,8 @@ CORE_ADDR
 lookup_objc_class (classname)
      char *classname;
 {
-  static cached_value_ptr function = NULL;
-  value_ptr classval;
+  static struct cached_value *function = NULL;
+  struct value *classval;
   
   if (! target_has_execution)
     {
@@ -138,8 +141,8 @@ int
 lookup_child_selector (selname)
      char *selname;
 {
-  static cached_value_ptr function = NULL;
-  value_ptr selstring;
+  static struct cached_value *function = NULL;
+  struct value *selstring;
 
   if (! target_has_execution)
     {
@@ -164,13 +167,11 @@ lookup_child_selector (selname)
   return value_as_long (call_function_by_hand (lookup_cached_function (function), 1, &selstring));
 }
 
-value_ptr 
-value_nsstring (ptr, len)
-     char *ptr;
-     int len;
+struct value * 
+value_nsstring (char *ptr, int len)
 {
-  value_ptr stringValue[3];
-  value_ptr function, nsstringValue;
+  struct value *stringValue[3];
+  struct value *function, *nsstringValue;
   struct symbol *sym;
   struct type *type;
 
@@ -644,8 +645,36 @@ const struct language_defn objc_language_defn = {
   range_check_off,
   type_check_off,
   case_sensitive_on,
-  objc_parse,
-  objc_error,
+  c_parse,
+  c_error,
+  evaluate_subexp_standard,
+  objc_printchar,		/* Print a character constant */
+  objc_printstr,		/* Function to print string constant */
+  objc_emit_char,
+  objc_create_fundamental_type,	/* Create fundamental type in this language */
+  c_print_type,			/* Print a type using appropriate syntax */
+  c_val_print,			/* Print a value using appropriate syntax */
+  c_value_print,		/* Print a top-level value */
+  {"",     "",    "",  ""},	/* Binary format info */
+  {"0%lo",  "0",   "o", ""},	/* Octal format info */
+  {"%ld",   "",    "d", ""},	/* Decimal format info */
+  {"0x%lx", "0x",  "x", ""},	/* Hex format info */
+  objc_op_print_tab,		/* expression operators for printing */
+  1,				/* c-style arrays */
+  0,				/* String lower bound */
+  &builtin_type_char,		/* Type of string elements */
+  LANG_MAGIC
+};
+
+const struct language_defn objcplus_language_defn = {
+  "objective-c++",				/* Language name */
+  language_objcplus,
+  objc_builtin_types,
+  range_check_off,
+  type_check_off,
+  case_sensitive_on,
+  c_parse,
+  c_error,
   evaluate_subexp_standard,
   objc_printchar,		/* Print a character constant */
   objc_printstr,		/* Function to print string constant */
@@ -1485,7 +1514,7 @@ void print_object_command (args, from_tty)
      char *args;
      int from_tty;
 {
-  value_ptr object, function, description;
+  struct value *object, *function, *description;
   CORE_ADDR string_addr;
   int i = 0;
   char c = -1;
@@ -1498,7 +1527,7 @@ void print_object_command (args, from_tty)
     register struct cleanup *old_chain = make_cleanup (free_current_contents, &expr);
     int pc = 0;
 
-    object = evaluate_subexp (builtin_type_ptr, expr, &pc, EVAL_NORMAL);
+    object = evaluate_subexp (builtin_type_void_func_ptr, expr, &pc, EVAL_NORMAL);
 
     do_cleanups (old_chain);
   }
@@ -1531,7 +1560,7 @@ void print_object_command (args, from_tty)
 
 struct objc_methcall {
   char *name;
-  CORE_ADDR (*stop_at) (CORE_ADDR); /* should return instance method to be called */
+  int (*stop_at) (CORE_ADDR, CORE_ADDR *); /* should return instance method to be called */
   CORE_ADDR begin;		    /* start of pc range corresponding to method invocation */
   CORE_ADDR end;		    /* end of pc range corresponding to method invocation */
 };
@@ -1662,6 +1691,7 @@ void
 _initialize_objc_language ()
 {
   add_language (&objc_language_defn);
+  add_language (&objcplus_language_defn);
   add_info ("selectors", selectors_info, 	/* INFO SELECTORS command */
 	    "All Objective C selectors, or those matching REGEXP.");
   add_info ("classes", classes_info, 		/* INFO CLASSES   command */
@@ -1672,23 +1702,23 @@ _initialize_objc_language ()
 }
 
 #if defined (__powerpc__) || defined (__ppc__)
-static unsigned long FETCH_ARGUMENT (int i)
+static ULONGEST FETCH_ARGUMENT (int i)
 {
   return read_register (3 + i);
 }
 #elif defined (__i386__)
-static unsigned long FETCH_ARGUMENT (int i)
+static ULONGEST FETCH_ARGUMENT (int i)
 {
   CORE_ADDR stack = read_register (SP_REGNUM);
   return read_memory_unsigned_integer (stack + (4 * (i + 1)), 4);
 }
 #elif defined (__sparc__)
-static unsigned long FETCH_ARGUMENT (int i)
+static ULONGEST FETCH_ARGUMENT (int i)
 {
   return read_register (O0_REGNUM + i);
 }
 #elif defined (__hppa__) || defined (__hppa)
-static unsigned long FETCH_ARGUMENT (int i)
+static ULONGEST FETCH_ARGUMENT (int i)
 {
   return read_register (R0_REGNUM + 26 - i);
 }

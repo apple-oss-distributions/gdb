@@ -9,6 +9,7 @@
 #include "gdbcore.h"
 #include "symfile.h"
 #include "objfiles.h"
+#include "regcache.h"
 
 #include "ppc-frameinfo.h"
 #include "ppc-tdep.h"
@@ -232,6 +233,11 @@ ppc_pop_frame ()
 /* Insert the specified number of args and function address
    into a call sequence of the above form stored at DUMMYNAME.  */
 
+#define INSTRUCTION_SIZE 4
+
+#define	TOC_ADDR_OFFSET              CALL_DUMMY_START_OFFSET
+#define	TARGET_ADDR_OFFSET           (CALL_DUMMY_START_OFFSET + (2 * INSTRUCTION_SIZE))
+
 void
 ppc_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR addr, int nargs, struct value **args, struct type *type, int gcc_p)
 {
@@ -307,7 +313,7 @@ ppc_push_arguments (nargs, args, sp, struct_return, struct_addr)
      prototyped to take a float */
 
   for (argno = 0; argno < nfargs; argno++) {
-    value_ptr arg = fargs[argno];
+    struct value *arg = fargs[argno];
     struct type *type = check_typedef (VALUE_TYPE (arg));
 
     if (TYPE_CODE (type) == TYPE_CODE_FLT) {
@@ -319,7 +325,7 @@ ppc_push_arguments (nargs, args, sp, struct_return, struct_addr)
     
   arg_bytes_required = 0;
   for (argno = 0; argno < nfargs; argno++) {
-    value_ptr arg = fargs[argno];
+    struct value *arg = fargs[argno];
     struct type *type = check_typedef (VALUE_TYPE (arg));
     unsigned int len = TYPE_LENGTH (type);
     if (TYPE_CODE (type) == TYPE_CODE_FLT) {
@@ -343,7 +349,7 @@ ppc_push_arguments (nargs, args, sp, struct_return, struct_addr)
   cur_fpr = 1;
   for (argno = 0; argno < nfargs; argno++) {
 
-    value_ptr arg = fargs[argno];
+    struct value *arg = fargs[argno];
     struct type *type = check_typedef (VALUE_TYPE (arg));
     int len = TYPE_LENGTH (type);
 

@@ -1,5 +1,6 @@
 /* Remote utility routines for the remote server for GDB.
-   Copyright (C) 1986, 1989, 1993 Free Software Foundation, Inc.
+   Copyright 1986, 1989, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -31,6 +32,8 @@
 #include <sys/ioctl.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <sys/time.h>
+#include <unistd.h>
 
 int remote_debug = 0;
 struct ui_file *gdb_stdlog;
@@ -61,7 +64,7 @@ remote_open (char *name)
 	termios.c_lflag = 0;
 	termios.c_cflag &= ~(CSIZE | PARENB);
 	termios.c_cflag |= CLOCAL | CS8;
-	termios.c_cc[VMIN] = 0;
+	termios.c_cc[VMIN] = 1;
 	termios.c_cc[VTIME] = 0;
 
 	tcsetattr (remote_desc, TCSANOW, &termios);
@@ -78,7 +81,7 @@ remote_open (char *name)
 	termio.c_lflag = 0;
 	termio.c_cflag &= ~(CSIZE | PARENB);
 	termio.c_cflag |= CLOCAL | CS8;
-	termio.c_cc[VMIN] = 0;
+	termio.c_cc[VMIN] = 1;
 	termio.c_cc[VTIME] = 0;
 
 	ioctl (remote_desc, TCSETA, &termio);
@@ -155,8 +158,11 @@ remote_open (char *name)
 #if defined(F_SETFL) && defined (FASYNC)
   save_fcntl_flags = fcntl (remote_desc, F_GETFL, 0);
   fcntl (remote_desc, F_SETFL, save_fcntl_flags | FASYNC);
+#if defined (F_SETOWN)
+  fcntl (remote_desc, F_SETOWN, getpid ());
+#endif
+#endif
   disable_async_io ();
-#endif /* FASYNC */
   fprintf (stderr, "Remote debugging using %s\n", name);
 }
 
@@ -260,18 +266,29 @@ putpkt (char *buf)
 static void
 input_interrupt (void)
 {
-  int cc;
-  char c;
+  fd_set readset;
+  struct timeval immediate = { 0, 0 };
 
-  cc = read (remote_desc, &c, 1);
+  /* Protect against spurious interrupts.  This has been observed to
+     be a problem under NetBSD 1.4 and 1.5.  */
 
-  if (cc != 1 || c != '\003')
+  FD_ZERO (&readset);
+  FD_SET (remote_desc, &readset);
+  if (select (remote_desc + 1, &readset, 0, 0, &immediate) > 0)
     {
-      fprintf (stderr, "input_interrupt, cc = %d c = %d\n", cc, c);
-      return;
-    }
+      int cc;
+      char c;
+      
+      cc = read (remote_desc, &c, 1);
 
-  kill (inferior_pid, SIGINT);
+      if (cc != 1 || c != '\003')
+	{
+	  fprintf (stderr, "input_interrupt, cc = %d c = %d\n", cc, c);
+	  return;
+	}
+      
+      kill (inferior_pid, SIGINT);
+    }
 }
 
 void

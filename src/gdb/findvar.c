@@ -1,5 +1,6 @@
 /* Find a variable's value in memory, for GDB, the GNU debugger.
-   Copyright 1986, 87, 89, 91, 94, 95, 96, 1998
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -28,8 +29,10 @@
 #include "inferior.h"
 #include "target.h"
 #include "gdb_string.h"
+#include "gdb_assert.h"
 #include "floatformat.h"
 #include "symfile.h"		/* for overlay functions */
+#include "regcache.h"
 
 /* This is used to indicate that we don't know the format of the floating point
    number.  Typically, this is useful for native ports, where the actual format
@@ -63,7 +66,7 @@ That operation is not available on integers of more than %d bytes.",
 
   /* Start at the most significant end of the integer, and work towards
      the least significant.  */
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       p = startaddr;
       /* Do the sign extension once at the start.  */
@@ -98,7 +101,7 @@ That operation is not available on integers of more than %d bytes.",
   /* Start at the most significant end of the integer, and work towards
      the least significant.  */
   retval = 0;
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = startaddr; p < endaddr; ++p)
 	retval = (retval << 8) | *p;
@@ -123,7 +126,7 @@ extract_long_unsigned_integer (void *addr, int orig_len, LONGEST *pval)
   int len;
 
   len = orig_len;
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = (char *) addr;
 	   len > (int) sizeof (LONGEST) && p < (char *) addr + orig_len;
@@ -190,7 +193,8 @@ extract_typed_address (void *buf, struct type *type)
 {
   if (TYPE_CODE (type) != TYPE_CODE_PTR
       && TYPE_CODE (type) != TYPE_CODE_REF)
-    internal_error ("findvar.c (extract_typed_address): "
+    internal_error (__FILE__, __LINE__,
+		    "extract_typed_address: "
 		    "type is not a pointer or reference");
 
   return POINTER_TO_ADDRESS (type, buf);
@@ -206,7 +210,7 @@ store_signed_integer (void *addr, int len, LONGEST val)
 
   /* Start at the least significant end of the integer, and work towards
      the most significant.  */
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = endaddr - 1; p >= startaddr; --p)
 	{
@@ -233,7 +237,7 @@ store_unsigned_integer (void *addr, int len, ULONGEST val)
 
   /* Start at the least significant end of the integer, and work towards
      the most significant.  */
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     {
       for (p = endaddr - 1; p >= startaddr; --p)
 	{
@@ -276,109 +280,14 @@ store_typed_address (void *buf, struct type *type, CORE_ADDR addr)
 {
   if (TYPE_CODE (type) != TYPE_CODE_PTR
       && TYPE_CODE (type) != TYPE_CODE_REF)
-    internal_error ("findvar.c (store_typed_address): "
+    internal_error (__FILE__, __LINE__,
+		    "store_typed_address: "
 		    "type is not a pointer or reference");
 
   ADDRESS_TO_POINTER (type, buf, addr);
 }
 
 
-
-
-/* Extract a floating-point number from a target-order byte-stream at ADDR.
-   Returns the value as type DOUBLEST.
-
-   If the host and target formats agree, we just copy the raw data into the
-   appropriate type of variable and return, letting the host increase precision
-   as necessary.  Otherwise, we call the conversion routine and let it do the
-   dirty work.  */
-
-DOUBLEST
-extract_floating (void *addr, int len)
-{
-  DOUBLEST dretval;
-
-  if (len * TARGET_CHAR_BIT == TARGET_FLOAT_BIT)
-    {
-      if (HOST_FLOAT_FORMAT == TARGET_FLOAT_FORMAT)
-	{
-	  float retval;
-
-	  memcpy (&retval, addr, sizeof (retval));
-	  return retval;
-	}
-      else
-	floatformat_to_doublest (TARGET_FLOAT_FORMAT, addr, &dretval);
-    }
-  else if (len * TARGET_CHAR_BIT == TARGET_DOUBLE_BIT)
-    {
-      if (HOST_DOUBLE_FORMAT == TARGET_DOUBLE_FORMAT)
-	{
-	  double retval;
-
-	  memcpy (&retval, addr, sizeof (retval));
-	  return retval;
-	}
-      else
-	floatformat_to_doublest (TARGET_DOUBLE_FORMAT, addr, &dretval);
-    }
-  else if (len * TARGET_CHAR_BIT == TARGET_LONG_DOUBLE_BIT)
-    {
-      if (HOST_LONG_DOUBLE_FORMAT == TARGET_LONG_DOUBLE_FORMAT)
-	{
-	  DOUBLEST retval;
-
-	  memcpy (&retval, addr, sizeof (retval));
-	  return retval;
-	}
-      else
-	floatformat_to_doublest (TARGET_LONG_DOUBLE_FORMAT, addr, &dretval);
-    }
-  else
-    {
-      error ("Can't deal with a floating point number of %d bytes.", len);
-    }
-
-  return dretval;
-}
-
-void
-store_floating (void *addr, int len, DOUBLEST val)
-{
-  if (len * TARGET_CHAR_BIT == TARGET_FLOAT_BIT)
-    {
-      if (HOST_FLOAT_FORMAT == TARGET_FLOAT_FORMAT)
-	{
-	  float floatval = val;
-
-	  memcpy (addr, &floatval, sizeof (floatval));
-	}
-      else
-	floatformat_from_doublest (TARGET_FLOAT_FORMAT, &val, addr);
-    }
-  else if (len * TARGET_CHAR_BIT == TARGET_DOUBLE_BIT)
-    {
-      if (HOST_DOUBLE_FORMAT == TARGET_DOUBLE_FORMAT)
-	{
-	  double doubleval = val;
-
-	  memcpy (addr, &doubleval, sizeof (doubleval));
-	}
-      else
-	floatformat_from_doublest (TARGET_DOUBLE_FORMAT, &val, addr);
-    }
-  else if (len * TARGET_CHAR_BIT == TARGET_LONG_DOUBLE_BIT)
-    {
-      if (HOST_LONG_DOUBLE_FORMAT == TARGET_LONG_DOUBLE_FORMAT)
-	memcpy (addr, &val, sizeof (val));
-      else
-	floatformat_from_doublest (TARGET_LONG_DOUBLE_FORMAT, &val, addr);
-    }
-  else
-    {
-      error ("Can't deal with a floating point number of %d bytes.", len);
-    }
-}
 
 /* Return a `value' with the contents of register REGNUM
    in its virtual format, with the type specified by
@@ -387,13 +296,13 @@ store_floating (void *addr, int len, DOUBLEST val)
    NOTE: returns NULL if register value is not available.
    Caller will check return value or die!  */
 
-value_ptr
+struct value *
 value_of_register (int regnum)
 {
   CORE_ADDR addr;
   int optim;
-  register value_ptr reg_val;
-  char raw_buffer[MAX_REGISTER_RAW_SIZE];
+  struct value *reg_val;
+  char *raw_buffer = (char*) alloca (MAX_REGISTER_RAW_SIZE);
   enum lval_type lval;
 
   get_saved_register (raw_buffer, &optim, &addr,
@@ -415,7 +324,8 @@ value_of_register (int regnum)
     memcpy (VALUE_CONTENTS_RAW (reg_val), raw_buffer,
 	    REGISTER_RAW_SIZE (regnum));
   else
-    internal_error ("Register \"%s\" (%d) has conflicting raw (%d) and virtual (%d) size",
+    internal_error (__FILE__, __LINE__,
+		    "Register \"%s\" (%d) has conflicting raw (%d) and virtual (%d) size",
 		    REGISTER_NAME (regnum),
 		    regnum,
 		    REGISTER_RAW_SIZE (regnum),
@@ -503,10 +413,10 @@ symbol_read_needs_frame (struct symbol *sym)
    If the variable cannot be found, return a zero pointer.
    If FRAME is NULL, use the selected_frame.  */
 
-value_ptr
+struct value *
 read_var_value (register struct symbol *var, struct frame_info *frame)
 {
-  register value_ptr v;
+  register struct value *v;
   struct type *type = SYMBOL_TYPE (var);
   CORE_ADDR addr;
   register int len;
@@ -562,18 +472,21 @@ read_var_value (register struct symbol *var, struct frame_info *frame)
       break;
 
     case LOC_INDIRECT:
-      /* The import slot does not have a real address in it from the
-         dynamic loader (dld.sl on HP-UX), if the target hasn't begun
-         execution yet, so check for that. */
-      if (!target_has_execution)
-	error ("\
+      {
+	/* The import slot does not have a real address in it from the
+	   dynamic loader (dld.sl on HP-UX), if the target hasn't
+	   begun execution yet, so check for that. */
+	CORE_ADDR locaddr;
+	struct value *loc;
+	if (!target_has_execution)
+	  error ("\
 Attempt to access variable defined in different shared object or load module when\n\
 addresses have not been bound by the dynamic loader. Try again when executable is running.");
 
-      addr = SYMBOL_VALUE_ADDRESS (var);
-      addr = read_memory_unsigned_integer
-	(addr, TARGET_PTR_BIT / TARGET_CHAR_BIT);
-      break;
+	locaddr = SYMBOL_VALUE_ADDRESS (var);
+	loc = value_at (lookup_pointer_type (type), locaddr, NULL);
+	addr = value_as_address (loc);
+      }
 
     case LOC_ARG:
       if (frame == NULL)
@@ -585,15 +498,19 @@ addresses have not been bound by the dynamic loader. Try again when executable i
       break;
 
     case LOC_REF_ARG:
-      if (frame == NULL)
-	return 0;
-      addr = FRAME_ARGS_ADDRESS (frame);
-      if (!addr)
-	return 0;
-      addr += SYMBOL_VALUE (var);
-      addr = read_memory_unsigned_integer
-	(addr, TARGET_PTR_BIT / TARGET_CHAR_BIT);
-      break;
+      {
+	struct value *ref;
+	CORE_ADDR argref;
+	if (frame == NULL)
+	  return 0;
+	argref = FRAME_ARGS_ADDRESS (frame);
+	if (!argref)
+	  return 0;
+	argref += SYMBOL_VALUE (var);
+	ref = value_at (lookup_pointer_type (type), argref, NULL);
+	addr = value_as_address (ref);
+	break;
+      }
 
     case LOC_LOCAL:
     case LOC_LOCAL_ARG:
@@ -605,22 +522,15 @@ addresses have not been bound by the dynamic loader. Try again when executable i
 
     case LOC_BASEREG:
     case LOC_BASEREG_ARG:
-      {
-	char buf[MAX_REGISTER_RAW_SIZE];
-	get_saved_register (buf, NULL, NULL, frame, SYMBOL_BASEREG (var),
-			    NULL);
-	addr = extract_address (buf, REGISTER_RAW_SIZE (SYMBOL_BASEREG (var)));
-	addr += SYMBOL_VALUE (var);
-	break;
-      }
-
     case LOC_THREAD_LOCAL_STATIC:
       {
-	char buf[MAX_REGISTER_RAW_SIZE];
+	struct value *regval;
 
-	get_saved_register (buf, NULL, NULL, frame, SYMBOL_BASEREG (var),
-			    NULL);
-	addr = extract_address (buf, REGISTER_RAW_SIZE (SYMBOL_BASEREG (var)));
+	regval = value_from_register (lookup_pointer_type (type),
+				      SYMBOL_BASEREG (var), frame);
+	if (regval == NULL)
+	  error ("Value of base register not available.");
+	addr = value_as_address (regval);
 	addr += SYMBOL_VALUE (var);
 	break;
       }
@@ -643,7 +553,7 @@ addresses have not been bound by the dynamic loader. Try again when executable i
       {
 	struct block *b;
 	int regno = SYMBOL_VALUE (var);
-	value_ptr regval;
+	struct value *regval;
 
 	if (frame == NULL)
 	  return 0;
@@ -658,7 +568,7 @@ addresses have not been bound by the dynamic loader. Try again when executable i
 	    if (regval == NULL)
 	      error ("Value of register variable not available.");
 
-	    addr = value_as_pointer (regval);
+	    addr = value_as_address (regval);
 	    VALUE_LVAL (v) = lval_memory;
 	  }
 	else
@@ -708,13 +618,13 @@ addresses have not been bound by the dynamic loader. Try again when executable i
    NOTE: returns NULL if register value is not available.
    Caller will check return value or die!  */
 
-value_ptr
+struct value *
 value_from_register (struct type *type, int regnum, struct frame_info *frame)
 {
-  char raw_buffer[MAX_REGISTER_RAW_SIZE];
+  char *raw_buffer = (char*) alloca (MAX_REGISTER_RAW_SIZE);
   CORE_ADDR addr;
   int optim;
-  value_ptr v = allocate_value (type);
+  struct value *v = allocate_value (type);
   char *value_bytes = 0;
   int value_bytes_copied = 0;
   int num_storage_locs;
@@ -723,11 +633,6 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
 
   CHECK_TYPEDEF (type);
   len = TYPE_LENGTH (type);
-
-  /* Pointers on D10V are really only 16 bits, 
-     but we lie to gdb elsewhere... */
-  if (GDB_TARGET_IS_D10V && TYPE_CODE (type) == TYPE_CODE_PTR)
-    len = 2;
 
   VALUE_REGNO (v) = regnum;
 
@@ -874,7 +779,8 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
 	  VALUE_ADDRESS (v) = first_addr;
 	}
       else
-	internal_error ("value_from_register: Value not stored anywhere!");
+	internal_error (__FILE__, __LINE__,
+			"value_from_register: Value not stored anywhere!");
 
       VALUE_OPTIMIZED_OUT (v) = optim;
 
@@ -918,31 +824,13 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
     {
       /* Raw and virtual formats are the same for this register.  */
 
-      if (TARGET_BYTE_ORDER == BIG_ENDIAN && len < REGISTER_RAW_SIZE (regnum))
+      if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG && len < REGISTER_RAW_SIZE (regnum))
 	{
 	  /* Big-endian, and we want less than full size.  */
 	  VALUE_OFFSET (v) = REGISTER_RAW_SIZE (regnum) - len;
 	}
 
       memcpy (VALUE_CONTENTS_RAW (v), raw_buffer + VALUE_OFFSET (v), len);
-    }
-
-  if (GDB_TARGET_IS_D10V
-      && TYPE_CODE (type) == TYPE_CODE_PTR)
-    {
-      unsigned long num;
-      unsigned short snum;
-
-      snum = (unsigned short)
-	extract_unsigned_integer (VALUE_CONTENTS_RAW (v), 2);
-
-      if (TYPE_TARGET_TYPE (type)	  /* pointer to function */
-	  && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_FUNC))
-	num = D10V_MAKE_IADDR (snum);
-      else 				  /* pointer to data */
-	num = D10V_MAKE_DADDR (snum);
-
-      store_address (VALUE_CONTENTS_RAW (v), 4, num);
     }
 
   return v;
@@ -953,12 +841,12 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
    return a (pointer to a) struct value containing the properly typed
    address.  */
 
-value_ptr
+struct value *
 locate_var_value (register struct symbol *var, struct frame_info *frame)
 {
   CORE_ADDR addr = 0;
   struct type *type = SYMBOL_TYPE (var);
-  value_ptr lazy_value;
+  struct value *lazy_value;
 
   /* Evaluate it first; if the result is a memory address, we're fine.
      Lazy evaluation pays off here. */
@@ -970,7 +858,7 @@ locate_var_value (register struct symbol *var, struct frame_info *frame)
   if (VALUE_LAZY (lazy_value)
       || TYPE_CODE (type) == TYPE_CODE_FUNC)
     {
-      value_ptr val;
+      struct value *val;
 
       addr = VALUE_ADDRESS (lazy_value);
       val = value_from_pointer (lookup_pointer_type (type), addr);
@@ -982,9 +870,21 @@ locate_var_value (register struct symbol *var, struct frame_info *frame)
   switch (VALUE_LVAL (lazy_value))
     {
     case lval_register:
+	gdb_assert (REGISTER_NAME (VALUE_REGNO (lazy_value)) != NULL
+	            && *REGISTER_NAME (VALUE_REGNO (lazy_value)) != '\0');
+      error("Address requested for identifier "
+	    "\"%s\" which is in register $%s",
+            SYMBOL_SOURCE_NAME (var), 
+	    REGISTER_NAME (VALUE_REGNO (lazy_value)));
+      break;
+
     case lval_reg_frame_relative:
-      error ("Address requested for identifier \"%s\" which is in a register.",
-	     SYMBOL_SOURCE_NAME (var));
+	gdb_assert (REGISTER_NAME (VALUE_FRAME_REGNUM (lazy_value)) != NULL
+	            && *REGISTER_NAME (VALUE_FRAME_REGNUM (lazy_value)) != '\0');
+      error("Address requested for identifier "
+	    "\"%s\" which is in frame register $%s",
+            SYMBOL_SOURCE_NAME (var), 
+	    REGISTER_NAME (VALUE_FRAME_REGNUM (lazy_value)));
       break;
 
     default:

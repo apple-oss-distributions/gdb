@@ -174,14 +174,7 @@ extern next_inferior_status *next_status;
 
 int pb_gdb_util_inferior_pid()
 {
-  if (inferior_pid > 0) {
-    int pid;
-    thread_t thread;
-    next_thread_list_lookup_by_id (next_status, inferior_pid, &pid, &thread);
-    return pid;
-  }
-
-  return -1;
+  return PIDGET (inferior_ptid);
 }
 
 #else

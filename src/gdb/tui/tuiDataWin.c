@@ -1,12 +1,28 @@
-/*
-   ** tuiDataWin.c
-   **   This module contains functions to support the data/register window display.
- */
+/* Data/register window display.
+   Copyright 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+   Contributed by Hewlett-Packard Company.
 
+   This file is part of GDB.
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place - Suite 330,
+   Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
 #include "tui.h"
 #include "tuiData.h"
+#include "tuiGeneralWin.h"
 #include "tuiRegs.h"
 
 
@@ -27,11 +43,7 @@
    **    If none are displayed, then return (-1).
  */
 int
-#ifdef __STDC__
 tuiFirstDataItemDisplayed (void)
-#else
-tuiFirstDataItemDisplayed ()
-#endif
 {
   int elementNo = (-1);
   int i;
@@ -56,13 +68,7 @@ tuiFirstDataItemDisplayed ()
    **        past the data area (-1) is returned.
  */
 int
-#ifdef __STDC__
-tuiFirstDataElementNoInLine (
-			      int lineNo)
-#else
-tuiFirstDataElementNoInLine (lineNo)
-     int lineNo;
-#endif
+tuiFirstDataElementNoInLine (int lineNo)
 {
   int firstElementNo = (-1);
 
@@ -86,11 +92,7 @@ tuiFirstDataElementNoInLine (lineNo)
    **        This is usually done when the data window is scrolled.
  */
 void
-#ifdef __STDC__
 tuiDeleteDataContentWindows (void)
-#else
-tuiDeleteDataContentWindows ()
-#endif
 {
   int i;
   TuiGenWinInfoPtr dataItemWinPtr;
@@ -109,13 +111,7 @@ tuiDeleteDataContentWindows ()
 
 
 void
-#ifdef __STDC__
-tuiEraseDataContent (
-		      char *prompt)
-#else
-tuiEraseDataContent (prompt)
-     char *prompt;
-#endif
+tuiEraseDataContent (char *prompt)
 {
   werase (dataWin->generic.handle);
   checkAndDisplayHighlightIfNeeded (dataWin);
@@ -145,11 +141,7 @@ tuiEraseDataContent (prompt)
    **        content.  It does not set the content.
  */
 void
-#ifdef __STDC__
 tuiDisplayAllData (void)
-#else
-tuiDisplayAllData ()
-#endif
 {
   if (dataWin->generic.contentSize <= 0)
     tuiEraseDataContent (NO_DATA_STRING);
@@ -178,13 +170,7 @@ tuiDisplayAllData ()
    **        data window.
  */
 void
-#ifdef __STDC__
-tuiDisplayDataFromLine (
-			 int lineNo)
-#else
-tuiDisplayDataFromLine (lineNo)
-     int lineNo;
-#endif
+tuiDisplayDataFromLine (int lineNo)
 {
   int _lineNo = lineNo;
 
@@ -232,15 +218,7 @@ tuiDisplayDataFromLine (lineNo)
    **        Display data starting at element elementNo
  */
 void
-#ifdef __STDC__
-tuiDisplayDataFrom (
-		     int elementNo,
-		     int reuseWindows)
-#else
-tuiDisplayDataFrom (elementNo, reuseWindows)
-     int elementNo;
-     int reuseWindows;
-#endif
+tuiDisplayDataFrom (int elementNo, int reuseWindows)
 {
   int firstLine = (-1);
 
@@ -267,11 +245,7 @@ tuiDisplayDataFrom (elementNo, reuseWindows)
    **        Function to redisplay the contents of the data window.
  */
 void
-#ifdef __STDC__
 tuiRefreshDataWin (void)
-#else
-tuiRefreshDataWin ()
-#endif
 {
   tuiEraseDataContent ((char *) NULL);
   if (dataWin->generic.contentSize > 0)
@@ -291,13 +265,7 @@ tuiRefreshDataWin ()
    **        Function to check the data values and hilite any that have changed
  */
 void
-#ifdef __STDC__
-tuiCheckDataValues (
-		     struct frame_info *frame)
-#else
-tuiCheckDataValues (frame)
-     struct frame_info *frame;
-#endif
+tuiCheckDataValues (struct frame_info *frame)
 {
   tuiCheckRegisterValues (frame);
 
@@ -330,41 +298,11 @@ tuiCheckDataValues (frame)
 
 
 /*
-   ** tui_vCheckDataValues().
-   **        Function to check the data values and hilite any that have
-   **        changed with args in a va_list
- */
-void
-#ifdef __STDC__
-tui_vCheckDataValues (
-		       va_list args)
-#else
-tui_vCheckDataValues (args)
-     va_list args;
-#endif
-{
-  struct frame_info *frame = va_arg (args, struct frame_info *);
-
-  tuiCheckDataValues (frame);
-
-  return;
-}				/* tui_vCheckDataValues */
-
-
-/*
    ** tuiVerticalDataScroll()
    **        Scroll the data window vertically forward or backward.
  */
 void
-#ifdef __STDC__
-tuiVerticalDataScroll (
-			TuiScrollDirection scrollDirection,
-			int numToScroll)
-#else
-tuiVerticalDataScroll (scrollDirection, numToScroll)
-     TuiScrollDirection scrollDirection;
-     int numToScroll;
-#endif
+tuiVerticalDataScroll (TuiScrollDirection scrollDirection, int numToScroll)
 {
   int firstElementNo;
   int firstLine = (-1);

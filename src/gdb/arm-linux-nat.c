@@ -1,5 +1,5 @@
 /* GNU/Linux on ARM native support.
-   Copyright 1999, 2000 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,6 +22,7 @@
 #include "inferior.h"
 #include "gdbcore.h"
 #include "gdb_string.h"
+#include "regcache.h"
 
 #include <sys/user.h>
 #include <sys/ptrace.h>
@@ -77,24 +78,19 @@ static unsigned int os_version, os_major, os_minor, os_release;
 
 /* On Linux, threads are implemented as pseudo-processes, in which
    case we may be tracing more than one process at a time.  In that
-   case, inferior_pid will contain the main process ID and the
-   individual thread (process) ID mashed together.  These macros are
-   used to separate them out.  These definitions should be overridden
-   if thread support is included.  */
-
-#if !defined (PIDGET)	/* Default definition for PIDGET/TIDGET.  */
-#define PIDGET(PID)	PID
-#define TIDGET(PID)	0
-#endif
+   case, inferior_ptid will contain the main process ID and the
+   individual thread (process) ID.  get_thread_id () is used to
+   get the thread id if it's available, and the process id otherwise. */
 
 int
-get_thread_id (int inferior_pid)
+get_thread_id (ptid_t ptid)
 {
-  int tid = TIDGET (inferior_pid);
-  if (0 == tid) tid = inferior_pid;
+  int tid = TIDGET (ptid);
+  if (0 == tid)
+    tid = PIDGET (ptid);
   return tid;
 }
-#define GET_THREAD_ID(PID)	get_thread_id ((PID));
+#define GET_THREAD_ID(PTID)	get_thread_id ((PTID));
 
 static void
 fetch_nwfpe_single (unsigned int fn, FPA11 * fpa11)
@@ -198,7 +194,7 @@ store_nwfpe_extended (unsigned int fn, FPA11 * fpa11)
 void
 store_nwfpe_register (int regno, FPA11 * fpa11)
 {
-  if (register_valid[regno])
+  if (register_cached (regno))
     {
        unsigned int fn = regno - F0_REGNUM;
        switch (fpa11->fType[fn])
@@ -220,7 +216,7 @@ store_nwfpe_register (int regno, FPA11 * fpa11)
 
 
 /* Get the value of a particular register from the floating point
-   state of the process and store it into registers[].  */
+   state of the process and store it into regcache.  */
 
 static void
 fetch_fpregister (int regno)
@@ -229,7 +225,7 @@ fetch_fpregister (int regno)
   FPA11 fp;
   
   /* Get the thread id for the ptrace call.  */
-  tid = GET_THREAD_ID (inferior_pid);
+  tid = GET_THREAD_ID (inferior_ptid);
 
   /* Read the floating point state.  */
   ret = ptrace (PT_GETFPREGS, tid, 0, &fp);
@@ -269,7 +265,7 @@ fetch_fpregister (int regno)
 }
 
 /* Get the whole floating point state of the process and store it
-   into registers[].  */
+   into regcache.  */
 
 static void
 fetch_fpregs (void)
@@ -278,7 +274,7 @@ fetch_fpregs (void)
   FPA11 fp;
 
   /* Get the thread id for the ptrace call.  */
-  tid = GET_THREAD_ID (inferior_pid);
+  tid = GET_THREAD_ID (inferior_ptid);
   
   /* Read the floating point state.  */
   ret = ptrace (PT_GETFPREGS, tid, 0, &fp);
@@ -317,7 +313,7 @@ fetch_fpregs (void)
 }
 
 /* Save a particular register into the floating point state of the
-   process using the contents from registers[].  */
+   process using the contents from regcache.  */
 
 static void
 store_fpregister (int regno)
@@ -326,7 +322,7 @@ store_fpregister (int regno)
   FPA11 fp;
 
   /* Get the thread id for the ptrace call.  */
-  tid = GET_THREAD_ID (inferior_pid);
+  tid = GET_THREAD_ID (inferior_ptid);
   
   /* Read the floating point state.  */
   ret = ptrace (PT_GETFPREGS, tid, 0, &fp);
@@ -337,7 +333,7 @@ store_fpregister (int regno)
     }
 
   /* Store fpsr.  */
-  if (FPS_REGNUM == regno && register_valid[FPS_REGNUM])
+  if (FPS_REGNUM == regno && register_cached (FPS_REGNUM))
     read_register_gen (FPS_REGNUM, (char *) &fp.fpsr);
 
   /* Store the floating point register.  */
@@ -355,7 +351,7 @@ store_fpregister (int regno)
 }
 
 /* Save the whole floating point state of the process using
-   the contents from registers[].  */
+   the contents from regcache.  */
 
 static void
 store_fpregs (void)
@@ -364,7 +360,7 @@ store_fpregs (void)
   FPA11 fp;
 
   /* Get the thread id for the ptrace call.  */
-  tid = GET_THREAD_ID (inferior_pid);
+  tid = GET_THREAD_ID (inferior_ptid);
   
   /* Read the floating point state.  */
   ret = ptrace (PT_GETFPREGS, tid, 0, &fp);
@@ -375,7 +371,7 @@ store_fpregs (void)
     }
 
   /* Store fpsr.  */
-  if (register_valid[FPS_REGNUM])
+  if (register_cached (FPS_REGNUM))
     read_register_gen (FPS_REGNUM, (char *) &fp.fpsr);
 
   /* Store the floating point registers.  */
@@ -393,16 +389,16 @@ store_fpregs (void)
 }
 
 /* Fetch a general register of the process and store into
-   registers[].  */
+   regcache.  */
 
 static void
 fetch_register (int regno)
 {
   int ret, tid;
-  struct pt_regs regs;
+  elf_gregset_t regs;
 
   /* Get the thread id for the ptrace call.  */
-  tid = GET_THREAD_ID (inferior_pid);
+  tid = GET_THREAD_ID (inferior_ptid);
   
   ret = ptrace (PTRACE_GETREGS, tid, 0, &regs);
   if (ret < 0)
@@ -412,34 +408,34 @@ fetch_register (int regno)
     }
 
   if (regno >= A1_REGNUM && regno < PC_REGNUM)
-    supply_register (regno, (char *) &regs.uregs[regno]);
+    supply_register (regno, (char *) &regs[regno]);
 
   if (PS_REGNUM == regno)
     {
       if (arm_apcs_32)
-        supply_register (PS_REGNUM, (char *) &regs.uregs[CPSR_REGNUM]);
+        supply_register (PS_REGNUM, (char *) &regs[CPSR_REGNUM]);
       else
-        supply_register (PS_REGNUM, (char *) &regs.uregs[PC_REGNUM]);
+        supply_register (PS_REGNUM, (char *) &regs[PC_REGNUM]);
     }
     
   if (PC_REGNUM == regno)
     { 
-      regs.uregs[PC_REGNUM] = ADDR_BITS_REMOVE (regs.uregs[PC_REGNUM]);
-      supply_register (PC_REGNUM, (char *) &regs.uregs[PC_REGNUM]);
+      regs[PC_REGNUM] = ADDR_BITS_REMOVE (regs[PC_REGNUM]);
+      supply_register (PC_REGNUM, (char *) &regs[PC_REGNUM]);
     }
 }
 
 /* Fetch all general registers of the process and store into
-   registers[].  */
+   regcache.  */
 
 static void
 fetch_regs (void)
 {
   int ret, regno, tid;
-  struct pt_regs regs;
+  elf_gregset_t regs;
 
   /* Get the thread id for the ptrace call.  */
-  tid = GET_THREAD_ID (inferior_pid);
+  tid = GET_THREAD_ID (inferior_ptid);
   
   ret = ptrace (PTRACE_GETREGS, tid, 0, &regs);
   if (ret < 0)
@@ -449,31 +445,31 @@ fetch_regs (void)
     }
 
   for (regno = A1_REGNUM; regno < PC_REGNUM; regno++)
-    supply_register (regno, (char *) &regs.uregs[regno]);
+    supply_register (regno, (char *) &regs[regno]);
 
   if (arm_apcs_32)
-    supply_register (PS_REGNUM, (char *) &regs.uregs[CPSR_REGNUM]);
+    supply_register (PS_REGNUM, (char *) &regs[CPSR_REGNUM]);
   else
-    supply_register (PS_REGNUM, (char *) &regs.uregs[PC_REGNUM]);
+    supply_register (PS_REGNUM, (char *) &regs[PC_REGNUM]);
 
-  regs.uregs[PC_REGNUM] = ADDR_BITS_REMOVE (regs.uregs[PC_REGNUM]);
-  supply_register (PC_REGNUM, (char *) &regs.uregs[PC_REGNUM]);
+  regs[PC_REGNUM] = ADDR_BITS_REMOVE (regs[PC_REGNUM]);
+  supply_register (PC_REGNUM, (char *) &regs[PC_REGNUM]);
 }
 
 /* Store all general registers of the process from the values in
-   registers[].  */
+   regcache.  */
 
 static void
 store_register (int regno)
 {
   int ret, tid;
-  struct pt_regs regs;
+  elf_gregset_t regs;
   
-  if (!register_valid[regno])
+  if (!register_cached (regno))
     return;
 
   /* Get the thread id for the ptrace call.  */
-  tid = GET_THREAD_ID (inferior_pid);
+  tid = GET_THREAD_ID (inferior_ptid);
   
   /* Get the general registers from the process.  */
   ret = ptrace (PTRACE_GETREGS, tid, 0, &regs);
@@ -484,7 +480,7 @@ store_register (int regno)
     }
 
   if (regno >= A1_REGNUM && regno <= PC_REGNUM)
-    read_register_gen (regno, (char *) &regs.uregs[regno]);
+    read_register_gen (regno, (char *) &regs[regno]);
 
   ret = ptrace (PTRACE_SETREGS, tid, 0, &regs);
   if (ret < 0)
@@ -498,10 +494,10 @@ static void
 store_regs (void)
 {
   int ret, regno, tid;
-  struct pt_regs regs;
+  elf_gregset_t regs;
 
   /* Get the thread id for the ptrace call.  */
-  tid = GET_THREAD_ID (inferior_pid);
+  tid = GET_THREAD_ID (inferior_ptid);
   
   /* Fetch the general registers.  */
   ret = ptrace (PTRACE_GETREGS, tid, 0, &regs);
@@ -513,8 +509,8 @@ store_regs (void)
 
   for (regno = A1_REGNUM; regno <= PC_REGNUM; regno++)
     {
-      if (register_valid[regno])
-	read_register_gen (regno, (char *) &regs.uregs[regno]);
+      if (register_cached (regno))
+	read_register_gen (regno, (char *) &regs[regno]);
     }
 
   ret = ptrace (PTRACE_SETREGS, tid, 0, &regs);
@@ -575,39 +571,31 @@ store_inferior_registers (int regno)
    If regno is -1, do this for all registers.  */
 
 void
-fill_gregset (gregset_t *gregsetp, int regno)
+fill_gregset (gdb_gregset_t *gregsetp, int regno)
 {
   if (-1 == regno)
     {
       int regnum;
       for (regnum = A1_REGNUM; regnum <= PC_REGNUM; regnum++) 
-        if (register_valid[regnum])
-	  read_register_gen (regnum, (char *) &(*gregsetp)[regnum]);
+	read_register_gen (regnum, (char *) &(*gregsetp)[regnum]);
     }
   else if (regno >= A1_REGNUM && regno <= PC_REGNUM)
-    {
-      if (register_valid[regno])
-	read_register_gen (regno, (char *) &(*gregsetp)[regno]);
-    }
+    read_register_gen (regno, (char *) &(*gregsetp)[regno]);
 
   if (PS_REGNUM == regno || -1 == regno)
     {
-      if (register_valid[regno] || -1 == regno)
-        {
-          if (arm_apcs_32)
-	    read_register_gen (PS_REGNUM, (char *) &(*gregsetp)[CPSR_REGNUM]);
-	  else
-	    read_register_gen (PC_REGNUM, (char *) &(*gregsetp)[PC_REGNUM]);
-	}
+      if (arm_apcs_32)
+	read_register_gen (PS_REGNUM, (char *) &(*gregsetp)[CPSR_REGNUM]);
+      else
+	read_register_gen (PC_REGNUM, (char *) &(*gregsetp)[PC_REGNUM]);
     }
-        
 }
 
 /* Fill GDB's register array with the general-purpose register values
    in *gregsetp.  */
 
 void
-supply_gregset (gregset_t *gregsetp)
+supply_gregset (gdb_gregset_t *gregsetp)
 {
   int regno, reg_pc;
 
@@ -628,7 +616,7 @@ supply_gregset (gregset_t *gregsetp)
    If regno is -1, do this for all registers.  */
 
 void
-fill_fpregset (fpregset_t *fpregsetp, int regno)
+fill_fpregset (gdb_fpregset_t *fpregsetp, int regno)
 {
   FPA11 *fp = (FPA11 *) fpregsetp;
   
@@ -645,16 +633,15 @@ fill_fpregset (fpregset_t *fpregsetp, int regno)
     }
 
   /* Store fpsr.  */
-  if (register_valid[FPS_REGNUM])
-    if (FPS_REGNUM == regno || -1 == regno)
-      read_register_gen (FPS_REGNUM, (char *) &fp->fpsr);
+  if (FPS_REGNUM == regno || -1 == regno)
+    read_register_gen (FPS_REGNUM, (char *) &fp->fpsr);
 }
 
 /* Fill GDB's register array with the floating-point register values
    in *fpregsetp.  */
 
 void
-supply_fpregset (fpregset_t *fpregsetp)
+supply_fpregset (gdb_fpregset_t *fpregsetp)
 {
   int regno;
   FPA11 *fp = (FPA11 *) fpregsetp;

@@ -1,5 +1,5 @@
 /* Target-specific definition for the Mitsubishi D30V
-   Copyright (C) 1997 Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999, 2000 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,9 +21,11 @@
 #ifndef TM_D30V_H
 #define TM_D30V_H
 
+#include "regcache.h"
+
 /* Define the bit, byte, and word ordering of the machine.  */
 
-#define TARGET_BYTE_ORDER	BIG_ENDIAN
+#define TARGET_BYTE_ORDER BFD_ENDIAN_BIG
 
 /* Offset from address of function to start of its code.
    Zero on most machines.  */

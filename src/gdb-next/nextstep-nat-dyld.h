@@ -62,4 +62,6 @@ void next_mach_add_shared_symbol_files ();
 
 void next_init_dyld_symfile (struct objfile *o);
 
+int next_dyld_update (int dyldonly);
+
 #endif /* _NEXTSTEP_NAT_DYLD_H_ */

@@ -165,7 +165,7 @@ static void info_embedded_symbol_command (char *exp, int from_tty)
   if ((TYPE_CODE (VALUE_TYPE (val)) == TYPE_CODE_FUNC) && (VALUE_LVAL (val) == lval_memory))
     address = VALUE_ADDRESS (val);
   else
-    address = value_as_pointer (val);
+    address = value_as_address (val);
 
   sym = search_for_embedded_symbol (address);
   if (sym != NULL)

@@ -212,7 +212,7 @@ static void info_trampoline_command (char *exp, int from_tty)
   if ((TYPE_CODE (VALUE_TYPE (val)) == TYPE_CODE_FUNC) && (VALUE_LVAL (val) == lval_memory))
     address = VALUE_ADDRESS (val);
   else
-    address = value_as_pointer (val);
+    address = value_as_address (val);
 
 #if defined (TARGET_POWERPC)
   trampoline = ppc_next_skip_trampoline_code (address);

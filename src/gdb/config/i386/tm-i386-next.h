@@ -20,6 +20,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #ifndef TM_I386NEXT_H
 #define TM_I386NEXT_H
 
+#define HAVE_I387_REGS
+
 #include "config/i386/tm-i386.h"
 #include "config/tm-nextstep.h"
 

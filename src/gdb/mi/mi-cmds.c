@@ -1,5 +1,5 @@
 /* MI Command Set.
-   Copyright (C) 2000, Free Software Foundation, Inc.
+   Copyright 2000, 2001 Free Software Foundation, Inc.
    Contributed by Cygnus Solutions (a Red Hat company).
 
    This file is part of GDB.
@@ -22,7 +22,7 @@
 #include "defs.h"
 #include "top.h"
 #include "mi-cmds.h"
-#include <string.h>
+#include "gdb_string.h"
 
 extern void _initialize_mi_cmds (void);
 struct mi_cmd;
@@ -242,7 +242,8 @@ build_table (struct mi_cmd *commands)
     {
       struct mi_cmd **entry = lookup_table (command->name);
       if (*entry)
-	internal_error ("command `%s' appears to be duplicated",
+	internal_error (__FILE__, __LINE__,
+			"command `%s' appears to be duplicated",
 			command->name);
       *entry = command;
       if (0)

@@ -21,15 +21,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #ifndef _NM_NEXTSTEP_H_
 #define _NM_NEXTSTEP_H_
 
-extern int next_pidget (int tpid);
-#define PIDGET(pid) \
-  next_pidget (pid)
-
 #define ATTACH_DETACH
 #define ATTACH_NO_WAIT
 
 struct target_waitstatus;
-extern int child_wait (int, struct target_waitstatus *);
+
+extern int child_wait (int, struct target_waitstatus *, void *);
 #define CHILD_WAIT
 
 #define FETCH_INFERIOR_REGISTERS
@@ -41,7 +38,7 @@ extern int child_wait (int, struct target_waitstatus *);
 
 extern int next_mach_try_start_dyld ();
 
-#define SOLIB_ADD(filename, from_tty, targ) \
+#define SOLIB_ADD(filename, from_tty, targ, loadsyms) \
   next_mach_try_start_dyld ()
 
 #define SOLIB_IN_DYNAMIC_LINKER(pid,pc) \
@@ -89,29 +86,41 @@ enum ptracereq {
   PTRACE_SETFPAREGS,		/* 21, set all fpa regs */
 };
 
-#if 0
+void next_mach_enable_page_protection_events (int pid);
+void next_mach_enable_page_protection_events (int pid);
+int next_mach_insert_watchpoint (CORE_ADDR addr, size_t len, int type);
+int next_mach_remove_watchpoint (CORE_ADDR addr, size_t len, int type);
+int next_mach_stopped_by_watchpoint (struct target_waitstatus *w, int, int);
+
+char **next_process_completer (char *text, char *word);
+
 #define TARGET_HAS_HARDWARE_WATCHPOINTS
 
 #define TARGET_CAN_USE_HARDWARE_WATCHPOINT(type, cnt, ot) \
-  ((type) == bp_hardware_watchpoint)
+next_mach_can_use_hw_watchpoint(type, cnt, ot)
 
-#define STOPPED_BY_WATCHPOINT(W) \
-  ((W).kind == TARGET_WAITKIND_STOPPED \
-   && (W).value.sig == TARGET_SIGNAL_TRAP \
-   && next_mach_stopped_by_watchpoint (W))
+#define TARGET_RANGE_PROFITABLE_FOR_HW_WATCHPOINT(pid, start, len) \
+next_mach_range_profitable_for_hw_watchpoint (pid, start, len)
+
+#define STOPPED_BY_WATCHPOINT(w) \
+next_mach_stopped_by_watchpoint (&w, stop_signal, stepped_after_stopped_by_watchpoint)
 
 #undef HAVE_STEPPABLE_WATCHPOINT
+#define HAVE_NONSTEPPABLE_WATCHPOINT
+#undef HAVE_CONTINUABLE_WATCHPOINT
 
-int next_mach_insert_watchpoint (CORE_ADDR addr, size_t len, int type);
+#define TARGET_ENABLE_HW_WATCHPOINTS(pid) \
+next_mach_enable_page_protection_events (pid)
+
+#define TARGET_DISABLE_HW_WATCHPOINTS(pid) \
+next_mach_disable_page_protection_events (pid)
+
 #define target_insert_watchpoint(addr, len, type) \
 next_mach_insert_watchpoint (addr, len, type)
 
-int next_mach_remove_watchpoint (CORE_ADDR addr, size_t len, int type);
 #define target_remove_watchpoint(addr, len, type) \
 next_mach_remove_watchpoint (addr, len, type)
-#endif /* 0 */
 
-char **next_process_completer (char *text, char *word);
 #define PROCESS_COMPLETER next_process_completer
 #define PROCESS_COMPLETER_WORD_BREAK_CHARACTERS gdb_completer_filename_word_break_characters
 

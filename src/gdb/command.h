@@ -1,5 +1,13 @@
+/* ***DEPRECATED***  The gdblib files must not be calling/using things in any
+   of the possible command languages.  If necessary, a hook (that may be
+   present or not) must be used and set to the appropriate routine by any
+   command language that cares about it.  If you are having to include this
+   file you are possibly doing things the old way.  This file will disapear.
+   2000-12-01 fnasser@redhat.com    */
+
 /* Header file for command-reading library command.c.
-   Copyright (C) 1986, 1989, 1990, 2000 Free Software Foundation, Inc.
+   Copyright 1986, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1999, 2000
+   Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -126,7 +134,7 @@ struct cmd_list_element
 	/* If type is not_set_cmd, call it like this:  */
 	void (*cfunc) (char *args, int from_tty);
 
-	/* If type is cmd_set or show_cmd, first set the variables, and
+	/* If type is set_cmd or show_cmd, first set the variables, and
 	   then call this.  */
 	void (*sfunc) (char *args, int from_tty, struct cmd_list_element * c);
       }
@@ -163,6 +171,10 @@ struct cmd_list_element
 
     /* if this command is deprecated, this is the replacement name */
     char *replacement;
+
+    /* If this command represents a show command, then this function
+       is called before the variable's value is examined.  */
+    void (*pre_show_hook) (struct cmd_list_element *c);
 
     /* Hook for another command to be executed before this command.  */
     struct cmd_list_element *hook_pre;
@@ -334,22 +346,21 @@ extern struct cmd_list_element *add_set_auto_boolean_cmd (char *name,
 							  char *doc,
 							  struct cmd_list_element **list);
 
+extern struct cmd_list_element *add_set_boolean_cmd (char *name,
+						     enum command_class class,
+						     int *var,
+						     char *doc,
+						     struct cmd_list_element **list);
+
 extern struct cmd_list_element *add_show_from_set (struct cmd_list_element *,
 						   struct cmd_list_element
 						   **);
-
-/* Do a "set" or "show" command.  ARG is NULL if no argument, or the text
-   of the argument, and FROM_TTY is nonzero if this command is being entered
-   directly by the user (i.e. these are just like any other
-   command).  C is the command list element for the command.  */
-
-extern void do_setshow_command (char *, int, struct cmd_list_element *);
 
 /* Do a "show" command for each thing on a command list.  */
 
 extern void cmd_show_list (struct cmd_list_element *, int, char *);
 
-extern void error_no_arg (char *);
+extern NORETURN void error_no_arg (char *) ATTR_NORETURN;
 
 extern void dont_repeat (void);
 

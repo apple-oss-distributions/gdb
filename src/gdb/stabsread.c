@@ -1,5 +1,6 @@
 /* Support routines for decoding "stabs" debugging information format.
-   Copyright 1986, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 1998
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -44,6 +45,7 @@
 #include "complaints.h"
 #include "demangle.h"
 #include "language.h"
+#include "doublest.h"
 
 #include <ctype.h>
 
@@ -684,7 +686,7 @@ read_cfront_baseclasses (struct field_info *fip, char **pp, struct type *type,
   for (i = 0; i < TYPE_N_BASECLASSES (type); i++)
     {
       new = (struct nextfield *) xmalloc (sizeof (struct nextfield));
-      make_cleanup (free, new);
+      make_cleanup (xfree, new);
       memset (new, 0, sizeof (struct nextfield));
       new->next = fip->list;
       fip->list = new;
@@ -844,7 +846,7 @@ read_cfront_member_functions (struct field_info *fip, char **pp,
 
       new_fnlist = (struct next_fnfieldlist *)
 	xmalloc (sizeof (struct next_fnfieldlist));
-      make_cleanup (free, new_fnlist);
+      make_cleanup (xfree, new_fnlist);
       memset (new_fnlist, 0, sizeof (struct next_fnfieldlist));
 
       /* The following is code to work around cfront generated stabs.
@@ -887,7 +889,7 @@ read_cfront_member_functions (struct field_info *fip, char **pp,
 
       new_sublist =
 	(struct next_fnfield *) xmalloc (sizeof (struct next_fnfield));
-      make_cleanup (free, new_sublist);
+      make_cleanup (xfree, new_sublist);
       memset (new_sublist, 0, sizeof (struct next_fnfield));
 
       /* eat 1; from :;2A.; */
@@ -897,7 +899,7 @@ read_cfront_member_functions (struct field_info *fip, char **pp,
       TYPE_CODE (new_sublist->fn_field.type) = TYPE_CODE_METHOD;
 
       /* If this is just a stub, then we don't have the real name here. */
-      if (TYPE_FLAGS (new_sublist->fn_field.type) & TYPE_FLAG_STUB)
+      if (TYPE_STUB (new_sublist->fn_field.type))
 	{
 	  if (!TYPE_DOMAIN_TYPE (new_sublist->fn_field.type))
 	    TYPE_DOMAIN_TYPE (new_sublist->fn_field.type) = type;
@@ -1523,7 +1525,7 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
 	    dbl_valu = (char *)
 	      obstack_alloc (&objfile->symbol_obstack,
 			     TYPE_LENGTH (SYMBOL_TYPE (sym)));
-	    store_floating (dbl_valu, TYPE_LENGTH (SYMBOL_TYPE (sym)), d);
+	    store_typed_floating (dbl_valu, SYMBOL_TYPE (sym), d);
 	    SYMBOL_VALUE_BYTES (sym) = dbl_valu;
 	    SYMBOL_CLASS (sym) = LOC_CONST_BYTES;
 	  }
@@ -1660,7 +1662,8 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
 	         FIXME: Do we need a new builtin_type_promoted_int_arg ?  */
 	      if (TYPE_CODE (ptype) == TYPE_CODE_VOID)
 		ptype = builtin_type_int;
-	      TYPE_FIELD_TYPE (ftype, nparams++) = ptype;
+	      TYPE_FIELD_TYPE (ftype, nparams) = ptype;
+	      TYPE_FIELD_ARTIFICIAL (ftype, nparams++) = 0;
 	    }
 	  TYPE_NFIELDS (ftype) = nparams;
 	  TYPE_FLAGS (ftype) |= TYPE_FLAG_PROTOTYPED;
@@ -1733,7 +1736,7 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
       SYMBOL_NAMESPACE (sym) = VAR_NAMESPACE;
       add_symbol_to_list (sym, &local_symbols);
 
-      if (TARGET_BYTE_ORDER != BIG_ENDIAN)
+      if (TARGET_BYTE_ORDER != BFD_ENDIAN_BIG)
 	{
 	  /* On little-endian machines, this crud is never necessary,
 	     and, if the extra bytes contain garbage, is harmful.  */
@@ -1835,9 +1838,10 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
       SYMBOL_TYPE (sym) = read_type (&p, objfile);
       SYMBOL_CLASS (sym) = LOC_REGPARM;
       SYMBOL_VALUE (sym) = STAB_REG_TO_REGNUM (valu);
-      if (SYMBOL_VALUE (sym) >= NUM_REGS)
+      if (SYMBOL_VALUE (sym) >= NUM_REGS + NUM_PSEUDO_REGS)
 	{
-	  complain (&reg_value_complaint, SYMBOL_VALUE (sym), NUM_REGS,
+	  complain (&reg_value_complaint, SYMBOL_VALUE (sym),
+		    NUM_REGS + NUM_PSEUDO_REGS,
 		    SYMBOL_SOURCE_NAME (sym));
 	  SYMBOL_VALUE (sym) = SP_REGNUM;	/* Known safe, though useless */
 	}
@@ -1850,9 +1854,10 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
       SYMBOL_TYPE (sym) = read_type (&p, objfile);
       SYMBOL_CLASS (sym) = LOC_REGISTER;
       SYMBOL_VALUE (sym) = STAB_REG_TO_REGNUM (valu);
-      if (SYMBOL_VALUE (sym) >= NUM_REGS)
+      if (SYMBOL_VALUE (sym) >= NUM_REGS + NUM_PSEUDO_REGS)
 	{
-	  complain (&reg_value_complaint, SYMBOL_VALUE (sym), NUM_REGS,
+	  complain (&reg_value_complaint, SYMBOL_VALUE (sym),
+		    NUM_REGS + NUM_PSEUDO_REGS,
 		    SYMBOL_SOURCE_NAME (sym));
 	  SYMBOL_VALUE (sym) = SP_REGNUM;	/* Known safe, though useless */
 	}
@@ -2028,7 +2033,8 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
          when translating C++ into C.  We make the typedef here so that
          "ptype foo" works as expected for cfront translated code.  */
       else if ((current_subfile->language == language_cplus)
-	       || (current_subfile->language == language_objc))
+	       || (current_subfile->language == language_objc)
+	       || (current_subfile->language == language_objcplus))
 	synonym = 1;
 
       SYMBOL_TYPE (sym) = read_type (&p, objfile);
@@ -2100,9 +2106,10 @@ define_symbol (CORE_ADDR valu, char *string, char *prefix,
       SYMBOL_TYPE (sym) = read_type (&p, objfile);
       SYMBOL_CLASS (sym) = LOC_REGPARM_ADDR;
       SYMBOL_VALUE (sym) = STAB_REG_TO_REGNUM (valu);
-      if (SYMBOL_VALUE (sym) >= NUM_REGS)
+      if (SYMBOL_VALUE (sym) >= NUM_REGS + NUM_PSEUDO_REGS)
 	{
-	  complain (&reg_value_complaint, SYMBOL_VALUE (sym), NUM_REGS,
+	  complain (&reg_value_complaint, SYMBOL_VALUE (sym),
+		    NUM_REGS + NUM_PSEUDO_REGS,
 		    SYMBOL_SOURCE_NAME (sym));
 	  SYMBOL_VALUE (sym) = SP_REGNUM;	/* Known safe, though useless */
 	}
@@ -2616,7 +2623,8 @@ again:
       if (type_descriptor == 'c' && !os9k_stabs)
 	return error_type (pp, objfile);
       type = read_type (pp, objfile);
-      /* FIXME! For now, we ignore const and volatile qualifiers.  */
+      type = make_cv_type (1, TYPE_VOLATILE (type), type,
+			   dbx_lookup_type (typenums));
       break;
 
     case 'B':			/* Volatile qual on some type (Sun) */
@@ -2626,7 +2634,8 @@ again:
       if (type_descriptor == 'i' && !os9k_stabs)
 	return error_type (pp, objfile);
       type = read_type (pp, objfile);
-      /* FIXME! For now, we ignore const and volatile qualifiers.  */
+      type = make_cv_type (TYPE_CONST (type), 1, type,
+			   dbx_lookup_type (typenums));
       break;
 
     case '@':
@@ -2707,6 +2716,14 @@ again:
 	    ++(*pp);
 
 	  return_type = read_type (pp, objfile);
+	  /* If we are defining a type within the argument list 
+	     then there will be a closing ";" after the type
+	     def'n.  Walk past it */
+
+	  if ((*pp)[0] == ';' && (*pp)[1] == ',')
+	    {
+	      ++(*pp);
+	    }
 	  args = read_args (pp, ';', objfile);
 	  type = dbx_alloc_type (typenums, objfile);
 	  smash_to_method_type (type, domain, return_type, args);
@@ -2983,6 +3000,7 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
 {
   int nfn_fields = 0;
   int length = 0;
+  int skip_method;
   /* Total number of member functions defined in this class.  If the class
      defines two `f' functions, and one `g' function, then this will have
      the value 3.  */
@@ -3022,9 +3040,39 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
       look_ahead_type = NULL;
       length = 0;
 
+      skip_method = 0;
+      if (p - *pp == strlen ("__base_ctor")
+	  && strncmp (*pp, "__base_ctor", strlen ("__base_ctor")) == 0)
+	skip_method = 1;
+      else if (p - *pp == strlen ("__base_dtor")
+	       && strncmp (*pp, "__base_dtor", strlen ("__base_dtor")) == 0)
+	skip_method = 1;
+      else if (p - *pp == strlen ("__deleting_dtor")
+	       && strncmp (*pp, "__deleting_dtor",
+			   strlen ("__deleting_dtor")) == 0)
+	skip_method = 1;
+
+      if (skip_method)
+	{
+	  /* Skip past '::'.  */
+	  *pp = p + 2;
+	  /* Read the type.  */
+	  read_type (pp, objfile);
+	  /* Skip past the colon, mangled name, semicolon, flags, and final
+	     semicolon.  */
+	  while (**pp != ';')
+	    (*pp) ++;
+	  (*pp) ++;
+	  while (**pp != ';')
+	    (*pp) ++;
+	  (*pp) ++;
+
+	  continue;
+	}
+
       new_fnlist = (struct next_fnfieldlist *)
 	xmalloc (sizeof (struct next_fnfieldlist));
-      make_cleanup (free, new_fnlist);
+      make_cleanup (xfree, new_fnlist);
       memset (new_fnlist, 0, sizeof (struct next_fnfieldlist));
 
       if ((*pp)[0] == 'o' && (*pp)[1] == 'p' && is_cplus_marker ((*pp)[2]))
@@ -3067,7 +3115,7 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
 	{
 	  new_sublist =
 	    (struct next_fnfield *) xmalloc (sizeof (struct next_fnfield));
-	  make_cleanup (free, new_sublist);
+	  make_cleanup (xfree, new_sublist);
 	  memset (new_sublist, 0, sizeof (struct next_fnfield));
 
 	  /* Check for and handle cretinous dbx symbol name continuation!  */
@@ -3099,7 +3147,7 @@ read_member_functions (struct field_info *fip, char **pp, struct type *type,
 
 	  /* If this is just a stub, then we don't have the real name here. */
 
-	  if (TYPE_FLAGS (new_sublist->fn_field.type) & TYPE_FLAG_STUB)
+	  if (TYPE_STUB (new_sublist->fn_field.type))
 	    {
 	      if (!TYPE_DOMAIN_TYPE (new_sublist->fn_field.type))
 		TYPE_DOMAIN_TYPE (new_sublist->fn_field.type) = type;
@@ -3295,8 +3343,13 @@ read_cpp_abbrev (struct field_info *fip, char **pp, struct type *type,
       switch (cpp_abbrev)
 	{
 	case 'f':		/* $vf -- a virtual function table pointer */
+	  name = type_name_no_tag (context);
+	  if (name == NULL)
+	  {
+		  name = "";
+	  }
 	  fip->list->field.name =
-	    obconcat (&objfile->type_obstack, vptr_name, "", "");
+	    obconcat (&objfile->type_obstack, vptr_name, name, "");
 	  break;
 
 	case 'b':		/* $vb -- a virtual bsomethingorother */
@@ -3404,6 +3457,12 @@ read_one_struct_field (struct field_info *fip, char **pp, char *p,
     }
 
   fip->list->field.type = read_type (pp, objfile);
+  /* See if embedded type info that is terminated with
+     a ";".  Skip the ";" in this case... */
+
+  if (**pp == ';')
+    ++(*pp);
+
   if (**pp == ':')
     {
       p = ++(*pp);
@@ -3535,15 +3594,17 @@ read_struct_fields (struct field_info *fip, char **pp, struct type *type,
   /* Read each data member type until we find the terminating ';' at the end of
      the data member list, or break for some other reason such as finding the
      start of the member function list. */
+  /* Stab string for structure/union does not end with two ';' in
+     SUN C compiler 5.3 i.e. F6U2, hence check for end of string. */
 
-  while (**pp != ';')
+  while (**pp != ';' && **pp != '\0')
     {
       if (os9k_stabs && **pp == ',')
 	break;
       STABS_CONTINUE (pp, objfile);
       /* Get space to record the next field's data.  */
       new = (struct nextfield *) xmalloc (sizeof (struct nextfield));
-      make_cleanup (free, new);
+      make_cleanup (xfree, new);
       memset (new, 0, sizeof (struct nextfield));
       new->next = fip->list;
       fip->list = new;
@@ -3663,7 +3724,7 @@ read_baseclasses (struct field_info *fip, char **pp, struct type *type,
   for (i = 0; i < TYPE_N_BASECLASSES (type); i++)
     {
       new = (struct nextfield *) xmalloc (sizeof (struct nextfield));
-      make_cleanup (free, new);
+      make_cleanup (xfree, new);
       memset (new, 0, sizeof (struct nextfield));
       new->next = fip->list;
       fip->list = new;
@@ -3883,7 +3944,7 @@ read_cfront_static_fields (struct field_info *fip, char **pp, struct type *type,
 
       /* allocate a new fip */
       new = (struct nextfield *) xmalloc (sizeof (struct nextfield));
-      make_cleanup (free, new);
+      make_cleanup (xfree, new);
       memset (new, 0, sizeof (struct nextfield));
       new->next = fip->list;
       fip->list = new;
@@ -3946,7 +4007,7 @@ copy_cfront_struct_fields (struct field_info *fip, struct type *type,
     {
       /* allocate a new fip */
       new = (struct nextfield *) xmalloc (sizeof (struct nextfield));
-      make_cleanup (free, new);
+      make_cleanup (xfree, new);
       memset (new, 0, sizeof (struct nextfield));
       new->next = fip->list;
       fip->list = new;
@@ -4115,6 +4176,8 @@ read_struct_type (char **pp, struct type *type, struct objfile *objfile)
       type = error_type (pp, objfile);
     }
 
+  /* Fix up any cv-qualified versions of this type.  */
+  finish_cv_type (type);
   do_cleanups (back_to);
   return (type);
 }
@@ -4805,6 +4868,10 @@ read_args (char **pp, int end, struct objfile *objfile)
     }
   (*pp)++;			/* get past `end' (the ':' character) */
 
+  if (n == 0) 
+    {
+      return (struct type **) -1;
+    }
   if (n == 1)
     {
       rval = (struct type **) xmalloc (2 * sizeof (struct type *));
@@ -4982,7 +5049,7 @@ cleanup_undefined_types (void)
 	       as well as in check_typedef to deal with the (legitimate in
 	       C though not C++) case of several types with the same name
 	       in different source files.  */
-	    if (TYPE_FLAGS (*type) & TYPE_FLAG_STUB)
+	    if (TYPE_STUB (*type))
 	      {
 		struct pending *ppt;
 		int i;
@@ -5234,7 +5301,7 @@ end_stabs (void)
 {
   if (type_vector)
     {
-      free ((char *) type_vector);
+      xfree (type_vector);
     }
   type_vector = 0;
   type_vector_length = 0;
@@ -5247,7 +5314,7 @@ finish_global_stabs (struct objfile *objfile)
   if (global_stabs)
     {
       patch_block_stabs (global_symbols, global_stabs, objfile);
-      free ((PTR) global_stabs);
+      xfree (global_stabs);
       global_stabs = NULL;
     }
 }

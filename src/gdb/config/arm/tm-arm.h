@@ -1,5 +1,6 @@
 /* Definitions to target GDB to ARM targets.
-   Copyright 1986, 1987, 1988, 1989, 1991, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1988, 1989, 1991, 1993, 1994, 1995, 1996, 1997,
+   1998, 1999, 2000, 2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,18 +22,19 @@
 #ifndef TM_ARM_H
 #define TM_ARM_H
 
+#include "regcache.h"
+#include "floatformat.h"
+
 /* Forward declarations for prototypes.  */
 struct type;
 struct value;
 
 /* Target byte order on ARM defaults to selectable, and defaults to
    little endian.  */
-#define TARGET_BYTE_ORDER_SELECTABLE_P	1
-#define TARGET_BYTE_ORDER_DEFAULT	LITTLE_ENDIAN
+#define TARGET_BYTE_ORDER_DEFAULT BFD_ENDIAN_LITTLE
 
 /* IEEE format floating point.  */
-#define IEEE_FLOAT (1)
-#define TARGET_DOUBLE_FORMAT  (target_byte_order == BIG_ENDIAN \
+#define TARGET_DOUBLE_FORMAT  (target_byte_order == BFD_ENDIAN_BIG \
 			       ? &floatformat_ieee_double_big	 \
 			       : &floatformat_ieee_double_littlebyte_bigword)
 
@@ -92,9 +94,9 @@ extern CORE_ADDR arm_saved_pc_after_call (struct frame_info *);
    Even this may only true if the condition predicate is true. The
    following use a condition predicate of ALWAYS so it is always TRUE.
    
-   There are other ways of forcing a breakpoint.  ARM Linux, RisciX,
-   and I suspect NetBSD will all use a software interrupt rather than
-   an undefined instruction to force a trap.  This can be handled by
+   There are other ways of forcing a breakpoint.  ARM Linux, RISC iX,
+   and NetBSD will all use a software interrupt rather than an
+   undefined instruction to force a trap.  This can be handled by
    redefining some or all of the following in a target dependent
    fashion.  */
 
@@ -167,10 +169,8 @@ extern void arm_float_info (void);
 #define NUM_GREGS	16	/* Number of general purpose registers.  */
 #define NUM_REGS	(NUM_GREGS + NUM_FREGS + NUM_SREGS)
 
-/* An array of names of registers. */
-extern char **arm_register_names;
-
-#define REGISTER_NAME(i) arm_register_names[i]
+#define REGISTER_NAME(i) arm_register_name(i)
+char *arm_register_name (int);
 
 /* Register numbers of various important registers.  Note that some of
    these values are "real" register numbers, and correspond to the
@@ -264,35 +264,11 @@ extern char **arm_register_names;
 /* Largest value REGISTER_VIRTUAL_SIZE can have.  */
 #define MAX_REGISTER_VIRTUAL_SIZE FP_REGISTER_VIRTUAL_SIZE
 
-/* Nonzero if register N requires conversion from raw format to
-   virtual format. */
-extern int arm_register_convertible (unsigned int);
-#define REGISTER_CONVERTIBLE(REGNUM) (arm_register_convertible (REGNUM))
-
-/* Convert data from raw format for register REGNUM in buffer FROM to
-   virtual format with type TYPE in buffer TO. */
-
-extern void arm_register_convert_to_virtual (unsigned int regnum,
-					     struct type *type,
-					     void *from, void *to);
-#define REGISTER_CONVERT_TO_VIRTUAL(REGNUM,TYPE,FROM,TO) \
-     arm_register_convert_to_virtual (REGNUM, TYPE, FROM, TO)
-
-/* Convert data from virtual format with type TYPE in buffer FROM to
-   raw format for register REGNUM in buffer TO.  */
-
-extern void arm_register_convert_to_raw (unsigned int regnum,
-					 struct type *type,
-					 void *from, void *to);
-#define REGISTER_CONVERT_TO_RAW(TYPE,REGNUM,FROM,TO) \
-     arm_register_convert_to_raw (REGNUM, TYPE, FROM, TO)
-
 /* Return the GDB type object for the "standard" data type of data in
    register N.  */
 
-#define REGISTER_VIRTUAL_TYPE(N) \
-     (((unsigned)(N) - F0_REGNUM) < NUM_FREGS \
-      ? builtin_type_double : builtin_type_int)
+extern struct type *arm_register_type (int regnum);
+#define REGISTER_VIRTUAL_TYPE(N) arm_register_type (N)
 
 /* The system C compiler uses a similar structure return convention to gcc */
 extern use_struct_convention_fn arm_use_struct_convention;
@@ -337,18 +313,6 @@ extern void convert_to_extended (void *dbl, void *ptr);
    before in the executables list of symbols.  */
 #define VARIABLES_INSIDE_BLOCK(desc, gcc_p) (!(gcc_p))
 
-
-/* Define other aspects of the stack frame.  We keep the offsets of
-   all saved registers, 'cause we need 'em a lot!  We also keep the
-   current size of the stack frame, and the offset of the frame
-   pointer from the stack pointer (for frameless functions, and when
-   we're still in the prologue of a function with a frame) */
-
-#define EXTRA_FRAME_INFO  	\
-  struct frame_saved_regs fsr;	\
-  int framesize;		\
-  int frameoffset;		\
-  int framereg;
 
 extern void arm_init_extra_frame_info (int fromleaf, struct frame_info * fi);
 #define INIT_EXTRA_FRAME_INFO(fromleaf, fi) \
@@ -420,13 +384,9 @@ extern CORE_ADDR arm_frame_saved_pc (struct frame_info *);
    ways in the stack frame.  sp is even more special: the address we
    return for it IS the sp for the next frame.  */
 
-struct frame_saved_regs;
-struct frame_info;
-void arm_frame_find_saved_regs (struct frame_info * fi,
-				struct frame_saved_regs * fsr);
-
-#define FRAME_FIND_SAVED_REGS(frame_info, frame_saved_regs) \
-	arm_frame_find_saved_regs (frame_info, &(frame_saved_regs));
+void arm_frame_init_saved_regs (struct frame_info *);
+#define FRAME_INIT_SAVED_REGS(frame_info) \
+	arm_frame_init_saved_regs (frame_info);
 
 /* Things needed for making the inferior call functions.  */
 
@@ -470,6 +430,14 @@ extern int arm_call_dummy_breakpoint_offset (void);
 void arm_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR fun,
 			 int nargs, struct value ** args,
 			 struct type * type, int gcc_p);
+
+/* Most ARMs don't have single stepping capability, so provide a 
+   single-stepping mechanism by default */
+#undef SOFTWARE_SINGLE_STEP_P
+#define SOFTWARE_SINGLE_STEP_P() 1
+
+#define SOFTWARE_SINGLE_STEP(sig,bpt) arm_software_single_step((sig), (bpt))
+void arm_software_single_step (int, int);
 
 CORE_ADDR arm_get_next_pc (CORE_ADDR pc);
 

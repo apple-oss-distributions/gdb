@@ -1,5 +1,6 @@
 /* DWARF debugging format support for GDB.
-   Copyright (C) 1991, 1992, 1993, 1994, 1995, 1996, 1998
+   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
+   2001
    Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support.  Portions based on dbxread.c,
    mipsread.c, coffread.c, and dwarfread.c from a Data General SVR4 gdb port.
@@ -18,8 +19,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330,
-   Boston, MA 02111-1307, USA.  */
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 /*
 
@@ -190,11 +190,6 @@ typedef unsigned int DIE_REF;	/* Reference to a DIE */
 #define CHILL_PRODUCER "GNU Chill "
 #endif
 
-/* Provide a default mapping from a DWARF register number to a gdb REGNUM.  */
-#ifndef DWARF_REG_TO_REGNUM
-#define DWARF_REG_TO_REGNUM(num) (num)
-#endif
-
 /* Flags to target_to_host() that tell whether or not the data object is
    expected to be signed.  Used, for example, when fetching a signed
    integer in the target environment which is used as a signed integer
@@ -246,7 +241,6 @@ typedef unsigned int DIE_REF;	/* Reference to a DIE */
 
 /* External variables referenced. */
 
-extern int info_verbose;	/* From main.c; nonzero => verbose */
 extern char *warning_pre_print;	/* From utils.c */
 
 /* The DWARF debugging information consists of two major pieces,
@@ -700,19 +694,20 @@ dwarf_build_psymtabs (struct objfile *objfile, int mainline, file_ptr dbfoff,
   dbbase = xmalloc (dbsize);
   dbroff = 0;
   if ((bfd_seek (abfd, dbfoff, SEEK_SET) != 0) ||
-      (bfd_read (dbbase, dbsize, 1, abfd) != dbsize))
+      (bfd_bread (dbbase, dbsize, abfd) != dbsize))
     {
-      free (dbbase);
+      xfree (dbbase);
       error ("can't read DWARF data from '%s'", bfd_get_filename (abfd));
     }
-  back_to = make_cleanup (free, dbbase);
+  back_to = make_cleanup (xfree, dbbase);
 
   /* If we are reinitializing, or if we have never loaded syms yet, init.
      Since we have no idea how many DIES we are looking at, we just guess
      some arbitrary value. */
 
-  if (mainline || objfile->global_psymbols.size == 0 ||
-      objfile->static_psymbols.size == 0)
+  if (mainline
+      || (objfile->global_psymbols.size == 0
+	  && objfile->static_psymbols.size == 0))
     {
       init_psymbol_list (objfile, 1024);
     }
@@ -875,7 +870,7 @@ alloc_utype (DIE_REF die_ref, struct type *utypep)
 static void
 free_utypes (PTR dummy)
 {
-  free (utypes);
+  xfree (utypes);
   utypes = NULL;
   numutypes = 0;
 }
@@ -1152,7 +1147,7 @@ read_structure_scope (struct dieinfo *dip, char *thisdie, char *enddie,
   struct symbol *sym;
 
   type = struct_type (dip, thisdie, enddie, objfile);
-  if (!(TYPE_FLAGS (type) & TYPE_FLAG_STUB))
+  if (!TYPE_STUB (type))
     {
       sym = new_symbol (dip, objfile);
       if (sym != NULL)
@@ -1844,7 +1839,11 @@ handle_producer (char *producer)
     {
       if (STREQN (producer, GPLUS_PRODUCER, strlen (GPLUS_PRODUCER)))
 	{
+#if 0
+	  /* For now, stay with AUTO_DEMANGLING for g++ output, as we don't
+	     know whether it will use the old style or v3 mangling.  */
 	  set_demangling_style (GNU_DEMANGLING_STYLE_STRING);
+#endif
 	}
       else if (STREQN (producer, LCC_PRODUCER, strlen (LCC_PRODUCER)))
 	{
@@ -2269,12 +2268,12 @@ read_ofile_symtab (struct partial_symtab *pst)
   base_section_offsets = pst->section_offsets;
   baseaddr = ANOFFSET (pst->section_offsets, 0);
   if (bfd_seek (abfd, foffset, SEEK_SET) ||
-      (bfd_read (dbbase, dbsize, 1, abfd) != dbsize))
+      (bfd_bread (dbbase, dbsize, abfd) != dbsize))
     {
-      free (dbbase);
+      xfree (dbbase);
       error ("can't read DWARF data");
     }
-  back_to = make_cleanup (free, dbbase);
+  back_to = make_cleanup (xfree, dbbase);
 
   /* If there is a line number table associated with this compilation unit
      then read the size of this fragment in bytes, from the fragment itself.
@@ -2285,8 +2284,8 @@ read_ofile_symtab (struct partial_symtab *pst)
   if (LNFOFF (pst))
     {
       if (bfd_seek (abfd, LNFOFF (pst), SEEK_SET) ||
-	  (bfd_read ((PTR) lnsizedata, sizeof (lnsizedata), 1, abfd) !=
-	   sizeof (lnsizedata)))
+	  (bfd_bread ((PTR) lnsizedata, sizeof (lnsizedata), abfd)
+	   != sizeof (lnsizedata)))
 	{
 	  error ("can't read DWARF line number table size");
 	}
@@ -2294,12 +2293,12 @@ read_ofile_symtab (struct partial_symtab *pst)
 			       GET_UNSIGNED, pst->objfile);
       lnbase = xmalloc (lnsize);
       if (bfd_seek (abfd, LNFOFF (pst), SEEK_SET) ||
-	  (bfd_read (lnbase, lnsize, 1, abfd) != lnsize))
+	  (bfd_bread (lnbase, lnsize, abfd) != lnsize))
 	{
-	  free (lnbase);
+	  xfree (lnbase);
 	  error ("can't read DWARF line numbers");
 	}
-      make_cleanup (free, lnbase);
+      make_cleanup (xfree, lnbase);
     }
 
   process_dies (dbbase, dbbase + dbsize, pst->objfile);

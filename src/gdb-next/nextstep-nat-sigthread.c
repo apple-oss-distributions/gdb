@@ -129,8 +129,7 @@ static void next_signal_thread (void *arg)
       sigthread_debug_re ("next_signal_thread: no children present: waiting for parent\n");
       for (;;) {
 	pthread_testcancel ();
-	pause ();
-	pthread_testcancel ();
+	sched_yield ();
       }
     }
 

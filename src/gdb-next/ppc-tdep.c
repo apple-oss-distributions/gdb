@@ -14,6 +14,7 @@
 #include "arch-utils.h"
 #include "floatformat.h"
 #include "gdbtypes.h"
+#include "regcache.h"
 
 #include "coff/internal.h"	/* for libcoff.h */
 
@@ -124,7 +125,6 @@ struct ppc_init_frame_pc_args
 int
 ppc_init_frame_pc_first_unsafe (struct ppc_init_frame_pc_args *args)
 {
-  int fromleaf = args->fromleaf;
   struct frame_info *frame = args->frame;
   struct frame_info *next;
 
@@ -278,8 +278,6 @@ ppc_frame_find_pc (frame)
   else
     {
       ppc_function_properties *props;
-      struct frame_info *cur_frame;
-      CORE_ADDR retval;
 
       props = frame->extra_info->props;
       CHECK_FATAL (props != NULL);
@@ -593,7 +591,7 @@ ppc_extract_return_value (valtype, regbuf, valbuf)
 
     unsigned int gpretreg = GP0_REGNUM + 3;
     /* return value is copied starting from r3. */
-    if (TARGET_BYTE_ORDER == BIG_ENDIAN
+    if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG
 	&& TYPE_LENGTH (valtype) < REGISTER_RAW_SIZE (gpretreg))
       offset = REGISTER_RAW_SIZE (gpretreg) - TYPE_LENGTH (valtype);
     
@@ -683,7 +681,7 @@ void ppc_store_struct_return (CORE_ADDR addr, CORE_ADDR sp)
   write_register (SRA_REGNUM, addr);
 }
 
-void ppc_store_return_value (struct type *type, unsigned char *valbuf)
+void ppc_store_return_value (struct type *type, char *valbuf)
 {
   /* Floating point values are returned starting from FPR1 and up.
      Say a double_double_double type could be returned in
@@ -751,7 +749,7 @@ ppc_breakpoint_from_pc (CORE_ADDR *addr, int *size)
   static unsigned char big_breakpoint[] = BIG_BREAKPOINT;
   static unsigned char little_breakpoint[] = LITTLE_BREAKPOINT;
   *size = 4;
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     return big_breakpoint;
   else
     return little_breakpoint;
@@ -835,6 +833,10 @@ static unsigned LONGEST ppc_call_dummy_words[]=
   0xfeedfeed, 0xfeedfeed, 0xfeedfeed, 0xfeedfeed 
 };
 
+/* keep this as multiple of 16 ($sp requires 16 byte alignment) */
+
+#define INSTRUCTION_SIZE 4
+
 static struct gdbarch *
 ppc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
@@ -882,29 +884,29 @@ ppc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   switch (info.byte_order)
     {
-    case BIG_ENDIAN:
+    case BFD_ENDIAN_BIG:
       set_gdbarch_float_format (gdbarch, &floatformat_ieee_single_big);
       set_gdbarch_double_format (gdbarch, &floatformat_ieee_double_big);
       set_gdbarch_long_double_format (gdbarch, &floatformat_ieee_double_big);
       break;
-    case LITTLE_ENDIAN:
+    case BFD_ENDIAN_LITTLE:
       set_gdbarch_float_format (gdbarch, &floatformat_ieee_single_little);
       set_gdbarch_double_format (gdbarch, &floatformat_ieee_double_little);
       set_gdbarch_long_double_format (gdbarch, &floatformat_ieee_double_little);
       break;
     default:
-      internal_error ("ppc_gdbarch_init: bad byte order for float format");
+      internal_error (__FILE__, __LINE__, "ppc_gdbarch_init: bad byte order for float format");
     }
 
   set_gdbarch_call_dummy_words (gdbarch, ppc_call_dummy_words);
   set_gdbarch_sizeof_call_dummy_words (gdbarch, sizeof (ppc_call_dummy_words));
   set_gdbarch_use_generic_dummy_frames (gdbarch, 0);
-  set_gdbarch_call_dummy_length (gdbarch, 0);
+  set_gdbarch_call_dummy_length (gdbarch, (32 + 16 + 32) * INSTRUCTION_SIZE);
   set_gdbarch_call_dummy_location (gdbarch, ON_STACK);
   set_gdbarch_call_dummy_address (gdbarch, 0);
+  set_gdbarch_call_dummy_start_offset (gdbarch, (32 + 6) * INSTRUCTION_SIZE);
   set_gdbarch_call_dummy_breakpoint_offset_p (gdbarch, 1);
-  set_gdbarch_call_dummy_breakpoint_offset (gdbarch, CALL_DUMMY_BREAKPOINT_OFFSET);
-  set_gdbarch_call_dummy_start_offset (gdbarch, CALL_DUMMY_START_OFFSET);
+  set_gdbarch_call_dummy_breakpoint_offset (gdbarch, (32 + 6 + 6) * INSTRUCTION_SIZE);
   set_gdbarch_pc_in_call_dummy (gdbarch, pc_in_call_dummy_on_stack);
   set_gdbarch_call_dummy_p (gdbarch, 1);
   set_gdbarch_call_dummy_stack_adjust_p (gdbarch, 0);
@@ -1057,43 +1059,50 @@ ppc_fast_show_stack_helper (int show_frames, int get_names, int *count)
   if (sigtramp_start == 0) 
     {
       char *name;
-      pc = parse_and_eval_address ("_sigtramp");
-      if (find_pc_partial_function (pc, &name, 
-				    &sigtramp_start, &sigtramp_end) == 0)
+      struct minimal_symbol *msymbol;
+
+      msymbol = lookup_minimal_symbol ("_sigtramp", NULL, NULL);
+      if (msymbol == NULL)
+	warning ("Couldn't find minimal symbol for \"_sigtramp\" - backtraces may be unreliable");
+      else
 	{
-	  error ("Couldn't find _sigtramp symbol - backtraces will be unreliable");
+	  pc = SYMBOL_VALUE_ADDRESS (msymbol);
+	  if (find_pc_partial_function (pc, &name, 
+					&sigtramp_start, &sigtramp_end) == 0)
+	    {
+	      error ("Couldn't find _sigtramp symbol - backtraces will be unreliable");
+	    }
 	}
     }
 
   if (show_frames)
     ui_out_list_begin (uiout, "frames");
   
+  i = 0;
+
   fi = get_current_frame();
 
   if (fi == NULL) 
     {
-      i = -1;
       goto ppc_count_finish;
     }
 
   if (show_frames)
-    ppc_print_count_info (0, fi->frame, fi->pc, get_names);
+    ppc_print_count_info (i, fi->frame, fi->pc, get_names);
+  i = 1;
+  valid = 1;
 
   fi = get_prev_frame(fi);
   if (fi == NULL)
     {
-      valid = 1;
-      i = 0;
       goto ppc_count_finish;
     }
 
   pc = fi->pc;
   fp = fi->frame;
-  i = 1;
 
   if (show_frames)
     ppc_print_count_info (i, fp, pc, get_names);
-
   i = 2;
   
   if (safe_read_memory_unsigned_integer (fp, 4, &next_fp))
@@ -1158,10 +1167,10 @@ _initialize_ppc_tdep ()
   tm_print_insn = print_insn_big_powerpc;
 
   cmd = add_set_cmd ("debug-ppc", class_obscure, var_boolean, 
-		     (char *) &ppc_debugflag,
-		     "Set if printing PPC stack analysis debugging statements.",
-		     &setlist),
-  add_show_from_set (cmd, &showlist);		
+                   (char *) &ppc_debugflag,
+                   "Set if printing PPC stack analysis debugging statements.",
+                   &setlist),
+  add_show_from_set (cmd, &showlist);
 
   add_com ("ppc-fast-show-stack", class_obscure, ppc_fast_show_stack,
 	   "List stack pc & frame pointers without building the stack info.\n\

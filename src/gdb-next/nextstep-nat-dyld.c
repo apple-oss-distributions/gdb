@@ -1,3 +1,20 @@
+#include <unistd.h>
+#include <ctype.h>
+#include <mach/mach_types.h>
+#include <mach/vm_types.h>
+#include <mach/vm_region.h>
+#include <mach/machine/vm_param.h>
+
+#include "defs.h"
+#include "inferior.h"
+#include "target.h"
+#include "gdbcmd.h"
+#include "annotate.h"
+#include "mach-o.h"
+#include "gdbcore.h"                /* for core_ops */
+#include "symfile.h"
+#include "objfiles.h"
+
 #include "nextstep-nat-dyld.h"
 #include "nextstep-nat-dyld-path.h"
 #include "nextstep-nat-inferior.h"
@@ -12,22 +29,20 @@
 #include "nextstep-nat-cfm.h"
 #endif /* WITH_CFM */
 
-#include "defs.h"
-#include "inferior.h"
-#include "target.h"
-#include "gdbcmd.h"
-#include "annotate.h"
-#include "mach-o.h"
-#include "gdbcore.h"                /* for core_ops */
-#include "symfile.h"
-#include "objfiles.h"
-
-#include <unistd.h>
-#include <ctype.h>
-
 FILE *dyld_stderr = NULL;
 int dyld_debug_flag = 0;
+
+/* These two record where we actually found dyld.  We need to do this 
+   detection before we build all the data structures for shared libraries,
+   so we need to keep it around on the side. */
+
+CORE_ADDR dyld_addr = 0;
+CORE_ADDR dyld_slide = 0;
+
 extern int inferior_auto_start_cfm_flag;
+
+static int dyld_starts_here_p (vm_address_t addr);
+static void next_locate_dyld (bfd *exec_bfd);
 
 void dyld_debug (const char *fmt, ...)
 {
@@ -118,7 +133,7 @@ dyld_print_status_info (struct next_dyld_thread_status *s, unsigned int mask)
     ui_out_text (uiout, "DYLD shared library information has been read from the DYLD debugging thread.\n");
     break;
   default:
-    internal_error ("invalid value for s->dyld_state");
+    internal_error (__FILE__, __LINE__, "invalid value for s->dyld_state");
     break;
   }
 
@@ -137,6 +152,7 @@ static
 CORE_ADDR lookup_dyld_address (const char *s)
 {
   struct minimal_symbol *msym = NULL;
+  CORE_ADDR sym_addr;
   char *ns = NULL;
 
   asprintf (&ns, "%s%s", dyld_symbols_prefix, s);
@@ -146,7 +162,8 @@ CORE_ADDR lookup_dyld_address (const char *s)
   if (msym == NULL) {
     error ("unable to locate symbol \"%s%s\"", dyld_symbols_prefix, s);
   }
-  return SYMBOL_VALUE_ADDRESS (msym);
+  sym_addr = SYMBOL_VALUE_ADDRESS (msym);
+  return sym_addr + dyld_slide;
 }
 
 static
@@ -158,9 +175,11 @@ unsigned int lookup_dyld_value (const char *s)
 void
 next_init_addresses ()
 {
+  
   next_status->dyld_status.object_images = lookup_dyld_address ("object_images");
   next_status->dyld_status.library_images = lookup_dyld_address ("library_images");
-  next_status->dyld_status.state_changed_hook = lookup_dyld_address ("gdb_dyld_state_changed");
+  next_status->dyld_status.state_changed_hook 
+    = lookup_dyld_address ("gdb_dyld_state_changed");
 
   next_status->dyld_status.dyld_version = lookup_dyld_value ("gdb_dyld_version");
 
@@ -170,34 +189,238 @@ next_init_addresses ()
   next_status->dyld_status.library_image_size = lookup_dyld_value ("gdb_library_image_size");
 }
 
+static int
+dyld_starts_here_p (vm_address_t addr)
+{
+  vm_address_t address =  addr;
+  vm_size_t size = 0;
+  vm_region_basic_info_data_64_t info;
+  mach_msg_type_number_t info_cnt;
+  kern_return_t ret;
+  mach_port_t object_name;
+  vm_address_t data;
+  vm_size_t data_count;
+
+  struct mach_header *mh;
+
+  info_cnt = VM_REGION_BASIC_INFO_COUNT;
+  ret = vm_region (next_status->task, &address, &size, VM_REGION_BASIC_INFO,
+		  (vm_region_info_t) &info, &info_cnt, &object_name);
+
+  if (ret != KERN_SUCCESS) {
+    return 0;
+  }
+
+  /* If it is not readable, it is not dyld. */
+  
+  if ((info.protection & VM_PROT_READ) == 0) {
+    return 0; 
+  }
+
+  ret = vm_read (next_status->task, address, size, &data, &data_count);
+
+  if (ret != KERN_SUCCESS) {
+    ret = vm_deallocate (mach_task_self (), data, data_count);
+    return 0; 
+  }
+
+  /* If the vm region is too small to contain a mach_header, it also can't be
+     where dyld is loaded */
+
+  if (data_count < sizeof (struct mach_header)){
+    ret = vm_deallocate (mach_task_self (), data, data_count);
+    return 0;
+  }
+
+  mh = (struct mach_header *) data;
+
+  /* If the magic number is right and the size of this
+   * region is big enough to cover the mach header and
+   * load commands assume it is correct.
+   */
+
+  if (mh->magic != MH_MAGIC ||
+      mh->filetype != MH_DYLINKER ||
+      data_count < sizeof (struct mach_header) +
+      mh->sizeofcmds) {
+    ret = vm_deallocate (mach_task_self (), data, data_count);
+    return 0;
+  }
+
+  /* Looks like dyld! */
+  ret = vm_deallocate(mach_task_self(), data, data_count);
+
+  return 1;
+}
+
+/*
+ * next_locate_dyld - This is set to the SOLIB_ADD
+ *   macro in nm-nextstep.h, and called when have created the
+ *   inferior and are about to run it.  It locates the dylinker 
+ *   in the executable, and updates the dyld part of our data
+ *   structures.
+ */
+
+static void
+next_locate_dyld (bfd *exec_bfd)
+{
+  char *dyld_name = NULL;
+  CORE_ADDR dyld_default_addr = 0x0;
+  int got_default_address;
+  struct cleanup *old_cleanups = NULL;
+  struct mach_o_data_struct *mdata = NULL;
+  unsigned int i;
+  struct objfile *objfile;
+
+  CHECK_FATAL (next_status != NULL);
+
+  /* Find where dyld is located in this binary.  We proceed in three steps.  
+
+     First we read the load commands of the executable to find the objfile 
+     for the dylinker.  If we can't find the exec_bfd (for instance if you
+     do attach without pointing gdb at the executable), we default to
+     /usr/lib/dyld.
+
+     Then we find the default load address from the dylinker.
+
+     Finally we see if the dylinker is in fact loaded there, and
+     if not, look through the mapped regions until we find it. 
+  */
+
+  if (exec_bfd != NULL)
+    {
+      mdata = exec_bfd->tdata.mach_o_data;
+      if (mdata == NULL)
+	error ("next_set_start_breakpoint: target data for exec bfd == NULL\n");
+      
+      for (i = 0; i < mdata->header.ncmds; i++) 
+	{
+	  struct bfd_mach_o_load_command *cmd = &mdata->commands[i];
+	  
+	  if (cmd->type == BFD_MACH_O_LC_LOAD_DYLINKER)
+	    {
+	      bfd_mach_o_dylinker_command *dcmd = &cmd->command.dylinker;
+	      
+	      dyld_name = xmalloc (dcmd->name_len + 1);
+	      
+	      bfd_seek (exec_bfd, dcmd->name_offset, SEEK_SET);
+	      if (bfd_bread (dyld_name, dcmd->name_len, exec_bfd) != dcmd->name_len) 
+		{
+		  warning ("Unable to find library name for LC_LOAD_DYLINKER or LD_ID_DYLINKER command; ignoring");
+		  xfree (dyld_name);
+		  continue;
+		}
+	      else
+		{
+		  old_cleanups = make_cleanup (xfree, dyld_name);
+		  break;
+		}
+	    }
+	}
+    }
+  
+  /* If for some reason we can't find  the name, look for it with the
+     default name. */
+  
+  if (dyld_name == NULL)
+    dyld_name = "/usr/lib/dyld";
+  
+  /* Okay, we have found the name of the dylinker, now let's find the objfile 
+     associated with it... */
+  
+  got_default_address = 0;
+  
+  ALL_OBJFILES (objfile)
+    {
+      if (strcmp (dyld_name, objfile->name) == 0) 
+	{
+	  asection *text_section 
+	    = bfd_get_section_by_name (objfile->obfd, "LC_SEGMENT.__TEXT");
+	  dyld_default_addr = bfd_section_vma (objfile->obfd, text_section);
+	  got_default_address = 1;
+	  break;
+	}
+    }
+  
+  if (!got_default_address)
+    error ("next_set_start_breakpoint: Couldn't find address of dylinker: %s.",
+	   dyld_name);
+  
+  /* Now let's see if dyld is at its default address: */
+  
+  if (dyld_starts_here_p (dyld_default_addr))
+    {
+      dyld_addr = dyld_default_addr;
+      dyld_slide = 0;
+    }
+  else
+    {
+      kern_return_t ret_val;
+      vm_region_basic_info_data_t info;
+      int info_cnt;
+      vm_address_t test_addr = VM_MIN_ADDRESS;
+      vm_size_t size;
+      mach_port_t object_name;
+      task_t target_task = next_status->task;
+      
+      do 
+	{
+	  ret_val = vm_region (target_task, &test_addr, 
+			       &size, VM_REGION_BASIC_INFO,
+			       (vm_region_info_t) &info, &info_cnt, 
+			       &object_name);
+	  
+	  if (ret_val != KERN_SUCCESS) {
+	    /* Implies end of vm_region, usually. */
+	    break;
+	  }
+	  
+	  if (dyld_starts_here_p (test_addr))
+	    {
+	      dyld_addr = test_addr;
+	      dyld_slide = test_addr - dyld_default_addr;
+	      break;
+	    }
+	  
+	  test_addr += size;
+	  
+	} while (size != 0);
+    }
+  
+  if (old_cleanups)
+    do_cleanups (old_cleanups);
+
+}
+
 void
 next_set_start_breakpoint (bfd *exec_bfd)
 {
   struct breakpoint *b;
   struct symtab_and_line sal;
-
   char *ns = NULL;
+
   asprintf (&ns, "%s%s", dyld_symbols_prefix, "gdb_dyld_state_changed");
  
+  next_locate_dyld (exec_bfd);
   next_init_addresses ();
 
   INIT_SAL (&sal);
   sal.pc = next_status->dyld_status.state_changed_hook;
   b = set_momentary_breakpoint (sal, NULL, bp_shlib_event);
-  b->disposition = donttouch;
+  b->disposition = disp_donttouch;
   b->thread = -1;
   b->addr_string = ns;
 
   breakpoints_changed ();
+
 }
 
 int
 next_mach_try_start_dyld ()
 {
   CHECK_FATAL (next_status != NULL);
-  return next_dyld_update (0);
 
-  fprintf (stderr, "stopped at 0x%lx\n", read_pc ());
+  return next_dyld_update (0);
 }
 
 static
@@ -345,6 +568,12 @@ void dyld_info_process_raw
   entry = dyld_objfile_entry_alloc (info);
 
   if (namebuf != NULL) {
+
+    char *s = strchr (namebuf, ':');
+    if (s != NULL) {
+      *s = '\0';
+    }
+
     entry->dyld_name = xstrdup (namebuf);
     entry->dyld_name_valid = 1;
   }
@@ -375,7 +604,7 @@ void dyld_info_process_raw
     entry->reason = dyld_reason_dyld;
     break;
   default:
-    internal_error ("Unknown object module at 0x%lx (offset 0x%lx) with type 0x%lx\n",
+    internal_error (__FILE__, __LINE__, "Unknown object module at 0x%lx (offset 0x%lx) with type 0x%lx\n",
                     (unsigned long) header, (unsigned long) slide, (unsigned long) headerbuf.filetype);
   }
 }
@@ -397,8 +626,8 @@ void dyld_info_read_raw
     entry->dyld_name_valid = 1;
     entry->prefix = "__dyld_";
 
-    entry->dyld_addr = 0x41100000;
-    entry->dyld_slide = 0;
+    entry->dyld_addr = dyld_addr;
+    entry->dyld_slide = dyld_slide;
     entry->dyld_index = 0;
     entry->dyld_valid = 1;
 

@@ -1,5 +1,5 @@
 /* MI Command Set - disassemble commands.
-   Copyright (C) 2000, Free Software Foundation, Inc.
+   Copyright 2000, 2001 Free Software Foundation, Inc.
    Contributed by Cygnus Solutions (a Red Hat company).
 
    This file is part of GDB.
@@ -59,7 +59,7 @@ gdb_dis_asm_read_memory (bfd_vma memaddr, bfd_byte * myaddr,
   int res;
 
   errno = 0;
-  res = xfer_memory (memaddr, myaddr, len, 0, &exec_ops);
+  res = xfer_memory (memaddr, myaddr, len, 0, 0, &exec_ops);
 
   if (res == len)
     return 0;
@@ -112,15 +112,9 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
 {
   CORE_ADDR pc;
   CORE_ADDR start;
-  CORE_ADDR low = 0;
-  CORE_ADDR high = 0;
 
-  int how_many = -1;
   int mixed_source_and_assembly;
   int num_displayed;
-  int line_num;
-
-  char *file_string;
   static disassemble_info di;
   static int di_initialized;
 
@@ -136,12 +130,19 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
   char *filename = NULL;
   char *name = NULL;
 
-  /* Which options have we processed? */
+  /* Which options have we processed ... */
   int file_seen = 0;
   int line_seen = 0;
   int num_seen = 0;
   int start_seen = 0;
   int end_seen = 0;
+
+  /* ... and their corresponding value. */
+  char *file_string = NULL;
+  int line_num = -1;
+  int how_many = -1;
+  CORE_ADDR low = 0;
+  CORE_ADDR high = 0;
 
   /* Options processing stuff. */
   int optind = 0;
@@ -241,7 +242,7 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
     }
 
   di.mach = TARGET_PRINT_INSN_INFO->mach;
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     di.endian = BFD_ENDIAN_BIG;
   else
     di.endian = BFD_ENDIAN_LITTLE;
@@ -376,7 +377,7 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
 		  /* Just one line to print. */
 		  if (next_line == mle[i].line)
 		    {
-		      ui_out_list_begin (uiout, "src_and_asm_line");
+		      ui_out_tuple_begin (uiout, "src_and_asm_line");
 		      print_source_lines (symtab, next_line, mle[i].line + 1, 0);
 		    }
 		  else
@@ -384,21 +385,21 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
 		      /* Several source lines w/o asm instructions associated. */
 		      for (; next_line < mle[i].line; next_line++)
 			{
-			  ui_out_list_begin (uiout, "src_and_asm_line");
+			  ui_out_tuple_begin (uiout, "src_and_asm_line");
 			  print_source_lines (symtab, next_line, mle[i].line + 1, 0);
 			  ui_out_list_begin (uiout, "line_asm_insn");
 			  ui_out_list_end (uiout);
-			  ui_out_list_end (uiout);
+			  ui_out_tuple_end (uiout);
 			}
 		      /* Print the last line and leave list open for
 		         asm instructions to be added. */
-		      ui_out_list_begin (uiout, "src_and_asm_line");
+		      ui_out_tuple_begin (uiout, "src_and_asm_line");
 		      print_source_lines (symtab, next_line, mle[i].line + 1, 0);
 		    }
 		}
 	      else
 		{
-		  ui_out_list_begin (uiout, "src_and_asm_line");
+		  ui_out_tuple_begin (uiout, "src_and_asm_line");
 		  print_source_lines (symtab, mle[i].line, mle[i].line + 1, 0);
 		}
 
@@ -417,7 +418,7 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
 		  else
 		    num_displayed++;
 		}
-	      ui_out_list_begin (uiout, NULL);
+	      ui_out_tuple_begin (uiout, NULL);
 	      ui_out_field_core_addr (uiout, "address", pc);
 
 	      if (!build_address_symbolic (pc, 0, &name, &offset, &filename, &line, &unmapped))
@@ -428,20 +429,20 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
 		  ui_out_field_int (uiout, "offset", offset);
 		}
 	      if (filename != NULL)
-		free (filename);
+		xfree (filename);
 	      if (name != NULL)
-		free (name);
+		xfree (name);
 
 	      ui_file_rewind (stb->stream);
 	      pc += (*tm_print_insn) (pc, &di);
 	      ui_out_field_stream (uiout, "inst", stb);
 	      ui_file_rewind (stb->stream);
-	      ui_out_list_end (uiout);
+	      ui_out_tuple_end (uiout);
 	    }
 	  if (close_list)
 	    {
 	      ui_out_list_end (uiout);
-	      ui_out_list_end (uiout);
+	      ui_out_tuple_end (uiout);
 	      close_list = 0;
 	    }
 	  if (how_many >= 0)
@@ -465,7 +466,7 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
 	      else
 		num_displayed++;
 	    }
-	  ui_out_list_begin (uiout, NULL);
+	  ui_out_tuple_begin (uiout, NULL);
 	  ui_out_field_core_addr (uiout, "address", pc);
 
 	  if (!build_address_symbolic (pc, 0, &name, &offset, &filename, &line, &unmapped))
@@ -476,15 +477,15 @@ mi_cmd_disassemble (char *command, char **argv, int argc)
 	      ui_out_field_int (uiout, "offset", offset);
 	    }
 	  if (filename != NULL)
-	    free (filename);
+	    xfree (filename);
 	  if (name != NULL)
-	    free (name);
+	    xfree (name);
 
 	  ui_file_rewind (stb->stream);
 	  pc += (*tm_print_insn) (pc, &di);
 	  ui_out_field_stream (uiout, "inst", stb);
 	  ui_file_rewind (stb->stream);
-	  ui_out_list_end (uiout);
+	  ui_out_tuple_end (uiout);
 	}
       ui_out_list_end (uiout);
     }

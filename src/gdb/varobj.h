@@ -1,5 +1,5 @@
 /* GDB variable objects API.
-   Copyright 1999 Free Software Foundation, Inc.
+   Copyright 1999, 2000 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -99,9 +99,9 @@ extern int varobj_set_value (struct varobj *var, char *expression);
 
 extern int varobj_list (struct varobj ***rootlist);
 
-extern int varobj_update (struct varobj *var, struct varobj ***changelist);
-
 extern int varobj_pc_in_valid_block_p (struct varobj *var);
+
+extern int varobj_update (struct varobj **varp, struct varobj ***changelist);
 
 extern void varobj_get_valid_block (struct varobj *var, CORE_ADDR *start,
 				    CORE_ADDR *end);

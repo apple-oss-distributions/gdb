@@ -63,8 +63,6 @@ void next_inferior_reset (next_inferior_status *s)
 
   s->last_thread = THREAD_NULL;
 
-  s->thread_list = NULL;
-
   next_signal_thread_init (&s->signal_status);
 
   next_exception_thread_init (&s->exception_status);
@@ -82,9 +80,6 @@ void next_inferior_destroy (next_inferior_status *s)
   next_cfm_thread_destroy (&s->cfm_status);
 #endif /* WITH_CFM */
   
-  next_thread_list_destroy (s->thread_list);
-  s->thread_list = NULL;
-
   s->task = TASK_NULL;
   s->pid = 0;
 
@@ -184,7 +179,7 @@ void next_inferior_suspend_ptrace (next_inferior_status *s)
   kill (s->pid, SIGSTOP);
   next_inferior_resume_mach (s, -1);
   
-  next_wait (s, &status);
+  next_wait (s, &status, NULL);
   CHECK (status.kind == TARGET_WAITKIND_STOPPED);
   CHECK (status.value.sig == TARGET_SIGNAL_STOP);
 }
@@ -212,83 +207,6 @@ void next_inferior_resume_ptrace (next_inferior_status *s, int nsignal, int val)
   }
 }
 
-void next_thread_list_lookup_by_id (next_inferior_status *s, int id, int *ppid, thread_t *pthread)
-{
-  next_thread_entry *tpid = s->thread_list;
-
-  CHECK (s != NULL);
-  CHECK (id > 0);
-  CHECK (ppid != NULL);
-  CHECK (pthread != NULL);
-
-  while ((tpid != NULL) && (tpid->id != id)) {
-    tpid = tpid->next;
-  }
-
-  if (tpid == NULL) {
-    error ("invalid thread ID %d", id);
-  }
-
-  *ppid = tpid->pid;
-  *pthread = tpid->thread;
-}
-
-void next_thread_list_lookup_by_info (next_inferior_status *s, int pid, thread_t thread, int *id)
-{
-  next_thread_entry *tpid = s->thread_list;
-
-  CHECK (s != NULL);
-  CHECK (pid != NULL);
-
-
-  while ((tpid != NULL) && ((tpid->pid != pid) || (tpid->thread != thread))) {
-    tpid = tpid->next;
-  }
-
-  if (tpid == NULL) {
-    error ("Unknown thread id 0x%lx for process %d", (unsigned long) thread, pid);
-  }
-
-  *id = tpid->id;
-}
-
-int next_thread_list_insert (next_inferior_status *s, int pid, thread_t thread)
-{
-  next_thread_entry *tpid = s->thread_list;
-  size_t i = 0;
-  
-  CHECK (s != NULL);
-
-  while ((tpid != NULL) && ((tpid->pid != pid) || (tpid->thread != thread))) {
-    tpid = tpid->next;
-    i++;
-  }
-
-  if (tpid == NULL) {
-
-    tpid = (next_thread_entry *) xmalloc (sizeof (next_thread_entry));
-
-    tpid->next = s->thread_list;
-
-    tpid->pid = pid;
-    tpid->thread = thread;
-    tpid->id = i + 1;
-
-    s->thread_list = tpid;
-  }
-
-  return tpid->id;
-}
-
-void next_thread_list_destroy (next_thread_entry *tpid)
-{
-  while (tpid != NULL) {
-    next_thread_entry *dead = tpid;
-    tpid = tpid->next;
-    xfree (dead);
-  }
-}
-
 void next_save_exception_ports
 (task_t task, struct next_exception_info *info)
 {
@@ -297,7 +215,7 @@ void next_save_exception_ports
   info->count = (sizeof (info->ports) / sizeof (info->ports[0]));
   kret = task_get_exception_ports 
     (task,
-     EXC_MASK_ALL & ~(EXC_MASK_MACH_SYSCALL | EXC_MASK_SYSCALL | EXC_MASK_RPC_ALERT | EXC_MASK_SOFTWARE),
+     EXC_MASK_ALL,
      info->masks, &info->count, info->ports, info->behaviors, info->flavors);
   MACH_CHECK_ERROR (kret);
 }

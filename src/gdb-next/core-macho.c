@@ -71,8 +71,8 @@ check_thread (bfd *abfd, asection *asect, unsigned int num)
     return;
   }
 
-  add_thread (num);
-  inferior_pid = num;
+  add_thread (pid_to_ptid (num));
+  inferior_ptid = pid_to_ptid (num);
 }
 
 static void
@@ -91,7 +91,7 @@ core_close (int quitting)
   free (name);
 
   core_bfd = NULL;
-  inferior_pid = 0;
+  inferior_ptid = null_ptid;
 
 #ifdef CLEAR_SOLIB
   CLEAR_SOLIB ();
@@ -185,7 +185,7 @@ core_open (char *filename, int from_tty)
 
   init_thread_list ();
 
-  inferior_pid = 0;
+  inferior_ptid = null_ptid;
   i = 0;
 
   for (sect = core_bfd->sections; sect != NULL; i++, sect = sect->next)
@@ -193,7 +193,7 @@ core_open (char *filename, int from_tty)
   
   CHECK_FATAL (i == core_bfd->section_count);
 
-  if (inferior_pid == 0) {
+  if (PIDGET (inferior_ptid) == 0) {
     error ("Core file contained no thread-specific data\n");
   }
   
@@ -240,7 +240,10 @@ core_fetch_section_registers (asection *sec, int regno)
   if (bfd_get_section_contents (core_bfd, sec, regs, (file_ptr) 0, size) != 1) {
     fprintf_filtered (gdb_stderr, "Unable to read register data from core file\n");
   }    
+  
+  error ("XXX: register support incomplete");
 
+#if 0
 #if defined (TARGET_POWERPC)
   ppc_next_fetch_gp_registers (registers, regs);
   ppc_next_fetch_sp_registers (registers, regs);
@@ -262,12 +265,13 @@ core_fetch_section_registers (asection *sec, int regno)
 #else
 #error "unsupported architecture"
 #endif
+#endif
 }
 
 static void
 core_fetch_registers (int regno)
 {
-  asection *sec = lookup_section (core_bfd, inferior_pid);
+  asection *sec = lookup_section (core_bfd, PIDGET (inferior_ptid));
   CHECK (sec != NULL);
   core_fetch_section_registers (sec, regno);
 }
@@ -278,10 +282,11 @@ core_files_info (struct target_ops *t)
   print_section_info (t, core_bfd);
 }
 
-static char *next_core_pid_to_str (int pid)
+static char *next_core_ptid_to_str (int pid)
 {
   static char buf[128];
-  sprintf (buf, "core thread %lu", (unsigned long) pid_to_thread_id (pid));
+  sprintf (buf, "core thread ???");
+  /* sprintf (buf, "core thread %lu", (unsigned long) pid_to_thread_id (pid)); */
   return buf;
 }
 
@@ -304,7 +309,7 @@ init_macho_core_ops ()
   macho_core_ops.to_xfer_memory = xfer_memory;
   macho_core_ops.to_files_info = core_files_info;
   macho_core_ops.to_create_inferior = find_default_create_inferior;
-  macho_core_ops.to_pid_to_str = next_core_pid_to_str;
+  macho_core_ops.to_pid_to_str = next_core_ptid_to_str;
   macho_core_ops.to_stratum = core_stratum;
   macho_core_ops.to_has_all_memory = 0;
   macho_core_ops.to_has_memory = 1;

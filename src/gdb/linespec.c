@@ -1,5 +1,6 @@
 /* Parser for linespec for the GNU debugger, GDB.
-   Copyright 1986, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 2000
+   Copyright 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
+   1996, 1997, 1998, 1999, 2000, 2001
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -21,13 +22,14 @@
 
 #include "defs.h"
 #include "symtab.h"
-#include "gdbtypes.h"
+#include "frame.h"
+#include "command.h"
 #include "symfile.h"
 #include "objfiles.h"
-#include "gdbcmd.h"
 #include "demangle.h"
-#include "inferior.h"
-#include "top.h"
+#include "value.h"
+#include "completer.h"
+#include "cp-abi.h"
 
 extern int metrowerks_ignore_breakpoint_errors_flag;
 extern int allow_objc_selectors_flag;
@@ -40,8 +42,6 @@ extern char *find_template_name_end (char *);
 /* We share this one with symtab.c, but it is not exported widely. */
 
 extern char *operator_chars (char *, char **);
-
-extern char *no_symtab_msg;
 
 /* Prototypes for local functions */
 
@@ -115,16 +115,13 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
      unless we figure out how to get the physname without the name of
      the class, then the loop can't do any good.  */
   if (class_name
-      && (sym_class = lookup_symbol (class_name,
-				     (struct block *) NULL,
-				     STRUCT_NAMESPACE,
-				     (int *) NULL,
-				     (struct symtab **) NULL)))
+      && (lookup_symbol (class_name, (struct block *) NULL,
+			 STRUCT_NAMESPACE, (int *) NULL,
+			 (struct symtab **) NULL)))
     {
       int method_counter;
 
-      /* FIXME: Shouldn't this just be CHECK_TYPEDEF (t)?  */
-      t = SYMBOL_TYPE (sym_class);
+      CHECK_TYPEDEF (t);
 
       /* Loop over each method name.  At this level, all overloads of a name
          are counted as a single name.  There is an inner loop which loops over
@@ -148,7 +145,7 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
 		method_name = dem_opname;
 	    }
 
-	  if (STREQ (name, method_name))
+	  if (strcmp_iw (name, method_name) == 0)
 	    /* Find all the overloaded methods with that name.  */
 	    for (field_counter = TYPE_FN_FIELDLIST_LENGTH (t, method_counter) - 1;
 		 field_counter >= 0;
@@ -168,13 +165,13 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
 						field_counter);
 		    phys_name = alloca (strlen (tmp_name) + 1);
 		    strcpy (phys_name, tmp_name);
-		    free (tmp_name);
+		    xfree (tmp_name);
 		  }
 		else
 		  phys_name = TYPE_FN_FIELD_PHYSNAME (f, field_counter);
-
+		
 		/* Destructor is handled by caller, dont add it to the list */
-		if (DESTRUCTOR_PREFIX_P (phys_name))
+		if (is_destructor_name (phys_name) != 0)
 		  continue;
 
 		sym_arr[i1] = lookup_symbol (phys_name,
@@ -259,8 +256,6 @@ build_canonical_line_spec (struct symtab_and_line *sal, char *symname,
   canonical_arr[0] = canonical_name;
 }
 
-
-
 /* Find an instance of the character C in the string S that is outside
    of all parenthesis pairs, single-quoted strings, and double-quoted
    strings.  */
@@ -329,12 +324,12 @@ decode_line_2 (sym_arr, nelts, nsym, funfirstline, canonical)
     alloca (nelts * sizeof (struct symtab_and_line));
   return_values.sals = (struct symtab_and_line *)
     xmalloc (nelts * sizeof (struct symtab_and_line));
-  old_chain = make_cleanup (free, return_values.sals);
+  old_chain = make_cleanup (xfree, return_values.sals);
 
   if (canonical)
     {
       canonical_arr = (char **) xmalloc (nelts * sizeof (char *));
-      make_cleanup (free, canonical_arr);
+      make_cleanup (xfree, canonical_arr);
       memset (canonical_arr, 0, nelts * sizeof (char *));
       *canonical = canonical_arr;
     }
@@ -443,7 +438,6 @@ decode_line_2 (sym_arr, nelts, nsym, funfirstline, canonical)
 	    {
 	      if (canonical_arr)
 		{
-
 		  if (values.sals[num].symtab)
 		    {
 		      symname = xmalloc
@@ -525,36 +519,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 	       int default_line, char ***canonical)
 {
   struct symtabs_and_lines values;
-#ifdef HPPA_COMPILER_BUG
-  /* FIXME: The native HP 9000/700 compiler has a bug which appears
-     when optimizing this file with target i960-vxworks.  I haven't
-     been able to construct a simple test case.  The problem is that
-     in the second call to SKIP_PROLOGUE below, the compiler somehow
-     does not realize that the statement val = find_pc_line (...) will
-     change the values of the fields of val.  It extracts the elements
-     into registers at the top of the block, and does not update the
-     registers after the call to find_pc_line.  You can check this by
-     inserting a printf at the end of find_pc_line to show what values
-     it is returning for val.pc and val.end and another printf after
-     the call to see what values the function actually got (remember,
-     this is compiling with cc -O, with this patch removed).  You can
-     also examine the assembly listing: search for the second call to
-     skip_prologue; the LDO statement before the next call to
-     find_pc_line loads the address of the structure which
-     find_pc_line will return; if there is a LDW just before the LDO,
-     which fetches an element of the structure, then the compiler
-     still has the bug.
-
-     Setting val to volatile avoids the problem.  We must undef
-     volatile, because the HPPA native compiler does not define
-     __STDC__, although it does understand volatile, and so volatile
-     will have been defined away in defs.h.  */
-#undef volatile
-  volatile struct symtab_and_line val;
-#define volatile		/*nothing */
-#else
   struct symtab_and_line val;
-#endif
   register char *p, *p1;
   char *q, *pp, *ii, *p2;
 #if 0
@@ -579,6 +544,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
   struct symbol **sym_arr;
   struct type *t;
   char *saved_arg = *argptr;
+  extern char *gdb_completer_quote_characters;
 
   INIT_SAL (&val);		/* initialize to zeroes */
 
@@ -637,7 +603,8 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
   /* Or it could be an ObjC method name with embedded ':'s */
 
   is_quoted = (**argptr
-	       && strchr (gdb_completer_quote_characters, **argptr) != NULL);
+	       && strchr (get_gdb_completer_quote_characters (),
+			  **argptr) != NULL);
 
   has_parens = ((pp = strchr (*argptr, '(')) != NULL
 		&& (pp = strrchr (pp, ')')) != NULL);
@@ -676,6 +643,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
   if (p[0] == '"')
     {
       is_quote_enclosed = 1;
+      (*argptr)++;
       p++;
     }
   else
@@ -715,7 +683,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
   /* if the closing double quote was left at the end, remove it */
   if (is_quote_enclosed)
     {
-      char *closing_quote = strchr (p, '"');
+      char *closing_quote = strchr (p - 1, '"');
       if (closing_quote && closing_quote[1] == '\0')
 	*closing_quote = '\0';
     }
@@ -874,7 +842,8 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 		  /* Arg token is not digits => try it as a function name
 		     Find the next token(everything up to end or next blank). */
 		  if (**argptr
-		      && strchr (gdb_completer_quote_characters, **argptr) != NULL)
+		      && strchr (get_gdb_completer_quote_characters (),
+				 **argptr) != NULL)
 		    {
 		      p = skip_quoted (*argptr, gdb_completer_word_break_characters);
 		      *argptr = *argptr + 1;
@@ -907,13 +876,14 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 		    }
 		  else
 #endif /* 0 */
+
 		    {
 		      copy = (char *) alloca (p - *argptr + 1);
 		      memcpy (copy, *argptr, p - *argptr);
 		      copy[p - *argptr] = '\0';
 		      if (p != *argptr
 			  && copy[p - *argptr - 1]
-			  && strchr (gdb_completer_quote_characters,
+			  && strchr (get_gdb_completer_quote_characters (),
 				     copy[p - *argptr - 1]) != NULL)
 			copy[p - *argptr - 1] = '\0';
 		    }
@@ -976,7 +946,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 		    {
 		      char *tmp;
 
-		      if (OPNAME_PREFIX_P (copy))
+		      if (is_operator_name (copy))
 			{
 			  tmp = (char *) alloca (strlen (copy + 3) + 9);
 			  strcpy (tmp, "operator ");
@@ -1084,7 +1054,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
       if (s == 0)
 	{
 	  if (!have_full_symbols () && !have_partial_symbols ())
-	    error (no_symtab_msg);
+	    error ("No symbol table is loaded.  Use the \"file\" command.");
 	  error ("No source file named %s.", copy);
 	}
 
@@ -1246,16 +1216,13 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
       p = skip_quoted (*argptr, "");
     }
 
-  if (is_quote_enclosed && **argptr == '"')
-    (*argptr)++;
-
   copy = (char *) alloca (p - *argptr + 1);
   memcpy (copy, *argptr, p - *argptr);
   copy[p - *argptr] = '\0';
   if (p != *argptr
       && copy[0]
       && copy[0] == copy[p - *argptr - 1]
-      && strchr (gdb_completer_quote_characters, copy[0]) != NULL)
+      && strchr (get_gdb_completer_quote_characters (), copy[0]) != NULL)
     {
       copy[p - *argptr - 1] = '\0';
       copy++;
@@ -1270,7 +1237,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 
   if (*copy == '$')
     {
-      value_ptr valx;
+      struct value *valx;
       int index = 0;
       int need_canonical = 0;
 
@@ -1303,7 +1270,7 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
 	    goto symbol_found;
 
 	  /* If symbol was not found, look in minimal symbol tables */
-	  msymbol = lookup_minimal_symbol (copy, 0, 0);
+	  msymbol = lookup_minimal_symbol (copy, NULL, NULL);
 	  /* Min symbol was found --> jump to minsym processing. */
 	  if (msymbol)
 	    goto minimal_symbol_found;
@@ -1418,7 +1385,7 @@ minimal_symbol_found:		/* We also jump here from the case for variables
 
   if (!have_full_symbols () &&
       !have_partial_symbols () && !have_minimal_symbols ())
-    error (no_symtab_msg);
+    error ("No symbol table is loaded.  Use the \"file\" command.");
 
   if (metrowerks_ignore_breakpoint_errors_flag)
     {

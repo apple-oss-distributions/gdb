@@ -63,7 +63,7 @@
 
 PROJECT				=	MacsBug
 PLUGIN				=       MacsBug_plugin
-VERSION				= 	1.1
+VERSION				= 	1.2
 
 SRCROOT				=	.
 SYMROOT				=	.
@@ -77,7 +77,7 @@ DSTDIR				=	$(DSTROOT)$(IDIR)
 
 PLUGIN_SUPPORT			= 	$(API_DIR)/gdb_plugin_support
 
-BUILD_VERSION			=	$(shell echo -n `sw_vers | grep 'ProductVersion'` | sed -e 's/.*: //')
+BUILD_VERSION			=	10.1
 
 # The following defines $(gdb_plugin_support.o) as a function of using the Makefile
 # by buildit or using it explicitly.  Only buildit will use the "install" target.  For
@@ -164,7 +164,7 @@ installsrc			:
 	chmod 755 $(SRCROOT)
 	gnutar cf - $(INSTALLSRC_FILES) | (cd $(SRCROOT); gnutar xf -)
 	chmod 444 $(SRCROOT)/*
-	cd gdb_plugin_support; make installsrc SRCROOT=$(SRCROOT)/gdb_plugin_support; cd ..
+	$(MAKE) -C gdb_plugin_support SRCROOT=$(SRCROOT)/gdb_plugin_support installsrc
 
 clean				:
 	rm -rf $(OFILE_DIR) $(PLUGIN) $(gdb_plugin_support.o)

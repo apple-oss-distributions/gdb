@@ -1,6 +1,7 @@
 /* *INDENT-OFF* */ /* ATTR_FORMAT confuses indent, avoid running it for now */
 /* Basic, host-specific, and target-specific definitions for GDB.
-   Copyright (C) 1986, 1989, 1991-1996, 1998-2000
+   Copyright 1986, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
+   1997, 1998, 1999, 2000, 2001, 2002
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -58,10 +59,6 @@
 
 #include "progress.h"
 
-#ifdef USE_MMALLOC
-#include "mmalloc.h"
-#endif
-
 /* For BFD64 and bfd_vma.  */
 #include "bfd.h"
 
@@ -72,9 +69,12 @@
 
 #define GDB_MULTI_ARCH_PARTIAL 1
 
-/* The target is multi-arched.  The MULTI-ARCH vector provides all
-   definitions.  "tm.h" is included and may provide definitions of
-   non- multi-arch macros..  */
+/* The target is partially multi-arched. Both the multi-arch vector
+   and "tm.h" provide definitions. "tm.h" cannot override a definition
+   provided by the multi-arch vector.  It is detected as a compilation
+   error.
+
+   This setting is only useful during a multi-arch conversion. */
 
 #define GDB_MULTI_ARCH_TM 2
 
@@ -148,7 +148,6 @@ typedef bfd_vma CORE_ADDR;
    issue is found that we spend the effort on algorithmic
    optimizations than micro-optimizing.'' J.T. */
 
-#define STRCMP(a,b) (*(a) == *(b) ? strcmp ((a), (b)) : (int)*(a) - (int)*(b))
 #define STREQ(a,b) (*(a) == *(b) ? !strcmp ((a), (b)) : 0)
 #define STREQN(a,b,c) (*(a) == *(b) ? !strncmp ((a), (b), (c)) : 0)
 
@@ -161,13 +160,6 @@ extern int is_cplus_marker (int);
 
 /* use tui interface if non-zero */
 extern int tui_version;
-
-#if defined(TUI) && !defined(NOTUI)
-/* all invocations of TUIDO should have two sets of parens */
-#define TUIDO(x)	tuiDo x
-#else
-#define TUIDO(x)
-#endif
 
 /* enable xdb commands if set */
 extern int xdb_commands;
@@ -227,6 +219,213 @@ enum precision_type
     single_precision,
     double_precision,
     unspecified_precision
+  };
+
+/* The numbering of these signals is chosen to match traditional unix
+   signals (insofar as various unices use the same numbers, anyway).
+   It is also the numbering of the GDB remote protocol.  Other remote
+   protocols, if they use a different numbering, should make sure to
+   translate appropriately.
+
+   Since these numbers have actually made it out into other software
+   (stubs, etc.), you mustn't disturb the assigned numbering.  If you
+   need to add new signals here, add them to the end of the explicitly
+   numbered signals.
+
+   This is based strongly on Unix/POSIX signals for several reasons:
+   (1) This set of signals represents a widely-accepted attempt to
+   represent events of this sort in a portable fashion, (2) we want a
+   signal to make it from wait to child_wait to the user intact, (3) many
+   remote protocols use a similar encoding.  However, it is
+   recognized that this set of signals has limitations (such as not
+   distinguishing between various kinds of SIGSEGV, or not
+   distinguishing hitting a breakpoint from finishing a single step).
+   So in the future we may get around this either by adding additional
+   signals for breakpoint, single-step, etc., or by adding signal
+   codes; the latter seems more in the spirit of what BSD, System V,
+   etc. are doing to address these issues.  */
+
+/* For an explanation of what each signal means, see
+   target_signal_to_string.  */
+
+enum target_signal
+  {
+    /* Used some places (e.g. stop_signal) to record the concept that
+       there is no signal.  */
+    TARGET_SIGNAL_0 = 0,
+    TARGET_SIGNAL_FIRST = 0,
+    TARGET_SIGNAL_HUP = 1,
+    TARGET_SIGNAL_INT = 2,
+    TARGET_SIGNAL_QUIT = 3,
+    TARGET_SIGNAL_ILL = 4,
+    TARGET_SIGNAL_TRAP = 5,
+    TARGET_SIGNAL_ABRT = 6,
+    TARGET_SIGNAL_EMT = 7,
+    TARGET_SIGNAL_FPE = 8,
+    TARGET_SIGNAL_KILL = 9,
+    TARGET_SIGNAL_BUS = 10,
+    TARGET_SIGNAL_SEGV = 11,
+    TARGET_SIGNAL_SYS = 12,
+    TARGET_SIGNAL_PIPE = 13,
+    TARGET_SIGNAL_ALRM = 14,
+    TARGET_SIGNAL_TERM = 15,
+    TARGET_SIGNAL_URG = 16,
+    TARGET_SIGNAL_STOP = 17,
+    TARGET_SIGNAL_TSTP = 18,
+    TARGET_SIGNAL_CONT = 19,
+    TARGET_SIGNAL_CHLD = 20,
+    TARGET_SIGNAL_TTIN = 21,
+    TARGET_SIGNAL_TTOU = 22,
+    TARGET_SIGNAL_IO = 23,
+    TARGET_SIGNAL_XCPU = 24,
+    TARGET_SIGNAL_XFSZ = 25,
+    TARGET_SIGNAL_VTALRM = 26,
+    TARGET_SIGNAL_PROF = 27,
+    TARGET_SIGNAL_WINCH = 28,
+    TARGET_SIGNAL_LOST = 29,
+    TARGET_SIGNAL_USR1 = 30,
+    TARGET_SIGNAL_USR2 = 31,
+    TARGET_SIGNAL_PWR = 32,
+    /* Similar to SIGIO.  Perhaps they should have the same number.  */
+    TARGET_SIGNAL_POLL = 33,
+    TARGET_SIGNAL_WIND = 34,
+    TARGET_SIGNAL_PHONE = 35,
+    TARGET_SIGNAL_WAITING = 36,
+    TARGET_SIGNAL_LWP = 37,
+    TARGET_SIGNAL_DANGER = 38,
+    TARGET_SIGNAL_GRANT = 39,
+    TARGET_SIGNAL_RETRACT = 40,
+    TARGET_SIGNAL_MSG = 41,
+    TARGET_SIGNAL_SOUND = 42,
+    TARGET_SIGNAL_SAK = 43,
+    TARGET_SIGNAL_PRIO = 44,
+    TARGET_SIGNAL_REALTIME_33 = 45,
+    TARGET_SIGNAL_REALTIME_34 = 46,
+    TARGET_SIGNAL_REALTIME_35 = 47,
+    TARGET_SIGNAL_REALTIME_36 = 48,
+    TARGET_SIGNAL_REALTIME_37 = 49,
+    TARGET_SIGNAL_REALTIME_38 = 50,
+    TARGET_SIGNAL_REALTIME_39 = 51,
+    TARGET_SIGNAL_REALTIME_40 = 52,
+    TARGET_SIGNAL_REALTIME_41 = 53,
+    TARGET_SIGNAL_REALTIME_42 = 54,
+    TARGET_SIGNAL_REALTIME_43 = 55,
+    TARGET_SIGNAL_REALTIME_44 = 56,
+    TARGET_SIGNAL_REALTIME_45 = 57,
+    TARGET_SIGNAL_REALTIME_46 = 58,
+    TARGET_SIGNAL_REALTIME_47 = 59,
+    TARGET_SIGNAL_REALTIME_48 = 60,
+    TARGET_SIGNAL_REALTIME_49 = 61,
+    TARGET_SIGNAL_REALTIME_50 = 62,
+    TARGET_SIGNAL_REALTIME_51 = 63,
+    TARGET_SIGNAL_REALTIME_52 = 64,
+    TARGET_SIGNAL_REALTIME_53 = 65,
+    TARGET_SIGNAL_REALTIME_54 = 66,
+    TARGET_SIGNAL_REALTIME_55 = 67,
+    TARGET_SIGNAL_REALTIME_56 = 68,
+    TARGET_SIGNAL_REALTIME_57 = 69,
+    TARGET_SIGNAL_REALTIME_58 = 70,
+    TARGET_SIGNAL_REALTIME_59 = 71,
+    TARGET_SIGNAL_REALTIME_60 = 72,
+    TARGET_SIGNAL_REALTIME_61 = 73,
+    TARGET_SIGNAL_REALTIME_62 = 74,
+    TARGET_SIGNAL_REALTIME_63 = 75,
+
+    /* Used internally by Solaris threads.  See signal(5) on Solaris.  */
+    TARGET_SIGNAL_CANCEL = 76,
+
+    /* Yes, this pains me, too.  But LynxOS didn't have SIG32, and now
+       Linux does, and we can't disturb the numbering, since it's part
+       of the remote protocol.  Note that in some GDB's
+       TARGET_SIGNAL_REALTIME_32 is number 76.  */
+    TARGET_SIGNAL_REALTIME_32,
+    /* Yet another pain, IRIX 6 has SIG64. */
+    TARGET_SIGNAL_REALTIME_64,
+    /* Yet another pain, Linux/MIPS might go up to 128. */
+    TARGET_SIGNAL_REALTIME_65,
+    TARGET_SIGNAL_REALTIME_66,
+    TARGET_SIGNAL_REALTIME_67,
+    TARGET_SIGNAL_REALTIME_68,
+    TARGET_SIGNAL_REALTIME_69,
+    TARGET_SIGNAL_REALTIME_70,
+    TARGET_SIGNAL_REALTIME_71,
+    TARGET_SIGNAL_REALTIME_72,
+    TARGET_SIGNAL_REALTIME_73,
+    TARGET_SIGNAL_REALTIME_74,
+    TARGET_SIGNAL_REALTIME_75,
+    TARGET_SIGNAL_REALTIME_76,
+    TARGET_SIGNAL_REALTIME_77,
+    TARGET_SIGNAL_REALTIME_78,
+    TARGET_SIGNAL_REALTIME_79,
+    TARGET_SIGNAL_REALTIME_80,
+    TARGET_SIGNAL_REALTIME_81,
+    TARGET_SIGNAL_REALTIME_82,
+    TARGET_SIGNAL_REALTIME_83,
+    TARGET_SIGNAL_REALTIME_84,
+    TARGET_SIGNAL_REALTIME_85,
+    TARGET_SIGNAL_REALTIME_86,
+    TARGET_SIGNAL_REALTIME_87,
+    TARGET_SIGNAL_REALTIME_88,
+    TARGET_SIGNAL_REALTIME_89,
+    TARGET_SIGNAL_REALTIME_90,
+    TARGET_SIGNAL_REALTIME_91,
+    TARGET_SIGNAL_REALTIME_92,
+    TARGET_SIGNAL_REALTIME_93,
+    TARGET_SIGNAL_REALTIME_94,
+    TARGET_SIGNAL_REALTIME_95,
+    TARGET_SIGNAL_REALTIME_96,
+    TARGET_SIGNAL_REALTIME_97,
+    TARGET_SIGNAL_REALTIME_98,
+    TARGET_SIGNAL_REALTIME_99,
+    TARGET_SIGNAL_REALTIME_100,
+    TARGET_SIGNAL_REALTIME_101,
+    TARGET_SIGNAL_REALTIME_102,
+    TARGET_SIGNAL_REALTIME_103,
+    TARGET_SIGNAL_REALTIME_104,
+    TARGET_SIGNAL_REALTIME_105,
+    TARGET_SIGNAL_REALTIME_106,
+    TARGET_SIGNAL_REALTIME_107,
+    TARGET_SIGNAL_REALTIME_108,
+    TARGET_SIGNAL_REALTIME_109,
+    TARGET_SIGNAL_REALTIME_110,
+    TARGET_SIGNAL_REALTIME_111,
+    TARGET_SIGNAL_REALTIME_112,
+    TARGET_SIGNAL_REALTIME_113,
+    TARGET_SIGNAL_REALTIME_114,
+    TARGET_SIGNAL_REALTIME_115,
+    TARGET_SIGNAL_REALTIME_116,
+    TARGET_SIGNAL_REALTIME_117,
+    TARGET_SIGNAL_REALTIME_118,
+    TARGET_SIGNAL_REALTIME_119,
+    TARGET_SIGNAL_REALTIME_120,
+    TARGET_SIGNAL_REALTIME_121,
+    TARGET_SIGNAL_REALTIME_122,
+    TARGET_SIGNAL_REALTIME_123,
+    TARGET_SIGNAL_REALTIME_124,
+    TARGET_SIGNAL_REALTIME_125,
+    TARGET_SIGNAL_REALTIME_126,
+    TARGET_SIGNAL_REALTIME_127,
+
+#if defined(MACH) || defined(__MACH__)
+    /* Mach exceptions */
+    TARGET_EXC_BAD_ACCESS,
+    TARGET_EXC_BAD_INSTRUCTION,
+    TARGET_EXC_ARITHMETIC,
+    TARGET_EXC_EMULATION,
+    TARGET_EXC_SOFTWARE,
+    TARGET_EXC_BREAKPOINT,
+#endif
+    TARGET_SIGNAL_INFO,
+
+    /* Some signal we don't know about.  */
+    TARGET_SIGNAL_UNKNOWN,
+
+    /* Use whatever signal we use when one is not specifically specified
+       (for passing to proceed and so on).  */
+    TARGET_SIGNAL_DEFAULT,
+
+    /* Last and unused enum value, for sizing arrays, etc.  */
+    TARGET_SIGNAL_LAST
   };
 
 /* the cleanup list records things that have to be undone
@@ -346,7 +545,7 @@ extern void discard_my_cleanups (struct cleanup **, struct cleanup *);
 typedef void (make_cleanup_ftype) (void *);
 
 extern struct cleanup *make_cleanup (make_cleanup_ftype *, void *);
- 
+
 extern struct cleanup *make_cleanup_freeargv (char **);
 
 struct ui_file;
@@ -382,20 +581,12 @@ extern int myread (int, char *, int);
 
 extern int query (char *, ...) ATTR_FORMAT (printf, 1, 2);
 
-#if !defined (USE_MMALLOC)
-/* NOTE: cagney/2000-03-04: The mmalloc functions need to use PTR
-   rather than void* so that they are consistent with
-   ../mmalloc/mmalloc.h. */
-extern PTR mcalloc (PTR, size_t, size_t);
-extern PTR mmalloc (PTR, size_t);
-extern PTR mrealloc (PTR, PTR, size_t);
-extern void mfree (PTR, PTR);
-#endif
-
 extern void init_page_info (void);
 
 extern CORE_ADDR host_pointer_to_address (void *ptr);
 extern void *address_to_host_pointer (CORE_ADDR addr);
+
+extern char *gdb_realpath (const char *);
 
 /* From demangle.c */
 
@@ -438,16 +629,12 @@ extern struct ui_file *gdb_null;
 
 #if defined(TUI) && !defined(NOTUI)
 #include "tui.h"
-#include "tuiCommand.h"
-#include "tuiData.h"
-#include "tuiIO.h"
-#include "tuiLayout.h"
-#include "tuiWin.h"
 #endif
 
 #include "ui-file.h"
 
-/* More generic printf like operations */
+/* More generic printf like operations.  Filtered versions may return
+   non-locally on error.  */
 
 extern void fputs_filtered (const char *, struct ui_file *);
 
@@ -456,6 +643,8 @@ extern void fputs_unfiltered (const char *, struct ui_file *);
 extern int fputc_filtered (int c, struct ui_file *);
 
 extern int fputc_unfiltered (int c, struct ui_file *);
+
+extern int putchar_filtered (int c);
 
 extern int putchar_unfiltered (int c);
 
@@ -512,6 +701,12 @@ extern char *paddr_d (LONGEST addr);
 extern char *phex (ULONGEST l, int sizeof_l);
 extern char *phex_nz (ULONGEST l, int sizeof_l);
 
+/* Like paddr() only print/scan raw CORE_ADDR.  The output from
+   core_addr_to_string() can be passed direct to
+   string_to_core_addr().  */
+extern const char *core_addr_to_string (const CORE_ADDR addr);
+extern CORE_ADDR string_to_core_addr (const char *my_string);
+
 extern void fprintf_symbol_filtered (struct ui_file *, char *,
 				     enum language, int);
 
@@ -541,8 +736,6 @@ extern void print_transfer_performance (struct ui_file *stream,
 /* From top.c */
 
 typedef void initialize_file_ftype (void);
-
-extern char *skip_quoted (char *, char *);
 
 extern char *gdb_readline (char *);
 
@@ -575,7 +768,7 @@ extern void print_address (CORE_ADDR, struct ui_file *);
 
 /* From source.c */
 
-extern int openp (char *, int, char *, int, int, char **);
+extern int openp (const char *, int, const char *, int, int, char **);
 
 extern int source_full_path_of (char *, char **);
 
@@ -592,6 +785,13 @@ extern char *symtab_to_filename (struct symtab *);
 extern void exec_set_section_offsets (bfd_signed_vma text_off,
 				      bfd_signed_vma data_off,
 				      bfd_signed_vma bss_off);
+
+/* Take over the 'find_mapped_memory' vector from exec.c. */
+extern void exec_set_find_memory_regions (int (*) (int (*) (CORE_ADDR, 
+							    unsigned long, 
+							    int, int, int, 
+							    void *),
+						   void *));
 
 /* From findvar.c */
 
@@ -663,7 +863,7 @@ extern void free_command_lines (struct command_line **);
 /* To continue the execution commands when running gdb asynchronously. 
    A continuation structure contains a pointer to a function to be called 
    to finish the command, once the target has stopped. Such mechanism is
-   used bt the finish and until commands, and in the remote protocol
+   used by the finish and until commands, and in the remote protocol
    when opening an extended-remote connection. */
 
 struct continuation_arg
@@ -721,6 +921,39 @@ enum val_prettyprint
     /* Use the default setting which the user has specified.  */
     Val_pretty_default
   };
+
+/* The ptid struct is a collection of the various "ids" necessary
+   for identifying the inferior.  This consists of the process id
+   (pid), thread id (tid), and other fields necessary for uniquely
+   identifying the inferior process/thread being debugged.  When
+   manipulating ptids, the constructors, accessors, and predicate
+   declared in inferior.h should be used.  These are as follows:
+
+      ptid_build	- Make a new ptid from a pid, lwp, and tid.
+      pid_to_ptid	- Make a new ptid from just a pid.
+      ptid_get_pid	- Fetch the pid component of a ptid.
+      ptid_get_lwp	- Fetch the lwp component of a ptid.
+      ptid_get_tid	- Fetch the tid component of a ptid.
+      ptid_equal	- Test to see if two ptids are equal.
+
+   Please do NOT access the struct ptid members directly (except, of
+   course, in the implementation of the above ptid manipulation
+   functions).  */
+
+struct ptid
+  {
+    /* Process id */
+    int pid;
+
+    /* Lightweight process id */
+    long lwp;
+
+    /* Thread id */
+    long tid;
+  };
+
+typedef struct ptid ptid_t;
+
 
 
 /* Optional host machine definition.  Pure autoconf targets will not
@@ -765,30 +998,7 @@ enum val_prettyprint
 #include "fopen-same.h"
 #endif
 
-/* Microsoft C can't deal with const pointers */
-
-#ifdef _MSC_VER
-#define CONST_PTR
-#else
 #define CONST_PTR const
-#endif
-
-/*
- * Allow things in gdb to be declared "volatile".  If compiling ANSI, it
- * just works.  If compiling with gcc but non-ansi, redefine to __volatile__.
- * If non-ansi, non-gcc, then eliminate "volatile" entirely, making those
- * objects be read-write rather than read-only.
- */
-
-#ifndef volatile
-#ifndef __STDC__
-#ifdef __GNUC__
-#define volatile __volatile__
-#else
-#define volatile		/* nothing */
-#endif /* GNUC */
-#endif /* STDC */
-#endif /* volatile */
 
 /* Defaults for system-wide constants (if not defined by xm.h, we fake it).
    FIXME: Assumes 2's complement arithmetic */
@@ -830,23 +1040,27 @@ extern int longest_to_int (LONGEST);
 /* Assorted functions we can declare, now that const and volatile are 
    defined.  */
 
-extern char *savestring (const char *, int);
+extern char *savestring (const char *, size_t);
 
-extern char *msavestring (void *, const char *, int);
-
-extern char *strsave (const char *);
+extern char *msavestring (void *, const char *, size_t);
 
 extern char *mstrsave (void *, const char *);
 
-/* FIXME; was long, but this causes compile errors in msvc if already
-   defined */
-#ifdef _MSC_VER
-extern PTR xmmalloc (PTR, size_t);
-extern PTR xmrealloc (PTR, PTR, size_t);
-#else
-extern PTR xmmalloc (PTR, long);
-extern PTR xmrealloc (PTR, PTR, long);
-#endif
+/* Robust versions of same.  Throw an internal error when no memory,
+   guard against stray NULL arguments. */
+extern void *xmmalloc (void *md, size_t size);
+extern void *xmrealloc (void *md, void *ptr, size_t size);
+extern void *xmcalloc (void *md, size_t number, size_t size);
+extern void xmfree (void *md, void *ptr);
+
+/* xmalloc(), xrealloc() and xcalloc() have already been declared in
+   "libiberty.h". */
+extern void xfree (void *);
+
+/* Like asprintf/vasprintf but get an internal_error if the call
+   fails. */
+extern void xasprintf (char **ret, const char *format, ...) ATTR_FORMAT (printf, 2, 3);
+extern void xvasprintf (char **ret, const char *format, va_list ap);
 
 extern int parse_escape (char **);
 
@@ -875,40 +1089,88 @@ extern NORETURN void error_stream (struct ui_file *) ATTR_NORETURN;
    message.  */
 extern char *error_last_message (void);
 
-extern NORETURN void internal_verror (const char *, va_list ap) ATTR_NORETURN;
+extern NORETURN void internal_verror (const char *file, int line,
+				      const char *, va_list ap) ATTR_NORETURN;
 
-extern NORETURN void internal_error (char *, ...) ATTR_NORETURN;
+extern NORETURN void internal_error (const char *file, int line,
+				     const char *, ...) ATTR_NORETURN ATTR_FORMAT (printf, 3, 4);
 
 extern NORETURN void nomem (long) ATTR_NORETURN;
 
-/* Reasons for calling return_to_top_level.  Note: enum value 0 is
-   reserved for internal use as the return value from an initial
-   setjmp().  */
+/* Reasons for calling return_to_top_level.  NOTE: all reason values
+   must be less than zero.  enum value 0 is reserved for internal use
+   as the return value from an initial setjmp().  The function
+   catch_exceptions() reserves values >= 0 as legal results from its
+   wrapped function.  */
 
 enum return_reason
   {
     /* User interrupt.  */
-    RETURN_QUIT = 1,
+    RETURN_QUIT = -2,
     /* Any other error.  */
     RETURN_ERROR
   };
 
 #define	ALL_CLEANUPS	((struct cleanup *)0)
 
-#define RETURN_MASK(reason)	(1 << (int)(reason))
+#define RETURN_MASK(reason)	(1 << (int)(-reason))
 #define RETURN_MASK_QUIT	RETURN_MASK (RETURN_QUIT)
 #define RETURN_MASK_ERROR	RETURN_MASK (RETURN_ERROR)
 #define RETURN_MASK_ALL		(RETURN_MASK_QUIT | RETURN_MASK_ERROR)
 typedef int return_mask;
 
+/* Throw an exception of type RETURN_REASON.  Will execute a LONG JUMP
+   to the inner most containing exception handler (established using
+   catch_exceptions() or the legacy catch_errors()).
+
+   Useful when a section of code that caught an exception finds it
+   needs to repropagate that exception up the call chain.
+
+   The name return_to_top_level() dates back to a time when GDB had
+   only one exception handler installed at the top level.  This really
+   did return to the top level.  The name should probably be changed.
+
+   NOTE: Some sections of code are using error_begin() in conjunction
+   with return_to_top_level() to throw the initial exception.  That
+   code should, instead, use either error() or error_string().  */
+
 extern NORETURN void return_to_top_level (enum return_reason) ATTR_NORETURN;
+
+/* Call FUNC(UIOUT, FUNC_ARGS) but wrapped within an exception
+   handler.  If an exception (enum return_reason) is thrown using
+   return_to_top_level() than all cleanups installed since
+   catch_exceptions() was entered are invoked, the (-ve) exception
+   value is then returned by catch_exceptions.  If FUNC() returns
+   normally (with a postive or zero return value) then that value is
+   returned by catch_exceptions().  It is an internal_error() for
+   FUNC() to return a negative value.
+
+   For the period of the FUNC() call: UIOUT is installed as the output
+   builder; ERRSTRING is installed as the error/quit message; and a
+   new cleanup_chain is established.  The old values are restored
+   before catch_exceptions() returns.
+
+   FIXME; cagney/2001-08-13: The need to override the global UIOUT
+   builder variable should just go away.
+
+   This function superseeds catch_errors().
+
+   This function uses SETJMP() and LONGJUMP().  */
+
+struct ui_out;
+typedef int (catch_exceptions_ftype) (struct ui_out *ui_out, void *args);
+extern int catch_exceptions (struct ui_out *uiout,
+			     catch_exceptions_ftype *func, void *func_args,
+			     char *errstring, return_mask mask);
 
 /* If CATCH_ERRORS_FTYPE throws an error, catch_errors() returns zero
    otherwize the result from CATCH_ERRORS_FTYPE is returned. It is
    probably useful for CATCH_ERRORS_FTYPE to always return a non-zero
    value. It's unfortunate that, catch_errors() does not return an
    indication of the exact exception that it caught - quit_flag might
-   help. */
+   help.
+
+   This function is superseeded by catch_exceptions().  */
 
 typedef int (catch_errors_ftype) (PTR);
 extern int catch_errors (catch_errors_ftype *, PTR, char *, return_mask);
@@ -938,11 +1200,6 @@ extern char *getenv (const char *);
 #endif
 
 #ifdef HAVE_STDLIB_H
-#if defined(_MSC_VER) && !defined(__cplusplus)
-/* msvc defines these in stdlib.h for c code */
-#undef min
-#undef max
-#endif
 #include <stdlib.h>
 #endif
 #ifndef min
@@ -966,22 +1223,6 @@ extern int fclose (FILE *);
 extern double atof (const char *);	/* X3.159-1989  4.10.1.1 */
 #endif
 
-#ifndef MALLOC_INCOMPATIBLE
-
-#ifdef NEED_DECLARATION_MALLOC
-extern PTR malloc ();
-#endif
-
-#ifdef NEED_DECLARATION_REALLOC
-extern PTR realloc ();
-#endif
-
-#ifdef NEED_DECLARATION_FREE
-extern void free ();
-#endif
-
-#endif /* MALLOC_INCOMPATIBLE */
-
 /* Various possibilities for alloca.  */
 #ifndef alloca
 #ifdef __GNUC__
@@ -997,29 +1238,11 @@ extern void free ();
 /* We need to be careful not to declare this in a way which conflicts with
    bison.  Bison never declares it as char *, but under various circumstances
    (like __hpux) we need to use void *.  */
-#if defined (__STDC__) || defined (__hpux)
 extern void *alloca ();
-#else /* Don't use void *.  */
-extern char *alloca ();
-#endif /* Don't use void *.  */
 #endif /* Not _AIX */
 #endif /* Not HAVE_ALLOCA_H */
 #endif /* Not GNU C */
 #endif /* alloca not defined */
-
-/* HOST_BYTE_ORDER must be defined to one of these.  */
-
-#ifdef HAVE_ENDIAN_H
-#include <endian.h>
-#endif
-
-#if !defined (BIG_ENDIAN)
-#define BIG_ENDIAN 4321
-#endif
-
-#if !defined (LITTLE_ENDIAN)
-#define LITTLE_ENDIAN 1234
-#endif
 
 /* Dynamic target-system-dependent parameters for GDB. */
 #include "gdbarch.h"
@@ -1054,7 +1277,7 @@ extern char *alloca ();
    from byte/word byte order.  */
 
 #if !defined (BITS_BIG_ENDIAN)
-#define BITS_BIG_ENDIAN (TARGET_BYTE_ORDER == BIG_ENDIAN)
+#define BITS_BIG_ENDIAN (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
 #endif
 
 /* In findvar.c.  */
@@ -1077,74 +1300,7 @@ extern void store_address (void *, int, LONGEST);
 
 extern void store_typed_address (void *buf, struct type *type, CORE_ADDR addr);
 
-/* Setup definitions for host and target floating point formats.  We need to
-   consider the format for `float', `double', and `long double' for both target
-   and host.  We need to do this so that we know what kind of conversions need
-   to be done when converting target numbers to and from the hosts DOUBLEST
-   data type.  */
-
-/* This is used to indicate that we don't know the format of the floating point
-   number.  Typically, this is useful for native ports, where the actual format
-   is irrelevant, since no conversions will be taking place.  */
-
-extern const struct floatformat floatformat_unknown;
-
-#if HOST_BYTE_ORDER == BIG_ENDIAN
-#ifndef HOST_FLOAT_FORMAT
-#define HOST_FLOAT_FORMAT &floatformat_ieee_single_big
-#endif
-#ifndef HOST_DOUBLE_FORMAT
-#define HOST_DOUBLE_FORMAT &floatformat_ieee_double_big
-#endif
-#else /* LITTLE_ENDIAN */
-#ifndef HOST_FLOAT_FORMAT
-#define HOST_FLOAT_FORMAT &floatformat_ieee_single_little
-#endif
-#ifndef HOST_DOUBLE_FORMAT
-#define HOST_DOUBLE_FORMAT &floatformat_ieee_double_little
-#endif
-#endif
-
-#ifndef HOST_LONG_DOUBLE_FORMAT
-#define HOST_LONG_DOUBLE_FORMAT &floatformat_unknown
-#endif
-
-/* Use `long double' if the host compiler supports it.  (Note that this is not
-   necessarily any longer than `double'.  On SunOS/gcc, it's the same as
-   double.)  This is necessary because GDB internally converts all floating
-   point values to the widest type supported by the host.
-
-   There are problems however, when the target `long double' is longer than the
-   host's `long double'.  In general, we'll probably reduce the precision of
-   any such values and print a warning.  */
-
-#ifdef HAVE_LONG_DOUBLE
-typedef long double DOUBLEST;
-#else
-typedef double DOUBLEST;
-#endif
-
-extern void floatformat_to_doublest (const struct floatformat *,
-				     char *, DOUBLEST *);
-extern void floatformat_from_doublest (const struct floatformat *,
-				       DOUBLEST *, char *);
-extern DOUBLEST extract_floating (void *, int);
-
-extern void store_floating (void *, int, DOUBLEST);
 
-/* On some machines there are bits in addresses which are not really
-   part of the address, but are used by the kernel, the hardware, etc.
-   for special purposes.  ADDR_BITS_REMOVE takes out any such bits
-   so we get a "real" address such as one would find in a symbol
-   table.  This is used only for addresses of instructions, and even then
-   I'm not sure it's used in all contexts.  It exists to deal with there
-   being a few stray bits in the PC which would mislead us, not as some sort
-   of generic thing to handle alignment or segmentation (it's possible it
-   should be in TARGET_READ_PC instead). */
-#if !defined (ADDR_BITS_REMOVE)
-#define ADDR_BITS_REMOVE(addr) (addr)
-#endif /* No ADDR_BITS_REMOVE.  */
-
 /* From valops.c */
 
 extern CORE_ADDR push_bytes (CORE_ADDR, char *, int);
@@ -1155,10 +1311,8 @@ extern int watchdog;
 
 /* Hooks for alternate command interfaces.  */
 
-#ifdef UI_OUT
 /* The name of the interpreter if specified on the command line. */
 extern char *interpreter_p;
-#endif
 
 /* If a given interpreter matches INTERPRETER_P then it should update
    command_loop_hook and init_ui_hook with the per-interpreter
@@ -1171,6 +1325,10 @@ struct cmd_list_element;
 /* Should the asynchronous variant of the interpreter (using the
    event-loop) be enabled? */
 extern int event_loop_p;
+
+/* Typedef for anonomous data type for event data */
+
+typedef void * gdb_client_data;
 
 typedef enum {
   STATE_NOT_ACTIVE,
@@ -1209,7 +1367,9 @@ extern void (*readline_end_hook) (void);
 extern void (*register_changed_hook) (int regno);
 extern void (*memory_changed_hook) (CORE_ADDR addr, int len);
 extern void (*context_hook) (int);
-extern int (*target_wait_hook) (int pid, struct target_waitstatus * status);
+extern ptid_t (*target_wait_hook) (ptid_t ptid,
+				   struct target_waitstatus * status,
+				   gdb_client_data client_data);
 
 extern void (*attach_hook) (void);
 extern void (*detach_hook) (void);
@@ -1263,43 +1423,25 @@ extern int use_windows;
 #define DIRNAME_SEPARATOR ':'
 #endif
 
-#ifndef SLASH_P
-#if defined(__GO32__)||defined(_WIN32)
-#define SLASH_P(X) ((X)=='\\')
-#else
-#define SLASH_P(X) ((X)=='/')
-#endif
-#endif
-
-#ifndef SLASH_CHAR
-#if defined(__GO32__)||defined(_WIN32)
-#define SLASH_CHAR '\\'
-#else
-#define SLASH_CHAR '/'
-#endif
-#endif
-
 #ifndef SLASH_STRING
-#if defined(__GO32__)||defined(_WIN32)
-#define SLASH_STRING "\\"
-#else
 #define SLASH_STRING "/"
 #endif
+
+#ifdef __MSDOS__
+# define CANT_FORK
+# define GLOBAL_CURDIR
 #endif
 
-#ifndef ROOTED_P
-#define ROOTED_P(X) (SLASH_P((X)[0]))
-#endif
-
-/* On some systems, PIDGET is defined to extract the inferior pid from
-   an internal pid that has the thread id and pid in seperate bit
-   fields.  If not defined, then just use the entire internal pid as
-   the actual pid. */
+/* Provide default definitions of PIDGET, TIDGET, and MERGEPID.
+   The name ``TIDGET'' is a historical accident.  Many uses of TIDGET
+   in the code actually refer to a lightweight process id, i.e,
+   something that can be considered a process id in its own right for
+   certain purposes.  */
 
 #ifndef PIDGET
-#define PIDGET(PID) (PID)
-#define TIDGET(PID) 0
-#define MERGEPID(PID, TID) (PID)
+#define PIDGET(PTID) (ptid_get_pid (PTID))
+#define TIDGET(PTID) (ptid_get_lwp (PTID))
+#define MERGEPID(PID, TID) ptid_build (PID, TID, 0)
 #endif
 
 /* If under Cygwin, provide backwards compatibility with older
@@ -1327,53 +1469,11 @@ extern int use_windows;
 #define ISATTY(FP)	(isatty (fileno (FP)))
 #endif
 
-
-/* FIXME: cagney/1999-12-13: The following will be moved to gdb.h /
-   libgdb.h or gdblib.h. */
-
-/* Return-code (RC) from a gdb library call.  (The abreviation RC is
-   taken from the sim/common directory.) */
-
-enum gdb_rc {
-  /* The operation failed.  The failure message can be fetched by
-     calling ``char *error_last_message(void)''. The value is
-     determined by the catch_errors() interface. */
-  /* NOTE: Since ``defs.h:catch_errors()'' does not return an error /
-     internal / quit indication it is not possible to return that
-     here. */
-  GDB_RC_FAIL = 0,
-  /* No error occured but nothing happened. Due to the catch_errors()
-     interface, this must be non-zero. */
-  GDB_RC_NONE = 1,
-  /* The operation was successful. Due to the catch_errors()
-     interface, this must be non-zero. */
-  GDB_RC_OK = 2
-};
-
-
-/* Print the specified breakpoint on GDB_STDOUT. (Eventually this
-   function will ``print'' the object on ``output''). */
-enum gdb_rc gdb_breakpoint_query (/* struct {ui,gdb}_out *output, */ int bnum);
-
-/* Create a breakpoint at ADDRESS (a GDB source and line). */
-enum gdb_rc gdb_breakpoint (char *address, char *condition,
-			    int hardwareflag, int tempflag,
-			    int thread, int ignore_count,
-			    int futureflag);
-enum gdb_rc gdb_thread_select (/* output object */ char *tidstr);
-
 #if defined(NeXT_PDO)
 #undef environ
 #endif /* NeXT_PDO */
 
-#ifdef UI_OUT
-/* Print a list of known thread ids. */
-enum gdb_rc gdb_list_thread_ids (/* output object */);
-
-/* Switch thread and print notification. */
-#endif
-
-#if (!defined __GNUC__ || __GNUC__ < 2 || __GNUC_MINOR__ < (defined __cplusplus ? 6 : 4))
+#if (!defined __GNUC__ || __GNUC__ < 2 || (__GNUC__ == 2 && __GNUC_MINOR__ < (defined __cplusplus ? 6 : 4)))
 #define __CHECK_FUNCTION ((__const char *) 0)
 #else
 #define __CHECK_FUNCTION __PRETTY_FUNCTION__

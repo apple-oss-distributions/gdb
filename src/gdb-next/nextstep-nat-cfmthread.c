@@ -32,7 +32,7 @@ void next_cfm_thread_create (next_cfm_thread_status *s, task_t task)
   INIT_SAL (&sal);
   sal.pc = s->notify_debugger;
   b = set_momentary_breakpoint (sal, NULL, bp_shlib_event);
-  b->disposition = donttouch;
+  b->disposition = disp_donttouch;
   b->thread = -1;
   b->addr_string = strsave (buf);
 

@@ -41,7 +41,8 @@ inferior_read
     return 0;
   }
 
-  ret = current_target.to_xfer_memory (iptr->addr + where, data, (size * nitems), 0, &current_target);
+  ret = current_target.to_xfer_memory (iptr->addr + where, data, (size * nitems),
+				       NULL, 0, &current_target);
   if (ret <= 0) {
     bfd_set_error (bfd_error_system_call);
     return 0;
@@ -83,7 +84,7 @@ mach_o_inferior_read
 	    && (where < (segment->fileoff + segment->filesize))) {
 	  bfd_vma infaddr = (segment->vmaddr + iptr->offset + (where - segment->fileoff));
 	  ret = current_target.to_xfer_memory
-	    (infaddr, data, (size * nitems), 0, &current_target);
+	    (infaddr, data, (size * nitems), 0, NULL, &current_target);
 	  if (ret <= 0) {
 	    bfd_set_error (bfd_error_system_call);
 	    return 0;
@@ -146,8 +147,17 @@ inferior_bfd_generic
   fdata.flush_func = &inferior_flush;
   fdata.close_func = &inferior_close;
 
-  iret = asprintf (&filename, "[memory object \"%s\" at 0x%lx for 0x%lx]",
-		   name, (unsigned long) addr, (unsigned long) len);
+  if (name != NULL)
+    {
+      iret = asprintf (&filename, "[memory object \"%s\" at 0x%lx for 0x%lx]",
+		       name, (unsigned long) addr, (unsigned long) len);
+    }
+  else
+    {
+      iret = asprintf (&filename, "[memory object at 0x%lx for 0x%lx]",
+		       (unsigned long) addr, (unsigned long) len);
+    }
+
   if (iret == 0) {
     warning ("unable to allocate memory for filename for \"%s\"", name);
     return NULL;

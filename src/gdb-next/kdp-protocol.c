@@ -59,8 +59,9 @@ const char *kdp_req_string (kdp_req_t req)
   switch (req) {
     case KDP_CONNECT: return "CONNECT";
     case KDP_DISCONNECT: return "DISCONNECT";
+    case KDP_REATTACH: return "REATTACH";
     case KDP_HOSTINFO: return "HOSTINFO";
-    case KDP_REGIONS: return "REGIONS";
+    case KDP_VERSION: return "VERSION";
     case KDP_MAXBYTES: return "MAXBYTES";
     case KDP_READMEM: return "READMEM";
     case KDP_WRITEMEM: return "WRITEMEM";
@@ -70,8 +71,11 @@ const char *kdp_req_string (kdp_req_t req)
     case KDP_IMAGEPATH: return "IMAGEPATH";
     case KDP_SUSPEND: return "SUSPEND";
     case KDP_RESUMECPUS: return "RESUMECPUS";
+    case KDP_BREAKPOINT_SET: return "BREAKPOINT_SET";
+    case KDP_BREAKPOINT_REMOVE: return "BREAKPOINT_REMOVE";
     case KDP_EXCEPTION: return "EXCEPTION";
     case KDP_TERMINATION: return "TERMINATION";
+    case KDP_REGIONS: return "REGIONS";
     default: return "[UNKNOWN]";
     }
 }
@@ -160,6 +164,7 @@ void kdp_log_packet
 	 "error", kdp_error_string (p->connect_reply.error), p->connect_reply.error);
       break;
     case KDP_DISCONNECT:
+    case KDP_REATTACH:
       break;
     case KDP_HOSTINFO:
       f (l,
@@ -169,6 +174,13 @@ void kdp_log_packet
 	 "cpu_mask", p->hostinfo_reply.cpu_mask,
 	 "type", p->hostinfo_reply.cpu_type,
 	 "subtype", p->hostinfo_reply.cpu_subtype);
+      break;
+    case KDP_VERSION:
+      f (l,
+	 "  %8s: %d\n"
+	 "  %8s: %d\n",
+	 "version", p->version_reply.version,
+	 "feature", p->version_reply.feature);
       break;
     case KDP_REGIONS:
       f (l,
@@ -225,6 +237,12 @@ void kdp_log_packet
 	 "  %8s: \"%s\"\n",
 	 "path", p->imagepath_reply.path);
       break;
+    case KDP_BREAKPOINT_SET:
+    case KDP_BREAKPOINT_REMOVE:
+      f (l,
+	 "  %8s: \"%s\" (%d)\n",
+	 "error", kdp_error_string (p->breakpoint_reply.error), p->breakpoint_reply.error);
+      break;
     case KDP_SUSPEND:
     case KDP_RESUMECPUS:
       break;
@@ -246,8 +264,10 @@ void kdp_log_packet
 	 "exc_port", p->connect_req.exc_note_port,
 	 "greeting", p->connect_req.greeting);
       break;
+    case KDP_REATTACH: break;
     case KDP_DISCONNECT: break;
     case KDP_HOSTINFO: break;
+    case KDP_VERSION: break;
     case KDP_REGIONS: break;
     case KDP_MAXBYTES: break;
     case KDP_READMEM:
@@ -264,6 +284,12 @@ void kdp_log_packet
 	 "addr", (unsigned long) p->writemem_req.address,
 	 "nbytes", (unsigned long) p->writemem_req.nbytes);
       kdp_log_data (f, l, p->writemem_req.data, p->writemem_req.nbytes);
+      break;
+    case KDP_BREAKPOINT_SET:
+    case KDP_BREAKPOINT_REMOVE:
+      f (l,
+	 "  %8s: 0x%lx\n",
+	 "addr", (unsigned long) p->breakpoint_req.address);
       break;
     case KDP_READREGS:
       f (l, 
@@ -331,6 +357,7 @@ kdp_return_t kdp_marshal
       write32u (s + 8, p->connect_reply.error, c->bigendian);
       break;
     case KDP_DISCONNECT:
+    case KDP_REATTACH:
       len = 8;
       break;
     case KDP_HOSTINFO:
@@ -338,6 +365,11 @@ kdp_return_t kdp_marshal
       write32u (s + 8, p->hostinfo_reply.cpu_mask, c->bigendian);
       write32u (s + 12, p->hostinfo_reply.cpu_type, c->bigendian);
       write32u (s + 16, p->hostinfo_reply.cpu_subtype, c->bigendian);
+      break;
+    case KDP_VERSION:
+      len = 24;
+      write32u (s + 8, p->version_reply.version, c->bigendian);
+      write32u (s + 12, p->version_reply.feature, c->bigendian);
       break;
     case KDP_REGIONS: {
       const unsigned int REGION_SIZE = 12;
@@ -364,6 +396,11 @@ kdp_return_t kdp_marshal
     case KDP_WRITEMEM:
       len = 12;
       write32u (s + 8, p->writemem_reply.error, c->bigendian);
+      break;
+    case KDP_BREAKPOINT_SET:
+    case KDP_BREAKPOINT_REMOVE:
+      len = 12;
+      write32u (s+8, p->breakpoint_reply.error, c->bigendian);
       break;
     case KDP_READREGS: {
       const unsigned int KDP_REGISTER_SIZE = 4;
@@ -415,8 +452,13 @@ kdp_return_t kdp_marshal
       write16u (s + 10, p->connect_req.exc_note_port, 0);
       memcpy (s + 12, p->connect_req.greeting, len - 12);
       break;
+    case KDP_REATTACH:
+      len = 10;
+      write16u (s + 8, p->reattach_req.req_reply_port, 0);
+      break;
     case KDP_DISCONNECT:
     case KDP_HOSTINFO:
+    case KDP_VERSION:
     case KDP_REGIONS:
     case KDP_MAXBYTES:
       len = 8;
@@ -432,6 +474,11 @@ kdp_return_t kdp_marshal
       write32u (s + 8, p->writemem_req.address, c->bigendian);
       write32u (s + 12, p->writemem_req.nbytes, c->bigendian);
       memcpy (s + 16, p->writemem_req.data, p->writemem_req.nbytes);
+      break;
+    case KDP_BREAKPOINT_SET:
+    case KDP_BREAKPOINT_REMOVE:
+      len = 12;
+      write32u (s + 8, p->breakpoint_req.address, c->bigendian);
       break;
     case KDP_READREGS:
       len = 16;
@@ -587,6 +634,7 @@ kdp_return_t kdp_unmarshal
       p->connect_reply.error = read32u (s + 8, c->bigendian);
       break;
     case KDP_DISCONNECT:
+    case KDP_REATTACH:
       CHECK_PLEN_RLEN (plen, rlen);
       CHECK_PLEN_LEN (plen, 8);
       break;
@@ -596,6 +644,12 @@ kdp_return_t kdp_unmarshal
       p->hostinfo_reply.cpu_mask = read32u (s + 8, c->bigendian);
       p->hostinfo_reply.cpu_type = read32u (s + 12, c->bigendian);
       p->hostinfo_reply.cpu_subtype = read32u (s + 16, c->bigendian);
+      break;
+    case KDP_VERSION:
+      CHECK_PLEN_RLEN (plen, rlen);
+      CHECK_PLEN_LEN (plen, 24);
+      p->version_reply.version = read32u (s + 8, c->bigendian);
+      p->version_reply.feature = read32u (s + 12, c->bigendian);
       break;
     case KDP_REGIONS: {
       const unsigned int REGION_SIZE = 12;
@@ -628,6 +682,12 @@ kdp_return_t kdp_unmarshal
       CHECK_PLEN_RLEN (plen, rlen);
       CHECK_PLEN_LEN (plen, 12);
       p->writemem_reply.error = read32u (s + 8, c->bigendian);
+      break;
+    case KDP_BREAKPOINT_SET:
+    case KDP_BREAKPOINT_REMOVE:
+      CHECK_PLEN_RLEN (plen, rlen);
+      CHECK_PLEN_LEN (plen, 12);
+      p->breakpoint_reply.error = read32u (s + 8, c->bigendian);
       break;
     case KDP_READREGS: { 
       const unsigned int KDP_REGISTER_SIZE = 4;
@@ -693,11 +753,19 @@ kdp_return_t kdp_unmarshal
       p->connect_req.exc_note_port = read16u (s + 10, 0);
       memcpy (p->connect_req.greeting, s + 12, plen - 12);
       break;
+    case KDP_REATTACH:
+      CHECK_PLEN_RLEN (plen, rlen);
+      CHECK_PLEN_LEN (plen, 10);
+      break;
     case KDP_DISCONNECT:
       CHECK_PLEN_RLEN (plen, rlen);
       CHECK_PLEN_LEN (plen, 8);
       break;
     case KDP_HOSTINFO:
+      CHECK_PLEN_RLEN (plen, rlen);
+      CHECK_PLEN_LEN (plen, 8);
+      break;
+    case KDP_VERSION:
       CHECK_PLEN_RLEN (plen, rlen);
       CHECK_PLEN_LEN (plen, 8);
       break;
@@ -767,6 +835,12 @@ kdp_return_t kdp_unmarshal
       CHECK_PLEN_RLEN (plen, rlen);
       CHECK_PLEN_LEN (plen, 12);
       p->resumecpus_req.cpu_mask = read32u (s + 8, c->bigendian);
+      break;
+    case KDP_BREAKPOINT_SET:
+    case KDP_BREAKPOINT_REMOVE:
+      CHECK_PLEN_RLEN (plen, rlen);
+      CHECK_PLEN_LEN (plen, 12);
+      p->breakpoint_req.address = read32u (s + 8, c->bigendian);
       break;
     case KDP_EXCEPTION: {
       const unsigned int EXCEPTION_SIZE = 16;

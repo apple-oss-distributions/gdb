@@ -21,7 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #ifndef _XM_PPC_MACOSX_H_
 #define _XM_PPC_MACOSX_H_
 
-#define HOST_BYTE_ORDER BIG_ENDIAN
+#define HOST_BYTE_ORDER BFD_ENDIAN_BIG
 
 #include "xm-macosx.h"
 

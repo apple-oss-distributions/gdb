@@ -1,5 +1,6 @@
 /* Definitions to make GDB run on an encore under umax 4.2
-   Copyright 1987, 1989, 1991, 1993 Free Software Foundation, Inc.
+   Copyright 1987, 1989, 1991, 1993, 1994, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,9 +19,11 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
+
 /* This is also included by tm-ns32km3.h, as well as being used by umax.  */
 
-#define TARGET_BYTE_ORDER LITTLE_ENDIAN
+#define TARGET_BYTE_ORDER BFD_ENDIAN_LITTLE
 
 /* Need to get function ends by adding this to epilogue address from .bf
    record, not using x_fsize field.  */
@@ -222,6 +225,12 @@ extern CORE_ADDR umax_skip_prologue (CORE_ADDR);
 
 extern CORE_ADDR ns32k_get_enter_addr ();
 
+/* Return number of args passed to a frame.
+   Can return -1, meaning no way to tell.  */
+
+extern int umax_frame_num_args (struct frame_info *fi);
+#define FRAME_NUM_ARGS(fi) (umax_frame_num_args ((fi)))
+
 /* Return number of bytes at start of arglist that are not really args.  */
 
 #define FRAME_ARGS_SKIP 8
@@ -232,8 +241,37 @@ extern CORE_ADDR ns32k_get_enter_addr ();
    ways in the stack frame.  sp is even more special:
    the address we return for it IS the sp for the next frame.  */
 
-extern int umax_frame_num_args (struct frame_info *fi);
-#define FRAME_NUM_ARGS(fi) (umax_frame_num_args ((fi)))
+extern int ns32k_localcount (CORE_ADDR enter_pc);
+
+#define FRAME_FIND_SAVED_REGS(frame_info, frame_saved_regs)	\
+{ 								\
+  register int	regmask, regnum;				\
+  int		localcount;					\
+  register CORE_ADDR	enter_addr;				\
+  register CORE_ADDR	next_addr;				\
+								\
+  memset (&(frame_saved_regs), '\0', sizeof (frame_saved_regs));	\
+  enter_addr = ns32k_get_enter_addr ((frame_info)->pc);		\
+  if (enter_addr > 1)						\
+    {								\
+      regmask = read_memory_integer (enter_addr+1, 1) & 0xff;	\
+      localcount = ns32k_localcount (enter_addr);		\
+      next_addr = (frame_info)->frame + localcount;		\
+      for (regnum = 0; regnum < 8; regnum++, regmask >>= 1)	\
+	(frame_saved_regs).regs[regnum] = (regmask & 1) ?	\
+					  (next_addr -= 4) : 0;	\
+      (frame_saved_regs).regs[SP_REGNUM] = (frame_info)->frame + 4;\
+      (frame_saved_regs).regs[PC_REGNUM] = (frame_info)->frame + 4;\
+      (frame_saved_regs).regs[FP_REGNUM] =			\
+		  (read_memory_integer ((frame_info)->frame, 4));\
+    }								\
+  else if (enter_addr == 1)					\
+    {								\
+      CORE_ADDR sp = read_register (SP_REGNUM);			\
+      (frame_saved_regs).regs[PC_REGNUM] = sp;			\
+      (frame_saved_regs).regs[SP_REGNUM] = sp + 4;		\
+    }								\
+}
 
 /* Things needed for making the inferior call functions.  */
 
@@ -285,6 +323,8 @@ extern int umax_frame_num_args (struct frame_info *fi);
 
 /* Insert the specified number of args and function address
    into a call sequence of the above form stored at DUMMYNAME.  */
+
+void flip_bytes (void *ptr, int count);
 
 #define FIX_CALL_DUMMY(dummyname, pc, fun, nargs, args, type, gcc_p)   		\
 {								\

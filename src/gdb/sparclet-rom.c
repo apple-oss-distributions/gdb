@@ -1,5 +1,6 @@
 /* Remote target glue for the SPARC Sparclet ROM monitor.
-   Copyright 1995, 1996 Free Software Foundation, Inc.
+   Copyright 1995, 1996, 1997, 1998, 1999, 2000, 2001
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +28,7 @@
 #include "srec.h"
 #include "symtab.h"
 #include "symfile.h"		/* for generic_load */
+#include "regcache.h"
 #include <time.h>
 
 extern void report_transfer_performance (unsigned long, time_t, time_t);
@@ -103,7 +105,7 @@ sparclet_supply_register (char *regname, int regnamelen, char *val, int vallen)
 }
 
 static void
-sparclet_load (serial_t desc, char *file, int hashmark)
+sparclet_load (struct serial *desc, char *file, int hashmark)
 {
   bfd *abfd;
   asection *s;
@@ -171,7 +173,7 @@ sparclet_load (serial_t desc, char *file, int hashmark)
 
 	    bfd_get_section_contents (abfd, s, buf, i, numbytes);
 
-	    SERIAL_WRITE (desc, buf, numbytes);
+	    serial_write (desc, buf, numbytes);
 
 	    if (hashmark)
 	      {

@@ -2,7 +2,7 @@
 
 CARBON_CORE = $(NEXT_ROOT)/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/CarbonCore.framework
 
-TERMCAP =
+TERMCAP = -lcurses
 
 SER_HARDWIRE = ser-unix.o ser-tcp.o
 

@@ -28,6 +28,7 @@
 #include "top.h"	// execute_command, get_prompt, instream, line, word brk completer
 #include "gdbtypes.h"	// enum type_code
 #include "gdbcmd.h" 	// cmdlist, execute_user_command, filename_completer
+#include "completer.h"  // cmdlist, execute_user_command, filename_completer
 #include "expression.h" // parse_expression 
 #include "inferior.h"	// stop_bpstat
 #include "symtab.h"	// struct symtab_and_line, find_pc_line
@@ -1344,11 +1345,11 @@ void gdb_set_string(char *theVariable, char *theString)
  Returns a gdb value pointer representing the evaluated expression result.
 */
 
-static value_ptr expression_to_value_ptr(char *expression)
+static struct value *expression_to_value_ptr(char *expression)
 {
     struct expression *expr;
     struct cleanup    *old_chain;
-    value_ptr         vp;
+    struct value      *vp;
              
     expr = parse_expression(expression);
     old_chain = make_cleanup(free_current_contents, &expr);
@@ -1408,7 +1409,7 @@ double gdb_get_double(char *expression)
 
 char *gdb_get_string(char *theVariable, char *str, int maxlen)
 {
-    value_ptr vp;
+    struct value *vp;
     CORE_ADDR temp;
     int	      i;
     
@@ -1416,7 +1417,7 @@ char *gdb_get_string(char *theVariable, char *str, int maxlen)
     if (!vp)
     	return (strcpy(str, ""));
         
-    temp = value_as_pointer(vp);
+    temp = value_as_address(vp);
     
     for (i = 0; i < maxlen; i++) {
   	QUIT;
@@ -1443,7 +1444,7 @@ char *gdb_get_string(char *theVariable, char *str, int maxlen)
 
 static int is_var_defined(char *theVariable)
 {
-    value_ptr vp = value_of_internalvar(lookup_internalvar(theVariable+1));
+    struct value *vp = value_of_internalvar(lookup_internalvar(theVariable+1));
     
     return ((vp) && VALUE_TYPE(vp) && TYPE_CODE(VALUE_TYPE(vp)) != TYPE_CODE_VOID);
 }
@@ -1493,7 +1494,7 @@ char *gdb_set_register(char *theRegister, void *value, int size)
 {
     int       regnum;
     char      *start = theRegister, *end;
-    value_ptr vp;
+    struct value *vp;
     
     if (!target_has_registers)
     	return ("no registers available at this time");
@@ -1602,9 +1603,9 @@ void *gdb_get_register(char *theRegister, void *value, int *size)
 
 unsigned long gdb_read_memory(void *dst, char *src, int n)
 {
-    value_ptr vp = expression_to_value_ptr(src);
+    struct value *vp = expression_to_value_ptr(src);
     
-    target_read_memory(value_as_pointer(vp), dst, n);
+    target_read_memory(value_as_address(vp), dst, n);
     
     return ((unsigned long)value_as_long(vp));
 }
@@ -1896,7 +1897,7 @@ void gdb_verror(const char *fmt, va_list ap)
 
 void gdb_internal_error(char *msg)
 {
-    internal_error(msg);
+    internal_error(__FILE__, __LINE__, msg);
 }
 
 /*--------------------------------------------------------------------------------------*/
@@ -2176,7 +2177,7 @@ int gdb_keyword(char *keyword, register char **table)
  
 int gdb_is_string(char *expression)
 {
-    value_ptr 	   vp;
+    struct value *vp;
     enum type_code type;
     
     if (!expression)

@@ -354,7 +354,6 @@ char *dyld_entry_string (struct dyld_objfile_entry *e, int print_basenames)
   xfree (prefix);
 
   return ret;
-
 }
 
 char *dyld_entry_out (struct ui_out *uiout, struct dyld_objfile_entry *e, int print_basenames)
@@ -370,7 +369,26 @@ char *dyld_entry_out (struct ui_out *uiout, struct dyld_objfile_entry *e, int pr
 
   if (name == NULL)
     {
-      ui_out_field_skip (uiout, "path");
+      if (ui_out_is_mi_like_p (uiout))
+	{
+	  char *name = dyld_entry_source_filename (e);
+	  if (name != NULL)
+	    {
+	      ui_out_text (uiout, "\"");
+	      ui_out_field_string (uiout, "path", name);
+	      ui_out_text (uiout, "\"");
+	    }
+	  else
+	    {
+	      char *s = dyld_entry_string (e, print_basenames);
+	      ui_out_text (uiout, "\"");
+	      ui_out_field_string (uiout, "path", s);
+	      ui_out_text (uiout, "\"");
+	      xfree (s);
+	    }
+	}
+      else
+	ui_out_field_skip (uiout, "path");
 
       if (addr != NULL)
 	{

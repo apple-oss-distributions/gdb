@@ -135,7 +135,7 @@ void next_exception_thread_create (next_exception_thread_status *s, task_t task)
 
     kret = task_set_exception_ports
       (task,
-       EXC_MASK_ALL & ~(EXC_MASK_MACH_SYSCALL | EXC_MASK_SYSCALL | EXC_MASK_RPC_ALERT | EXC_MASK_SOFTWARE),
+       EXC_MASK_ALL,
        s->inferior_exception_port, EXCEPTION_DEFAULT, THREAD_STATE_NONE);
     MACH_CHECK_ERROR (kret);
   }

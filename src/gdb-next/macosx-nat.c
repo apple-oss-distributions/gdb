@@ -290,7 +290,7 @@ void next_create_inferior_for_task
 
     ret = task_set_exception_ports
       (inferior->task,
-       EXC_MASK_ALL & ~(EXC_MASK_MACH_SYSCALL | EXC_MASK_SYSCALL | EXC_MASK_RPC_ALERT | EXC_MASK_SOFTWARE),
+       EXC_MASK_ALL,
        inferior->exception_port, EXCEPTION_DEFAULT, THREAD_STATE_NONE);
     MACH_CHECK_ERROR (ret);
   }

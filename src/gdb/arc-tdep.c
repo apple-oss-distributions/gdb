@@ -1,5 +1,5 @@
 /* ARC target-dependent stuff.
-   Copyright (C) 1995, 1997 Free Software Foundation, Inc.
+   Copyright 1995, 1996, 1999, 2000, 2001 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,6 +26,7 @@
 #include "floatformat.h"
 #include "symtab.h"
 #include "gdbcmd.h"
+#include "regcache.h"
 
 /* Local functions */
 
@@ -44,13 +45,11 @@ struct
   }
 arc_cpu_type_table[] =
 {
-  {
-    "base", bfd_mach_arc_base
-  }
-  ,
-  {
-    NULL, 0
-  }
+  { "arc5", bfd_mach_arc_5 },
+  { "arc6", bfd_mach_arc_6 },
+  { "arc7", bfd_mach_arc_7 },
+  { "arc8", bfd_mach_arc_8 },
+  {  NULL,  0 }
 };
 
 /* Used by simulator.  */
@@ -618,8 +617,7 @@ arc_print_insn (bfd_vma vma, disassemble_info *info)
     {
       current_mach = arc_bfd_mach_type;
       current_endian = TARGET_BYTE_ORDER;
-      current_disasm = arc_get_disassembler (current_mach,
-					     current_endian == BIG_ENDIAN);
+      current_disasm = arc_get_disassembler (NULL);
     }
 
   return (*current_disasm) (vma, info);
@@ -639,7 +637,7 @@ arc_set_cpu_type_command (char *args, int from_tty)
 	printf_unfiltered ("%s\n", arc_cpu_type_table[i].name);
 
       /* Restore the value.  */
-      tmp_arc_cpu_type = strsave (arc_cpu_type);
+      tmp_arc_cpu_type = xstrdup (arc_cpu_type);
 
       return;
     }
@@ -648,7 +646,7 @@ arc_set_cpu_type_command (char *args, int from_tty)
     {
       error ("Unknown cpu type `%s'.", tmp_arc_cpu_type);
       /* Restore its value.  */
-      tmp_arc_cpu_type = strsave (arc_cpu_type);
+      tmp_arc_cpu_type = xstrdup (arc_cpu_type);
     }
 }
 
@@ -698,9 +696,9 @@ cpu-type-specific registers and recognize cpu-type-specific instructions.\
   c = add_show_from_set (c, &showlist);
   c->function.cfunc = arc_show_cpu_type_command;
 
-  /* We have to use strsave here because the `set' command frees it before
-     setting a new value.  */
-  tmp_arc_cpu_type = strsave (DEFAULT_ARC_CPU_TYPE);
+  /* We have to use xstrdup() here because the `set' command frees it
+     before setting a new value.  */
+  tmp_arc_cpu_type = xstrdup (DEFAULT_ARC_CPU_TYPE);
   arc_set_cpu_type (tmp_arc_cpu_type);
 
   c = add_set_cmd ("displaypipeline", class_support, var_zinteger,

@@ -57,14 +57,6 @@ void next_inferior_suspend_ptrace PARAMS ((next_inferior_status *s));
 
 void next_inferior_resume_ptrace PARAMS ((next_inferior_status *s, int nsignal, int val));
 
-void next_thread_list_lookup_by_id PARAMS ((next_inferior_status *s, int id, int *ppid, thread_t *pthread));
-
-void next_thread_list_lookup_by_info PARAMS ((next_inferior_status *s, int pid, thread_t thread, int *ppid));
-
-int next_thread_list_insert PARAMS ((next_inferior_status *s, int pid, thread_t thread));
-
-void next_thread_list_destroy PARAMS ((next_thread_entry *tpid));
-
 void next_save_exception_ports PARAMS ((task_t task, struct next_exception_info *info));
 
 void next_restore_exception_ports PARAMS ((task_t task, struct next_exception_info *info));

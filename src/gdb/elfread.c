@@ -1,5 +1,7 @@
 /* Read ELF (Executable and Linking Format) object files for GDB.
-   Copyright 1991, 92, 93, 94, 95, 96, 1998 Free Software Foundation, Inc.
+   Copyright 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
+   2001
+   Free Software Foundation, Inc.
    Written by Fred Fish at Cygnus Support.
 
    This file is part of GDB.
@@ -74,7 +76,7 @@ static void elf_symfile_finish (struct objfile *);
 
 static void elf_symtab_read (struct objfile *, int);
 
-static void free_elfinfo (void *);
+static void free_elfinfo (PTR);
 
 static struct minimal_symbol *record_minimal_symbol_and_info (char *,
 							      CORE_ADDR,
@@ -86,7 +88,7 @@ static struct minimal_symbol *record_minimal_symbol_and_info (char *,
 							      struct objfile
 							      *);
 
-static void elf_locate_sections (bfd *, asection *, void *);
+static void elf_locate_sections (bfd *, asection *, PTR);
 
 /* We are called once per section from elf_symfile_read.  We
    need to examine each section we are passed, check to see
@@ -171,32 +173,13 @@ record_minimal_symbol_and_info (char *name, CORE_ADDR address,
 				enum minimal_symbol_type ms_type, char *info,	/* FIXME, is this really char *? */
 				asection *bfd_section, struct objfile *objfile)
 {
-  int section;
-
-  /* Guess the section from the type.  This is likely to be wrong in
-     some cases.  */
-  switch (ms_type)
-    {
-    case mst_text:
-    case mst_file_text:
-      section = bfd_section->index;
 #ifdef SMASH_TEXT_ADDRESS
-      SMASH_TEXT_ADDRESS (address);
+  if (ms_type == mst_text || ms_type == mst_file_text)
+    SMASH_TEXT_ADDRESS (address);
 #endif
-      break;
-    case mst_data:
-    case mst_file_data:
-    case mst_bss:
-    case mst_file_bss:
-      section = bfd_section->index;
-      break;
-    default:
-      section = -1;
-      break;
-    }
 
   return prim_record_minimal_symbol_and_info
-    (name, address, ms_type, info, section, bfd_section, objfile);
+    (name, address, ms_type, info, bfd_section->index, bfd_section, objfile);
 }
 
 /*
@@ -268,7 +251,7 @@ elf_symtab_read (struct objfile *objfile, int dynamic)
   if (storage_needed > 0)
     {
       symbol_table = (asymbol **) xmalloc (storage_needed);
-      back_to = make_cleanup (free, symbol_table);
+      back_to = make_cleanup (xfree, symbol_table);
       if (dynamic)
 	number_of_symbols = bfd_canonicalize_dynamic_symtab (objfile->obfd,
 							     symbol_table);
@@ -428,7 +411,7 @@ elf_symtab_read (struct objfile *objfile, int dynamic)
 		}
 	      else if (sym->section->flags & SEC_ALLOC)
 		{
-		  if (sym->flags & BSF_GLOBAL)
+		  if (sym->flags & (BSF_GLOBAL | BSF_WEAK))
 		    {
 		      if (sym->section->flags & SEC_LOAD)
 			{
@@ -488,7 +471,8 @@ elf_symtab_read (struct objfile *objfile, int dynamic)
 				}
 			    }
 			  else
-			    internal_error ("Section index uninitialized.");
+			    internal_error (__FILE__, __LINE__,
+					    "Section index uninitialized.");
 			  /* Bfd symbols are section relative. */
 			  symaddr = sym->value + sym->section->vma;
 			  /* Relocate non-absolute symbols by the section offset. */
@@ -499,7 +483,8 @@ elf_symtab_read (struct objfile *objfile, int dynamic)
 			  if (index != -1)
 			    sectinfo->sections[index] = symaddr;
 			  else
-			    internal_error ("Section index uninitialized.");
+			    internal_error (__FILE__, __LINE__,
+					    "Section index uninitialized.");
 			  /* The special local symbols don't go in the
 			     minimal symbol table, so ignore this one. */
 			  continue;
@@ -676,6 +661,9 @@ elf_symfile_read (struct objfile *objfile, int mainline)
 			    ei.lnoffset, ei.lnsize);
     }
 
+  if (DWARF2_BUILD_FRAME_INFO_P ())
+    DWARF2_BUILD_FRAME_INFO(objfile);
+
   /* Install any minimal symbols that have been collected as the current
      minimal symbols for this objfile. */
 
@@ -698,7 +686,7 @@ free_elfinfo (PTR objp)
   while (ssi)
     {
       nssi = ssi->next;
-      mfree (objfile->md, ssi);
+      xmfree (objfile->md, ssi);
       ssi = nssi;
     }
 
@@ -729,7 +717,7 @@ elf_symfile_finish (struct objfile *objfile)
 {
   if (objfile->sym_stab_info != NULL)
     {
-      mfree (objfile->md, objfile->sym_stab_info);
+      xmfree (objfile->md, objfile->sym_stab_info);
     }
 }
 

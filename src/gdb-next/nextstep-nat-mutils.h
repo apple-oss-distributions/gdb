@@ -28,9 +28,11 @@ void gdb_check_fatal (const char *str, const char *file, unsigned int line, cons
 
 unsigned int child_get_pagesize PARAMS (());
 
-int mach_xfer_memory PARAMS
-  ((CORE_ADDR memaddr, char *myaddr, int len, int write,
-    struct target_ops *target));
+int
+mach_xfer_memory (CORE_ADDR memaddr, char *myaddr, 
+		  int len, int write, 
+		  struct mem_attrib *attrib, 
+		  struct target_ops *target);
 
 void mach_check_error (kern_return_t ret, const char *file, unsigned int line, const char *func);
 void mach_warn_error (kern_return_t ret, const char *file, unsigned int line, const char *func);

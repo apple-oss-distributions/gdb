@@ -49,7 +49,7 @@
 static void initialize_interps (void);
 
 static void set_interpreter_cmd (char *args, int from_tty, 
-				 struct cmd_list_element * c);
+				 struct cmd_list_element *c);
 static void list_interpreter_cmd (char *args, int from_tty);
 static void do_set_interpreter (int not_an_fd);
 
@@ -72,16 +72,16 @@ static int initialized = 0;
  */
 
 struct gdb_interpreter *
-gdb_new_interpreter ( char *name, 
-		      void *data, 
-		      struct ui_out *uiout,
-		      interp_init_ftype init_proc, 
-		      interp_resume_ftype  resume_proc,
-		      interp_do_one_event_ftype do_one_event_proc,
-		      interp_suspend_ftype suspend_proc, 
-		      interp_delete_ftype delete_proc,
-		      interp_exec_ftype    exec_proc,
-		      interp_prompt_ftype prompt_proc)
+gdb_new_interpreter (char *name, 
+		     void *data, 
+		     struct ui_out *uiout,
+		     interp_init_ftype init_proc, 
+		     interp_resume_ftype  resume_proc,
+		     interp_do_one_event_ftype do_one_event_proc,
+		     interp_suspend_ftype suspend_proc, 
+		     interp_delete_ftype delete_proc,
+		     interp_exec_ftype exec_proc,
+		     interp_prompt_ftype prompt_proc)
 {
   struct gdb_interpreter *new_interp;
   
@@ -115,14 +115,12 @@ gdb_new_interpreter ( char *name,
 int 
 gdb_add_interpreter (struct gdb_interpreter *interp)
 {
-  
   if (!initialized)
     initialize_interps ();
 
   if (gdb_lookup_interpreter (interp->name) != NULL) 
-    {
       return 0;
-    }
+
   interp->next = interp_list;
   interp_list = interp;
   
@@ -319,8 +317,8 @@ struct gdb_interpreter *
 gdb_lookup_interpreter(char *name)
 {
   struct gdb_interpreter *interp;
-  
-  if (name == NULL || strlen (name) == 0)
+
+  if (name == NULL || strlen(name) == 0)
     return NULL;
 
   for (interp = interp_list; interp != NULL; interp = interp->next)
@@ -340,6 +338,12 @@ struct gdb_interpreter *
 gdb_current_interpreter()
 {
   return current;
+}
+
+struct ui_out *
+gdb_interpreter_ui_out (struct gdb_interpreter *interp)
+{
+  return interp->interpreter_out;
 }
 
 /*
@@ -457,8 +461,7 @@ initialize_interps (void)
   /* Don't know if anything needs to be done here... */    
 }
 
-/* set_interpreter_cmd - This implements "set interpreter foo".  
- */
+/* set_interpreter_cmd - This implements "set interpreter foo". */
 
 static void 
 set_interpreter_cmd (char *args, int from_tty, struct cmd_list_element * c)

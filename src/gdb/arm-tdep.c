@@ -1,6 +1,6 @@
 /* Common target dependent code for GDB on ARM systems.
-   Copyright 1988, 1989, 1991, 1992, 1993, 1995, 1996, 1997, 1998, 1999, 2000
-   Free Software Foundation, Inc.
+   Copyright 1988, 1989, 1991, 1992, 1993, 1995, 1996, 1998, 1999, 2000,
+   2001, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,6 +29,10 @@
 #include "coff/internal.h"	/* Internal format of COFF symbols in BFD */
 #include "dis-asm.h"		/* For register flavors. */
 #include <ctype.h>		/* for isupper () */
+#include "regcache.h"
+#include "doublest.h"
+#include "value.h"
+#include "solib-svr4.h"
 
 /* Each OS has a different mechanism for accessing the various
    registers stored in the sigcontext structure.
@@ -79,7 +83,7 @@ static char * arm_register_name_strings[] =
  "f0",  "f1",  "f2",  "f3",	/* 16 17 18 19 */
  "f4",  "f5",  "f6",  "f7",	/* 20 21 22 23 */
  "fps", "cpsr" }; 		/* 24 25       */
-char **arm_register_names = arm_register_name_strings;
+static char **arm_register_names = arm_register_name_strings;
 
 /* Valid register name flavors.  */
 static const char **valid_flavors;
@@ -103,36 +107,17 @@ static void convert_from_extended (void *ptr, void *dbl);
    we're still in the prologue of a function with a frame) */
 
 struct frame_extra_info
-  {
-    struct frame_saved_regs fsr;
-    int framesize;
-    int frameoffset;
-    int framereg;
-  };
+{
+  int framesize;
+  int frameoffset;
+  int framereg;
+};
 
 /* Addresses for calling Thumb functions have the bit 0 set.
    Here are some macros to test, set, or clear bit 0 of addresses.  */
 #define IS_THUMB_ADDR(addr)	((addr) & 1)
 #define MAKE_THUMB_ADDR(addr)	((addr) | 1)
 #define UNMAKE_THUMB_ADDR(addr) ((addr) & ~1)
-
-#define SWAP_TARGET_AND_HOST(buffer,len) 				\
-  do									\
-    {									\
-      if (TARGET_BYTE_ORDER != HOST_BYTE_ORDER)				\
-	{								\
-	  char tmp;							\
-	  char *p = (char *)(buffer);					\
-	  char *q = ((char *)(buffer)) + len - 1;		   	\
-	  for (; p < q; p++, q--)				 	\
-	    {								\
-	      tmp = *q;							\
-	      *q = *p;							\
-	      *p = tmp;							\
-	    }								\
-	}								\
-    }									\
-  while (0)
 
 /* Will a function return an aggregate type in memory or in a
    register?  Return 0 if an aggregate type can be returned in a
@@ -390,6 +375,10 @@ thumb_skip_prologue (CORE_ADDR pc, CORE_ADDR func_end)
 	{
 	  findmask |= 2;  /* setting of r7 found */
 	}
+      else if (findmask == (4+2+1))
+	{
+	  break;	/* We have found one of each type of prologue instruction */
+	}
       else
 	continue;	/* something in the prolog that we don't care about or some
 	  		   instruction from outside the prolog scheduled here for optimization */
@@ -416,15 +405,24 @@ arm_skip_prologue (CORE_ADDR pc)
   unsigned long inst;
   CORE_ADDR skip_pc;
   CORE_ADDR func_addr, func_end;
+  char *func_name;
   struct symtab_and_line sal;
 
   /* See what the symbol table says.  */
 
-  if (find_pc_partial_function (pc, NULL, &func_addr, &func_end))
+  if (find_pc_partial_function (pc, &func_name, &func_addr, &func_end))
     {
-      sal = find_pc_line (func_addr, 0);
-      if ((sal.line != 0) && (sal.end < func_end))
-	return sal.end;
+      struct symbol *sym;
+
+      /* Found a function.  */
+      sym = lookup_symbol (func_name, NULL, VAR_NAMESPACE, NULL, NULL);
+      if (sym && SYMBOL_LANGUAGE (sym) != language_asm)
+        {
+	  /* Don't use this trick for assembly source files. */
+	  sal = find_pc_line (func_addr, 0);
+	  if ((sal.line != 0) && (sal.end < func_end))
+	    return sal.end;
+        }
     }
 
   /* Check if this is Thumb code.  */
@@ -539,7 +537,7 @@ thumb_scan_prologue (struct frame_info *fi)
      frame pointer, adjust the stack pointer, and save registers.
      Do this until all basic prolog instructions are found.  */
 
-  fi->framesize = 0;
+  fi->extra_info->framesize = 0;
   for (current_pc = prologue_start;
        (current_pc < prologue_end) && ((findmask & 7) != 7);
        current_pc += 2)
@@ -562,8 +560,9 @@ thumb_scan_prologue (struct frame_info *fi)
 	  for (regno = LR_REGNUM; regno >= 0; regno--)
 	    if (mask & (1 << regno))
 	      {
-		fi->framesize += 4;
-		fi->fsr.regs[saved_reg[regno]] = -(fi->framesize);
+		fi->extra_info->framesize += 4;
+		fi->saved_regs[saved_reg[regno]] =
+		  -(fi->extra_info->framesize);
 		saved_reg[regno] = regno;	/* reset saved register map */
 	      }
 	}
@@ -577,22 +576,23 @@ thumb_scan_prologue (struct frame_info *fi)
 	  offset = (insn & 0x7f) << 2;	/* get scaled offset */
 	  if (insn & 0x80)	/* is it signed? (==subtracting) */
 	    {
-	      fi->frameoffset += offset;
+	      fi->extra_info->frameoffset += offset;
 	      offset = -offset;
 	    }
-	  fi->framesize -= offset;
+	  fi->extra_info->framesize -= offset;
 	}
       else if ((insn & 0xff00) == 0xaf00)	/* add r7, sp, #imm */
 	{
 	  findmask |= 2;  /* setting of r7 found */
-	  fi->framereg = THUMB_FP_REGNUM;
-	  fi->frameoffset = (insn & 0xff) << 2;		/* get scaled offset */
+	  fi->extra_info->framereg = THUMB_FP_REGNUM;
+	  /* get scaled offset */
+	  fi->extra_info->frameoffset = (insn & 0xff) << 2;
 	}
       else if (insn == 0x466f)			/* mov r7, sp */
 	{
 	  findmask |= 2;  /* setting of r7 found */
-	  fi->framereg = THUMB_FP_REGNUM;
-	  fi->frameoffset = 0;
+	  fi->extra_info->framereg = THUMB_FP_REGNUM;
+	  fi->extra_info->frameoffset = 0;
 	  saved_reg[THUMB_FP_REGNUM] = SP_REGNUM;
 	}
       else if ((insn & 0xffc0) == 0x4640)	/* mov r0-r7, r8-r15 */
@@ -632,11 +632,11 @@ check_prologue_cache (struct frame_info *fi)
 
   if (fi->pc == prologue_cache.pc)
     {
-      fi->framereg = prologue_cache.framereg;
-      fi->framesize = prologue_cache.framesize;
-      fi->frameoffset = prologue_cache.frameoffset;
-      for (i = 0; i <= NUM_REGS; i++)
-	fi->fsr.regs[i] = prologue_cache.fsr.regs[i];
+      fi->extra_info->framereg = prologue_cache.extra_info->framereg;
+      fi->extra_info->framesize = prologue_cache.extra_info->framesize;
+      fi->extra_info->frameoffset = prologue_cache.extra_info->frameoffset;
+      for (i = 0; i < NUM_REGS + NUM_PSEUDO_REGS; i++)
+	fi->saved_regs[i] = prologue_cache.saved_regs[i];
       return 1;
     }
   else
@@ -652,12 +652,12 @@ save_prologue_cache (struct frame_info *fi)
   int i;
 
   prologue_cache.pc = fi->pc;
-  prologue_cache.framereg = fi->framereg;
-  prologue_cache.framesize = fi->framesize;
-  prologue_cache.frameoffset = fi->frameoffset;
+  prologue_cache.extra_info->framereg = fi->extra_info->framereg;
+  prologue_cache.extra_info->framesize = fi->extra_info->framesize;
+  prologue_cache.extra_info->frameoffset = fi->extra_info->frameoffset;
 
-  for (i = 0; i <= NUM_REGS; i++)
-    prologue_cache.fsr.regs[i] = fi->fsr.regs[i];
+  for (i = 0; i < NUM_REGS + NUM_PSEUDO_REGS; i++)
+    prologue_cache.saved_regs[i] = fi->saved_regs[i];
 }
 
 
@@ -732,6 +732,7 @@ static void
 arm_scan_prologue (struct frame_info *fi)
 {
   int regno, sp_offset, fp_offset;
+  LONGEST return_value;
   CORE_ADDR prologue_start, prologue_end, current_pc;
 
   /* Check if this function is already in the cache of frame information. */
@@ -739,9 +740,9 @@ arm_scan_prologue (struct frame_info *fi)
     return;
 
   /* Assume there is no frame until proven otherwise.  */
-  fi->framereg = SP_REGNUM;
-  fi->framesize = 0;
-  fi->frameoffset = 0;
+  fi->extra_info->framereg = SP_REGNUM;
+  fi->extra_info->framesize = 0;
+  fi->extra_info->frameoffset = 0;
 
   /* Check for Thumb prologue.  */
   if (arm_pc_is_thumb (fi->pc))
@@ -796,9 +797,13 @@ arm_scan_prologue (struct frame_info *fi)
     {
       /* Get address of the stmfd in the prologue of the callee; the saved
          PC is the address of the stmfd + 8.  */
-      prologue_start = ADDR_BITS_REMOVE (read_memory_integer (fi->frame, 4))
-	- 8;
-      prologue_end = prologue_start + 64;	/* See above. */
+      if (!safe_read_memory_integer (fi->frame, 4,  &return_value))
+        return;
+      else
+        {
+          prologue_start = ADDR_BITS_REMOVE (return_value) - 8;
+          prologue_end = prologue_start + 64;   /* See above. */
+        }
     }
 
   /* Now search the prologue looking for instructions that set up the
@@ -812,98 +817,104 @@ arm_scan_prologue (struct frame_info *fi)
      traceback.
 
      In the APCS, the prologue should start with  "mov ip, sp" so
-     if we don't see this as the first insn, we will stop.  */
+     if we don't see this as the first insn, we will stop.  [Note:
+     This doesn't seem to be true any longer, so it's now an optional
+     part of the prologue.  - Kevin Buettner, 2001-11-20]  */
 
   sp_offset = fp_offset = 0;
 
   if (read_memory_unsigned_integer (prologue_start, 4)
       == 0xe1a0c00d)		/* mov ip, sp */
+    current_pc = prologue_start + 4;
+  else
+    current_pc = prologue_start;
+
+  for (; current_pc < prologue_end; current_pc += 4)
     {
-      for (current_pc = prologue_start + 4; current_pc < prologue_end;
-	   current_pc += 4)
+      unsigned int insn = read_memory_unsigned_integer (current_pc, 4);
+
+      if ((insn & 0xffff0000) == 0xe92d0000)
+	/* stmfd sp!, {..., fp, ip, lr, pc}
+	   or
+	   stmfd sp!, {a1, a2, a3, a4}  */
 	{
-	  unsigned int insn = read_memory_unsigned_integer (current_pc, 4);
+	  int mask = insn & 0xffff;
 
-	  if ((insn & 0xffff0000) == 0xe92d0000)
-	    /* stmfd sp!, {..., fp, ip, lr, pc}
-	       or
-	       stmfd sp!, {a1, a2, a3, a4}  */
-	    {
-	      int mask = insn & 0xffff;
+	  /* Calculate offsets of saved registers. */
+	  for (regno = PC_REGNUM; regno >= 0; regno--)
+	    if (mask & (1 << regno))
+	      {
+		sp_offset -= 4;
+		fi->saved_regs[regno] = sp_offset;
+	      }
+	}
+      else if ((insn & 0xfffff000) == 0xe24cb000)	/* sub fp, ip #n */
+	{
+	  unsigned imm = insn & 0xff;	/* immediate value */
+	  unsigned rot = (insn & 0xf00) >> 7;	/* rotate amount */
+	  imm = (imm >> rot) | (imm << (32 - rot));
+	  fp_offset = -imm;
+	  fi->extra_info->framereg = FP_REGNUM;
+	}
+      else if ((insn & 0xfffff000) == 0xe24dd000)	/* sub sp, sp #n */
+	{
+	  unsigned imm = insn & 0xff;	/* immediate value */
+	  unsigned rot = (insn & 0xf00) >> 7;	/* rotate amount */
+	  imm = (imm >> rot) | (imm << (32 - rot));
+	  sp_offset -= imm;
+	}
+      else if ((insn & 0xffff7fff) == 0xed6d0103)	/* stfe f?, [sp, -#c]! */
+	{
+	  sp_offset -= 12;
+	  regno = F0_REGNUM + ((insn >> 12) & 0x07);
+	  fi->saved_regs[regno] = sp_offset;
+	}
+      else if ((insn & 0xffbf0fff) == 0xec2d0200)	/* sfmfd f0, 4, [sp!] */
+	{
+	  int n_saved_fp_regs;
+	  unsigned int fp_start_reg, fp_bound_reg;
 
-	      /* Calculate offsets of saved registers. */
-	      for (regno = PC_REGNUM; regno >= 0; regno--)
-		if (mask & (1 << regno))
-		  {
-		    sp_offset -= 4;
-		    fi->fsr.regs[regno] = sp_offset;
-		  }
-	    }
-	  else if ((insn & 0xfffff000) == 0xe24cb000)	/* sub fp, ip #n */
+	  if ((insn & 0x800) == 0x800)	/* N0 is set */
 	    {
-	      unsigned imm = insn & 0xff;	/* immediate value */
-	      unsigned rot = (insn & 0xf00) >> 7;	/* rotate amount */
-	      imm = (imm >> rot) | (imm << (32 - rot));
-	      fp_offset = -imm;
-	      fi->framereg = FP_REGNUM;
+	      if ((insn & 0x40000) == 0x40000)	/* N1 is set */
+		n_saved_fp_regs = 3;
+	      else
+		n_saved_fp_regs = 1;
 	    }
-	  else if ((insn & 0xfffff000) == 0xe24dd000)	/* sub sp, sp #n */
+	  else
 	    {
-	      unsigned imm = insn & 0xff;	/* immediate value */
-	      unsigned rot = (insn & 0xf00) >> 7;	/* rotate amount */
-	      imm = (imm >> rot) | (imm << (32 - rot));
-	      sp_offset -= imm;
+	      if ((insn & 0x40000) == 0x40000)	/* N1 is set */
+		n_saved_fp_regs = 2;
+	      else
+		n_saved_fp_regs = 4;
 	    }
-	  else if ((insn & 0xffff7fff) == 0xed6d0103)	/* stfe f?, [sp, -#c]! */
+
+	  fp_start_reg = F0_REGNUM + ((insn >> 12) & 0x7);
+	  fp_bound_reg = fp_start_reg + n_saved_fp_regs;
+	  for (; fp_start_reg < fp_bound_reg; fp_start_reg++)
 	    {
 	      sp_offset -= 12;
-	      regno = F0_REGNUM + ((insn >> 12) & 0x07);
-	      fi->fsr.regs[regno] = sp_offset;
+	      fi->saved_regs[fp_start_reg++] = sp_offset;
 	    }
-	  else if ((insn & 0xffbf0fff) == 0xec2d0200)	/* sfmfd f0, 4, [sp!] */
-	    {
-	      int n_saved_fp_regs;
-	      unsigned int fp_start_reg, fp_bound_reg;
-
-	      if ((insn & 0x800) == 0x800)	/* N0 is set */
-		{
-		  if ((insn & 0x40000) == 0x40000)	/* N1 is set */
-		    n_saved_fp_regs = 3;
-		  else
-		    n_saved_fp_regs = 1;
-		}
-	      else
-		{
-		  if ((insn & 0x40000) == 0x40000)	/* N1 is set */
-		    n_saved_fp_regs = 2;
-		  else
-		    n_saved_fp_regs = 4;
-		}
-
-	      fp_start_reg = F0_REGNUM + ((insn >> 12) & 0x7);
-	      fp_bound_reg = fp_start_reg + n_saved_fp_regs;
-	      for (; fp_start_reg < fp_bound_reg; fp_start_reg++)
-		{
-		  sp_offset -= 12;
-		  fi->fsr.regs[fp_start_reg++] = sp_offset;
-		}
-	    }
-	  else if ((insn & 0xf0000000) != 0xe0000000)
-	    break;	/* Condition not true, exit early */
-	  else if ((insn & 0xfe200000) == 0xe8200000) /* ldm? */
-	    break;	/* Don't scan past a block load */
-	  else
-	    /* The optimizer might shove anything into the prologue,
-	       so we just skip what we don't recognize. */
-	    continue;
 	}
+      else if ((insn & 0xf0000000) != 0xe0000000)
+	break;	/* Condition not true, exit early */
+      else if ((insn & 0xfe200000) == 0xe8200000) /* ldm? */
+	break;	/* Don't scan past a block load */
+      else
+	/* The optimizer might shove anything into the prologue,
+	   so we just skip what we don't recognize. */
+	continue;
     }
 
   /* The frame size is just the negative of the offset (from the original SP)
      of the last thing thing we pushed on the stack.  The frame offset is
      [new FP] - [new SP].  */
-  fi->framesize = -sp_offset;
-  fi->frameoffset = fp_offset - sp_offset;
+  fi->extra_info->framesize = -sp_offset;
+  if (fi->extra_info->framereg == FP_REGNUM)
+    fi->extra_info->frameoffset = fp_offset - sp_offset;
+  else
+    fi->extra_info->frameoffset = 0;
 
   save_prologue_cache (fi);
 }
@@ -925,8 +936,8 @@ arm_find_callers_reg (struct frame_info *fi, int regnum)
       return generic_read_register_dummy (fi->pc, fi->frame, regnum);
     else
 #endif
-    if (fi->fsr.regs[regnum] != 0)
-      return read_memory_integer (fi->fsr.regs[regnum],
+    if (fi->saved_regs[regnum] != 0)
+      return read_memory_integer (fi->saved_regs[regnum],
 				  REGISTER_RAW_SIZE (regnum));
   return read_register (regnum);
 }
@@ -969,8 +980,7 @@ arm_frame_chain (struct frame_info *fi)
       return 0;			/* in _start fn, don't chain further */
 #endif
   CORE_ADDR caller_pc, fn_start;
-  struct frame_info caller_fi;
-  int framereg = fi->framereg;
+  int framereg = fi->extra_info->framereg;
 
   if (fi->pc < LOWEST_PC)
     return 0;
@@ -985,12 +995,31 @@ arm_frame_chain (struct frame_info *fi)
      the frame register of the caller is different from ours.
      So we must scan the prologue of the caller to determine its
      frame register number. */
+  /* XXX Fixme, we should try to do this without creating a temporary
+     caller_fi.  */
   if (arm_pc_is_thumb (caller_pc) != arm_pc_is_thumb (fi->pc))
     {
+      struct frame_info caller_fi;
+      struct cleanup *old_chain;
+
+      /* Create a temporary frame suitable for scanning the caller's
+	 prologue.  (Ugh.)  */
       memset (&caller_fi, 0, sizeof (caller_fi));
+      caller_fi.extra_info = (struct frame_extra_info *)
+	xcalloc (1, sizeof (struct frame_extra_info));
+      old_chain = make_cleanup (xfree, caller_fi.extra_info);
+      caller_fi.saved_regs = (CORE_ADDR *)
+	xcalloc (1, SIZEOF_FRAME_SAVED_REGS);
+      make_cleanup (xfree, caller_fi.saved_regs);
+
+      /* Now, scan the prologue and obtain the frame register.  */
       caller_fi.pc = caller_pc;
       arm_scan_prologue (&caller_fi);
-      framereg = caller_fi.framereg;
+      framereg = caller_fi.extra_info->framereg;
+
+      /* Deallocate the storage associated with the temporary frame
+	 created above.  */
+      do_cleanups (old_chain);
     }
 
   /* If the caller used a frame register, return its value.
@@ -998,7 +1027,7 @@ arm_frame_chain (struct frame_info *fi)
   if (framereg == FP_REGNUM || framereg == THUMB_FP_REGNUM)
     return arm_find_callers_reg (fi, framereg);
   else
-    return fi->frame + fi->framesize;
+    return fi->frame + fi->extra_info->framesize;
 }
 
 /* This function actually figures out the frame address for a given pc
@@ -1014,11 +1043,22 @@ void
 arm_init_extra_frame_info (int fromleaf, struct frame_info *fi)
 {
   int reg;
+  CORE_ADDR sp;
+
+  if (fi->saved_regs == NULL)
+    frame_saved_regs_zalloc (fi);
+
+  fi->extra_info = (struct frame_extra_info *)
+    frame_obstack_alloc (sizeof (struct frame_extra_info));
+
+  fi->extra_info->framesize = 0;
+  fi->extra_info->frameoffset = 0;
+  fi->extra_info->framereg = 0;
 
   if (fi->next)
     fi->pc = FRAME_SAVED_PC (fi->next);
 
-  memset (fi->fsr.regs, '\000', sizeof fi->fsr.regs);
+  memset (fi->saved_regs, '\000', sizeof fi->saved_regs);
 
 #if 0				/* FIXME: enable this code if we convert to new call dummy scheme.  */
   if (PC_IN_CALL_DUMMY (fi->pc, fi->frame, fi->frame))
@@ -1026,12 +1066,20 @@ arm_init_extra_frame_info (int fromleaf, struct frame_info *fi)
       /* We need to setup fi->frame here because run_stack_dummy gets it wrong
          by assuming it's always FP.  */
       fi->frame = generic_read_register_dummy (fi->pc, fi->frame, SP_REGNUM);
-      fi->framesize = 0;
-      fi->frameoffset = 0;
+      fi->extra_info->framesize = 0;
+      fi->extra_info->frameoffset = 0;
       return;
     }
   else
 #endif
+
+  /* Compute stack pointer for this frame.  We use this value for both the
+     sigtramp and call dummy cases.  */
+  if (!fi->next)
+    sp = read_sp();
+  else
+    sp = (fi->next->frame - fi->next->extra_info->frameoffset
+	  + fi->next->extra_info->framesize);
 
   /* Determine whether or not we're in a sigtramp frame. 
      Unfortunately, it isn't sufficient to test
@@ -1043,27 +1091,45 @@ arm_init_extra_frame_info (int fromleaf, struct frame_info *fi)
      Note: If an ARM IN_SIGTRAMP method ever needs to compare against
      the name of the function, the code below will have to be changed
      to first fetch the name of the function and then pass this name
-     to IN_SIGTRAMP. */
+     to IN_SIGTRAMP.  */
 
   if (SIGCONTEXT_REGISTER_ADDRESS_P () 
-      && (fi->signal_handler_caller || IN_SIGTRAMP (fi->pc, 0)))
+      && (fi->signal_handler_caller || IN_SIGTRAMP (fi->pc, (char *)0)))
     {
-      CORE_ADDR sp;
-
-      if (!fi->next)
-	sp = read_sp();
-      else
-	sp = fi->next->frame - fi->next->frameoffset + fi->next->framesize;
-
       for (reg = 0; reg < NUM_REGS; reg++)
-	fi->fsr.regs[reg] = SIGCONTEXT_REGISTER_ADDRESS (sp, fi->pc, reg);
+	fi->saved_regs[reg] = SIGCONTEXT_REGISTER_ADDRESS (sp, fi->pc, reg);
 
       /* FIXME: What about thumb mode? */
-      fi->framereg = SP_REGNUM;
-      fi->frame = read_memory_integer (fi->fsr.regs[fi->framereg], 4);
-      fi->framesize = 0;
-      fi->frameoffset = 0;
+      fi->extra_info->framereg = SP_REGNUM;
+      fi->frame =
+	read_memory_integer (fi->saved_regs[fi->extra_info->framereg],
+			     REGISTER_RAW_SIZE (fi->extra_info->framereg));
+      fi->extra_info->framesize = 0;
+      fi->extra_info->frameoffset = 0;
 
+    }
+  else if (PC_IN_CALL_DUMMY (fi->pc, sp, fi->frame))
+    {
+      CORE_ADDR rp;
+      CORE_ADDR callers_sp;
+
+      /* Set rp point at the high end of the saved registers.  */
+      rp = fi->frame - REGISTER_SIZE;
+
+      /* Fill in addresses of saved registers.  */
+      fi->saved_regs[PS_REGNUM] = rp;
+      rp -= REGISTER_RAW_SIZE (PS_REGNUM);
+      for (reg = PC_REGNUM; reg >= 0; reg--)
+	{
+	  fi->saved_regs[reg] = rp;
+	  rp -= REGISTER_RAW_SIZE (reg);
+	}
+
+      callers_sp = read_memory_integer (fi->saved_regs[SP_REGNUM],
+                                        REGISTER_RAW_SIZE (SP_REGNUM));
+      fi->extra_info->framereg = FP_REGNUM;
+      fi->extra_info->framesize = callers_sp - sp;
+      fi->extra_info->frameoffset = fi->frame - sp;
     }
   else
     {
@@ -1071,14 +1137,16 @@ arm_init_extra_frame_info (int fromleaf, struct frame_info *fi)
 
       if (!fi->next)
 	/* this is the innermost frame? */
-	fi->frame = read_register (fi->framereg);
-      else if (fi->framereg == FP_REGNUM || fi->framereg == THUMB_FP_REGNUM)
+	fi->frame = read_register (fi->extra_info->framereg);
+      else if (fi->extra_info->framereg == FP_REGNUM
+	       || fi->extra_info->framereg == THUMB_FP_REGNUM)
 	{
 	  /* not the innermost frame */
 	  /* If we have an FP, the callee saved it. */
-	  if (fi->next->fsr.regs[fi->framereg] != 0)
+	  if (fi->next->saved_regs[fi->extra_info->framereg] != 0)
 	    fi->frame =
-	      read_memory_integer (fi->next->fsr.regs[fi->framereg], 4);
+	      read_memory_integer (fi->next
+				   ->saved_regs[fi->extra_info->framereg], 4);
 	  else if (fromleaf)
 	    /* If we were called by a frameless fn.  then our frame is
 	       still in the frame pointer register on the board... */
@@ -1088,8 +1156,9 @@ arm_init_extra_frame_info (int fromleaf, struct frame_info *fi)
       /* Calculate actual addresses of saved registers using offsets
          determined by arm_scan_prologue.  */
       for (reg = 0; reg < NUM_REGS; reg++)
-	if (fi->fsr.regs[reg] != 0)
-	  fi->fsr.regs[reg] += fi->frame + fi->framesize - fi->frameoffset;
+	if (fi->saved_regs[reg] != 0)
+	  fi->saved_regs[reg] += (fi->frame + fi->extra_info->framesize
+				  - fi->extra_info->frameoffset);
     }
 }
 
@@ -1110,6 +1179,13 @@ arm_frame_saved_pc (struct frame_info *fi)
     return generic_read_register_dummy (fi->pc, fi->frame, PC_REGNUM);
   else
 #endif
+  if (PC_IN_CALL_DUMMY (fi->pc, fi->frame - fi->extra_info->frameoffset,
+			fi->frame))
+    {
+      return read_memory_integer (fi->saved_regs[PC_REGNUM],
+				  REGISTER_RAW_SIZE (PC_REGNUM));
+    }
+  else
     {
       CORE_ADDR pc = arm_find_callers_reg (fi, LR_REGNUM);
       return IS_THUMB_ADDR (pc) ? UNMAKE_THUMB_ADDR (pc) : pc;
@@ -1131,10 +1207,13 @@ arm_target_read_fp (void)
 /* Calculate the frame offsets of the saved registers (ARM version).  */
 
 void
-arm_frame_find_saved_regs (struct frame_info *fi,
-			   struct frame_saved_regs *regaddr)
+arm_frame_init_saved_regs (struct frame_info *fip)
 {
-  memcpy (regaddr, &fi->fsr, sizeof (struct frame_saved_regs));
+
+  if (fip->saved_regs)
+    return;
+
+  arm_init_extra_frame_info (0, fip);
 }
 
 void
@@ -1156,13 +1235,15 @@ arm_push_dummy_frame (void)
      instruction stores the PC, it stores the address of the stm
      instruction itself plus 12.  */
   fp = sp = push_word (sp, prologue_start + 12);
-  sp = push_word (sp, read_register (PC_REGNUM));	/* FIXME: was PS_REGNUM */
-  sp = push_word (sp, old_sp);
-  sp = push_word (sp, read_register (FP_REGNUM));
 
-  for (regnum = 10; regnum >= 0; regnum--)
+  /* Push the processor status.  */
+  sp = push_word (sp, read_register (PS_REGNUM));
+
+  /* Push all 16 registers starting with r15.  */
+  for (regnum = PC_REGNUM; regnum >= 0; regnum--)
     sp = push_word (sp, read_register (regnum));
 
+  /* Update fp (for both Thumb and ARM) and sp.  */
   write_register (FP_REGNUM, fp);
   write_register (THUMB_FP_REGNUM, fp);
   write_register (SP_REGNUM, sp);
@@ -1185,7 +1266,7 @@ arm_push_dummy_frame (void)
 
 void
 arm_fix_call_dummy (char *dummy, CORE_ADDR pc, CORE_ADDR fun, int nargs,
-		    value_ptr *args, struct type *type, int gcc_p)
+		    struct value **args, struct type *type, int gcc_p)
 {
   static short thumb_dummy[4] =
   {
@@ -1254,7 +1335,7 @@ arm_call_dummy_breakpoint_offset (void)
    general registers and/or on the stack.  */
 
 CORE_ADDR
-arm_push_arguments (int nargs, value_ptr * args, CORE_ADDR sp,
+arm_push_arguments (int nargs, struct value **args, CORE_ADDR sp,
 		    int struct_return, CORE_ADDR struct_addr)
 {
   char *fp;
@@ -1308,7 +1389,6 @@ arm_push_arguments (int nargs, value_ptr * args, CORE_ADDR sp,
     {
       int len;
       char *val;
-      double dbl_arg;
       CORE_ADDR regval;
       enum type_code typecode;
       struct type *arg_type, *target_type;
@@ -1328,22 +1408,11 @@ arm_push_arguments (int nargs, value_ptr * args, CORE_ADDR sp,
          calling the function.  */
       if (TYPE_CODE_FLT == typecode && REGISTER_SIZE == len)
 	{
-	  float f;
-	  double d;
-	  char * bufo = (char *) &d;
-	  char * bufd = (char *) &dbl_arg;
-
-	  len = sizeof (double);
-	  f = *(float *) val;
-	  SWAP_TARGET_AND_HOST (&f, sizeof (float));  /* adjust endianess */
-	  d = f;
-	  /* We must revert the longwords so they get loaded into the
-	     the right registers. */
-	  memcpy (bufd, bufo + len / 2, len / 2);
-	  SWAP_TARGET_AND_HOST (bufd, len / 2);  /* adjust endianess */
-	  memcpy (bufd + len / 2, bufo, len / 2);
-	  SWAP_TARGET_AND_HOST (bufd + len / 2, len / 2); /* adjust endianess */
-	  val = (char *) &dbl_arg;
+	  DOUBLEST dblval;
+	  dblval = extract_floating (val, len);
+	  len = TARGET_DOUBLE_BIT / TARGET_CHAR_BIT;
+	  val = alloca (len);
+	  store_floating (val, len, dblval);
 	}
 #if 1
       /* I don't know why this code was disable. The only logical use
@@ -1389,45 +1458,26 @@ arm_push_arguments (int nargs, value_ptr * args, CORE_ADDR sp,
   return sp;
 }
 
+/* Pop the current frame.  So long as the frame info has been initialized
+   properly (see arm_init_extra_frame_info), this code works for dummy frames
+   as well as regular frames.  I.e, there's no need to have a special case
+   for dummy frames.  */
 void
 arm_pop_frame (void)
 {
   int regnum;
   struct frame_info *frame = get_current_frame ();
+  CORE_ADDR old_SP = (frame->frame - frame->extra_info->frameoffset
+		      + frame->extra_info->framesize);
 
-  if (!PC_IN_CALL_DUMMY(frame->pc, frame->frame, read_fp()))
-    {
-      CORE_ADDR old_SP;
+  for (regnum = 0; regnum < NUM_REGS; regnum++)
+    if (frame->saved_regs[regnum] != 0)
+      write_register (regnum,
+		  read_memory_integer (frame->saved_regs[regnum],
+				       REGISTER_RAW_SIZE (regnum)));
 
-      old_SP = read_register (frame->framereg);
-      for (regnum = 0; regnum < NUM_REGS; regnum++)
-        if (frame->fsr.regs[regnum] != 0)
-          write_register (regnum,
-		      read_memory_integer (frame->fsr.regs[regnum], 4));
-
-      write_register (PC_REGNUM, FRAME_SAVED_PC (frame));
-      write_register (SP_REGNUM, old_SP);
-    }
-  else
-    {
-      CORE_ADDR sp;
-
-      sp = read_register (FP_REGNUM);
-      sp -= sizeof(CORE_ADDR); /* we don't care about this first word */
-
-      write_register (PC_REGNUM, read_memory_integer (sp, 4));
-      sp -= sizeof(CORE_ADDR);
-      write_register (SP_REGNUM, read_memory_integer (sp, 4));
-      sp -= sizeof(CORE_ADDR);
-      write_register (FP_REGNUM, read_memory_integer (sp, 4));
-      sp -= sizeof(CORE_ADDR);
-
-      for (regnum = 10; regnum >= 0; regnum--)
-        {
-          write_register (regnum, read_memory_integer (sp, 4));
-          sp -= sizeof(CORE_ADDR);
-        }
-    }
+  write_register (PC_REGNUM, FRAME_SAVED_PC (frame));
+  write_register (SP_REGNUM, old_SP);
 
   flush_cached_frames ();
 }
@@ -1464,76 +1514,47 @@ arm_float_info (void)
   print_fpu_flags (status);
 }
 
-#if 0
-/* FIXME:  The generated assembler works but sucks.  Instead of using
-   r0, r1 it pushes them on the stack, then loads them into r3, r4 and
-   uses those registers.  I must be missing something.  ScottB  */
-
-void
-convert_from_extended (void *ptr, void *dbl)
+struct type *
+arm_register_type (int regnum)
 {
-  __asm__ ("
-	   ldfe f0,[%0]
-	   stfd f0,[%1] "
-:				/* no output */
-:	   "r" (ptr), "r" (dbl));
+  if (regnum >= F0_REGNUM && regnum < F0_REGNUM + NUM_FREGS)
+    {
+      if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
+	return builtin_type_arm_ext_big;
+      else
+	return builtin_type_arm_ext_littlebyte_bigword;
+    }
+  else
+    return builtin_type_int32;
 }
 
-void
-convert_to_extended (void *dbl, void *ptr)
-{
-  __asm__ ("
-	   ldfd f0,[%0]
-	   stfe f0,[%1] "
-:				/* no output */
-:	   "r" (dbl), "r" (ptr));
-}
-#else
+/* NOTE: cagney/2001-08-20: Both convert_from_extended() and
+   convert_to_extended() use floatformat_arm_ext_littlebyte_bigword.
+   It is thought that this is is the floating-point register format on
+   little-endian systems.  */
+
 static void
 convert_from_extended (void *ptr, void *dbl)
 {
-  *(double *) dbl = *(double *) ptr;
+  DOUBLEST d;
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
+    floatformat_to_doublest (&floatformat_arm_ext_big, ptr, &d);
+  else
+    floatformat_to_doublest (&floatformat_arm_ext_littlebyte_bigword,
+			     ptr, &d);
+  floatformat_from_doublest (TARGET_DOUBLE_FORMAT, &d, dbl);
 }
 
 void
 convert_to_extended (void *dbl, void *ptr)
 {
-  *(double *) ptr = *(double *) dbl;
-}
-#endif
-
-/* Nonzero if register N requires conversion from raw format to
-   virtual format.  */
-
-int
-arm_register_convertible (unsigned int regnum)
-{
-  return ((regnum - F0_REGNUM) < 8);
-}
-
-/* Convert data from raw format for register REGNUM in buffer FROM to
-   virtual format with type TYPE in buffer TO.  */
-
-void
-arm_register_convert_to_virtual (unsigned int regnum, struct type *type,
-				 void *from, void *to)
-{
-  double val;
-
-  convert_from_extended (from, &val);
-  store_floating (to, TYPE_LENGTH (type), val);
-}
-
-/* Convert data from virtual format with type TYPE in buffer FROM to
-   raw format for register REGNUM in buffer TO.  */
-
-void
-arm_register_convert_to_raw (unsigned int regnum, struct type *type,
-			     void *from, void *to)
-{
-  double val = extract_floating (from, TYPE_LENGTH (type));
-
-  convert_to_extended (&val, to);
+  DOUBLEST d;
+  floatformat_to_doublest (TARGET_DOUBLE_FORMAT, ptr, &d);
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
+    floatformat_from_doublest (&floatformat_arm_ext_big, &d, dbl);
+  else
+    floatformat_from_doublest (&floatformat_arm_ext_littlebyte_bigword,
+			       &d, dbl);
 }
 
 static int
@@ -1578,6 +1599,7 @@ condition_true (unsigned long cond, unsigned long status_reg)
   return 1;
 }
 
+/* Support routines for single stepping.  Calculate the next PC value.  */
 #define submask(x) ((1L << ((x) + 1)) - 1)
 #define bit(obj,st) (((obj) >> (st)) & 1)
 #define bits(obj,st,fn) (((obj) >> (st)) & submask ((fn) - (st)))
@@ -1912,6 +1934,31 @@ arm_get_next_pc (CORE_ADDR pc)
   return nextpc;
 }
 
+/* single_step() is called just before we want to resume the inferior,
+   if we want to single-step it but there is no hardware or kernel
+   single-step support.  We find the target of the coming instruction
+   and breakpoint it.
+
+   single_step is also called just after the inferior stops.  If we had
+   set up a simulated single-step, we undo our damage.  */
+
+void
+arm_software_single_step (ignore, insert_bpt)
+     int ignore; /* Signal, not needed */
+     int insert_bpt;
+{
+  static int next_pc; /* State between setting and unsetting. */
+  static char break_mem[BREAKPOINT_MAX]; /* Temporary storage for mem@bpt */
+
+  if (insert_bpt)
+    {
+      next_pc = arm_get_next_pc (read_register (PC_REGNUM));
+      target_insert_breakpoint (next_pc, break_mem);
+    }
+  else
+    target_remove_breakpoint (next_pc, break_mem);
+}
+
 #include "bfd-in2.h"
 #include "libcoff.h"
 
@@ -1948,7 +1995,7 @@ gdb_print_insn_arm (bfd_vma memaddr, disassemble_info *info)
   else
     info->symbols = NULL;
 
-  if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+  if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
     return print_insn_big_arm (memaddr, info);
   else
     return print_insn_little_arm (memaddr, info);
@@ -1967,7 +2014,7 @@ arm_breakpoint_from_pc (CORE_ADDR *pcptr, int *lenptr)
 {
   if (arm_pc_is_thumb (*pcptr) || arm_pc_is_thumb_dummy (*pcptr))
     {
-      if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+      if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
 	{
 	  static char thumb_breakpoint[] = THUMB_BE_BREAKPOINT;
 	  *pcptr = UNMAKE_THUMB_ADDR (*pcptr);
@@ -1984,7 +2031,7 @@ arm_breakpoint_from_pc (CORE_ADDR *pcptr, int *lenptr)
     }
   else
     {
-      if (TARGET_BYTE_ORDER == BIG_ENDIAN)
+      if (TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
 	{
 	  static char arm_breakpoint[] = ARM_BE_BREAKPOINT;
 	  *lenptr = sizeof (arm_breakpoint);
@@ -2075,6 +2122,13 @@ set_disassembly_flavor_sfunc (char *args, int from_tty,
   set_disassembly_flavor ();
 }
 
+/* Return the ARM register name corresponding to register I.  */
+char *
+arm_register_name(int i)
+{
+  return arm_register_names[i];
+}
+
 static void
 set_disassembly_flavor (void)
 {
@@ -2122,6 +2176,49 @@ arm_othernames (char *names, int n)
 
   disassembly_flavor = valid_flavors[current_option];
   set_disassembly_flavor (); 
+}
+
+/* Fetch, and possibly build, an appropriate link_map_offsets structure
+   for ARM linux targets using the struct offsets defined in <link.h>.
+   Note, however, that link.h is not actually referred to in this file.
+   Instead, the relevant structs offsets were obtained from examining
+   link.h.  (We can't refer to link.h from this file because the host
+   system won't necessarily have it, or if it does, the structs which
+   it defines will refer to the host system, not the target.)  */
+
+struct link_map_offsets *
+arm_linux_svr4_fetch_link_map_offsets (void)
+{
+  static struct link_map_offsets lmo;
+  static struct link_map_offsets *lmp = 0;
+
+  if (lmp == 0)
+    {
+      lmp = &lmo;
+
+      lmo.r_debug_size = 8;	/* Actual size is 20, but this is all we
+                                   need. */
+
+      lmo.r_map_offset = 4;
+      lmo.r_map_size   = 4;
+
+      lmo.link_map_size = 20;	/* Actual size is 552, but this is all we
+                                   need. */
+
+      lmo.l_addr_offset = 0;
+      lmo.l_addr_size   = 4;
+
+      lmo.l_name_offset = 4;
+      lmo.l_name_size   = 4;
+
+      lmo.l_next_offset = 12;
+      lmo.l_next_size   = 4;
+
+      lmo.l_prev_offset = 16;
+      lmo.l_prev_size   = 4;
+    }
+
+    return lmp;
 }
 
 void
@@ -2194,6 +2291,12 @@ The valid values are:\n");
 
   add_com ("othernames", class_obscure, arm_othernames,
 	   "Switch to the next set of register names.");
+
+  /* Fill in the prologue_cache fields.  */
+  prologue_cache.extra_info = (struct frame_extra_info *)
+    xcalloc (1, sizeof (struct frame_extra_info));
+  prologue_cache.saved_regs = (CORE_ADDR *)
+    xcalloc (1, SIZEOF_FRAME_SAVED_REGS);
 }
 
 /* Test whether the coff symbol specific value corresponds to a Thumb

@@ -1,5 +1,5 @@
 /* Kernel Object Display generic routines and callbacks
-   Copyright 1998, 1999 Free Software Foundation, Inc.
+   Copyright 1998, 1999, 2000 Free Software Foundation, Inc.
 
    Written by Fernando Nasser <fnasser@cygnus.com> for Cygnus Solutions.
 
@@ -143,7 +143,7 @@ kod_set_os (char *arg, int from_tty, struct cmd_list_element *command)
   if (old_operating_system)
     {
       delete_cmd (old_operating_system, &infolist);
-      free (old_operating_system);
+      xfree (old_operating_system);
     }
   old_operating_system = xstrdup (operating_system);
 
@@ -175,7 +175,7 @@ kod_set_os (char *arg, int from_tty, struct cmd_list_element *command)
 	p = "Unknown KOD library";
       printf_filtered ("%s - %s\n", operating_system, p);
 
-      free (kodlib);
+      xfree (kodlib);
     }
 }
 

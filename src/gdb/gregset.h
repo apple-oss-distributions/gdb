@@ -1,5 +1,5 @@
 /* Interface for functions using gregset and fpregset types.
-   Copyright 2000 Free Software Foundation, Inc.
+   Copyright 2000, 2002 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -51,5 +51,6 @@ extern void supply_fpregset (gdb_fpregset_t *fpregs);
 
 extern void fill_gregset (gdb_gregset_t *gregs, int regno);
 extern void fill_fpregset (gdb_fpregset_t *fpregs, int regno);
+
 
 #endif

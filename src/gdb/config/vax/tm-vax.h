@@ -1,5 +1,6 @@
 /* Definitions to make GDB run on a vax under 4.2bsd.
-   Copyright 1986, 1987, 1989, 1991, 1993 Free Software Foundation, Inc.
+   Copyright 1986, 1987, 1989, 1991, 1993, 1994, 1996, 1998, 1999, 2000
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,8 +19,9 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
+#include "regcache.h"
 
-#define TARGET_BYTE_ORDER LITTLE_ENDIAN
+#define TARGET_BYTE_ORDER BFD_ENDIAN_LITTLE
 
 /* Offset from address of function to start of its code.
    Zero on most machines.  */
