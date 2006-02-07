@@ -38,6 +38,11 @@
 
 #if defined (NM_NEXTSTEP)
 #include "macosx-nat-infthread.h"
+
+/* Whether to allow inferior function calls to be made or not.
+   translated processes cannot do inferior function calls (or changing
+   the PC in any way) and can terminate the inferior if you try.  */
+int inferior_function_calls_disabled_p = 0;
 #endif
 
 /* NOTE: cagney/2003-04-16: What's the future of this code?
@@ -440,6 +445,10 @@ hand_function_call (struct value *function, struct type *expect_type,
 
 #if defined (NM_NEXTSTEP)
   macosx_setup_registers_before_hand_call ();
+
+  /* FIXME: This really needs to go in the target vector....  */
+  if (inferior_function_calls_disabled_p)
+    error ("Function calls from gdb not possible when debugging translated processes.");
 #endif
 
   /* A cleanup for the inferior status.  Create this AFTER the retbuf

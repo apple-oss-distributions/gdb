@@ -1,3 +1,17 @@
+2005-11-17  Jason Molenda  (jmolenda@apple.com)
+
+	* infcall.c (inferior_function_calls_disabled_p): New global variable
+	to control whether inferior function calls are allowed (should be a
+	target vector entry).
+	(hand_function_call): If inf func calls disabled, throw an error.
+	* infcall.h (inferior_function_calls_disabled_p): Provide extern decl.
+	* objc-lang.h (lookup_objc_class_p): Provide extern decl.
+
+2005-11-17  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (redirect_statics): Also look in the new __IMPORT,
+	__pointers section for non-lazy symbol pointers.
+
 2005-10-31  Jim Ingham  <jingham@apple.com>
 
 	* i386-tdep.c (i386_follow_jump): Use 32 bit math to calculate

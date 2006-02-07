@@ -1,3 +1,19 @@
+2005-12-01  Ronnie Misra  (rgmisra@apple.com)
+
+	* macosx-nat.c (classic_socket_exists_p, attach_to_classic_process):
+	Update to look for new socket filename.
+
+2005-11-17  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat.c (attach_to_classic_process): Disable inferior
+	function calls and objc class lookups when debugging translated 
+	processes.
+
+2005-11-16  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-macosx-thread-status.h (GDB_i386_THREAD_STATE): Update to
+	match xnu's definition.
+
 2005-10-21  Jason Molenda  (jmolenda@apple.com)
 
 	* macosx-nat-dyld-process.c (dyld_libraries_compatible): Modify
