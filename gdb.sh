@@ -105,6 +105,24 @@ case "$architecture_to_use" in
         ;;
 esac
 
+# When running under CodeWarrior we want to invoke a gdb binary
+# specifically intended/qualified for its use.
+
+parent=`ps -Awwwo pid,command | 
+          awk -v ppid=$PPID '{if ($1 == ppid ) {print}}' |
+          sed -e 's,^ *,,' -e 's,[^ ]* *,,'`
+if [ -n "$parent" ]
+then
+  case "$parent" in
+    *CodeWarrior*)
+      if [ -x "${GDBROOT}/usr/libexec/gdb/gdb-for-codewarrior" ]
+      then
+        gdb="${GDBROOT}/usr/libexec/gdb/gdb-for-codewarrior"
+      fi
+    ;;
+  esac
+fi
+
 if [ ! -x "$gdb" ]; then
     echo "Unable to start GDB: cannot find binary in '$gdb'"
     exit 1

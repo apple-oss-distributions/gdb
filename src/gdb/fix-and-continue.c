@@ -1,3 +1,4 @@
+/* APPLE LOCAL file fix and continue */
 /* Fix and Continue support for gdb
 
    Copyright 2003, 2004 Free Software Foundation, Inc.
@@ -54,6 +55,7 @@
 #include "block.h"
 #include <readline/readline.h>
 #include "osabi.h"
+#include "exceptions.h"
 
 #if defined (TARGET_POWERPC)
 #include "ppc-macosx-frameinfo.h"
@@ -287,7 +289,7 @@ static struct active_threads * create_current_threads_list (const char *);
 
 static struct fixinfo *get_fixinfo_for_new_request (const char *);
 
-static int file_exists_p (const char *);
+int file_exists_p (const char *);
 
 static void do_pre_load_checks (struct fixinfo *, struct objfile *);
 
@@ -946,7 +948,7 @@ load_fixed_objfile (const char *name)
     nslink_options |= NSLINKMODULE_OPTION_BINDNOW;
 
   objfile_image_ref = value_at (builtin_type_CORE_ADDR, 
-                                value_as_long (objfile_image_ref_memory), NULL);
+                                value_as_long (objfile_image_ref_memory));
   args[0] = objfile_image_ref;
   args[1] = value_array (0, librarylen, libraryvec);
   args[2] = value_from_longest (builtin_type_int, 
@@ -1196,7 +1198,7 @@ redirect_statics (struct file_static_fixups *indirect_entries,
                   int indirect_entry_count)
 {
   int i;
-  char buf[TARGET_ADDRESS_BYTES];
+  gdb_byte buf[TARGET_ADDRESS_BYTES];
 
   for (i = 0; i < indirect_entry_count; i++)
     {
@@ -1265,7 +1267,7 @@ find_and_parse_nonlazy_ptr_sect (struct fixinfo *cur,
   bfd_size_type indirect_ptr_section_size;
   int nl_symbol_ptr_count = 0;
   int actual_entry_count;
-  char *buf;
+  gdb_byte *buf;
   struct cleanup *wipe;
   int i;
   
@@ -1643,7 +1645,7 @@ create_current_threads_list (const char *source_filename)
   for (tp = thread_list; tp; tp = tp->next)
     {
       snprintf (buf, 79, "%d", tp->num);
-      rc = gdb_thread_select (null_uiout, buf, 0); 
+      rc = gdb_thread_select (null_uiout, buf, 0, 0); 
 
       if (((int) rc < 0 && (enum return_reason) rc == RETURN_ERROR) ||
           ((int) rc >= 0 && rc == GDB_RC_FAIL))
@@ -2185,7 +2187,7 @@ expand_all_objfile_psymtabs (struct objfile *obj)
 
 /* Returns 1 if the file is found.  0 if error or not found.  */
 
-static int
+int
 file_exists_p (const char *filename)
 {
   struct stat sb;
@@ -2258,7 +2260,10 @@ create_current_active_funcs_list (const char *source_filename)
               func->level = frame_relative_level (fi);
               func->line = sal.line;
               func->file = xstrdup (sal.symtab->filename);
-              func->dir = xstrdup (sal.symtab->dirname);
+              if (sal.symtab->dirname)
+                func->dir = xstrdup (sal.symtab->dirname);
+              else
+                func->dir = NULL;
               func->fp = get_frame_base (fi);
               func->addr = get_frame_pc (fi);
 
@@ -2305,10 +2310,10 @@ in_active_func (const char *name, struct active_threads *threads)
 
 /* Record the value of a memory location, and update it with the new value. */
 static void
-updatedatum (struct fixinfo *fixinfo, CORE_ADDR addr, char *newval, int size)
+updatedatum (struct fixinfo *fixinfo, CORE_ADDR addr, gdb_byte *newval, int size)
 { 
   struct fixeddatum * fixeddatum;
-  char buf [8];
+  gdb_byte buf[8];
   int oldval;
   target_read_memory (addr, buf, size);
   oldval = extract_unsigned_integer (buf, size);
@@ -2355,23 +2360,23 @@ redirect_old_function (struct fixinfo *fixinfo, struct symbol *new_sym,
 #if defined (TARGET_POWERPC)
   /* li r12,lo16(newfuncstart) */
   inst = 0x39800000 | encode_lo16 (newfuncstart);
-  updatedatum (fixinfo, fixup_addr, (char *)&inst, 4);
+  updatedatum (fixinfo, fixup_addr, (gdb_byte *)&inst, 4);
 
   /* addis r12,r12,hi16(newfuncstart) */
   inst = 0x3d8c0000 | encode_hi16 (newfuncstart);
-  updatedatum (fixinfo, fixup_addr + 4, (char *)&inst, 4);
+  updatedatum (fixinfo, fixup_addr + 4, (gdb_byte *)&inst, 4);
 
   /* mtctr r12  - move contents of r12 (newfuncstart) to count register */
   inst = 0x7d8903a6;
-  updatedatum (fixinfo, fixup_addr + 8, (char *)&inst, 4);
+  updatedatum (fixinfo, fixup_addr + 8, (gdb_byte *)&inst, 4);
 
   /* bctr - branch unconditionally to count reg, don't update link reg */
   inst = 0x4e800420;
-  updatedatum (fixinfo, fixup_addr + 12, (char *)&inst, 4);
+  updatedatum (fixinfo, fixup_addr + 12, (gdb_byte *)&inst, 4);
   
   /* .long 0 - Illegal instruction for trampoline detection */
   inst = 0x0;
-  updatedatum (fixinfo, fixup_addr + 16, (char *)&inst, 4);
+  updatedatum (fixinfo, fixup_addr + 16, (gdb_byte *)&inst, 4);
 #endif
 #if defined (TARGET_I386)
   unsigned char buf[6];
@@ -2826,9 +2831,10 @@ _initialize_fix (void)
   c = add_com ("fix", class_files, fix_command, "Bring in a fixed objfile.");
   set_cmd_completer (c, filename_completer);
 
-  c = add_set_cmd ("fix-and-continue", class_obscure, var_boolean,
-      (char *) &fix_and_continue_debug_flag,
-      "Set if GDB prints debug information while Fix and Continuing.",
-      &setdebuglist);
-  add_show_from_set (c, &showdebuglist);
+  add_setshow_boolean_cmd ("fix-and-continue", class_obscure,
+			   &fix_and_continue_debug_flag, _("\
+Set if GDB prints debug information while Fix and Continuing."), _("\
+Show if GDB prints debug information while Fix and Continuing."), NULL,
+			   NULL, NULL,
+			   &setdebuglist, &showdebuglist);
 }
