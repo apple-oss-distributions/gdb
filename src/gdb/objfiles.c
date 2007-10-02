@@ -1044,6 +1044,13 @@ free_objfile_internal (struct objfile *objfile)
     close_dwarf_repositories (objfile);
   /* APPLE LOCAL end dwarf repository  */
 
+  /* APPLE LOCAL begin subroutine inlining  */
+  if (objfile->inlined_subroutine_data)
+    {
+      inlined_subroutine_free_objfile_data (objfile->inlined_subroutine_data);
+      xfree (objfile->inlined_subroutine_data);
+    }
+  /* APPLE LOCAL end subroutine inlining  */
 }
 
 /* APPLE LOCAL: clear_objfile deletes all the data
@@ -1174,6 +1181,13 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
       return;
   }
 
+  /* APPLE LOCAL begin subroutine inlining  */
+  /* Update all the inlined subroutine data for this objfile.  */
+  inlined_subroutine_objfile_relocate (objfile,
+				       objfile->inlined_subroutine_data,
+				       delta);
+  /* APPLE LOCAL end subroutine inlining  */
+
   /* OK, get all the symtabs.  */
   {
     struct symtab *s;
@@ -1192,7 +1206,11 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
 	  int discontinuity_index = -1;
 
 	  for (i = 0; i < l->nitems; ++i)
-	    l->item[i].pc += ANOFFSET (delta, s->block_line_section);
+	    {
+	      l->item[i].pc += ANOFFSET (delta, s->block_line_section);
+	      if (l->item[i].end_pc != 0)
+		l->item[i].end_pc += ANOFFSET (delta, s->block_line_section);
+	    }
 
 	  /* Re-sort the line-table.  The table should have started
 	     off sorted, so we should be able to re-sort it by
@@ -1353,7 +1371,6 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
   {
     struct obj_section *s;
     bfd *abfd;
-    int idx = 0;
 
     abfd = objfile->obfd;
 
@@ -1361,9 +1378,10 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
 
     ALL_OBJFILE_OSECTIONS (objfile, s)
       {
+      	int idx = s->the_bfd_section->index;
+	
 	s->addr += ANOFFSET (delta, idx);
 	s->endaddr += ANOFFSET (delta, idx);
-	idx++;
       }
 
     objfile_add_to_ordered_sections (objfile);
@@ -2317,6 +2335,22 @@ objfile_section_offset (struct objfile *objfile, int sect_idx)
       return (CORE_ADDR) -1;
     }
 
+  /* APPLE LOCAL shared cache begin.  */
+  if (exec_objfile != objfile && 
+      bfd_mach_o_in_shared_cached_memory (exec_objfile->obfd))
+    {
+      /* If we are reading from a memory based mach executable image that 
+	 has a dSYM file, all executable image sections have zero offsets.
+	 The dSYM file will be based at the original executable link 
+	 addresses and will need offsets to make symbols in dSYM match the
+	 shared cache loaded addresses. Core files currently run into this
+	 issue, and if we decide to load images from memory in the future, 
+	 those will as well.  */
+      gdb_assert (exec_objfile->num_sections <= objfile->num_sections);
+      gdb_assert (sect_idx < objfile->num_sections);
+      return objfile->section_offsets->offsets[sect_idx];
+    }
+  /* APPLE LOCAL shared cache end.  */
   return exec_objfile->section_offsets->offsets[sect_idx];
 }
 

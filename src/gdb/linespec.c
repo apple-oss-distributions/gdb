@@ -2721,7 +2721,7 @@ minsyms_found (int funfirstline, int equivalencies,
 	{
 	  struct minimal_symbol *msym;
 	  msym = equiv_msymbols[j];
-	  xasprintf (&canonical_arr[i], "'%s'", SYMBOL_LINKAGE_NAME (msym));
+	  xasprintf (&canonical_arr[j+i], "'%s'", SYMBOL_LINKAGE_NAME (msym));
 	}
     }
 

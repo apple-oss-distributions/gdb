@@ -16,6 +16,14 @@
                 Return false if FUNC returns false.
                 (tekhex_object_p): Return NULL if pass_over fails.
 
+2007-07-30  Greg Clayton  <gclayton@apple.com>
+
+	* mach-o.c (bfd_mach_o_in_shared_cached_memory): New function.
+	(bfd_mach_o_scan_read_dysymtab): Check for memory bfd objects
+	in the shared cache and create a LC_DYSYMTAB.nonlocalstabs section
+	for them.
+	* mach-o.h (bfd_mach_o_in_shared_cached_memory): New prototype.
+
 2006-04-18  Greg Clayton  (gclayton@apple.com)
 
 	* mach-o.c (bfd_mach_o_make_bfd_section): Make any mach-o debug 

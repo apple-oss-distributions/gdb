@@ -92,6 +92,10 @@ int lookup_objc_class_p = 1;
    calling PO?  */
 int call_po_at_unsafe_times = 0;
 
+/* When we go to read the method table in find_implementation_from_class,
+   sometimes we are looking at a bogus object, and just spin forever.  So 
+   after we've seen this many "methods" we error out.  */
+static unsigned int objc_class_method_limit = 10000;
 
 /* APPLE LOCAL: At several places we grope in the objc runtime to
    find addresses of methods and such; we need to know how large
@@ -2050,6 +2054,13 @@ _initialize_objc_language (void)
   add_com ("print-object", class_vars, print_object_command, 
 	   _("Ask an Objective-C object to print itself."));
   add_com_alias ("po", "print-object", class_vars, 1);
+  add_setshow_uinteger_cmd ("objc-class-method-limit", class_obscure,
+			    &objc_class_method_limit,
+			    "Set the maximum number of class methods we scan before deciding we are looking at an uninitialized object.",
+			    "Show the maximum number of class methods we scan before deciding we are looking at an uninitialized object.",
+			    NULL,
+			    NULL, NULL, 
+			    &setlist, &showlist);
 }
 
 /* In 64-bit programs the ObjC runtime uses a different layout for
@@ -2223,7 +2234,7 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
   char sel_str[2048];
   int npasses;
   int addrsize = get_addrsize ();
-  
+  int total_methods = 0;
   sel_str[0] = '\0';
 
   if (new_objc_runtime_internals ())
@@ -2306,6 +2317,19 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
 	    {
 	      struct objc_method meth_str;
 	      char name_str[2048];
+
+	      if (++total_methods >= objc_class_method_limit)
+		{
+		  static int only_warn_once = 0;
+		  if (only_warn_once == 0)
+		    warning ("Read %d potential method entries, probably looking "
+			     "at an unitialized object.\n"
+			     "Set objc-class-method-limit to higher value if your class"
+			     " really has this many methods.",
+			     total_methods);
+		  only_warn_once++;
+		  return 0;
+		}
 
 	      read_objc_method_list_method (mlist, i, &meth_str);
 

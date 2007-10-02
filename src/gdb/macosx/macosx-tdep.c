@@ -378,7 +378,10 @@ macosx_record_symbols_from_sect_p (bfd *abfd, unsigned char macho_type,
   /* We sometimes get malformed symbols which are of type N_SECT, but
      with a section number of NO_SECT.  */
   if (macho_sect <= 0 || macho_sect > abfd->tdata.mach_o_data->nsects)
-      error ("Bad symbol - type is N_SECT but section is %d", macho_sect);
+    {
+      warning ("Bad symbol - type is N_SECT but section is %d", macho_sect);
+      return 0;
+    }
 
   sect = abfd->tdata.mach_o_data->sections[macho_sect - 1];
   if ((sect->flags & BFD_MACH_O_SECTION_TYPE_MASK) ==

@@ -1682,6 +1682,11 @@ macosx_child_attach (char *args, int from_tty)
 	}
     }
 
+  /* I don't have any good way to know whether the malloc library
+     has been initialized yet.  But I'm going to guess that we are
+     unlikely to be able to attach BEFORE then...  */
+  macosx_set_malloc_inited (1);
+
   if (inferior_auto_start_dyld_flag)
     {
       macosx_solib_add (NULL, 0, NULL, 0);
@@ -1947,6 +1952,10 @@ macosx_child_create_inferior (char *exec_file, char *allargs, char **env,
       error
         ("Can't run a PEF binary - use LaunchCFMApp as the executable file.");
     }
+
+  /* It's not safe to call functions in the target until we've initialized
+     the libsystem malloc package.  So for now, mark it unsafe.  */
+  macosx_set_malloc_inited (0);
 
   fork_inferior (exec_file, allargs, env, macosx_ptrace_me, macosx_ptrace_him,
                  NULL, NULL);
@@ -2388,6 +2397,11 @@ static int num_unsafe_patterns;
 int
 macosx_check_safe_call (void)
 {
+  /* If we haven't initialized the malloc library yet, don't even
+     try to call functions.  It is very unlikely to succeed...  */
+  if (macosx_get_malloc_inited () == 0)
+      return 0;
+
   if (macosx_unsafe_patterns == NULL)
     {
       int i;
@@ -2412,7 +2426,6 @@ macosx_check_safe_call (void)
 			      macosx_unsafe_functions[i], err_str);
 	    }
 	}
-      
     }
   return check_safe_call (macosx_unsafe_patterns, num_unsafe_patterns, 5, 
 			  CHECK_SCHEDULER_VALUE);

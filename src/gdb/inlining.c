@@ -37,6 +37,7 @@
 #include "annotate.h"
 #include "ui-out.h"
 #include "inlining.h"
+#include "objfiles.h"
 
 extern int addressprint;
 
@@ -59,13 +60,12 @@ struct pending_node {
 
 struct inlined_function_data global_inlined_call_stack;
 static struct inlined_function_data saved_call_stack;
-static struct rb_tree_node *function_name_records = NULL;
 
 static int call_stack_initialized = 0;
 
 static void verify_stack (void);
-static void find_function_names_and_address_ranges (struct 
-						    inlined_call_stack_record *);
+static void find_function_names_and_address_ranges (struct objfile *,
+					   struct inlined_call_stack_record *);
 static void add_item_to_inlined_subroutine_stack (struct linetable_entry *, 
 						  struct symtab *,
 						  struct bfd_section *);
@@ -325,7 +325,7 @@ inlined_function_address_ranges_properly_contained (int outer, int inner)
 	     record.  */
 	  /* all_fit = 1; */
 	  fits_some = 0;
-	  for (i = 0; i < inner_record->ranges->nelts && all_fit; i++)
+	  for (i = 0; i < inner_record->ranges->nelts; i++)
 	    {
 	      inner_start = inner_record->ranges->ranges[i].startaddr;
 	      inner_end   = inner_record->ranges->ranges[i].endaddr;
@@ -333,7 +333,7 @@ inlined_function_address_ranges_properly_contained (int outer, int inner)
 		{
 		  outer_start = outer_record->ranges->ranges[i].startaddr;
 		  outer_end   = outer_record->ranges->ranges[i].endaddr;
-		  if (outer_start < inner_start
+		  if (outer_start <= inner_start
 		      && inner_start < outer_end)
 		    {
 		      /* Since the start of the inner range is inside the
@@ -511,17 +511,18 @@ search_tree_for_name (struct rb_tree_node *root, char *name,
 }
 
 /* Given a partially filled in record for the global_inlined_call_stack,
-   search through the function_name_records to find the appropriate function
-   names for the caller and callee and fill them in.  */
+   search through the inlined_subroutine_data of the appropriate objfile
+   to find the appropriate function names for the caller and callee and fill 
+   them in.  */
 
 static void
-find_function_names_and_address_ranges (struct inlined_call_stack_record 
-					*record)
+find_function_names_and_address_ranges (struct objfile *objfile,
+					struct inlined_call_stack_record *record)
 {
   struct rb_tree_node *tmp_node;
   struct inlined_call_stack_record *tmp_record;
 
-  tmp_node = rb_tree_find_node_all_keys (function_name_records, 
+  tmp_node = rb_tree_find_node_all_keys (objfile->inlined_subroutine_data,
 					 record->start_pc, 0, record->end_pc);
 
   while (tmp_node != NULL)
@@ -627,7 +628,7 @@ add_item_to_inlined_subroutine_stack (struct linetable_entry *item,
       /* An existing entry was not found; we need to make a new entry on the
 	 top of the stack.  First we need to make sure we have enough space
 	 in the array for a new entry; otherwise we need to resize the array.  */
-      if (nelts >= max_size)
+      if (nelts >= max_size - 1)
 	{
 	  if (max_size == 0)
 	    {
@@ -668,20 +669,35 @@ add_item_to_inlined_subroutine_stack (struct linetable_entry *item,
 	    }
 	}
 
+      global_inlined_call_stack.max_array_size = max_size;
+      saved_call_stack.max_array_size = max_size;
+
       /* An existing entry was not found; check to see if the new entry should
 	 go between existing entries...  */
 
       new_pos = 0;
-      for (j = 1; j < nelts && !new_pos; j++)
+
+      /* Does new entry go at the bottom of the stack? */
+
+      if (item->pc < global_inlined_call_stack.records[1].start_pc
+	  || (item->pc == global_inlined_call_stack.records[1].start_pc
+	      && item->end_pc > global_inlined_call_stack.records[1].end_pc))
+	new_pos = 1;
+      else
 	{
-	  k = j + 1;
-	  if (global_inlined_call_stack.records[j].start_pc <= item->pc
-	      && item->pc <= global_inlined_call_stack.records[k].start_pc
-	      && global_inlined_call_stack.records[j].end_pc >= item->end_pc
-	      && item->end_pc >= global_inlined_call_stack.records[k].end_pc)
-	    new_pos = k;
+	  /* Does new entry go between existing entries?  */
+
+	  for (j = 1; j < nelts && !new_pos; j++)
+	    {
+	      k = j + 1;
+	      if (global_inlined_call_stack.records[j].start_pc <= item->pc
+		  && item->pc <= global_inlined_call_stack.records[k].start_pc
+		  && global_inlined_call_stack.records[j].end_pc >= item->end_pc
+		  && item->end_pc >= global_inlined_call_stack.records[k].end_pc)
+		new_pos = k;
+	    }
 	}
-      
+
       if (new_pos)
 	{
 	  /* The new record goes into the middle of the array, which means
@@ -703,6 +719,11 @@ add_item_to_inlined_subroutine_stack (struct linetable_entry *item,
   /* Whether we are using an existing call stack entry or a new one, 'i' will
      point to the correct entry.  */
 
+  if (!s)
+    s = find_pc_symtab (item->pc);
+
+  gdb_assert (s != NULL);
+
   if (item->entry_type == INLINED_SUBROUTINE_LT_ENTRY)
     {
       global_inlined_call_stack.records[i].start_pc = item->pc;
@@ -722,11 +743,20 @@ add_item_to_inlined_subroutine_stack (struct linetable_entry *item,
       global_inlined_call_stack.records[i].call_site_column = 0;
     }
 
-  find_function_names_and_address_ranges(&(global_inlined_call_stack.records[i]));
+  find_function_names_and_address_ranges(s->objfile,
+				     &(global_inlined_call_stack.records[i]));
   
+  if (global_inlined_call_stack.records[i].fn_name == NULL)
+    global_inlined_call_stack.records[i].fn_name = xstrdup ("<Unknown Function>");
+  
+  if (global_inlined_call_stack.records[i].calling_fn_name == NULL)
+    global_inlined_call_stack.records[i].calling_fn_name = 
+      xstrdup ("<Unknown Function>");
+  
+  if (global_inlined_call_stack.records[i].s == NULL)
+    global_inlined_call_stack.records[i].s = s;
+
   global_inlined_call_stack.nelts = nelts;
-  global_inlined_call_stack.max_array_size = max_size;
-  saved_call_stack.max_array_size = max_size;
 
   /* Make sure that each element on the stack should properly contain the
      element(s) above it.  */
@@ -1061,71 +1091,6 @@ inlined_function_update_call_stack (CORE_ADDR pc)
   inlined_function_update_call_stack_pc (pc);
 }
 
-static void
-update_function_names_and_address_ranges (CORE_ADDR start_pc,
-					  CORE_ADDR current_end_pc,
-					  CORE_ADDR proper_end_pc)
-{
-  struct rb_tree_node *tmp_node;
-  struct inlined_call_stack_record *tmp_record;
-  int i;
-  int found = 0;
-
-  tmp_node = rb_tree_find_node_all_keys (function_name_records, start_pc,
-					 0, current_end_pc);
-
-  while (tmp_node && !found)
-    {
-      tmp_record = (struct inlined_call_stack_record *) tmp_node->data;
-      if (tmp_record->ranges)
-	{
-	  for (i = 0; i < tmp_record->ranges->nelts && !found; i++)
-	    if (tmp_record->ranges->ranges[i].endaddr == proper_end_pc)
-	      {
-		found = 1;
-		tmp_record->end_pc = proper_end_pc;
-	      }
-	}
-
-      if (!found)
-	tmp_node = rb_tree_find_next_node (tmp_node, start_pc, 0,
-					   current_end_pc);
-    }
-}
-
-static void
-tree_fix_up_inlined_function_line_table_entries (struct rb_tree_node *root)
-{
-  CORE_ADDR start_pc;
-  CORE_ADDR current_end_pc;
-  CORE_ADDR proper_end_pc;
-  struct inlined_call_stack_record *tmp_record;
-
-  if (root)
-    {
-      tmp_record = (struct inlined_call_stack_record *) root->data;
-      if (tmp_record->ranges)
-	{
-	  start_pc = tmp_record->start_pc;
-	  current_end_pc = tmp_record->end_pc;
-	  proper_end_pc = address_range_ending_pc (tmp_record->ranges);
-	  update_inlined_function_line_table_entry (start_pc, current_end_pc,
-						    proper_end_pc);
-	  update_function_names_and_address_ranges (start_pc, current_end_pc,
-						    proper_end_pc);
-	}
-    }
-  
-  tree_fix_up_inlined_function_line_table_entries (root->left);
-  tree_fix_up_inlined_function_line_table_entries (root->right);
-}
-
-void
-fix_up_inlined_function_line_table_entries (void)
-{
-  tree_fix_up_inlined_function_line_table_entries (function_name_records);
-}
-
 /* This function is call from check_inlined_function_calls in
    dwarf2read.c, when it is processing the dies for inlined
    subroutines.  This function creates a unique record for each
@@ -1152,7 +1117,8 @@ fix_up_inlined_function_line_table_entries (void)
 
 
 void
-inlined_function_add_function_names (CORE_ADDR low_pc, CORE_ADDR high_pc,
+inlined_function_add_function_names (struct objfile *objfile,
+				     CORE_ADDR low_pc, CORE_ADDR high_pc,
 				     int line, int column, char *fn_name, 
 				     char *calling_fn_name,
 				     struct address_range_list *ranges)
@@ -1161,8 +1127,8 @@ inlined_function_add_function_names (CORE_ADDR low_pc, CORE_ADDR high_pc,
   struct inlined_call_stack_record *tmp_record;
   int found = 0;
 
-  tmp_rb_node = rb_tree_find_node_all_keys (function_name_records, low_pc, 0, 
-					    high_pc);
+  tmp_rb_node = rb_tree_find_node_all_keys (objfile->inlined_subroutine_data, 
+					    low_pc, 0, high_pc);
 
   while (tmp_rb_node && !found)
     {
@@ -1185,7 +1151,22 @@ inlined_function_add_function_names (CORE_ADDR low_pc, CORE_ADDR high_pc,
 	                           (sizeof (struct inlined_call_stack_record));
       tmp_record->start_pc = low_pc;
       tmp_record->end_pc = high_pc;
-      tmp_record->ranges = ranges;
+
+      if (ranges != NULL)
+	{
+	  int i;
+	  tmp_record->ranges 
+	    = (struct address_range_list *) xmalloc (sizeof (struct address_range_list));
+	  tmp_record->ranges->ranges 
+	    = (struct address_range *) xmalloc (ranges->nelts * sizeof (struct address_range));
+	  
+	  tmp_record->ranges->nelts = ranges->nelts;
+	  for (i = 0; i < ranges->nelts; i++)
+	    tmp_record->ranges->ranges[i] = ranges->ranges[i];
+	}
+      else
+	tmp_record->ranges = NULL;
+      
       tmp_record->fn_name = xstrdup (fn_name);
       tmp_record->calling_fn_name = xstrdup (calling_fn_name);
       tmp_record->call_site_filename = NULL;
@@ -1204,8 +1185,8 @@ inlined_function_add_function_names (CORE_ADDR low_pc, CORE_ADDR high_pc,
       tmp_rb_node->parent = NULL;
       tmp_rb_node->color = UNINIT;
       
-      rb_tree_insert (&function_name_records, function_name_records, 
-		      tmp_rb_node);
+      rb_tree_insert (&(objfile->inlined_subroutine_data), 
+		      objfile->inlined_subroutine_data, tmp_rb_node);
     }
 }
 
@@ -1338,29 +1319,6 @@ at_inlined_call_site_p (char **file_name, int *line_num, int *column)
 	}
     }
 
-  /* Occasionally, the first instruction in an inlined subroutine that
-     the inferior stops on will be BEYOND the actual first instruction of
-     the inlining.  If the user was single stepping, and lands in the middle
-     of an inlined subroutine, we still want to treat it as landing at
-     the call site, so the user has the option of 'stepping over' the
-     inlined function.  */
-
-  cur_pos = current_inlined_subroutine_stack_position ();
-  if (!ret_val
-      && cur_pos > 0
-      && !global_inlined_call_stack.records[cur_pos].stepped_into
-      && stop_pc > global_inlined_call_stack.records[cur_pos].start_pc
-      && stop_pc < global_inlined_call_stack.records[cur_pos].end_pc
-      && step_range_start 
-      && step_range_end
-      && step_range_start != step_range_end)
-    {
-      *file_name = global_inlined_call_stack.records[cur_pos].call_site_filename;
-      *line_num  = global_inlined_call_stack.records[cur_pos].call_site_line;
-      *column    = global_inlined_call_stack.records[cur_pos].call_site_column;
-      ret_val = cur_pos;
-    }
-
   return ret_val;
 }
 
@@ -1380,16 +1338,17 @@ in_inlined_function_call_p (CORE_ADDR *inline_end_pc)
   *inline_end_pc = (CORE_ADDR) 0;
 
   for (i = 1; i <= global_inlined_call_stack.nelts; i++)
-    if ((global_inlined_call_stack.records[i].ranges
-	 && record_ranges_contains_pc (i, stop_pc))
-	|| (!global_inlined_call_stack.records[i].ranges
-	    && (global_inlined_call_stack.records[i].start_pc <= stop_pc
-		&& stop_pc < global_inlined_call_stack.records[i].end_pc)))
-      {
-	if (!low)
-	  low = i;
-	high = i;
-      }
+    if (global_inlined_call_stack.records[i].stepped_into)
+      if ((global_inlined_call_stack.records[i].ranges
+	   && record_ranges_contains_pc (i, stop_pc))
+	  || (!global_inlined_call_stack.records[i].ranges
+	      && (global_inlined_call_stack.records[i].start_pc <= stop_pc
+		  && stop_pc < global_inlined_call_stack.records[i].end_pc)))
+        {
+	  if (!low)
+	    low = i;
+	  high = i;
+        }
   
   if (low > 0)
     {
@@ -1399,10 +1358,6 @@ in_inlined_function_call_p (CORE_ADDR *inline_end_pc)
       else
 	i = high;
 
-      while (!global_inlined_call_stack.records[i].stepped_into
-	     && i > low)
-	i--;
-      
       if (!global_inlined_call_stack.records[i].ranges)
 	*inline_end_pc = global_inlined_call_stack.records[i].end_pc;
       else
@@ -1813,7 +1768,9 @@ check_for_additional_inlined_breakpoint_locations (struct symtabs_and_lines sals
   int j;
   int *indices;
   int max_size = sals.nelts * 2;
+  struct objfile *obj;
   struct symtabs_and_lines new_sals;
+  struct rb_tree_node *function_name_records;
   
   new_sals.sals = (struct symtab_and_line *) 
                                        xmalloc (max_size *
@@ -1824,60 +1781,65 @@ check_for_additional_inlined_breakpoint_locations (struct symtabs_and_lines sals
   for (i = 0; i < sals.nelts; i++)
     indices[i] = 0;
   
-  if (!function_name_records)
-    return new_sals;
-  
-  /* Build new_sals for new breakpoints (if any)  */
-
-  for (i = 0; i < sals.nelts; i++)
+  ALL_OBJFILES (obj)
     {
-      if (addr_string[i])
+      function_name_records = obj->inlined_subroutine_data;
+
+      if (!function_name_records)
+	continue;
+  
+      /* Build new_sals for new breakpoints (if any)  */
+
+      for (i = 0; i < sals.nelts; i++)
 	{
-	  int already_found = 0;
-	  for (j = i - 1; j > 0 && !already_found; j--)
-	    if (addr_string[j]
-		&& strcmp (addr_string[i], addr_string[j]) == 0)
-	      already_found = 1;
-
-	  if (!already_found)
+	  if (addr_string[i])
 	    {
-	      struct record_list *found_records = NULL;
-	      struct record_list *cur;
-
-	      search_tree_for_name (function_name_records, 
-				    addr_string[i], &found_records);
+	      int already_found = 0;
+	      for (j = i - 1; j > 0 && !already_found; j--)
+		if (addr_string[j]
+		    && strcmp (addr_string[i], addr_string[j]) == 0)
+		  already_found = 1;
 	      
-	      for (cur = found_records; cur; cur = cur->next)
+	      if (!already_found)
 		{
-		  /* We've found an inlined version of the function named
-		     in addr_string[i]; now we need to create a breakpoint
-		     for the inlined instance.  */
-
-		  indices[i] = 1;
-		  if (new_sals.nelts >= max_size)
+		  struct record_list *found_records = NULL;
+		  struct record_list *cur;
+		  
+		  search_tree_for_name (function_name_records, 
+					addr_string[i], &found_records);
+		  
+		  for (cur = found_records; cur; cur = cur->next)
 		    {
-		      max_size = max_size * 2;
-		      new_sals.sals = xrealloc (new_sals.sals,
+		      /* We've found an inlined version of the function named
+			 in addr_string[i]; now we need to create a breakpoint
+			 for the inlined instance.  */
+		      
+		      indices[i] = 1;
+		      if (new_sals.nelts >= max_size)
+			{
+			  max_size = max_size * 2;
+			  new_sals.sals = xrealloc (new_sals.sals,
 					      max_size * 
 					      sizeof (struct symtab_and_line));
-		    }
-		  new_sals.sals[new_sals.nelts] = find_pc_line 
+			}
+		      new_sals.sals[new_sals.nelts] = find_pc_line 
 		                                       (cur->record->start_pc, 
 							0);
 		  
-		  /*  Keep this:  It may need to be reinstated.
-		      gdb_assert 
-		      (new_sals.sals[new_sals.nelts].pc == 
+		      /*  Keep this:  It may need to be reinstated.
+			  gdb_assert 
+			  (new_sals.sals[new_sals.nelts].pc == 
                                                         cur->record->start_pc);
-		  */
+		      */
 		  
-		  new_sals.sals[new_sals.nelts].end = cur->record->end_pc;
-		  new_sals.sals[new_sals.nelts].entry_type = 
-		    INLINED_SUBROUTINE_LT_ENTRY;
-		  new_sals.sals[new_sals.nelts].next = NULL;
-		  
-		  new_sals.nelts++;
-
+		      new_sals.sals[new_sals.nelts].end = cur->record->end_pc;
+		      new_sals.sals[new_sals.nelts].entry_type = 
+			INLINED_SUBROUTINE_LT_ENTRY;
+		      new_sals.sals[new_sals.nelts].next = NULL;
+		      
+		      new_sals.nelts++;
+		      
+		    }
 		}
 	    }
 	}
@@ -2220,6 +2182,68 @@ is_at_stepping_ranges_end (CORE_ADDR pc)
       end_found = 1;
 
   return end_found;
+}
+void
+inlined_subroutine_free_objfile_data (struct rb_tree_node *root)
+{
+  struct inlined_call_stack_record *data;
+  if (root->left)
+    {
+      inlined_subroutine_free_objfile_data (root->left);
+      xfree (root->left);
+    }
+  if (root->right)
+    {
+      inlined_subroutine_free_objfile_data (root->right);
+      xfree (root->right);
+    }
+  data = (struct inlined_call_stack_record *) root->data;
+  if (data->ranges)
+    xfree (data->ranges);
+  xfree (root->data);
+}
+
+static void
+update_inlined_data_addresses (CORE_ADDR offset,
+			       struct rb_tree_node *tree)
+{
+  struct inlined_call_stack_record *data;
+  int i;
+
+  tree->key += offset;
+  tree->third_key += offset;
+  data = (struct inlined_call_stack_record *) tree->data;
+  data->start_pc += offset;
+  data->end_pc += offset;
+  if (data->ranges)
+    for (i = 0; i < data->ranges->nelts; i++)
+      {
+	data->ranges->ranges[i].startaddr += offset;
+	data->ranges->ranges[i].endaddr += offset;
+      }
+
+  if (tree->left)
+    update_inlined_data_addresses (offset, tree->left);
+  
+  if (tree->right)
+    update_inlined_data_addresses (offset, tree->right);
+}
+
+void
+inlined_subroutine_objfile_relocate (struct objfile *objfile,
+				     struct rb_tree_node *tree_node,
+				     struct section_offsets *deltas)
+{
+  struct obj_section *sect = NULL;
+  CORE_ADDR offset = 0;
+  
+  if (!tree_node)
+    return;
+  
+  offset = ANOFFSET (deltas, SECT_OFF_TEXT (objfile));
+		       
+  if (offset)
+    update_inlined_data_addresses (offset, tree_node);
 }
 
 /* APPLE LOCAL end subroutine inlining  (entire file) */

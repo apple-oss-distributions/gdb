@@ -108,6 +108,21 @@ struct varobj_root
   struct varobj_root *next;
 };
 
+/* APPLE LOCAL: In building up the path expression for a varobj,
+   we need to know how to join the children of a varobj to the
+   expression of the parent.  We figure this out as we are making
+   the varobj's, and this enum records the result.  See the 
+   join_in_expr varobj struct element below for some discussion of
+   why this is tricky.  */
+enum varobj_join_type
+  {
+    VAROBJ_AS_DUNNO,   /* This is a error - for types that can't have children.  */
+    VAROBJ_AS_STRUCT, /* For children of structs, joined with a ".".  */
+    VAROBJ_AS_PTR_TO_SCALAR,  /* This is a simple dereference.  */
+    VAROBJ_AS_PTR_TO_STRUCT, /* This will be "->".  */
+    VAROBJ_AS_ARRAY,  /* This is an array reference "[n]".  */
+  };
+
 /* Every variable in the system has a structure of this type defined
    for it. This structure holds all information necessary to manipulate
    a particular object variable. Members which must be freed are noted. */
@@ -124,6 +139,18 @@ struct varobj
   /* Alloc'd expression for this child.  Can be used to create a
      root variable corresponding to this child. */
   char *path_expr;
+  /* In ObjC you can't put the Class name in expressions, even though
+     it shows up in the varobj hierarchy (at least it does with DWARF).
+     So on the one hand we need to propagate the knowledge of how the
+     last parent that actually contributes to the expression should join
+     to its children over these non-contributing elements.  */
+  enum varobj_join_type join_in_expr;
+  /* And it's more convenient to mark whether this variable contributes
+     or not as we build up the varobj.  
+     FIXME: I don't set this for the CPLUS_FAKE_CHILD elements.  They
+     recieve special treatment in too many places, so for now I'm only
+     using this variable for ObjC Objects.  */
+  int elide_in_expr;
   /* APPLE LOCAL end */
 
   /* The alloc'd name for this variable's object. This is here for
@@ -340,6 +367,9 @@ static int varobj_value_is_changeable_p (struct varobj *var);
 /* APPLE LOCAL is_root_p */
 static int is_root_p (struct varobj *var);
 
+/* APPLE LOCAL set path expression junk.  */
+static enum varobj_join_type get_join_type (struct type *type);
+
 /* C implementation */
 
 static int c_number_of_children (struct varobj *var);
@@ -534,6 +564,42 @@ is_root_p (struct varobj *var)
   return (var->root->rootvar == var);
 }
 /* APPLE LOCAL end is_root_p */
+
+/* APPLE LOCAL: Returns how you would join the children of
+   a varobj of type TYPE to the varobj's path expression.  */
+
+static enum varobj_join_type 
+get_join_type (struct type *in_type)
+{
+  struct type *type = check_typedef (in_type);
+
+  switch (TYPE_CODE (type))
+    {
+    case TYPE_CODE_PTR:
+      {
+	struct type *target = get_target_type (type);
+	switch (TYPE_CODE (target))
+	  {
+	  case TYPE_CODE_STRUCT:
+	  case TYPE_CODE_UNION:
+	    return VAROBJ_AS_PTR_TO_STRUCT;
+	  default:
+	    return VAROBJ_AS_PTR_TO_SCALAR;
+	    break;
+	  }
+      case TYPE_CODE_STRUCT:
+      case TYPE_CODE_UNION:
+	return VAROBJ_AS_STRUCT;
+	break;
+      case TYPE_CODE_ARRAY:
+	return VAROBJ_AS_ARRAY;
+	break;
+      default:
+	return VAROBJ_AS_DUNNO;
+      }
+    }
+}
+
 
 static struct type *
 safe_value_rtti_target_type (struct value *val, int *full, int *top, int *using_enc)
@@ -824,7 +890,9 @@ varobj_create (char *objname,
 	  /* Don't allow variables to be created for types. */
 	  if (var->root->exp->elts[0].opcode == OP_TYPE)
 	    {
-	      warning ("Attempt to use a type name as an expression.");
+	      /* APPLE LOCAL: suppress this warning, since Xcode does this 
+		 when raising tooltips over the cast part of an expression.
+		 warning ("Attempt to use a type name as an expression."); */
 	      goto error_cleanup;
 	    }
 	}
@@ -963,6 +1031,12 @@ varobj_create (char *objname,
 	  return NULL;
 	}
     }
+
+  /* APPLE LOCAL: Give ourselves a hint about how to join this varobj
+     in path expressions.  */
+
+  if (var != NULL && var->type != NULL)
+      var->join_in_expr = get_join_type (var->type);
 
   /* APPLE LOCAL: Reset the scheduler lock, and discard the varobj deletion. */
   do_cleanups (schedlock_chain);
@@ -1300,7 +1374,6 @@ int
 varobj_set_value (struct varobj *var, char *expression)
 {
   struct value *val;
-  int offset = 0;
   int error = 0;
 
   /* The argument "expression" contains the variable's new value.
@@ -1794,6 +1867,7 @@ create_child (struct varobj *parent, int index, char *name)
   struct varobj *child;
   char *childs_name;
   enum varobj_type_change type_changed;
+  struct type *target;
   
   child = new_variable ();
 
@@ -1836,6 +1910,43 @@ create_child (struct varobj *parent, int index, char *name)
 
   /* Now get the type & value of the child. */
   child->type = type_of_child (child);
+  
+  /* APPLE LOCAL: Compute here how we would join this child in
+     expressions.  ObjC base classes and C++ fake children just
+     inherit the join type of their parents.  */
+
+  /* FIXME: We should really set "elide_in_expr" for C++ fake children
+     as well, but there's too much other code that treats the
+     CPLUS_FAKE_CHILD specially and I don't have time to disentangle
+     it right now.  So we don't set the elide_in_expr, and let the
+     other code handle the fake children.  */
+  
+  if (CPLUS_FAKE_CHILD (parent))
+    child->join_in_expr = parent->join_in_expr;
+  else
+    {
+      if (TYPE_CODE (parent->type) == TYPE_CODE_PTR)
+	{
+	  target = get_target_type (parent->type);
+	}
+      else
+	target = parent->type;
+
+      if (target != NULL
+	  && TYPE_CODE (target) == TYPE_CODE_STRUCT
+	  && TYPE_RUNTIME (target) == OBJC_RUNTIME 
+	  && index < TYPE_N_BASECLASSES (target))
+	{
+	  /* This is an ObjC base class.  */
+	  child->elide_in_expr = 1;
+	  child->join_in_expr = parent->join_in_expr;
+	}
+      else if (CPLUS_FAKE_CHILD (child))
+	  child->join_in_expr = parent->join_in_expr;
+      else
+	child->join_in_expr = get_join_type (child->type);
+    }
+
   child->value = value_of_child (parent, index, &type_changed);
 
   if ((!CPLUS_FAKE_CHILD(child) && child->value == NULL) || parent->error)
@@ -1904,6 +2015,8 @@ new_variable (void)
   var->dynamic_type = NULL;
   var->dynamic_type_name = NULL;
   var->path_expr = NULL;
+  var->elide_in_expr = 0;
+  var->join_in_expr = VAROBJ_AS_DUNNO;
   var->value = NULL;
   var->error = 0;
   var->num_children = -1;
@@ -2310,6 +2423,17 @@ path_expr_of_variable (struct varobj *var)
   /* APPLE LOCAL is_root_p */
   else if (is_root_p (var))
     return var->name;
+  else if (var->elide_in_expr)
+    {
+      if (CPLUS_FAKE_CHILD (var->parent))
+	/* FIXME: Note we won't get here for now, since I don't set
+	   the elide_in_expr for fake children.  But this is how it
+	   really should work...  */
+	var->path_expr = xstrdup (path_expr_of_variable (var->parent->parent));
+      else
+	var->path_expr = xstrdup (path_expr_of_variable (var->parent));
+      return var->path_expr;
+    }
   else
     return path_expr_of_child (var->parent, var->index);
 }
@@ -2780,8 +2904,6 @@ c_make_name_of_child (struct varobj *parent, int index)
 static char *
 c_path_expr_of_child (struct varobj *parent, int index)
 {
-  struct type *type;
-  struct type *target;
   char *path_expr;
   struct varobj *child = child_exists (parent, index);
   char *parent_expr;
@@ -2804,12 +2926,9 @@ c_path_expr_of_child (struct varobj *parent, int index)
   child_len = strlen (name);
   len = parent_len + child_len + 2 + 1; /* 2 for (), and 1 for null */
 
-  type = get_type (parent);
-  target = get_target_type (type);
-
-  switch (TYPE_CODE (type))
+  switch (parent->join_in_expr)
     {
-    case TYPE_CODE_ARRAY:
+    case VAROBJ_AS_ARRAY:
       {
 	/* We never get here unless parent->num_children is greater than 0... */
 	
@@ -2819,32 +2938,24 @@ c_path_expr_of_child (struct varobj *parent, int index)
       }
       break;
 
-    case TYPE_CODE_STRUCT:
-    case TYPE_CODE_UNION:
+    case VAROBJ_AS_STRUCT:
       len += 1;
       path_expr = (char *) xmalloc (len);
       sprintf (path_expr, "(%s).%s", parent_expr, name);
       break;
 
-    case TYPE_CODE_PTR:
-      switch (TYPE_CODE (target))
-	{
-	case TYPE_CODE_STRUCT:
-	case TYPE_CODE_UNION:
-	  len += 2;
-	  path_expr = (char *) xmalloc (len);
-	  sprintf (path_expr, "(%s)->%s", parent_expr, name);
-	  break;
-
-	default:
-	  len += parent_len + 2 + 1 + 1;
-	  path_expr = (char *) xmalloc (len);
-	  sprintf (path_expr, "*(%s)", parent_expr);
-	  break;
-	}
+    case VAROBJ_AS_PTR_TO_STRUCT:
+      len += 2;
+      path_expr = (char *) xmalloc (len);
+      sprintf (path_expr, "(%s)->%s", parent_expr, name);
+      break;
+    case VAROBJ_AS_PTR_TO_SCALAR:
+      len += parent_len + 2 + 1 + 1;
+      path_expr = (char *) xmalloc (len);
+      sprintf (path_expr, "*(%s)", parent_expr);
       break;
 
-    default:
+    case VAROBJ_AS_DUNNO:
       /* This should not happen */
       len = 5;
       path_expr =
@@ -3718,6 +3829,12 @@ cplus_path_expr_of_child (struct varobj *parent, int index)
   else
     type = get_type_deref (parent, &is_ptr);
 
+  /* If the parent belongs to the ObjC runtime, let the c_path_expr_of_child
+     do the work.  We don't have an objc language specific vector, since it's
+     very little different from the basic C case.  */
+  if (TYPE_RUNTIME (type) == OBJC_RUNTIME)
+    return c_path_expr_of_child (parent, index);
+
   path_expr = NULL;
   switch (TYPE_CODE (type))
     {
@@ -3892,7 +4009,6 @@ cplus_value_of_child (struct varobj *parent, int index, int *lookup_dynamic_type
     {
       if (CPLUS_FAKE_CHILD (parent))
 	{
-	  char *name;
 	  enum gdb_rc ret_val;
 	  struct varobj *child;
 	  struct value *temp = parent->parent->value;

@@ -1,10 +1,97 @@
-2007-07-10  Jim Ingham  <jingham@apple.com>
+2007-09-28  Jason Molenda  (jmolenda@apple.com)
 
-	* macosx-nat-mutils.c (macosx_get_region_info): New function.
-	(macosx_xfer_memory): Use macosx_get_region_info to wrap the
-	decision of whether to use the SHORT return from vm_region_recurse.
-	Also, ignore the error from resetting the protections and don't print
-	a warning.
+	* macosx-nat-dyld.c (get_sectoffs_for_shared_cache_dylib):
+	New function, contents pulled from the middle of...
+	(dyld_info_process_raw): here.  Add call to
+	get_sectoffs_for_shared_cache_dylib.
+	* macosx-nat-dyld.h: Prototype for 
+	get_sectoffs_for_shared_cache_dylib.
+	* macosx-nat-dyld-process.c (dyld_load_symfile_internal):
+	Call get_sectoffs_for_shared_cache_dylib for dylibs in
+	the shared cache.  Count the number of bfd sections in
+	objfile terms.  Pass the count & the offsets when adding
+	the objfile.
+
+2007-09-27  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-dyld.c (dyld_info_process_raw): Change the 
+	algorithm that computes the per-section slide to just
+	get the rigid text segment slide & apply that to all 
+	sections - for libraries that are NOT in the shared
+	cache.
+
+2007-09-19  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-inferior.c (macosx_set_malloc_inited): Removed.
+	* macosx-nat-inferior.h (macosx_set_malloc_inited): Prototype removed.
+	* macosx-nat-dyld.c (macosx_set_malloc_inited): Added.
+	(macosx_get_malloc_inited): Added.
+	* macosx-nat-dyld.h: Prototypes added.
+
+2007-08-19  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-dyld.h: Add malloc_inited_breakpoint to the
+	macosx_dyld_thread_status.
+	* macosx-nat-dyld.c (macosx_set_start_breakpoint): Set the malloc
+	inited breakpoint.
+	(macosx_solib_add): If we've hit the malloc inited breakpoint,
+	set malloc_inited to 1.
+	(macosx_dyld_thread_init): Clear the malloc inited breakpoint.
+	* macosx-nat-inferior.c (macosx_child_attach): Set malloc_inited
+	to 1.
+	(macosx_child_create_inferior): Set malloc_inited to 0.
+	(macosx_set_malloc_inited): New Function.
+	(macosx_check_safe_call): Check malloc_inited.
+	* macosx-nat-inferior.h: Declare macosx_set_malloc_inited.
+	
+	* machoread.c (macho_read_indirect_symbols): Offset the
+	stub symbols by the offset for their containing section.
+	
+2007-08-14  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-mutils.c (gc_print_references): Fix thinko
+	in printing reference type.
+	
+2007-08-07  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-dyld.c (macosx_init_dyld_from_core): Free all 
+	target->to_sections after throwing away all objfiles.
+
+2007-08-01  Jason Molenda  (jmolenda@apple.com)
+
+        * ppc-macosx-tdep.c (ppc_gdbarch_init): Call rs6000 register
+        mapping func.
+
+2007-08-01  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_objfile_info_pack): Fix off
+	by one error when shifting the info array down.
+	
+2007-07-30  Greg Clayton  <gclayton@apple.com>
+
+	* machoread.c (macho_calculate_offsets_for_dsym): Calculate in 
+	memory shared cache section offsets correctly.
+	* macosx-nat-dyld.c (dyld_info_process_raw): Omit warning for
+	section count mismatches and document in comments.
+
+2007-07-27  Jim Ingham (jingham@apple.com)
+
+	* macosx-nat-dyld.c (macosx_dyld_remove_libraries): Call new
+	tell_breakpoints_objfile_removed func.
+
+2007-07-23  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-macosx-tdep.c (i386_fast_show_stack): If saved PC
+	value is 0x0, we've reached the end of the stack.
+
+2007-07-16  Jim Ingham  <jingham@apple.com>
+
+	* macosx-tdep.c (macosx_record_symbols_from_sect_p): If a symbol
+	has an illegal section number, give an warning rather than an
+	error.
+	
+	* macosx-nat-dyld.c (dyld_starts_here_p): If the exec_bfd architecture
+	doesn't match the dyld we find, then error out.
 	
 2007-07-06  Jim Ingham  <jingham@apple.com>
 

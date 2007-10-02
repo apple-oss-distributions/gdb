@@ -638,6 +638,20 @@ dbx_symfile_read (struct objfile *objfile, int mainline)
      || (0 == strncmp (bfd_get_target (sym_bfd), "epoc-pe", 7))
      || (0 == strncmp (bfd_get_target (sym_bfd), "nlm", 3)));
 
+  /* APPLE LOCAL shared cache begin.  */
+  if (bfd_mach_o_in_shared_cached_memory (objfile->obfd))
+    {
+      /* All shared libraries being read from memory that are in the new 
+         shared cache share a single large symbol and string table. These
+	 bfd objects require only getting the nonlocal symbols. This range 
+	 was set to the range of the EXTDEF symbols from the DYSYMTAB 
+	 load command in the bfd_mach_o_scan_read_dysymtab function from
+	 the bfd mach-o.c reader.  */
+      dbx_symtab_offset = DBX_NONLOCAL_STAB_OFFSET (objfile);
+      dbx_symtab_count = DBX_NONLOCAL_STAB_COUNT (objfile);
+    }
+  else
+  /* APPLE LOCAL shared cache end.  */
   if (objfile->symflags != OBJF_SYM_ALL
       && (objfile->symflags & OBJF_SYM_EXTERN
           || objfile->symflags & OBJF_SYM_CONTAINER)

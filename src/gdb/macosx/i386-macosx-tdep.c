@@ -667,6 +667,8 @@ i386_fast_show_stack (unsigned int count_limit, unsigned int print_limit,
 	    }
           if (!safe_read_memory_unsigned_integer (fp + wordsize, wordsize, &pc))
             goto i386_count_finish;
+          if (pc == 0x0)
+            goto i386_count_finish;
           prev_fp = fp;
           fp = next_fp;
         }

@@ -60,6 +60,8 @@ struct macosx_dyld_thread_status
 
   struct breakpoint *dyld_breakpoint;
 
+  struct breakpoint *malloc_inited_breakpoint;
+
   CORE_ADDR dyld_addr;
   CORE_ADDR dyld_slide;
   const char *dyld_name;
@@ -109,5 +111,10 @@ int dyld_lookup_and_bind_function (char *name);
 void update_section_tables_dyld (struct dyld_objfile_info *s);
 void update_section_tables ();
 char *dyld_fix_path (char *path);
+
+void macosx_set_malloc_inited (int new_val);
+int macosx_get_malloc_inited (void);
+struct section_offsets *get_sectoffs_for_shared_cache_dylib (struct dyld_objfile_entry *, CORE_ADDR);
+
 
 #endif /* __GDB_MACOSX_NAT_DYLD_H__ */

@@ -504,15 +504,21 @@ finish_block (struct symbol *symbol, struct pending **listhead,
 			     paddr_nz (BLOCK_END (block)));
 		}
 	      /* APPLE LOCAL begin address ranges  */
+	      /* We're trying to fit all the pending blocks into a
+		 super block.  In general, we get all the pending blocks
+		 by looking at the indididual function entries, so their
+		 addresses are quite likely to be right.  But we got the
+		 super block start and end by looking at something like
+		 the psymtab range, which is less likely to be accurate.
+		 So trust the pending blocks, and if they lie outside
+		 the super block fix up the super block ranges to fit
+		 them.  */
 	      if (!BLOCK_RANGES (pblock->block) && !BLOCK_RANGES (block))
 		{
 		  if (BLOCK_START (pblock->block) < BLOCK_START (block))
-		    BLOCK_START (pblock->block) = BLOCK_START (block);
+		    BLOCK_START (block) = BLOCK_START (pblock->block);
 		  if (BLOCK_END (pblock->block) > BLOCK_END (block))
-		    BLOCK_END (pblock->block) = BLOCK_END (block);
-                  /* Better than nothing */
-                  if (BLOCK_END (pblock->block) < BLOCK_START (block))
-		    BLOCK_END (pblock->block) = BLOCK_START (block);
+		    BLOCK_END (block) = BLOCK_END (pblock->block);
 		}
 	      /* APPLE LOCAL end address ranges  */
 	    }

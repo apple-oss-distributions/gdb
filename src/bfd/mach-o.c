@@ -118,6 +118,22 @@ bfd_mach_o_version (abfd)
   return mdata->header.version;
 }
 
+/* APPLE LOCAL shared cache begin
+   If a mach image is in the shared cache is being read straight from memory
+   or from the shared cache file itself, the msbit of FLAGS will be set to
+   1.  */
+bfd_boolean
+bfd_mach_o_in_shared_cached_memory (bfd *abfd)
+{
+  bfd_mach_o_data_struct *mdata = NULL;
+  BFD_ASSERT (bfd_mach_o_valid (abfd));
+  mdata = abfd->tdata.mach_o_data;
+  if (mdata->header.flags & 0x80000000)
+    return 1;
+  return 0;
+}
+/* APPLE LOCAL shared cache end  */
+
 bfd_boolean
 bfd_mach_o_valid (bfd *abfd)
 {
@@ -1667,6 +1683,9 @@ bfd_mach_o_scan_read_dysymtab (bfd *abfd, bfd_mach_o_load_command *command)
   struct bfd_section *stabs_pseudo_section;
   asection *bfdsec;
   int nlist_size;
+  bfd_boolean in_mem_shared_cache;
+  
+  in_mem_shared_cache = bfd_mach_o_in_shared_cached_memory (abfd);
 
   BFD_ASSERT (command->type == BFD_MACH_O_LC_DYSYMTAB);
 
@@ -1706,19 +1725,35 @@ bfd_mach_o_scan_read_dysymtab (bfd *abfd, bfd_mach_o_load_command *command)
      This is especially useful if we want to minimize the amount of
      minsyms we create initially.  */
 
-  /* First, check that our assumption about the ordering is correct.
-     ilocalsym should always be less than (come before) 
-     iextdefsym and iundefsym.  */
+  /* APPLE LOCAL shared cache
+     If we are parsing an in memory mach image that is in the shared
+     cache, we need not check for continuity in the dysymtab load commands
+     since we know they aren't contiguous. These kinds of mach images all 
+     share one big symbol and string table, and the dysymtab load command 
+     tells which symbols belong to each image. We create a 
+     "LC_DYSYMTAB.localstabs" for these files that won't get used,
+     will contain no entries, or one bogus entry created by dyld. We also
+     create a "LC_DYSYMTAB.nonlocalstabs" section that contains all of the 
+     extdef symbols. If we need to parse the undef symbols, we may need to
+     create a "LC_DYSYMTAB.undefstabs" section that we can check for since
+     items in the shared cache do not have contiguous EXTDEF and UNDEF 
+     symbols.  */
+     
+  if (in_mem_shared_cache == 0)
+    {
+      /* First, check that our assumption about the ordering is correct.
+	 ilocalsym should always be less than (come before) 
+	 iextdefsym and iundefsym.  */
+      if (seg->ilocalsym >= seg->iextdefsym || seg->ilocalsym >= seg->iundefsym)
+	return 0;
 
-  if (seg->ilocalsym >= seg->iextdefsym || seg->ilocalsym >= seg->iundefsym)
-    return 0;
+      /* Check that the three types - local, external, undefined - are contiguous
+	 and start at offset 0 like they're supposed to. */
 
-  /* Check that the three types - local, external, undefined - are contiguous
-     and start at offset 0 like they're supposed to. */
-
-  if (seg->ilocalsym != 0 || seg->nlocalsym != seg->iextdefsym ||
-      seg->nlocalsym + seg->nextdefsym != seg->iundefsym)
-    return 0;
+      if (seg->ilocalsym != 0 || seg->nlocalsym != seg->iextdefsym ||
+	  seg->nlocalsym + seg->nextdefsym != seg->iundefsym)
+	return 0;
+    }
 
   /* nlist's are different sizes for 32 bit & 64 bit PPC...  */
 
@@ -1729,42 +1764,69 @@ bfd_mach_o_scan_read_dysymtab (bfd *abfd, bfd_mach_o_load_command *command)
   if (stabs_pseudo_section == NULL)
     return 0;
 
-  prefix = "LC_DYSYMTAB.localstabs";
+  /* APPLE LOCAL shared cache - only create the fake localstabs section if
+     we have some local symbols.  */
+  if (seg->nlocalsym > 0)
+    {
+      prefix = "LC_DYSYMTAB.localstabs";
+      
+      sname = (char *) bfd_alloc (abfd, strlen (prefix) + 1);
+      if (sname == NULL)
+	return -1;
+      strcpy (sname, prefix);
+
+      bfdsec = bfd_make_section_anyway (abfd, sname);
+      if (bfdsec == NULL)
+	return -1;
+
+      bfdsec->vma = 0;
+      bfdsec->lma = 0;
+      bfdsec->size = seg->nlocalsym * nlist_size;
+      bfdsec->filepos = stabs_pseudo_section->filepos + (seg->ilocalsym * nlist_size);
+      bfdsec->alignment_power = 0;
+      bfdsec->flags = SEC_HAS_CONTENTS;
+    }
   
-  sname = (char *) bfd_alloc (abfd, strlen (prefix) + 1);
-  if (sname == NULL)
-    return -1;
-  strcpy (sname, prefix);
+  /* APPLE LOCAL shared cache - only create the fake localstabs section if
+     we have some local symbols.  */
+  if (seg->nextdefsym > 0 || seg->nundefsym > 0)
+    {
+      unsigned long num_nonlocalstabs;
+      if (in_mem_shared_cache)
+	{
+	  /* In the memory based shared cache mach-o images we just want
+	     the EXT symbols since the UNDEF symbols do not immediately 
+	     follow the EXT symbols.  */
+	  num_nonlocalstabs = seg->nextdefsym;
+	}
+      else
+	{
+	  /* For all others the EXT and UNDEF symbols are contiguous.  */
+	  num_nonlocalstabs = seg->nextdefsym + seg->nundefsym;
+	}
 
-  bfdsec = bfd_make_section_anyway (abfd, sname);
-  if (bfdsec == NULL)
-    return -1;
+      if (num_nonlocalstabs > 0)
+	{
+	  prefix = "LC_DYSYMTAB.nonlocalstabs";
+	  
+	  sname = (char *) bfd_alloc (abfd, strlen (prefix) + 1);
+	  if (sname == NULL)
+	    return -1;
+	  strcpy (sname, prefix);
 
-  bfdsec->vma = 0;
-  bfdsec->lma = 0;
-  bfdsec->size = seg->nlocalsym * nlist_size;
-  bfdsec->filepos = stabs_pseudo_section->filepos + (seg->ilocalsym * nlist_size);
-  bfdsec->alignment_power = 0;
-  bfdsec->flags = SEC_HAS_CONTENTS;
+	  bfdsec = bfd_make_section_anyway (abfd, sname);
+	  if (bfdsec == NULL)
+	    return -1;
 
-  prefix = "LC_DYSYMTAB.nonlocalstabs";
-  
-  sname = (char *) bfd_alloc (abfd, strlen (prefix) + 1);
-  if (sname == NULL)
-    return -1;
-  strcpy (sname, prefix);
-
-  bfdsec = bfd_make_section_anyway (abfd, sname);
-  if (bfdsec == NULL)
-    return -1;
-
-  bfdsec->vma = 0;
-  bfdsec->lma = 0;
-  bfdsec->size = (seg->nextdefsym * nlist_size) + (seg->nundefsym * nlist_size);
-  bfdsec->filepos =  stabs_pseudo_section->filepos + (seg->iextdefsym * nlist_size);
-  bfdsec->alignment_power = 0;
-  bfdsec->flags = SEC_HAS_CONTENTS;
-
+	  bfdsec->vma = 0;
+	  bfdsec->lma = 0;
+	  bfdsec->size = (num_nonlocalstabs * nlist_size);
+	  bfdsec->filepos =  stabs_pseudo_section->filepos + 
+			     (seg->iextdefsym * nlist_size);
+	  bfdsec->alignment_power = 0;
+	  bfdsec->flags = SEC_HAS_CONTENTS;
+	}
+    }
   return 0;
 }
 

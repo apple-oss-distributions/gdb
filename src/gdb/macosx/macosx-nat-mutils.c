@@ -298,116 +298,6 @@ mach_xfer_memory_block (CORE_ADDR memaddr, gdb_byte *myaddr,
   return len;
 }
 
-/* We need to build Salt on Tiger, but we want to try to run it on Leopard.
-   On Leopard, there is both the SHORT and regular versions of the mach_vm_region_recurse
-   call.  BUT the latter is MUCH slower on Leopard than on Tiger, whereas the short form
-   is pretty much the same speed.  Sadly, the defines for the short version
-   are missing on Tiger.  So in that case, I supply the defines here, copied
-   over.  Then we try the call, and if we get KERN_INVALID_ARGUMENT, we know
-   that we're on Tiger, and switch over to the long form.  */
-
-#ifndef VM_REGION_SUBMAP_SHORT_INFO_COUNT_64
-  struct vm_region_submap_short_info_64 {
-    vm_prot_t		protection;     /* present access protection */
-    vm_prot_t		max_protection; /* max avail through vm_prot */
-    vm_inherit_t		inheritance;/* behavior of map/obj on fork */
-    memory_object_offset_t	offset;		/* offset into object/map */
-    unsigned int            user_tag;	/* user tag on map entry */
-    unsigned int            ref_count;	 /* obj/map mappers, etc */
-    unsigned short          shadow_depth; 	/* only for obj */
-    unsigned char           external_pager;  /* only for obj */
-    unsigned char           share_mode;	/* see enumeration */
-    boolean_t		is_submap;	/* submap vs obj */
-    vm_behavior_t		behavior;	/* access behavior hint */
-    vm_offset_t		object_id;	/* obj/map name, not a handle */
-    unsigned short		user_wired_count; 
-  };
-  
-  typedef struct vm_region_submap_short_info_64	*vm_region_submap_short_info_64_t;
-  typedef struct vm_region_submap_short_info_64	 vm_region_submap_short_info_data_64_t;
-  
-#define VM_REGION_SUBMAP_SHORT_INFO_COUNT_64	((mach_msg_type_number_t) \
-						 (sizeof(vm_region_submap_short_info_data_64_t)/sizeof(int)))
-  
-  vm_region_submap_info_data_64_t r_data;
-
-static kern_return_t
-macosx_get_region_info (task_t task, 
-			mach_vm_address_t *r_start,
-			mach_vm_address_t *r_end,
-			mach_vm_size_t *r_size,
-			vm_prot_t *prot)
-{
-  vm_region_submap_short_info_data_64_t r_short_data;
-  vm_region_submap_info_data_64_t r_long_data;
-  static int use_short_info = 1;
-  mach_msg_type_number_t r_info_size;
-  natural_t r_depth;
-  kern_return_t kret;
-
-  r_depth = 1000;
-  try_recurse_again:
-  
-  if (use_short_info)
-    {
-      r_info_size = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
-      kret = mach_vm_region_recurse (task, 
-				     r_start, r_size,
-				     & r_depth,
-				     (vm_region_recurse_info_t) &r_short_data, 
-				     &r_info_size);
-      if (kret == KERN_INVALID_ARGUMENT)
-	{
-	  use_short_info = 0;
-	  mutils_debug ("vm_region_submap_short_info not supported, switching"
-			" to long info.\n");
-	  goto try_recurse_again;
-	}
-      *prot = r_short_data.protection;
-    }
-  else
-    {
-      r_info_size = VM_REGION_SUBMAP_INFO_COUNT_64;
-      kret = mach_vm_region_recurse (task, 
-				     r_start, r_size,
-				     & r_depth,
-				     (vm_region_recurse_info_t) &r_long_data, 
-				     &r_info_size);
-      *prot = r_long_data.protection;
-    }
-  
-  return kret;
-}
-/* However, if we have the short form defined, use a simpler version of
-   macosx_get_region_info that just uses the short form.  Ultimately,
-   we will just switch over to this function when we no longer need to
-   build on Tiger.  */
-#else
-static kern_return_t
-macosx_get_region_info (task_t task, 
-			mach_vm_address_t *r_start,
-			mach_vm_address_t *r_end,
-			mach_vm_size_t *r_size,
-			vm_prot_t *prot)
-{
-  vm_region_submap_short_info_data_64_t r_short_data;
-  mach_msg_type_number_t r_info_size;
-  natural_t r_depth;
-  kern_return_t kret;
-
-  r_depth = 1000;
-  r_info_size = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
-  kret = mach_vm_region_recurse (task, 
-				 r_start, r_size,
-				 & r_depth,
-				 (vm_region_recurse_info_t) &r_short_data, 
-				 &r_info_size);
-  *prot = r_short_data.protection;
-  return kret;
-}
-
-#endif
-
 int
 mach_xfer_memory (CORE_ADDR memaddr, gdb_byte *myaddr,
                   int len, int write,
@@ -418,6 +308,15 @@ mach_xfer_memory (CORE_ADDR memaddr, gdb_byte *myaddr,
   mach_vm_size_t r_size;
   natural_t r_depth;
   mach_port_t r_object_name;
+  mach_msg_type_number_t r_info_size;
+
+#ifdef VM_REGION_SUBMAP_SHORT_INFO_COUNT_64
+  vm_region_submap_short_info_data_64_t r_data;
+  #define GDB_VM_REGION_SUBMAP_INFO_COUNT_SIZE VM_REGION_SUBMAP_SHORT_INFO_COUNT_64
+#else
+  vm_region_submap_info_data_64_t r_data;
+  #define GDB_VM_REGION_SUBMAP_INFO_COUNT_SIZE VM_REGION_SUBMAP_INFO_COUNT_64
+#endif
 
   vm_prot_t orig_protection;
 
@@ -449,10 +348,14 @@ mach_xfer_memory (CORE_ADDR memaddr, gdb_byte *myaddr,
   /* check for case where memory available only at address greater than address specified */
   {
     r_start = memaddr;
-
-    kret = macosx_get_region_info (macosx_status->task,
-				   &r_start, &r_end, &r_size,
-				   &orig_protection);
+    r_info_size = GDB_VM_REGION_SUBMAP_INFO_COUNT_SIZE;
+    r_depth = 1000;
+    kret = mach_vm_region_recurse (macosx_status->task, 
+				   &r_start, &r_size,
+				   & r_depth,
+				   (vm_region_recurse_info_t) &r_data, 
+				   &r_info_size);
+    
     if (kret != KERN_SUCCESS)
       {
         return 0;
@@ -480,6 +383,8 @@ mach_xfer_memory (CORE_ADDR memaddr, gdb_byte *myaddr,
   cur_myaddr = myaddr;
   cur_len = len;
 
+  r_info_size = GDB_VM_REGION_SUBMAP_INFO_COUNT_SIZE;
+  
   while (cur_len > 0)
     {
 
@@ -488,10 +393,21 @@ mach_xfer_memory (CORE_ADDR memaddr, gdb_byte *myaddr,
       /* We want the inner-most map containing our address, so set
 	 the recurse depth to some high value, and call mach_vm_region_recurse.  */
 
-      kret = macosx_get_region_info (macosx_status->task, 
-				     &r_start, &r_end, &r_size,
-				     &orig_protection);
+      r_depth = 9999;
+      r_start = cur_memaddr;
+      kret = mach_vm_region_recurse (macosx_status->task, 
+				     &r_start, &r_size,
+				     &r_depth,
+				     (vm_region_recurse_info_t) & r_data, 
+				     &r_info_size);
+      if (write)
+	mutils_debug ("Pre-write in-depth 9999 - input: 0x%s, start: 0x%s, size: 0x%llx, "
+		      "depth %d, protection: %d, max_protection: %d\n",
+		      paddr_nz (cur_memaddr), paddr_nz (r_start), 
+		      r_size, r_depth, r_data.protection, r_data.max_protection);
       
+      orig_protection = r_data.protection;
+
       if (r_start > cur_memaddr)
         {
           mutils_debug
@@ -606,9 +522,10 @@ mach_xfer_memory (CORE_ADDR memaddr, gdb_byte *myaddr,
                              orig_protection);
           if (kret != KERN_SUCCESS)
             {
-              mutils_debug
-                ("Unable to restore original permissions for region at 0x%s - error \"%s\" (%lu)\n",
+              warning
+                ("Unable to restore original permissions for region at 0x%s - error \"%s\" (%lu)",
                  paddr_nz (cur_memaddr), MACH_ERROR_STRING (kret), (unsigned long) kret);
+              break;
             }
         }
 
@@ -1452,7 +1369,7 @@ gc_print_references (CORE_ADDR list_addr, int wordsize)
 	  
       ui_out_text (uiout, " Kind: ");
 
-      if (kind >= AUTO_BLOCK_GLOBAL && kind < AUTO_BLOCK_BYTES)
+      if (kind >= AUTO_BLOCK_GLOBAL && kind <= AUTO_BLOCK_BYTES)
 	{
 	  ui_out_field_string (uiout, "kind", auto_kind_strings[kind]);
 	  ui_out_text (uiout, auto_kind_spacer[kind]);

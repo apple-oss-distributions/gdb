@@ -1462,18 +1462,27 @@ int
 remove_breakpoints (void)
 {
   struct bp_location *b;
-  int val;
+  int retval = 0;
 
   ALL_BP_LOCATIONS (b)
   {
     if (b->inserted)
       {
+	int val;
 	val = remove_breakpoint (b, mark_uninserted);
+	/* APPLE LOCAL: Just because you can't remove
+	   one breakpoint, don't fail to remove all the
+	   others...  If you do this while single-stepping
+	   over a trap, you'll just end up hitting the trap
+	   over and over...  */
 	if (val != 0)
-	  return val;
+	  {
+	    warning ("Could not remove breakpoint at \"0x%s\".", paddr_nz (b->address));
+	    retval = val;
+	  }
       }
   }
-  return 0;
+  return retval;
 }
 
 int
@@ -9436,6 +9445,11 @@ do_enable_breakpoint (struct breakpoint *bpt, enum bpdisp disposition)
     {
       if (bpt->enable_state != bp_permanent)
 	bpt->enable_state = bp_enabled;
+
+      /* APPLE LOCAL: We mark breakpoints as unset in disable so we need
+	 to mark it as reset here.  */
+      bpt->bp_set_state = bp_state_set;
+
       bpt->disposition = disposition;
       check_duplicates (bpt);
       breakpoints_changed ();
@@ -9906,10 +9920,10 @@ find_finish_breakpoint (void)
    this flag whenever the objfile in which it is set changes.  Do this
    by calling this function with the changed objfile as argument. */
 
-void 
-tell_breakpoints_objfile_changed (struct objfile *objfile)
+void
+tell_breakpoints_objfile_changed_internal (struct objfile *objfile,
+					   int set_pending)
 {
-
   struct breakpoint *b, *tmp;
 
   if (objfile != NULL)
@@ -9935,6 +9949,8 @@ tell_breakpoints_objfile_changed (struct objfile *objfile)
 		  else
 		    {
 		      b->bp_set_state = bp_state_unset;
+		      if (set_pending)
+			b->pending = 1;
 		      /* APPLE LOCAL begin radar 5273932  */
 		      /* Save name of objfile in bp_objfile_name, so
 			 that if we attempt to reset the breakpoint
@@ -9973,6 +9989,25 @@ tell_breakpoints_objfile_changed (struct objfile *objfile)
     }
   breakpoint_generation--;
 }
+
+/* This one sets the breakpoint as unset, but doesn't mark
+   it as pending.  That way breakpoint_re_set_all will re-set
+   it.  */
+
+void 
+tell_breakpoints_objfile_changed (struct objfile *objfile)
+{
+  tell_breakpoints_objfile_changed_internal (objfile, 0);
+}
+
+/* Use this one if the the shared library has been unloaded.  We mark it
+   as pending again, so it will get reset when the shared library reappears.  */
+void 
+tell_breakpoints_objfile_removed (struct objfile *objfile)
+{
+  tell_breakpoints_objfile_changed_internal (objfile, 1);
+}
+
 /* APPLE LOCAL end future-break command */
 
 void

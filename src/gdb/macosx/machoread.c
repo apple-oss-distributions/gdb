@@ -37,6 +37,7 @@
 
 #include "mach-o.h"
 #include "gdb_assert.h"
+#include "macosx-nat-dyld-io.h"
 
 #include <string.h>
 
@@ -567,6 +568,9 @@ macho_read_indirect_symbols (bfd *abfd,
   for (section_count = abfd->section_count, bfdsec = abfd->sections;
        section_count > 0; section_count--, bfdsec = bfdsec->next)
     {
+      struct obj_section *osect;
+      int osect_idx;
+      int found_it;
 
       ret = bfd_mach_o_lookup_section (abfd, bfdsec, &lcommand, &section);
       if (ret != 1)
@@ -586,6 +590,31 @@ macho_read_indirect_symbols (bfd *abfd,
              bfd_section_name (abfd, bfdsec));
           continue;
         }
+
+      /* We need to find the correct section to get the offset
+	 for these symbols.  In the dyld shared cache, the IMPORT
+	 segments slides independently of the TEXT & DATA segments.
+	 so we can't just apply the TEXT offset.
+	 It's kind of annoying that the bfd index isn't the same as
+	 the objfile section_offsets index, so we have to search
+	 for it like this, but...  */
+
+      osect_idx = 0;
+      found_it = 0;
+
+      ALL_OBJFILE_OSECTIONS (objfile, osect)
+	{
+	  if (osect->the_bfd_section == bfdsec)
+	    {
+	      found_it = 1;
+	      break;
+	    }
+	  else
+	    osect_idx++;
+	}
+      if (!found_it)
+	osect_idx = SECT_OFF_TEXT (objfile);
+
 
       nsyms = section->size / section->reserved2;
 
@@ -623,10 +652,10 @@ macho_read_indirect_symbols (bfd *abfd,
           CHECK_FATAL ((strlen (sname) + sizeof ("__dyld_stub_") + 1) < 4096);
           sprintf (nname, "dyld_stub_%s", sname);
 
-          stubaddr += objfile_text_section_offset (objfile);
+          stubaddr += objfile_section_offset (objfile, osect_idx);
           prim_record_minimal_symbol_and_info (nname, stubaddr,
                                                mst_solib_trampoline, NULL,
-                                               SECT_OFF_TEXT (objfile),
+                                               osect_idx,
                                                bfdsec, objfile);
         }
     }
@@ -756,11 +785,68 @@ macho_calculate_offsets_for_dsym (struct objfile *main_objfile,
 				  struct section_offsets **sym_offsets,
 				  int *sym_num_offsets)
 {
+  bfd_boolean in_mem_shared_cache;
+  int i;  
+  in_mem_shared_cache = bfd_mach_o_in_shared_cached_memory (main_objfile->obfd);
+
+  if (in_mem_shared_cache)
+    {
+      gdb_assert (in_offsets);
+      if (in_offsets)
+	{
+	 /* When we have a main_objfile that is in the shared cache and is
+	     also memory based, we need to figure out the differences of each
+	     section compared to the mach segment map that is found in modern
+	     dSYM files. dSYM files contain all of the segment load commands
+	     from the original executable and we can figure out the offsets
+	     or addresses accordingly.  */
+	  struct bfd_section *sym_sect = NULL;
+	  struct bfd_section *exe_sect = NULL;
+	  bfd *exe_bfd = main_objfile->obfd;
+
+	  *sym_offsets = (struct section_offsets *)
+	    xmalloc (SIZEOF_N_SECTION_OFFSETS (in_num_offsets));
+	  memset (*sym_offsets, 0,
+		  SIZEOF_N_SECTION_OFFSETS (in_num_offsets));
+	  
+	  i = 0;
+	  exe_sect = exe_bfd->sections;
+	  sym_sect = sym_bfd->sections;
+	  for (i = 0; 
+	       exe_sect != NULL && i < in_num_offsets; 
+	       exe_sect = exe_sect->next, i++)
+	    {
+	      if (i > 0 && sym_sect != NULL)
+		sym_sect = sym_sect->next;
+  
+	      struct bfd_section *sect = NULL;
+	      if (sym_sect && strcmp (exe_sect->name, sym_sect->name) == 0)
+		sect = sym_sect;
+	      else
+		{
+		  /* Sections were out of order, lets search linearly for the
+		     section with the same name.  */
+		  for (sect = sym_bfd->sections; sect != NULL; sect = sect->next)
+		    {
+		      if (strcmp (exe_sect->name, sect->name) == 0)
+			break;
+		    }
+		}
+		
+	      (*sym_offsets)->offsets[i] = ANOFFSET (in_offsets, i);
+	      if (sect)
+		(*sym_offsets)->offsets[i] += exe_sect->vma - sect->vma;
+	    }
+	  *sym_num_offsets = in_num_offsets;
+	  return;
+	}
+    }
+    
+    
   CORE_ADDR dsym_offset = macho_calculate_dsym_offset (main_objfile->obfd,
 						       sym_bfd);
   if (in_offsets)
     {
-      int i;
       *sym_offsets = (struct section_offsets *)
 	xmalloc (SIZEOF_N_SECTION_OFFSETS (in_num_offsets));
       for (i = 0; i < in_num_offsets; i++)
@@ -770,7 +856,6 @@ macho_calculate_offsets_for_dsym (struct objfile *main_objfile,
     }
   else if (addrs)
     {
-      int i;
       *sym_offsets = (struct section_offsets *)
 	xmalloc (SIZEOF_N_SECTION_OFFSETS (addrs->num_sections));
       for (i = 0; i < addrs->num_sections; i++)
@@ -783,7 +868,6 @@ macho_calculate_offsets_for_dsym (struct objfile *main_objfile,
     }
   else if (dsym_offset != 0)
     {
-      int i;
       *sym_offsets = (struct section_offsets *)
 	xmalloc (SIZEOF_N_SECTION_OFFSETS (in_num_offsets));
       for (i = 0; i < in_num_offsets; i++)

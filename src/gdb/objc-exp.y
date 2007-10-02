@@ -754,14 +754,48 @@ variable:	name_not_typename
 			    }
 			  else if ($1.is_a_field_of_this)
 			    {
+                              struct symbol *func;
+                              enum runtime_type runtime = OBJC_RUNTIME;
+
 			      /* C++/ObjC: it hangs off of `this'/'self'.  
 				 Must not inadvertently convert from a 
 				 method call to data ref.  */
+
 			      if (innermost_block == 0 || 
 				  contained_in (block_found, innermost_block))
 				innermost_block = block_found;
-			      write_exp_elt_opcode (OP_OBJC_SELF);
-			      write_exp_elt_opcode (OP_OBJC_SELF);
+                              if (innermost_block)
+                                {
+                                  func = BLOCK_FUNCTION (innermost_block);
+                                }
+                              else
+                                func = NULL;
+
+                              /* If this is an ObjC++ file we could have either
+                                 a C++ function or an ObjC function - which
+                                 determines whether OP_OBJC_SELF or OP_THIS is
+                                 the right opcode to add here.  */
+
+                              if (func 
+                                  && TYPE_RUNTIME (SYMBOL_TYPE (func)) != OBJC_RUNTIME)
+                                {
+                                  if (SYMBOL_LANGUAGE(func) == language_cplus
+                                      || SYMBOL_LANGUAGE(func) == language_objcplus)
+                                    {
+                                      runtime = CPLUS_RUNTIME;
+                                    }
+                                }
+
+                              if (runtime == OBJC_RUNTIME)
+                                {
+			          write_exp_elt_opcode (OP_OBJC_SELF);
+			          write_exp_elt_opcode (OP_OBJC_SELF);
+                                }
+                              else
+                                {
+			          write_exp_elt_opcode (OP_THIS);
+			          write_exp_elt_opcode (OP_THIS);
+                                }
 			      write_exp_elt_opcode (STRUCTOP_PTR);
 			      write_exp_string ($1.stoken);
 			      write_exp_elt_opcode (STRUCTOP_PTR);

@@ -508,6 +508,8 @@ typedef struct mach_o_data_struct bfd_mach_o_data_struct;
 
 /* APPLE LOCAL  Mach-O */
 unsigned int bfd_mach_o_version (bfd *);
+/* APPLE LOCAL shared cache  */
+bfd_boolean bfd_mach_o_in_shared_cached_memory (bfd *);
 
 bfd_boolean        bfd_mach_o_valid  (bfd *);
 int                bfd_mach_o_scan_read_symtab_symbol        (bfd *, bfd_mach_o_symtab_command *, asymbol *, unsigned long);

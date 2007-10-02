@@ -2669,6 +2669,27 @@ add_symbol_file_command (char *args, int from_tty)
   if (filename == NULL)
     error ("usage: must specify exactly one filename");
 
+  /* APPLE LOCAL: Did the user do "add-symbol-file whatever.dSYM" when 
+     they really intended to do an add-dsym?
+     If there were any arguments to add-symbol-file in addition to the filename,
+     we'll assume they know what they're doing and give them a warning.
+     If it's just the dSYM bundle name, redirect to add-dsym.  */
+
+  if (strstr (filename, ".dSYM"))
+    {
+      if (address != NULL || flags != OBJF_USERLOADED || section_index != 0
+          || mapaddr != 0 || prefix != NULL)
+        {
+          warning ("add-symbol-file doesn't work on dSYM files, use "
+                   "\"add-dsym\" instead.");
+        }
+      else
+        {
+          add_dsym_command (filename, from_tty);
+          return;
+        }
+    }
+
   /* Print the prompt for the query below. And save the arguments into
      a sect_addr_info structure to be passed around to other
      functions.  We have to split this up into separate print

@@ -25,6 +25,8 @@
 
 #include "gdb_obstack.h"	/* For obstack internals.  */
 #include "symfile.h"		/* For struct psymbol_allocation_list */
+/* APPLE LOCAL subroutine inlining  */
+#include "inlining.h"           /* For information about inlined subroutines  */
 #include <sqlite3.h>
 
 struct bcache;
@@ -504,6 +506,10 @@ struct objfile
     /* APPLE LOCAL begin dwarf repository  */
     int uses_sql_repository;
     /* APPLE LOCAL end dwarf repository  */
+
+    /* APPLE LOCAL begin subroutine inlining  */
+    struct rb_tree_node *inlined_subroutine_data;
+    /* APPLE LOCAL end subroutine inlining  */
   };
 
 /* Defines for the objfile flag word. */

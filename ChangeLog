@@ -1,8 +1,8 @@
-2007-07-10  Jim Ingham  <jingham@apple.com>  
+2007-07-10  Jason Molenda  (jmolenda@apple.com)
 
-	* Makefile: Hard-code the Salt path to the Developer documentation, 
-	since we can't seem to get useful values from the system.
-	
+	* Makefile (GDB_RC_VERSION): Bump Leopard gdb version up to gdb-750
+	to leave a hole for Xcode 2.5 gdb submissions on the branch.
+
 2007-05-22  Jason Molenda  (jmolenda@apple.com)
 
 	* gdb.sh: If the gdb shell script being run is a soft link to the

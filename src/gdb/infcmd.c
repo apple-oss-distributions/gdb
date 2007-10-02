@@ -53,6 +53,7 @@
 #include "gdb_assert.h"
 /* APPLE LOCAL - subroutine inlining  */
 #include "inlining.h"
+#include "exceptions.h"
 
 /* APPLE LOCAL checkpoints */
 #include "checkpoint.h"
@@ -996,7 +997,12 @@ step_once (int skip_subroutines, int single_inst, int count)
       step_range_end = sal.pc;
       step_over_calls = STEP_OVER_ALL;
       stepping_over_inlined_subroutine = 1;
-      stepping_ranges = global_inlined_call_stack.records[stack_pos].ranges;
+      if (current_inlined_subroutine_stack_size() > 0
+	  && stack_pos > 0
+	  && stack_pos < current_inlined_subroutine_stack_size ())
+	stepping_ranges = global_inlined_call_stack.records[stack_pos].ranges;
+      else
+	stepping_ranges = 0;
 
       proceed ((CORE_ADDR) -1, TARGET_SIGNAL_DEFAULT, 1);
     }
@@ -1006,20 +1012,29 @@ step_once (int skip_subroutines, int single_inst, int count)
       struct symtab_and_line sal;
       struct symtab_and_line tmp_sal;
       struct symtab_and_line *cur = NULL;
-      struct symbol *func_sym;
+      struct symbol *func_sym = NULL;
       struct symtab *tmp_symtab;
+      char *func_name = NULL;
       int func_first_line = 0;
       int found = 0;
 
       stepping_into_inlined_subroutine = 1;
 
-      func_sym = lookup_symbol 
-	((const char *) current_inlined_subroutine_function_name (),
-	 get_selected_block (0), VAR_DOMAIN, 0, &tmp_symtab);
+      func_name = current_inlined_subroutine_function_name ();
+      if (func_name)
+	func_sym = lookup_symbol ((const char *) func_name,
+				  get_selected_block (0), VAR_DOMAIN, 0, 
+				  &tmp_symtab);
 
       if (func_sym)
 	{
-	  tmp_sal = find_function_start_sal (func_sym, 1);
+	  struct gdb_exception e;
+	  TRY_CATCH (e, RETURN_MASK_ERROR)
+	  {
+	    tmp_sal = find_function_start_sal (func_sym, 1);
+	  }
+	  if (e.reason != NO_ERROR)
+	    error ("Can't step into \"%s\" - try \"next\" instead.", func_name);
 				
 	  func_first_line = tmp_sal.line;
 	}
@@ -1087,8 +1102,6 @@ step_once (int skip_subroutines, int single_inst, int count)
 		  sal = *cur;
 		}
 	    }
-	  
-	  gdb_assert (found == 1);
 	  
 	  /* Stepping into an inlined function requires creating a new
 	     INLINED_FRAME, at level 0, so we need to flush the current

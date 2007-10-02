@@ -855,8 +855,8 @@ print_single_dwarf_location (struct ui_file *stream, gdb_byte **loc_ptr,
 	    op_ptr = read_sleb128 (op_ptr, op_end, &offset);
 	    result = op - DW_OP_breg0;
 
-	    fprintf_filtered (stream, "at the address (reg %d + 0x%s)", 
-                              (unsigned int) result, paddr_nz (offset));
+	    fprintf_filtered (stream, "at the address (reg %d + %d)", 
+                              (unsigned int) result, (signed int) offset);
 	    /*
 	      result = (ctx->read_reg) (ctx->baton, op - DW_OP_breg0);
 	      result += offset;
@@ -867,8 +867,8 @@ print_single_dwarf_location (struct ui_file *stream, gdb_byte **loc_ptr,
 	  {
 	    op_ptr = read_uleb128 (op_ptr, op_end, &reg);
 	    op_ptr = read_sleb128 (op_ptr, op_end, &offset);
-	    fprintf_filtered (stream, "at the address (reg %d + 0x%s)",
-                     (unsigned int) reg, paddr_nz (offset));
+	    fprintf_filtered (stream, "at the address (reg %d + %d)",
+			      (unsigned int) reg, (signed int)  offset);
 	    /*
 	      result = (ctx->read_reg) (ctx->baton, reg);
 	      result += offset;
@@ -887,8 +887,8 @@ print_single_dwarf_location (struct ui_file *stream, gdb_byte **loc_ptr,
 	       afterwards, effectively erasing whatever the recursive
 	       call put there.  */
 	    fprintf_filtered (stream, 
-                          "at offset 0x%s from the frame base pointer", 
-                          paddr_nz (offset));
+                          "at offset %d  from the frame base pointer", 
+			      (signed int) offset);
 	    before_stack_len = ctx->stack_len;
 	    /* FIXME: cagney/2003-03-26: This code should be using
 	       get_frame_base_address(), and then implement a dwarf2

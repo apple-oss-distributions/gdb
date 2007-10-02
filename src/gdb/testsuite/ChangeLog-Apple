@@ -1,3 +1,14 @@
+2007-07-27  Jim Ingham (jingham@apple.com)
+
+	* gdb.apple/unloading.exp: More tests.
+
+2007-07-11  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/fix-and-continue/small-c/Makefile: Build the fix bundles
+	into their own .o files so the debug info persists.
+	* ../fix-and-continue/small-c/fix-small-c.exp: Updated to expect the
+	new compiler output text.
+
 2007-07-09  Caroline Tice  <ctice@apple.com>
 
         * gdb.apple/nested-inlines-console.x86.exp:  Fix test to

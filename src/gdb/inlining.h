@@ -173,11 +173,10 @@ extern int inlined_function_call_stack_initialized_p (void);
 
 extern void inlined_function_update_call_stack (CORE_ADDR);
 
-extern void inlined_function_add_function_names (CORE_ADDR, CORE_ADDR, int, int,
+extern void inlined_function_add_function_names (struct objfile *, CORE_ADDR,
+						 CORE_ADDR, int, int,
 						 char *, char *, 
 						 struct address_range_list *);
-
-extern void fix_up_inlined_function_line_table_entries (void);
 
 extern int at_inlined_call_site_p (char **, int *, int *);
 
@@ -280,6 +279,12 @@ extern struct rb_tree_node *rb_tree_find_node_all_keys (struct rb_tree_node *,
 
 extern void rb_tree_insert (struct rb_tree_node **, struct rb_tree_node *, 
 			    struct rb_tree_node *);
+
+extern void inlined_subroutine_free_objfile_data (struct rb_tree_node *);
+
+extern void inlined_subroutine_objfile_relocate (struct objfile *,
+						 struct rb_tree_node *,
+						 struct section_offsets *);
 
 #endif /* !defined(INLINE_H) */
 /* APPLE LOCAL end subroutine inlining (entire file) */

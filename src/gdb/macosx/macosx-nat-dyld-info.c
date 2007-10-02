@@ -216,12 +216,12 @@ void
 dyld_objfile_info_pack (struct dyld_objfile_info *i)
 {
   int j;
-  for (j = 0; j < i->nents; j++)
+  for (j = 0; j < i->nents - 1; j++)
     {
       if (!i->entries[j].allocated)
         {
           memmove (&i->entries[j], &i->entries[j + 1],
-                   (i->nents - j) * sizeof (struct dyld_objfile_entry));
+                   (i->nents - j - 1) * sizeof (struct dyld_objfile_entry));
           i->nents--;
           j--;
         }

@@ -1,5 +1,5 @@
 GDB_VERSION = 6.3.50-20050815
-GDB_RC_VERSION = 696
+GDB_RC_VERSION = 768
 
 BINUTILS_VERSION = 2.13-20021117
 BINUTILS_RC_VERSION = 46
@@ -18,7 +18,7 @@ BINUTILS_RC_VERSION = 46
 # the platform-variables.make file exists.
 
 OS=MACOS
-SYSTEM_DEVELOPER_TOOLS_DOC_DIR=/Developer/ADC Reference Library/documentation/DeveloperTools
+SYSTEM_DEVELOPER_TOOLS_DOC_DIR=/Developer/Documentation/DocSets/com.apple.ADC_Reference_Library.DeveloperTools.docset/Contents/Resources/Documents/documentation/DeveloperTools
 
 
 ifndef RC_ARCHS

@@ -2882,10 +2882,46 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
          0) instead of a real line.  */
 
       /* APPLE LOCAL begin subroutine inlining  */
-      if (prev && prev->line && prev->entry_type == NORMAL_LT_ENTRY
-	  && (!best || prev->pc > best->pc))
-      /* APPLE LOCAL end subroutine inlining  */
+      /* We only want to use non-NORMAL line table entries, if they exactly
+	 match the pc we are searching for.  Otherwise we want to use only
+	 NORMAL entries.  If 'prev' is not NORMAL, and its pc does not match
+	 the one we are searching for then we know that: 1). 'prev' has a pc
+	 value less than PC; 2). 'item' has a pc value greater than PC;  3).
+	 there is supposed to be a NORMAL entry that has the same pc value
+	 as 'prev', and since it is not after prev, it must be before prev.
+	 Therefore we will search backwards from prev for the first NORMAL
+	 entry we find and assign prev to be that (leaving 'item' where it is,
+	 namely the next highest pc in the line table).  */
+      if (prev && prev->pc != pc && prev->entry_type != NORMAL_LT_ENTRY)
 	{
+	  struct linetable_entry *temp_prev;
+	  temp_prev = prev;
+	  while (temp_prev > l->item
+		 && temp_prev->entry_type != NORMAL_LT_ENTRY)
+	    temp_prev--;
+	  prev = temp_prev;
+	}
+
+      if (prev && prev->line && (!best || prev->pc > best->pc))
+	{
+	  /* If we are changing the value of 'best', then any data
+	     in temp_list and inlined_entries_found is stale and needs
+	     to be removed/re-set.  Since temp_list is a linked list,
+	     we need to traverse the list to free the elements.  */
+	  if (temp_list && temp_list->pc != prev->pc)
+	    {
+	      struct symtab_and_line *p, *c;
+	      p = temp_list;
+	      while (p)
+		{
+		  c = p->next;
+		  xfree (p);
+		  p = c;
+		}
+	      temp_list = NULL;
+	      inlined_entries_found = 0;
+	    }
+	  /* APPLE LOCAL end subroutine inlining  */
 	  best = prev;
 	  best_symtab = s;
 
@@ -2910,8 +2946,27 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
 	  && (prev == best || prev->pc == pc))
 	/*  || (prev->pc == pc && prev->entry_type != NORMAL_LT_ENTRY))) */
 	{
+	  if (temp_list && temp_list->pc != prev->pc)
+	    {
+	      /* If temp_list->pc does not match prev->pc, then the
+		 data in temp_list and inlined_entries_found is stale
+		 and needs to be removed/re-set.  Since temp_list is a
+		 linked list, we need to traverse the list to free the
+		 elements.  */
+	      struct symtab_and_line *p, *c;
+	      p = temp_list;
+	      while (p)
+		{
+		  c = p->next;
+		  xfree (p);
+		  p = c;
+		}
+	      temp_list = NULL;
+	      inlined_entries_found = 0;
+	    }
+
 	  temp_val = (struct symtab_and_line *) xmalloc 
-	                                      (sizeof (struct symtab_and_line));
+	                                     (sizeof (struct symtab_and_line));
 	  temp_val->symtab = s;
 	  temp_val->section = section;
 	  temp_val->line = prev->line;
@@ -2951,7 +3006,7 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
 	  item++;
 
 	  if (prev && prev->line && prev->entry_type == NORMAL_LT_ENTRY
-	      && (!best || prev->pc > best->pc))
+	      && (!best || prev->pc >= best->pc))
 	    {
 	      best = prev;
 	      best_symtab = s;
@@ -3032,6 +3087,8 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
       struct symtab_and_line *cur;
       struct symtab_and_line *p;
       struct symtab_and_line *outer_call_site = NULL;
+
+      init_sal (&final_val);
 
       /* Find the outermost call_site.  */
       
@@ -3123,6 +3180,8 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
       if (final_val.pc == outer_call_site->pc)
 	final_val.line = outer_call_site->line;
  
+      if (final_val.symtab == NULL)
+	warning ("Returning an unfilled final_val");
       return final_val;
     }
   /* APPLE LOCAL end subroutine inlining  */

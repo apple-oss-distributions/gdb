@@ -1298,7 +1298,9 @@ i386_frame_this_id (struct frame_info *next_frame, void **this_cache,
      come from the registers.  */
   if (get_frame_type (next_frame) != SENTINEL_FRAME)
     {
-      if (cache->base == 0)
+      if (cache->base == 0 
+          || (get_prev_frame (next_frame) != NULL 
+              && frame_pc_unwind (get_prev_frame (next_frame)) == 0))
 	{
 	  *this_id = null_frame_id;
 	  return;

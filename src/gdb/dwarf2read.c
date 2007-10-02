@@ -4519,13 +4519,6 @@ read_inlined_subroutine_scope (struct die_info *die, struct dwarf2_cu *cu)
   if (!dwarf2_get_pc_bounds (die, &lowpc, &highpc, &ranges, cu))
     return;
 
-  for (c = die->child; c; c = sibling_die (c))
-    if (c->tag == DW_TAG_lexical_block)
-      break;
-
-  if (c && c->tag == DW_TAG_lexical_block)
-    dwarf2_get_pc_bounds (c, &lowpc, &highpc, &ranges, cu);
-
   lowpc += baseaddr;
   highpc += baseaddr;
 
@@ -5707,6 +5700,42 @@ read_structure_type (struct die_info *die, struct dwarf2_cu *cu)
 
       do_cleanups (back_to);
     }
+
+  /* APPLE LOCAL: Figure out which runtime this type belongs to...  
+     Only do this for ObjC & ObjC++.  Otherwise we default to the
+     C++ runtime.  We could add defines for ADA etc, but we don't
+     use that, and it's really only important when you can mix runtimes
+     in a single CU.  */
+  if (cu->language == language_objc
+      || cu->language == language_objcplus
+      || cu->language == language_unknown)
+    {
+      if (TYPE_N_BASECLASSES (type) == 0)
+	{
+	  /* If there are no baseclasses, see if this is the 
+	     base of the ObjC Hierarchy.  */
+	  if (TYPE_TAG_NAME (type) 
+	      && (strcmp(TYPE_TAG_NAME (type), "NSObject") == 0
+		  || strcmp (TYPE_TAG_NAME (type), "objc_object") == 0))
+	    TYPE_RUNTIME (type) = OBJC_RUNTIME;
+	  else
+	    TYPE_RUNTIME (type) = CPLUS_RUNTIME;
+	}
+      else if (TYPE_N_BASECLASSES (type) > 1)
+	{
+	  /* ObjC is single inheritance only, so is there's more than one
+	     baseclass it can't be ObjC.  */
+	  TYPE_RUNTIME (type) = CPLUS_RUNTIME;
+	}
+      else
+	{
+	  /* The type inherits its runtime from its parent.  */
+	  TYPE_RUNTIME (type)
+	    = TYPE_RUNTIME(TYPE_FIELD_TYPE (type, 0));
+	}
+    }
+  else
+    TYPE_RUNTIME (type) = CPLUS_RUNTIME;
 
   processing_current_prefix = previous_prefix;
   if (back_to != NULL)
@@ -8431,6 +8460,7 @@ check_inlined_function_calls (struct subfile *subfile, int file_index, int line,
 			      struct dwarf2_cu *cu, char *comp_dir)
 {
   struct inlined_call_record *current = NULL;
+  struct objfile *objfile = cu->objfile;
   struct subfile *tmp_subfile = NULL;
   struct rb_tree_node *rb_node;
   int done = 0;
@@ -8556,7 +8586,8 @@ check_inlined_function_calls (struct subfile *subfile, int file_index, int line,
 		       current->highpc,
 		       INLINED_SUBROUTINE_LT_ENTRY);
 	  /* APPLE LOCAL begin address ranges  */
-	  inlined_function_add_function_names (current->lowpc, 
+	  inlined_function_add_function_names (objfile,
+					       current->lowpc, 
 					       current->highpc,
 					       current->line, current->column,
 					       current->name,

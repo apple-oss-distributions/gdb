@@ -37,6 +37,7 @@
 #include "gdb_stat.h"
 #include "arch-utils.h"
 #include "gdbarch.h"
+#include "symfile.h"
 
 #include "gdb_stat.h"
 
@@ -1321,6 +1322,16 @@ dyld_load_symfile_internal (struct dyld_objfile_entry *e,
 
       CHECK_FATAL (e->abfd != NULL);
 
+      /* Is this in the shared cache?  If so, and we don't already
+         have section offsets, we need to call a special routine to
+         compute the offsets -- dylibs in the shared cache have
+         different slide values for different sections.  */
+
+      if (e->in_shared_cache && e->dyld_section_offsets == NULL
+          && e->dyld_valid)
+        e->dyld_section_offsets = 
+                  get_sectoffs_for_shared_cache_dylib (e, e->loaded_addr);
+
       /* If we just have a slide then that means that the whole objfile is 
 	 sliding by the same amount.  So we make up a section_addr_info
 	 struct, and fill each element with the slide value.  Otherwise, we
@@ -1359,18 +1370,36 @@ dyld_load_symfile_internal (struct dyld_objfile_entry *e,
       else
 	{
 	  using_orig_objfile = 1;
+	  int i, num_offsets;
+	  struct bfd_section *this_sect;
+
+          /* bfd sections are not the same as objfile sections.  */
+	  num_offsets = 0;
+	  if (e->dyld_section_offsets != NULL)
+	    {
+	      this_sect = e->abfd->sections;
+	      for (i = 0; 
+                   i < bfd_count_sections (e->abfd); 
+                   i++, this_sect = this_sect->next)
+		{
+		  if (objfile_keeps_section (e->abfd, this_sect))
+		    num_offsets++;
+		}
+	    }
+
 	  TRY_CATCH (exc, RETURN_MASK_ALL)
 	    {
 	      e->objfile =
-		symbol_file_add_bfd_using_objfile (e->objfile,
+		symbol_file_add_with_addrs_or_offsets_using_objfile (e->objfile,
 						   e->abfd, 
 						   0, 
 						   addrs, 
 						   e->dyld_section_offsets,
+                                                   num_offsets,
 						   0, 0, 
 						   e->load_flag, 
 						   0,
-						   e->prefix);
+						   e->prefix, NULL);
 	    }
 	  if (exc.reason == RETURN_ERROR)
 	    e->objfile = NULL;

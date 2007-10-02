@@ -1,7 +1,230 @@
-2007-10-19  Jim Ingham  <jingham@apple.com>
+2007-10-01  Caroline Tice  (ctice@apple.com)
 
-	* objfiles.c (objfile_relocate): Don't use the bfd section index
-	to index into the offsets.
+	* inlining.c (add_item_to_inlined_subroutine):  Move code that updates
+	max_array_size fields  to right after the re-sizing code.
+
+2007-09-28  Jason Molenda  (jmolenda@apple.com)
+
+	* symfile.h: Add prototype for 
+	symbol_file_add_with_addrs_or_offsets_using_objfile.
+
+2007-09-28  Caroline Tice  (ctice@apple.com)
+
+	* inlining.c (add_item_to_inlined_subroutine_stack):  Fix off-by-one
+	error when deciding whether or not to re-alloc the records array.
+
+2007-09-14  Caroline Tice  (ctice@apple.com)
+
+	* inlining.c (add_item_to_inlined_subroutine_stack):  Check to see if
+	new item belongs at very bottom of stack & put it there if so; make
+	sure function name fields always contain a string (a dummy string if 
+	not the proper function names).
+
+2007-09-12  Jim Ingham (jingham@apple.com)
+
+	* varobj.c (get_join_type): Follow possibly typedef'ed type to
+	actual type before processing it.
+
+2007-09-12  Jason Molenda  (jmolenda@apple.com)
+
+        * symfile.c (add_symbol_file_command): If the symbol file is a dSYM
+        bundle, redirect to add-dsym.
+
+2007-09-12  Caroline Tice  <ctice@apple.com>
+
+        * inlining.c (at_inlined_call_site_p):  Remove code that attempted
+	to detect when the first line the inferior stopped at, in an inlined
+	subroutine, is beyond the official start of the inlined subroutine.
+
+2007-09-08  Caroline Tice  <ctice@apple.com>
+
+        * inlining.c (inlined_function_add_function_names):  Instead of
+	sharing the ranges pointer, malloc new ranges records for the rb tree
+	and copy the ranges contents into the new records.
+
+2007-09-07  Caroline Tice  <ctice@apple.com>
+
+        * dwarf2read.c (read_inlined_subroutine_scope): Remove code that
+	used DWARF lexical blocks to find address ranges of inlined
+	subroutines.
+
+2007-09-04  Caroline Tice  <ctice@apple.com>
+
+        * inlining.c (update_inlined_data_addresses): Change type of offset
+	from 'int' to 'CORE_ADDR'.
+	(inlined_subroutine_objfile_relocate): Change type of offset from
+	'int' to 'CORE_ADDR'.
+
+2007-08-31  Caroline Tice  <ctice@apple.com>
+
+        * symtab.c (find_pc_sect_line): Free temp_list and re-initialize
+          inlined_entries_found if temp_list->pc does not match best->pc
+          or prev->pc; only allow 'prev' to be a non-NORMAL entry if
+          prev->pc exactly matches the search pc, otherwise assign prev to
+          the first NORMAL entry preceding it in the line table; initialize
+          final_val to zeros & warn if does not get updated later.
+
+2007-08-31  Jim Ingham  <jingham@apple.com>
+
+	* infcmd.c (step_once): Catch the error in find_function_start_sal and
+	turn it into a more helpful error message.
+	
+2007-08-24  Caroline Tice  <ctice@apple.com>
+
+	* symtab.c (find_pc_sect_line): Remove check that forced prev to be
+	a NORMAL_LT_ENTRY before assigning to 'best'; allow change '>'
+	to '>=' when comparing prev->pc to best->pc, when finding the NORMAL
+	entry to assign to best from a list of entries with identical pc's.
+
+2007-08-17  Caroline Tice  <ctice@apple.com>
+
+	* infcmd.c (step_once) Make sure 
+	current_inlined_subroutine_function_name () is not null before
+	attempting to do a lookup_symbol on it.
+
+
+2007-08-17  Caroline Tice  <ctice@apple.com>
+
+	* dwarf2read.c (check_inlined_function_calls) Determine current
+	objfile and pass it to calls to inlined_function_add_function_names.
+	* inlining.c (function_name_records): Remove global variable.
+	(inlined_function_address_ranges_properly_contained): Remove all_fit 
+	from for-condition; change < to <= when comparing start addresses.
+	(find_function_names_and_address_ranges):  Add new parameter, objfile;
+	use objfile->inlined_subroutine_data to lookup up function name 
+	records.
+	(add_item_to_inlined_subroutine_stack):  Make sure there is a 
+	symbol table, get the objfile from the symbol table, and pass the
+	objfile to find_function_names_and_address_ranges.
+	(update_function_names_and_address_ranges): Delete function.
+	(tree_fix_up_inlined_function_line_table_entries): Delete function.
+	(fix_up_inlined_function_line_table_entries): Delete function.
+	(inlined_function_add_function_names):  Add new parameter, objfile;
+	look up for existing records in objfile->inlined_subroutine_data;
+	add new records to objfile->inlined_subroutine_data.
+	(check_for_additional_inlined_breakpoint_locations): Now that each
+	objfile has its own inlined data, search through all the inlined
+	data of all the objfiles for name matches, for setting breakpoints.
+	(inlined_subroutine_free_objfile_data): New function.
+	(update_inlined_data_addresses): New function.
+	(inlined_subroutine_objfile_relocate): New function.
+	* inlining.h (inlined_function_add_function_names):  Add objfile 
+	parameter to extern declaration.
+	(inlined_subroutine_free_objfile_data): New extern declaration.
+	(inlined_subroutine_objfile_relocate): New extern declaration.
+	* objfiles.c (free_objfile_internal):  Add call to 
+	inlined_subroutine_free_objfile_data & make sure the 
+	inlined_subroutine_data field is free'd.
+	(objfile_relocate):  Add call to inlined_subroutine_objfile_relocate.
+	* objfiles.h (inlining.h) New include statement.
+	(struct objfile):  Add new field, inlined_subroutine_data.
+
+2007-08-07  Jason Molenda  (jmolenda@apple.com)
+
+	* inlining.c (in_inlined_function_call_p): Don't examine call stack
+	records that we haven't stepped into, instead of recording them and
+	then trying to elide them after the fact.
+
+2007-08-07  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (find_implementation_from_class): Abort the method
+	lookup after objc_class_method_limit lookups.
+	(_initialize_objc_language): Add set command for 
+	objc_class_method_limit.
+	
+2007-08-03  Jason Molenda  (jmolenda@apple.com)
+
+	* dwarf2expr.c (execute_stack_op): Detect and work around bogus
+	expression emitted by gcc-4.0.
+
+2007-08-01  Jason Molenda  (jmolenda@apple.com)
+
+        * rs6000-tdep.c (rs6000_stab_reg_to_regnum): Recognize and map
+        gcc 4.0's incorrect register numbering for AltiVec regs when 
+        unambiguous.
+
+2007-08-01  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.c (objfile_relocate): Relocate the new "end_pc"
+	field in the linetable_items.
+	
+2007-07-30  Greg Clayton  <gclayton@apple.com>
+
+	* dbxread.c (dbx_symfile_read): Handle in memory shared cache symbol
+	table reading.
+	* objfiles.c (objfile_section_offset): Handle in memory shared cache
+	section offsets correctly.
+
+2007-07-31  Jim Ingham  <jingham@apple.com>
+
+	* varobj.c (varobj_create): Suppress the warning when trying
+	to make a varobj from a type.
+	
+	* linespec.c (minsyms_found): Use the correct index when
+	adding equivalence elements to the "canonical" array.
+	
+	* breakpoint.c (do_enable_breakpoint): Change the bp_set_state
+	when the breakpoint gets enabled.
+	
+2007-07-27  Jim Ingham (jingham@apple.com)
+
+	* breakpoint.c (remove_breakpoints): If we can't remove a breakpoint,
+	issue a warning and continue to remove the other breakpoints.
+	(tell_breakpoints_objfile_changed): Renamed to 
+	tell_breakpoints_objfile_changed_internal, generalized to allow removed
+	breakpoints to be marked as pending.
+	(tell_breakpoints_objfile_changed): Old behavior.
+	(tell_breakpoints_objfile_removed): New behavior - mark removed 
+	breakpoints as pending.
+	* breakpoint.h (tell_breakpoints_objfile_removed): Prototype.
+
+2007-07-27  Caroline Tice  <ctice@apple.com>
+
+        * infcmd.c (step_once): Add some tests to make sure stepping ranges is
+	only set if stop_pc is actually in an inlined function; remove an
+	assert that I discovered is not necessarily going to be true.
+
+2007-07-25  Jim Ingham (jingham@apple.com)
+
+        * varobj.c (enum varobj_join_type): New enumeration to track how
+        to build varobj paths between parents/children.
+        (struct varobj): Add join_in_expr, elide_in_expr fields.
+        (get_join_type): New func; logic from c_path_expr_of_child.
+        (varobj_create): Initialize the join_in_expr field.
+        (create_child): Set up the join_in_expr/elide_in_expr fields.
+        (new_variable): Initialize new fields.
+        (path_expr_of_variable): Use new fields.
+        (c_path_expr_of_child): Ditto.
+        (cplus_path_expr_of_child): Ditto.
+
+2007-07-25  Jason Molenda  (jmolenda@apple.com)
+
+        * i386-tdep.c (i386_frame_this_id): If saved PC value for
+        the frame we're creating an id for is 0x0 and it's not
+        the 0th frame, we're past the end of the stack.
+        * amd64-tdep.c (amd64_frame_this_id): Ditto.
+
+2007-07-17  Jason Molenda  (jmolenda@apple.com), Jim Ingham (jingham@apple.com)
+
+	* dwarf2read.c (read_structure_type): In C++/ObjC++ translation units,
+	try to determine if a class is an ObjC class or a C++ class and mark
+	the results.
+	* gdbtypes.h (enum runtime_type): New.
+	(struct cplus_struct_type): New runtime_type field.
+	* objc-exp.y: If in a C++/ObjC++ file and class is marked as being
+	a C++ class, pus OP_THIS instead of OP_OBJC_SELF so we get the
+	correct "this" vs. "self" name when we evaluate the expression.
+
+2007-07-17  Caroline Tice  <ctice@apple.com>
+
+	* dwarf2loc.c (print_single_dwarf_location):  Make sure results of
+	SLEB 128 tranlations are written out as signed ints.
+
+2007-07-10  Jim Ingham  <jingham@apple.com>
+
+	* buildsym.c (finish_block): Expand the global block if one of
+	the pending functions is outside its range rather than the other
+	way round.
 	
 2007-07-10  Caroline Tice  <ctice@apple.com>
 
