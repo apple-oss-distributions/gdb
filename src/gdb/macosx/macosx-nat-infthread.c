@@ -151,15 +151,8 @@ modify_trace_bit (thread_t thread, int value)
 
 }
 
-#elif defined (TARGET_ARM) /* ARM HACK: kernel doesn't support hardware single step on ARM.  */
-kern_return_t
-modify_trace_bit (thread_t thread, int value)
-{
-  /* abort (); */
-  return KERN_SUCCESS;
-}
 #else
-#error "unknown architecture"
+#error unknown architecture
 #endif
 
 void

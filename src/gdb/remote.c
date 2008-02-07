@@ -540,21 +540,10 @@ dump_protocol_log ()
           else
             fprintf_filtered (gdb_stderr, "Recvd: ");
           struct timeval *t = &(protocol_log.ents[i].tv);
-          fprintf_filtered (gdb_stderr, "[%0.3f",
-                      ((double) t->tv_sec * 1000000 + t->tv_usec) / 1000000);
-          if (protocol_log.ents[i].mi_token[0] != '\0')
-            fprintf_filtered (gdb_stderr, ":%s", protocol_log.ents[i].mi_token);
-          fprintf_filtered (gdb_stderr, "] ");
-          const char *p = protocol_log.ents[i].packet;
-          while (p && *p != '\0')
-            {
-              if (isprint (*p))
-                fprintf_filtered (gdb_stderr, "%c", *p);
-              else
-                fprintf_filtered (gdb_stderr, "\\x%02x", *p & 0xff);
-              p++;
-            }
-          fprintf_filtered (gdb_stderr, "\n");
+          fprintf_filtered (gdb_stderr, "[%0.3f:%s] %s\n", 
+                      ((double) t->tv_sec * 1000000 + t->tv_usec) / 1000000,
+                      protocol_log.ents[i].mi_token,
+                      protocol_log.ents[i].packet);
         }
       if (++i == PROTOCOL_LOG_COUNT)
         i = 0;
@@ -1181,37 +1170,6 @@ send_remote_debugflags_pkt (const char *flags)
   getpkt (buf, sizeof (buf) - 1, 0);
   if (buf[0] != 'O' || buf[1] != 'K')
     return 0;
-  return 1;
-}
-
-/* APPLE LOCAL: Tell the remote stub the maximum payload size gdb can handle.
-   "payload" does not include the packet-start '$', the 
-   packet-end '#', or the 2-character checksum.
-   Any packets that the remote stub wants to send that are larger 
-   than this, it should break up into multiple packets.  
-   Note that the packet size is sent as a hex value without a 
-   "0x" prefix, as is the style of gdb remote protocol.  
-
-   This ONLY tells the remote stub how large of a packet gdb can 
-   receive.  It doesn't say anything about how large of a packet gdb
-   might try to send or about how large of a packet the remote stub
-   may be able to send/receive.  */
-
-static int
-send_remote_max_payload_size ()
-{
-  struct remote_state *rs = get_remote_state ();
-  if (rs->remote_packet_size < 4)
-    return 0;
-
-  char buf[32];
-  snprintf (buf, sizeof (buf), "QSetMaxPayloadSize:%x", 
-            (int) rs->remote_packet_size - 4);
-  putpkt (buf);
-  getpkt (buf, sizeof (buf) - 1, 0);
-  if (buf[0] != 'O' || buf[1] != 'K')
-    return 0;
-
   return 1;
 }
 
@@ -2447,9 +2405,8 @@ remote_start_remote (struct ui_out *uiout, void *dummy)
         start_no_ack_mode ();
       if (remote_debugflags != NULL)
         send_remote_debugflags_pkt (remote_debugflags);
-      send_remote_max_payload_size ();
-      
-      putpkt ("?");		/* Initiate a query from remote machine.  */
+
+      putpkt ("?");			/* Initiate a query from remote machine.  */
       immediate_quit--;
       
       remote_start_remote_dummy (uiout, dummy);
@@ -2784,7 +2741,7 @@ remote_create_inferior (char *exec_file, char *allargs, char **env, int from_tty
 
   for (i = 0; i < exec_len; i++)
     {
-      snprintf (hexval, sizeof (hexval), "%02hhx", remote_exec_file[i]);
+      sprintf(hexval,"%02x", remote_exec_file[i]);
       *ptr++ = hexval[0];
       *ptr++ = hexval[1];
     }
@@ -2798,7 +2755,7 @@ remote_create_inferior (char *exec_file, char *allargs, char **env, int from_tty
       ptr += strlen (ptr);
       for (i = 0; i < arglen; i++)
 	{
-	  snprintf (hexval, sizeof (hexval), "%02hhx", arg[i]);
+	  sprintf(hexval,"%02x", arg[i]);
 	  *ptr++ = hexval[0];
 	  *ptr++ = hexval[1];
 	}
@@ -6024,11 +5981,6 @@ Specify the serial device it is connected to\n\
 #ifdef MACOSX_DYLD
   extern int dyld_lookup_and_bind_function (char *name);
   extern int dyld_is_objfile_loaded (struct objfile *obj);
-
-  remote_ops.to_enable_exception_callback = macosx_enable_exception_callback;
-  remote_ops.to_find_exception_catchpoints = macosx_find_exception_catchpoints;
-  remote_ops.to_get_current_exception_event = macosx_get_current_exception_event;
-
   remote_ops.to_bind_function = dyld_lookup_and_bind_function;
   remote_ops.to_check_is_objfile_loaded = dyld_is_objfile_loaded;
 #endif

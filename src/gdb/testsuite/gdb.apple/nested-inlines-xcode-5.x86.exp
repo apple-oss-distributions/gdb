@@ -212,7 +212,7 @@ mi_gdb_test "343-thread-list-ids" "343\\^done,thread-ids=\{thread-id=\"1\"},numb
 
 mi_gdb_test "344-stack-list-frames-lite -limit 500" "344\\^done,frames=\\\[0=\{pc=\"$hex\",fp=\"$hex\"\},1=\{pc=\"$hex\",fp=\"$hex\"\},2=\{pc=\"$hex\",fp=\"$hex\"\}\\\],valid=\"1\",count=\"3\"" "stack-list-frames-lite"
 
-mi_gdb_test "345-stack-list-frames 0 2" "345\\^done,stack=\\\[frame=\{level=\"0\",addr=\"$hex\",fp=\"$hex\",func=\"bar \\\[inlined\\\]\",file=\".*$srcfile\",fullname=\".*$srcfile\",line=\"46\",dir=\".*\"\},frame=\{level=\"1\",addr=\"$hex\",fp=\"$hex\",func=\"foo \\\[inlined\\\]\",file=\".*$srcfile\",fullname=\".*$srcfile\",line=\"27\",dir=\".*\"\},frame=\{level=\"2\",addr=\"$hex\",fp=\"$hex\",func=\"main\",file=\".*$srcfile\",fullname=\".*$srcfile\",line=\"14\",dir=\".*\"\}\\\]"  "stack-list-frames 0 2"
+mi_gdb_test "345-stack-list-frames 0 2" "345\\^done,stack=\\\[frame=\{level=\"0\",addr=\"$hex\",fp=\"$hex\",func=\"bar \\\[inlined\\\]\",file=\".*$srcfile\",fullname=\".*$srcfile\",line=\".*\",dir=\".*\"\},frame=\{level=\"1\",addr=\"$hex\",fp=\"$hex\",func=\"foo \\\[inlined\\\]\",file=\".*$srcfile\",fullname=\".*$srcfile\",line=\"27\",dir=\".*\"\},frame=\{level=\"2\",addr=\"$hex\",fp=\"$hex\",func=\"main\",file=\".*$srcfile\",fullname=\".*$srcfile\",line=\"14\",dir=\".*\"\}\\\]"  "stack-list-frames 0 2"
 
 #"345\\^done,stack=\\\[frame=\{level=\"0\",addr=\"$hex\",fp=\"$hex\",func=\"bar \\\[inlined\\\]\",file=\".*$srcfile\",fullname=\".*$srcfile\",line=\"46\",dir=\"\.*"\},frame=\{level=\"1\",addr=\"$hex\",fp=\"$hex\",func=\"foo \\\[inlined\\\]\",file=\".*$srcfile\",fullname=\".*\$srcfile\",line=\"27\",dir=\".*\"\},frame=\{level=\"2\",addr=\"$hex\",fp=\"$hex\",func=\"main\",file=\".*$srcfile\",fullname=\".*$srcfile\",line=\"14\",dir=\".*\"\}\\\]"
 

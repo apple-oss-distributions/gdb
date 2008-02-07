@@ -150,10 +150,6 @@ INTL_CFLAGS = -I$(INTL_DIR) -I$(INTL_SRC)
 # Where is the ICONV library?  This can be empty if libc has iconv.
 LIBICONV = @LIBICONV@
 
-# APPLE LOCAL: We need to weak link to CoreFoundation for locating application 
-# executables in bundles.
-COREFOUNDATION_LDFLAGS = @COREFOUNDATION_LIBS@
-
 # APPLE LOCAL: location of carbon header files & libraries
 
 # APPLE LOCAL: We need to weak link to Carbon for the "open" command, and we
@@ -418,8 +414,7 @@ INSTALLED_LIBS=-lbfd -lreadline -lopcodes -liberty \
 CLIBS = $(SIM) $(READLINE) $(OPCODES) $(BFD) $(INTL) $(LIBIBERTY) \
 	$(XM_CLIBS) $(TM_CLIBS) $(NAT_CLIBS) $(GDBTKLIBS) @LIBS@ \
 	$(LIBICONV) \
-	$(COREFOUNDATION_LDFLAGS)\
-	$(CARBON_LDFLAGS) \
+        $(CARBON_LDFLAGS) \
 	$(DEBUG_SYMBOLS_LDFLAGS) \
 	$(MMALLOC) $(WIN32LIBS) $(LIBSQLITE3)
 

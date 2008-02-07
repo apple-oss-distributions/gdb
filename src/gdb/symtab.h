@@ -1423,22 +1423,6 @@ struct symtabs_and_lines
 };
 
 
-/* APPLE LOCAL begin address context.  */
-struct address_context
-{
-  CORE_ADDR address; /* The address described in this context baton.  */
-  asection *bfd_section; /* BFD section for ADDRESS.  */
-  struct block *block;	/* The lowest block associated with ADDRESS.  */
-  struct minimal_symbol *msymbol; /* The min symbol for ADDRESS.  */
-  struct partial_symbol *psymbol; /* The partial symbol for ADDRESS.  */
-  struct symbol *symbol; /* The symbol for ADDRESS.  */
-  struct symtab_and_line sal;
-};
-
-extern void init_address_context (struct address_context *addr_ctx);
-
-/* APPLE LOCAL begin address context.  */
-
 
 /* Some types and macros needed for exception catchpoints.
    Can't put these in target.h because symtab_and_line isn't

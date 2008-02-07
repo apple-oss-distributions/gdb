@@ -2867,6 +2867,23 @@ inlined_subroutine_free_objfile_data (struct rb_tree_node *root)
   xfree (root);
 }
 
+void
+inlined_subroutine_free_objfile_call_sites (struct rb_tree_node *root)
+{
+  struct dwarf_inlined_call_record *data;
+  if (root->left)
+    inlined_subroutine_free_objfile_call_sites (root->left);
+
+  if (root->right)
+    inlined_subroutine_free_objfile_call_sites (root->right);
+
+  data = (struct dwarf_inlined_call_record *) root->data;
+  if (data->ranges)
+    xfree (data->ranges);
+  xfree (root->data);
+  xfree (root);
+}
+
 static void
 update_inlined_data_addresses (CORE_ADDR offset,
 			       struct rb_tree_node *tree)

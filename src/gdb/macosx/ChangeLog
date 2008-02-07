@@ -1,200 +1,88 @@
-2008-02-19  Jim Ingham  <jingham@apple.com>
-	
-	macosx-nat-dyld.c (macosx_solib_add): Call objc_clear_caches.
-	
-	* arm-macosx-tdep.c (arm_throw_catch_find_typeinfo): New
-	function, gets the exception type from the program state.
-	
-2008-02-15  Jim Ingham  <jingham@apple.com>
+2008-02-06  Jim Ingham  <jingham@apple.com>
 
-	* macosx-nat-inferior.c (macosx_enable_exception_callback):
-	(macosx_find_exception_catchpoints):
-	(macosx_get_current_exception_event):
-	Move all the exception catchpoint stuff from here.
-	* macosx-nat-tdep.c: To here.
-	
-	* macosx-nat-dyld-process.c (dyld_libraries_compatible): Test
-	for compatibility if one library name is the other embedded
-	in the "[memory object ... at ...]".
-	* macosx-nat-dyld-io.c (inferior_bfd_generic): Add a comment.
-	
-2008-02-14  Jim Ingham  <jingham@apple.com>
-
-	* macosx-nat-dyld.c (macosx_solib_add): Clear the objc
-	implementation cache on new library load.
-	
-2008-02-05  Jason Molenda  (jmolenda@apple.com)
-
-	* macosx-nat-dyld.h: Include loader.h to get mach_header/load_command
-	definitions.
-
-2008-02-05  Jim Ingham  <jingham@apple.com>
-
-	* macosx-nat-dyld-info.c (dyld_print_entry_info): Translate
-	OBJF_SYM_CONTAINTER, and use OBJF_SYM_LEVELS_MASK.
-	* macosx-nat-dyld-process.c (dyld_load_library): If a library
-	is not available on the host, set it's initial load level
-	to OBJF_SYM_CONTAINER.  If the host version is a stub library
-	set the DONT_CHANGE flag.
-	(dyld_should_reload_objfile_for_flags): Enforce DONT_CHANGE.
-	
-2008-02-01  Jim Ingham  <jingham@apple.com>
-
-	* macosx-nat-dyld-io.c (inferior_read_memory_partial): Unset
-	trust_readonly while reading.
-	(inferior_read_mach_o): Don't try to use this routine if
-	we're reading the load commands - it relies on already having
-	read them.
-	macosx-nat-dyld-process.c: (dyld_check_uuids_flag) - new variable.
-	(dyld_load_library): If we can't make a bfd for the library, 
-	read it from memory.  Also, if asked make sure the UUID of the
-	memory copy of the binary and the on disk copy are the same.
-	(dyld_load_symfile_internal): If loaded_from_memory is true, then
-	set loaded_memaddr.
-	(dyld_libraries_compatible): "loaded_from_memory" should be a
-	criterion for libraries being different.
-	(_initialize_macosx_nat_dyld_process): Add check-uuids set
-	command.
-	* macosx-nat-dyld.c (target_read_header, target_read_load_command):
-	Make non-static.
-	(target_read_uuid): New function.
-	(dyld_info_process_raw): Turn off trust-readonly while getting
-	the header the raw address pointed to.
-	Also set the dyld_offset to invalid address in the objfile
-	entry for the new library.
-	* macosx-nat-dyld.h (target_read_header, target_read_load_command):
-	Declare.
+	* macosx-nat-inferior.c (macosx_child_attach): When we attach,
+	check to make sure we aren't in _dyld_start.  If we are, don't
+	mark malloc as inited.
 	
 2008-01-30  Jason Molenda  (jmolenda@apple.com)
 
-	* macosx-nat-cmds-load.c (load_plugin): Use dlopen instead of
-	deprecated NSLinkModule.
+        * macosx-nat-cmds-load.c (load_plugin): Use dlopen instead of
+        deprecated NSLinkModule.
 
-2008-01-30  Jason Molenda  (jmolenda@apple.com)
-
-	* macosx-nat-dyld.c (FETCH_ARGUMENT): Quote #error arg.
-	* macosx-nat-infthread.c: Same.
-	* macosx-nat-inferior.c: Same.  Use "#error", not "error".
-	* macosx-tdep.h: Same.
-
-2008-01-22  Jason Molenda  (jmolenda@apple.com)
-
-        * macosx-nat-cfm.c: Use target_read instead of 
-        target_read_memory_partial.
-
-2008-01-30  Jason Molenda  (jmolenda@apple.com)
-
-	* macosx-self-backtrace.c (gdb_self_backtrace): If built on arm,
-	return 0 stack frames until this function is ported to arm.
+2008-01-24  Jason Molenda  (jmolenda@apple.com)
+ 
+        * machoread.c (macho_symfile_read): Don't read any symbols if
+        this is a stub library.
 
 2008-01-24  Jason Molenda  (jmolenda@apple.com)
 
-	* machoread.c (macho_symfile_read): Don't read any symbols if
-	this is a stub library.
+	* macosx-nat-inferior.c (struct pid_list): New.
+	(macosx_process_completer_quoted): Pass through a pid_list of 
+	processes to ignore.
+	(macosx_lookup_task_local): Same.
+	(wait_for_process_by_name): Skip processes on the ignorepids list.
+	(find_existing_processes_by_name): Create pid_list of all processes
+	of a given name.
+	(pid_present_on_pidlist): Indicate whether a given pid is on the 
+	pid_list.
+	(macosx_lookup_task): Create a list of processes with the -waitfor
+	process name so we don't try to attach to extant processes.
+	(macosx_process_completer_quoted): Don't try to attach to zombie
+	processes.
 
-2008-01-21  Jim Ingham  <jingham@apple.com>
+2008-01-22  Jason Molenda  (jmolenda@apple.com)
 
-	* remote-mobile.c: New file pulled onto deep-branch.
-	
+	* macosx-tdep.c: Include mach/machine.h for CPU_TYPE_ANY.
+
+2008-01-22  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-cfm.c: Use target_read instead of 
+	target_read_memory_partial.
+
 2008-01-18  Jim Ingham  <jingham@apple.com>
 
 	* macosx-nat-dyld-io.c (inferior_read_memory_partial): replace
 	target_read_memory_partial with target_read.
 	macosx-nat-inferior.c (fork_memcache_put): Replace 
 	target_write_memory_partial with target_write.
+	
+2008-01-16  Jim Ingham  <jingham@apple.com>
 
-2007-12-20  Jason Molenda  (jmolenda@apple.com)
+	* macosx-nat-inferior.c (macosx_child_stop): Don't try to signal
+	the inferior_process_group, that is not always set correctly on
+	Mac OS X.  Just kill the inferior_pid directly.
+	* macosx-tdep.c (open_file_with_LS): Remove.
+	(open_command): Note it doesn't work anymore.
+	
+2008-01-10  Jason Molenda  (jmolenda@apple.com)
 
-	* macosx-nat-dyld.c (macosx_dyld_init): Add a hint about where
-	to find dyld on a remote system.  We'll need to add a remote protocol
-	packet for locating dyld to handle this correctly.
+	* macosx-nat-dyld.c (target_is_remote): Recognize some async
+	remote targets as well.
 
+2008-01-09  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-mutils.c (_initialize_macosx_mutils): reopen stderr as 
+	w not w+.
+	* macosx-nat-dyld.c (_initialize_macosx_nat_dyld): Ditto.
+	
 2007-12-19  Jason Molenda  (jmolenda@apple.com)
- 
-        * macosx-nat-dyld.c (dyld_starts_here_p, macosx_locate_dyld): Keep
-        #if NM_NEXTSTEP guards around these functions because we won't have
+
+	* macosx-nat-dyld.c (dyld_starts_here_p, macosx_locate_dyld): Keep
+	#if NM_NEXTSTEP guards around these functions because we won't have
         a macosx_status global unless this is native debugging.
- 
+
 2007-12-19  Jason Molenda  (jmolenda@apple.com)
- 
-        * macosx-nat-dyld.c (target_is_remote): Indicate whether the
-        current target is using the gdb remote protocol or not.
-        (dyld_starts_here_p, macosx_locate_dyld): Use it.
-        * macosx-nat-dyld-io.c (valid_target_for_inferior_bfd): Use it.
-        * macosx-nat-dyld.h: Prototype.
 
-2007-12-10  Greg Clayton  <gclayton@apple.com>
+	* macosx-nat-dyld.c (target_is_remote): Indicate whether the
+	current target is using the gdb remote protocol or not.
+	(dyld_starts_here_p, macosx_locate_dyld): Use it.
+	* macosx-nat-dyld-io.c (valid_target_for_inferior_bfd): Use it.
+	* macosx-nat-dyld.h: Prototype.
 
-	* macosx-nat-dyld.c (dyld_info_process_raw): Don't slide by invalid
-	amount when we can't determine the on disk version's original load
- 	address.
+2007-12-14  Jim Ingham  <jingham@apple.com>
 
-2007-11-12  Greg Clayton  <gclayton@apple.com>
-
-	* macosx-nat-dyld.c (macosx_dyld_init): Use BFD definitions 
-	for mach-o CPU types to ease reliance on local headers.
-	* arm-macosx-tdep.c (arm_mach_o_query_v6): Ditto.
-	(GDB_N_ARM_THUMB_DEF): Copy nlist related defined from local 
-	headers for use in cross builds.
-	(arm_macosx_dbx_make_msymbol_special): Use GDB_N_ARM_THUMB_DEF.
-	* remote-kdp.c (CPU_TYPE_ARM): Define this preprocessor symbol
-	if needed.
-
-2007-07-24  Greg Clayton  <gclayton@apple.com>
-
-	* macosx-nat-mutils.c (g_macosx_protection_strs): New static array
-	for logging.
-	(macosx_get_region_info): New macro.
-	(macosx_vm_protect): New macro.
-	(macosx_vm_region): New function.
-	(macosx_vm_region_recurse_long): New function.
-	(macosx_vm_region_recurse_short): New function.
-	(macosx_vm_protect_range): New function.
-	(macosx_vm_protect_region): New function.
-	(macosx_get_region_info_both): New function.
-	(mach_xfer_memory): Use macosx_get_region_info macro, only change
-	or restore protections if needed.
-
-2007-07-08	Greg Clayton <gclayton@apple.com>
-
-	* core-macho.c: Add ARM support.
-	(core_fetch_cached_thread_registers): Ditto.
-	(core_cache_section_registers): Ditto.
-	(delete_core_thread_state_cache): Ditto.
-	(core_fetch_registers): Ditto.
-	(core_store_registers): Ditto.
-	* macosx-nat-dyld-process.c: Ditto.
-	* macosx-nat-dyld.c (macosx_dyld_init): Ditto.
-	(FETCH_ARGUMENT): Ditto.
-	* macosx-nat-infthread.c (modify_trace_bit): Ditto.
-	* macosx-nat-mutils.c (mach_check_error): Removed.
-	(mach_warn_error): Removed.
-	* macosx-nat-mutils.h (mach_check_error): Removed prototype.
-	(mach_warn_error): Removed prototype.
-	* macosx-nat-utils.c (mach_check_error): Moved from
-	macosx-nat-mutils.c.
-	(mach_warn_error): Ditto.
-	* macosx-nat-utils.h (mach_check_error): Moved from
-	macosx-nat-mutils.h.
-	(mach_warn_error): Ditto.
-	* macosx-tdep.c (USE_DEBUG_SYMBOLS_FRAMEWORK): Changed from 
-	HAVE_DEBUG_SYMBOLS_FRAMEWORK because just because we have it doesn't 
-	mean we need to use it. 
-	(open_command): Check if we should use Carbon before using it.
-	(macosx_locate_dsym): Add shallow executable support when searching
-	for dSYM files located right next to bundles.
-	(_initialize_macosx_tdep): Only add the open command if we can use 
-	Carbon.
-	* remote-kdp.c (parse_host_type): Add ARM support.
-	(convert_host_type): Ditto.
-	(kdp_attach): Ditto.
-	(kdp_reattach_command): Ditto.
-	(kdp_reboot_command): Ditto.
-	(kdp_set_trace_bit): Ditto.
-	(kdp_store_registers): Ditto.
-	(kdp_fetch_registers): Ditto.
-	(kdp_store_registers_arm): New function.
-
+	* remote-mobile.c: New file.
+	
 2007-11-07  Jason Molenda  (jmolenda@apple.com)
 
 	* i386-macosx-tdep.c (i386_fast_show_stack): Fix uninit var usage.

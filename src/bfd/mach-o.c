@@ -475,14 +475,7 @@ bfd_mach_o_convert_architecture (bfd_mach_o_cpu_type mtype,
     case BFD_MACH_O_CPU_TYPE_MIPS: *type = bfd_arch_mips; break;
     case BFD_MACH_O_CPU_TYPE_MC98000: *type = bfd_arch_m98k; break;
     case BFD_MACH_O_CPU_TYPE_HPPA: *type = bfd_arch_hppa; break;
-    case BFD_MACH_O_CPU_TYPE_ARM: 
-      *type = bfd_arch_arm;
-      if (msubtype == BFD_MACH_O_CPU_SUBTYPE_ARM_4T)
-	*subtype = bfd_mach_arm_4T;
-      else if (msubtype == BFD_MACH_O_CPU_SUBTYPE_ARM_6)
-	*subtype = bfd_mach_arm_6;
-
-      break;
+    case BFD_MACH_O_CPU_TYPE_ARM: *type = bfd_arch_arm; break;
     case BFD_MACH_O_CPU_TYPE_MC88000: *type = bfd_arch_m88k; break;
     case BFD_MACH_O_CPU_TYPE_SPARC:
       *type = bfd_arch_sparc; 
@@ -1118,35 +1111,6 @@ bfd_mach_o_scan_read_section_64 (bfd *abfd,
   return 0;
 }
 
-#define ARM_THREAD_STATE_STR	"ARM_THREAD_STATE"
-#define ARM_VFP_STATE_STR	"ARM_VFP_STATE"
-#define ARM_EXCEPTION_STATE_STR	"ARM_EXCEPTION_STATE"
-
-static const char *
-bfd_mach_o_arm_flavour_string (unsigned int flavour)
-{
-  switch ((int) flavour)
-    {
-    case BFD_MACH_O_ARM_THREAD_STATE: return ARM_THREAD_STATE_STR;
-    case BFD_MACH_O_ARM_VFP_STATE: return ARM_VFP_STATE_STR;
-    case BFD_MACH_O_ARM_EXCEPTION_STATE: return ARM_EXCEPTION_STATE_STR;
-    default: return "UNKNOWN";
-    }
-}
-
-static unsigned int
-bfd_mach_o_arm_flavour_from_string(const char* s)
-{
-  if (strcmp(s, ARM_THREAD_STATE_STR) == 0)
-    return BFD_MACH_O_ARM_THREAD_STATE;
-  else if (strcmp(s, ARM_VFP_STATE_STR) == 0)
-    return BFD_MACH_O_ARM_VFP_STATE;
-  else if (strcmp(s, ARM_EXCEPTION_STATE_STR) == 0)
-    return BFD_MACH_O_ARM_EXCEPTION_STATE;
-  return 0;
-}
-
-
 static int
 bfd_mach_o_scan_read_section (bfd *abfd,
 			      bfd_mach_o_section *section,
@@ -1473,9 +1437,6 @@ bfd_mach_o_flavour_from_string(unsigned long cputype, const char* s)
 	case BFD_MACH_O_CPU_TYPE_X86_64:
 	  flavour = bfd_mach_o_i386_flavour_from_string (s);
 	  break;
-	case BFD_MACH_O_CPU_TYPE_ARM:
-	  flavour = bfd_mach_o_arm_flavour_from_string (s);
-	  break;
 	default:
 	  break;
 	}
@@ -1683,9 +1644,6 @@ bfd_mach_o_scan_read_thread (bfd *abfd, bfd_mach_o_load_command *command)
 	case BFD_MACH_O_CPU_TYPE_I386:
 	case BFD_MACH_O_CPU_TYPE_X86_64:
 	  flavourstr = bfd_mach_o_i386_flavour_string (cmd->flavours[i].flavour);
-	  break;
-	case BFD_MACH_O_CPU_TYPE_ARM:
-	  flavourstr = bfd_mach_o_arm_flavour_string (cmd->flavours[i].flavour);
 	  break;
 	default:
 	  flavourstr = "UNKNOWN_ARCHITECTURE";
@@ -2242,19 +2200,6 @@ bfd_mach_o_scan_start_address (bfd *abfd)
 
           abfd->start_address = bfd_h_get_64 (abfd, buf);
         }
-      else if ((mdata->header.cputype == BFD_MACH_O_CPU_TYPE_ARM)
-               && (cmd->flavours[i].flavour == BFD_MACH_O_ARM_THREAD_STATE))
-        {
-          unsigned char buf[8];
-	  
-          bfd_seek (abfd, cmd->flavours[i].offset + 60, SEEK_SET);
-	  
-          if (bfd_bread (buf, 4, abfd) != 4)
-            return -1;
-	  
-          abfd->start_address = bfd_h_get_32 (abfd, buf);
-        }
-      
       /* APPLE LOCAL begin x86_64 */
       else if ((mdata->header.cputype == BFD_MACH_O_CPU_TYPE_X86_64)
                && (cmd->flavours[i].flavour == BFD_MACH_O_x86_THREAD_STATE64))
@@ -2291,8 +2236,6 @@ bfd_mach_o_scan (bfd *abfd,
   mdata->header = *header;
   mdata->symbols = NULL;
 
-  mdata->scanning_load_cmds = 1;
-
   abfd->flags = (abfd->xvec->object_flags
 		 | (abfd->flags & (BFD_IN_MEMORY | BFD_IO_FUNCS)));
   abfd->tdata.mach_o_data = mdata;
@@ -2312,15 +2255,12 @@ bfd_mach_o_scan (bfd *abfd,
 
   if (header->ncmds != 0)
     {
-      /* Use zalloc so we set all the "type" fields to 0 - we use that
-	 to indicate that we have not read the command data for that
-	 command in yet.  */
       mdata->commands =
 	((bfd_mach_o_load_command *)
-	 bfd_zalloc (abfd, header->ncmds * sizeof (bfd_mach_o_load_command)));
+	 bfd_alloc (abfd, header->ncmds * sizeof (bfd_mach_o_load_command)));
       if (mdata->commands == NULL)
 	return -1;
-      
+
       for (i = 0; i < header->ncmds; i++)
 	{
 	  bfd_mach_o_load_command *cur = &mdata->commands[i];
@@ -2349,7 +2289,7 @@ bfd_mach_o_scan (bfd *abfd,
     }
 
   bfd_mach_o_flatten_sections (abfd);
-  mdata->scanning_load_cmds = 0;
+
   return 0;
 }
 
@@ -2730,8 +2670,6 @@ bfd_mach_o_stack_addr (enum bfd_mach_o_cpu_type type)
       return 0xc0000000;
     case BFD_MACH_O_CPU_TYPE_I386:
       return 0xc0000000;
-    case BFD_MACH_O_CPU_TYPE_ARM:
-      return 0x40000000;
     case BFD_MACH_O_CPU_TYPE_SPARC:
       return 0xf0000000;
     case BFD_MACH_O_CPU_TYPE_I860:

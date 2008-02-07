@@ -64,6 +64,7 @@ the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/param.h>
+#include <mach/machine.h>
 
 #include <CoreFoundation/CoreFoundation.h>
 
@@ -435,192 +436,6 @@ info_trampoline_command (char *exp, int from_tty)
      paddr_nz (address), paddr_nz (trampoline), paddr_nz (objc));
 }
 
-struct sal_chain
-{
-  struct sal_chain *next;
-  struct symtab_and_line sal;
-};
-
-
-/* On some platforms, you need to turn on the exception callback
-   to hit the catchpoints for exceptions.  Not on Mac OS X. */
-
-int
-macosx_enable_exception_callback (enum exception_event_kind kind, int enable)
-{
-  return 1;
-}
-
-/* The MacOS X implemenatation of the find_exception_catchpoints
-   target vector entry.  Relies on the __cxa_throw and
-   __cxa_begin_catch functions from libsupc++.  */
-
-struct symtabs_and_lines *
-macosx_find_exception_catchpoints (enum exception_event_kind kind,
-                                   struct objfile *restrict_objfile)
-{
-  struct symtabs_and_lines *return_sals;
-  char *symbol_name;
-  struct objfile *objfile;
-  struct minimal_symbol *msymbol;
-  unsigned int hash;
-  struct sal_chain *sal_chain = 0;
-
-  switch (kind)
-    {
-    case EX_EVENT_THROW:
-      symbol_name = "__cxa_throw";
-      break;
-    case EX_EVENT_CATCH:
-      symbol_name = "__cxa_begin_catch";
-      break;
-    default:
-      error ("We currently only handle \"throw\" and \"catch\"");
-    }
-
-  hash = msymbol_hash (symbol_name) % MINIMAL_SYMBOL_HASH_SIZE;
-
-  ALL_OBJFILES (objfile)
-  {
-    for (msymbol = objfile->msymbol_hash[hash];
-         msymbol != NULL; msymbol = msymbol->hash_next)
-      if (MSYMBOL_TYPE (msymbol) == mst_text
-          && (strcmp_iw (SYMBOL_LINKAGE_NAME (msymbol), symbol_name) == 0))
-        {
-          /* We found one, add it here... */
-          CORE_ADDR catchpoint_address;
-          CORE_ADDR past_prologue;
-
-          struct sal_chain *next
-            = (struct sal_chain *) alloca (sizeof (struct sal_chain));
-
-          next->next = sal_chain;
-          init_sal (&next->sal);
-          next->sal.symtab = NULL;
-
-          catchpoint_address = SYMBOL_VALUE_ADDRESS (msymbol);
-          past_prologue = SKIP_PROLOGUE (catchpoint_address);
-
-          next->sal.pc = past_prologue;
-          next->sal.line = 0;
-          next->sal.end = past_prologue;
-
-          sal_chain = next;
-
-        }
-  }
-
-  if (sal_chain)
-    {
-      int index = 0;
-      struct sal_chain *temp;
-
-      for (temp = sal_chain; temp != NULL; temp = temp->next)
-        index++;
-
-      return_sals = (struct symtabs_and_lines *)
-        xmalloc (sizeof (struct symtabs_and_lines));
-      return_sals->nelts = index;
-      return_sals->sals =
-        (struct symtab_and_line *) xmalloc (index *
-                                            sizeof (struct symtab_and_line));
-
-      for (index = 0; sal_chain; sal_chain = sal_chain->next, index++)
-        return_sals->sals[index] = sal_chain->sal;
-      return return_sals;
-    }
-  else
-    return NULL;
-
-}
-
-/* Returns data about the current exception event */
-
-struct exception_event_record *
-macosx_get_current_exception_event ()
-{
-  static struct exception_event_record *exception_event = NULL;
-  struct frame_info *curr_frame;
-  struct frame_info *fi;
-  CORE_ADDR pc;
-  int stop_func_found;
-  char *stop_name;
-  char *typeinfo_str;
-
-  if (exception_event == NULL)
-    {
-      exception_event = (struct exception_event_record *)
-        xmalloc (sizeof (struct exception_event_record));
-      exception_event->exception_type = NULL;
-    }
-
-  curr_frame = get_current_frame ();
-  if (!curr_frame)
-    return (struct exception_event_record *) NULL;
-
-  pc = get_frame_pc (curr_frame);
-  stop_func_found = find_pc_partial_function (pc, &stop_name, NULL, NULL);
-  if (!stop_func_found)
-    return (struct exception_event_record *) NULL;
-
-  if (strcmp (stop_name, "__cxa_throw") == 0)
-    {
-
-      fi = get_prev_frame (curr_frame);
-      if (!fi)
-        return (struct exception_event_record *) NULL;
-
-      exception_event->throw_sal = find_pc_line (get_frame_pc (fi), 1);
-
-      /* FIXME: We don't know the catch location when we
-         have just intercepted the throw.  Can we walk the
-         stack and redo the runtimes exception matching
-         to figure this out? */
-      exception_event->catch_sal.pc = 0x0;
-      exception_event->catch_sal.line = 0;
-
-      exception_event->kind = EX_EVENT_THROW;
-
-    }
-  else if (strcmp (stop_name, "__cxa_begin_catch") == 0)
-    {
-      fi = get_prev_frame (curr_frame);
-      if (!fi)
-        return (struct exception_event_record *) NULL;
-
-      exception_event->catch_sal = find_pc_line (get_frame_pc (fi), 1);
-
-      /* By the time we get here, we have totally forgotten
-         where we were thrown from... */
-      exception_event->throw_sal.pc = 0x0;
-      exception_event->throw_sal.line = 0;
-
-      exception_event->kind = EX_EVENT_CATCH;
-
-
-    }
-
-#ifdef THROW_CATCH_FIND_TYPEINFO
-  typeinfo_str =
-    THROW_CATCH_FIND_TYPEINFO (curr_frame, exception_event->kind);
-#else
-  typeinfo_str = NULL;
-#endif
-
-  if (exception_event->exception_type != NULL)
-    xfree (exception_event->exception_type);
-
-  if (typeinfo_str == NULL)
-    {
-      exception_event->exception_type = NULL;
-    }
-  else
-    {
-      exception_event->exception_type = xstrdup (typeinfo_str);
-    }
-
-  return exception_event;
-}
 
 void
 update_command (char *args, int from_tty)
@@ -637,149 +452,6 @@ stack_flush_command (char *args, int from_tty)
     printf_filtered ("Stack cache flushed.\n");
 }
 
-#if USE_CARBON_FRAMEWORK
-
-#include <Carbon/Carbon.h>
-#include <dlfcn.h>
-
-#pragma options align=mac68k
-// We attach this to an 'odoc' event to specify a particular selection
-typedef struct {
-  SInt16      reserved0;      // must be zero
-  SInt16      fLineNumber;
-  SInt32      fSelStart;
-  SInt32      fSelEnd;
-  UInt32      reserved1;      // must be zero
-  UInt32      reserved2;      // must be zero
-} BabelAESelInfo;
-#pragma options align=reset
-
-static int 
-open_file_with_LS (const char *file_path, int lineno)
-{
-  AEKeyDesc selection_desc;
-  LSApplicationParameters app_params;
-  FSRef item_refs[1], out_app;
-  OSStatus err;	
-  BabelAESelInfo selection_info;
-  char app_path[PATH_MAX];
-  int is_xcode;
-
-  err = FSPathMakeRef ((unsigned char *) file_path, &item_refs[0], NULL);
-  if (err != noErr)
-    {
-      error ("Couldn't make FSRef from path: %s\n", file_path);
-      return 0;
-    }
-    
-  err = LSGetApplicationForItem (&item_refs[0], kLSRolesAll, &out_app, NULL);
-  if (err != noErr)
-    {
-      error ("Couldn't get the application for item: %s", file_path);
-      return 0;
-    }
-  
-  bzero (&selection_info, sizeof (selection_info));
-  selection_info.fLineNumber = lineno - 1;
-  selection_info.fSelStart = 1;
-  selection_info.fSelEnd = 1;
-	
-  err = AECreateDesc (typeChar, &selection_info, sizeof (selection_info), 
-		      &(selection_desc.descContent));
-  if (err != noErr)
-    {
-      error ("Could not make selection info AEDesc.");
-      return 0;
-    }
-
-  selection_desc.descKey = keyAEPosition;
-	
-  bzero (&app_params, sizeof (app_params));
-	
-  app_params.application = &out_app;
-  
-  FSRefMakePath (&out_app, (unsigned char *) app_path, PATH_MAX);
-  is_xcode = (strstr (app_path, "Xcode") != NULL);
-
-  /* Since we're going to have to send Xcode an AppleScript, we need to 
-     make sure it gets opened first.  kLSLaunchDefaults includes the
-     Async flag, which we don't want in this case.  */
-  
-  if (is_xcode)
-    app_params.flags = kLSLaunchDontSwitch;
-  else
-    app_params.flags = kLSLaunchDefaults | kLSLaunchDontSwitch;
-
-  err = LSOpenItemsWithRole (item_refs, 1, kLSRolesAll, &selection_desc, 
-			     &app_params, NULL, 0);
-  AEDisposeDesc (&(selection_desc.descContent));
-
-  if (err != noErr)  
-    return 0;
-
-  /* Xcode and TextEdit don't obey the keyAELocation event.  So we
-     have to also send an AppleScript to do this.  
-     FIXME: Might be good to snoop the AppleEvent this script 
-     sends, and then cons that up & send it directly.  The problem
-     with this is the version of the script the eliminates the "doc"
-     AppleScript variable fails (Xcode returns some error).  I 
-     think somebody's mishandling the "whose" clause.  So right
-     now this is not a simple AppleEvent.  Thanks to Rick Altherr
-     for the AppleScript snippet.  */
-  
-  if (is_xcode)
-    {
-      static ComponentInstance osa_component = NULL;
-      static char *format_str = "tell application \"Xcode\"\r"
-        "set doc to the first document whose path is \"%s\"\r"
-        "set selection to paragraph %d of doc\r"
-        "end tell\r";
-
-      int format_len = strlen (format_str);
-      char *script_str;
-      AEDesc script_desc;
-      OSAID ret_OSAID;
-      if (osa_component == NULL)
-        {
-          osa_component = OpenDefaultComponent (kOSAComponentType, 
-						kAppleScriptSubtype);
-        }
-      if (osa_component == NULL)
-        error ("Can't initialize the AppleScript OSA component");
-
-      /* 64 chars should be big enough to store the linenumber even if 
-         int is a long long and a bit left over for safety.  */
-      script_str = malloc (format_len + strlen (file_path) + 64);
-      sprintf (script_str, format_str, file_path, lineno);
-     
-      err = AECreateDesc (typeChar, script_str, 
-			  strlen (script_str), &script_desc);
-
-      free (script_str);
-
-      if (err != noErr)
-	error ("Can't make an AEDesc for the selection setting script.");
-
-      err = OSACompileExecute (osa_component, &script_desc, kOSANullScript, 
-			       kOSAModeNeverInteract, &ret_OSAID);
-
-      /* NOTE, maybe we should call OSAScriptError to
-	 get the error message.  But in my experience, the error message is not
-	 very helpful.  So I'll just print a warning so somebody knows I tried.  */
-      if (err != noErr)
-	warning ("Could not select current line, error %ld\n", err);
-
-      OSADispose (osa_component, ret_OSAID);
-
-      AEDisposeDesc (&script_desc);
-
-      if (err != noErr)
-        return 0;  
-    }
-    
-  return 1;
-}
-
 /* Opens the file pointed to in ARGS with the default editor
    given by LaunchServices.  If ARGS is NULL, opens the current
    source file & line.  You can also supply file:line and it will
@@ -792,6 +464,9 @@ open_command (char *args, int from_tty)
   const char *fullname = NULL;  /* Fully qualified on-disk filename */
   struct stat sb;
   int line_no = 0;
+
+  warning ("open command no longer supported - may be back in a future build.");
+  return;
 
   if (args == NULL || args[0] == '\0')
     {
@@ -847,12 +522,8 @@ open_command (char *args, int from_tty)
   else
     if (stat (filename, &sb) != 0)
       error ("File '%s' not found.", filename);
-#if USE_CARBON_FRAMEWORK
-  open_file_with_LS (filename, line_no);
-#endif
 }
 
-#endif	/* #if USE_CARBON_FRAMEWORK  */
 
 #if USE_DEBUG_SYMBOLS_FRAMEWORK
 
@@ -1171,10 +842,6 @@ macosx_locate_dsym (struct objfile *objfile)
 	 "/some/path/MyApp.app.dSYM/Contents/Resources/DWARF/MyApp" or
 	 "/some/path/MyApp.dSYM/Contents/Resources/DWARF/MyApp".  */
       strcpy (dsymfile, dirname (executable_name));
-      /* Append a directory delimiter so we don't miss shallow bundles that
-         have the dSYM appended on like "/some/path/MacApp.app.dSYM" when
-	 we start with "/some/path/MyApp.app/MyApp".  */
-      strcat (dsymfile, "/");
       while ((dot_ptr = strrchr (dsymfile, '.')))
 	{
 	  /* Find the directory delimiter that follows the '.' character since
@@ -1814,7 +1481,6 @@ _initialize_macosx_tdep ()
 
   add_info ("trampoline", info_trampoline_command,
             "Resolve function for DYLD trampoline stub and/or Objective-C call");
-#if USE_CARBON_FRAMEWORK
   c = add_com ("open", class_support, open_command, _("\
 Open the named source file in an application determined by LaunchServices.\n\
 With no arguments, open the currently selected source file.\n\
@@ -1822,7 +1488,6 @@ Also takes file:line to hilight the file at the given line."));
   set_cmd_completer (c, filename_completer);
   add_com_alias ("op", "open", class_support, 1);
   add_com_alias ("ope", "open", class_support, 1);
-#endif /* #if USE_CARBON_FRAMEWORK  */
 
   add_com ("flushstack", class_maintenance, stack_flush_command,
            "Force gdb to flush its stack-frame cache (maintainer command)");

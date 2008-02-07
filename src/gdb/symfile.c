@@ -995,7 +995,7 @@ syms_from_objfile (struct objfile *objfile,
 
   /* APPLE LOCAL If our load level is higher than container, call
      symfile read fn.  */
-  if ((objfile->symflags & ~OBJF_SYM_CONTAINER) & OBJF_SYM_LEVELS_MASK)
+  if (objfile->symflags & ~OBJF_SYM_CONTAINER)
     (*objfile->sf->sym_read) (objfile, mainline);
 
   /* Don't allow char * to have a typename (else would get caddr_t).
@@ -1167,19 +1167,8 @@ append_psymbols_as_msymbols (struct objfile *objfile)
 	    {
 	      psym_addr = SYMBOL_VALUE_ADDRESS (psym);
 	      psym_osect = find_section_for_addr (objfile, psym_addr);
-	      
 	      if (psym_osect != NULL)
 		{
-		  struct minimal_symbol *msym;
-		  
-		  /* Don't overwrite an extant msym, since we might lose information
-		     that isn't known in the psymbol (like the "is_special" info.)  */
-		  msym = lookup_minimal_symbol_by_pc_section_from_objfile (psym_addr, 
-									   psym_osect->the_bfd_section, 
-									   objfile);
-		  if (msym != NULL)
-		    continue;
-
 		  if (add_prefix)
 		    {
 		      psym_linkage_name = 
@@ -1212,16 +1201,6 @@ append_psymbols_as_msymbols (struct objfile *objfile)
 
 	      if (psym_osect != NULL)
 		{
-		  struct minimal_symbol *msym;
-		  
-		  /* Don't overwrite an extant msym, since we might lose information
-		     that isn't known in the psymbol (like the "is_special" info.  */
-		  msym = lookup_minimal_symbol_by_pc_section_from_objfile (psym_addr, 
-									   psym_osect->the_bfd_section, 
-									   objfile);
-		  if (msym != NULL)
-		    continue;
-
 		  if (add_prefix)
 		    {
 		      psym_linkage_name = 
@@ -3325,7 +3304,7 @@ reread_symbols (void)
 	      /* The "mainline" parameter is a hideous hack; I think leaving it
 	         zero is OK since dbxread.c also does what it needs to do if
 	         objfile->global_psymbols.size is 0.  */
-	      if ((objfile->symflags & ~OBJF_SYM_CONTAINER) & OBJF_SYM_LEVELS_MASK)
+	      if (objfile->symflags & ~OBJF_SYM_CONTAINER)
 		(*objfile->sf->sym_read) (objfile, 0);
 	      /* APPLE LOCAL don't complain about lack of symbols */
 	      objfile->flags |= OBJF_SYMS;
@@ -5184,57 +5163,6 @@ open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format)
   enum gdb_osabi osabi = GDB_OSABI_UNINITIALIZED;
   bfd *abfd = NULL;
   
-#if defined (TARGET_ARM) && defined (TM_NEXTSTEP)
-
-  /* APPLE LOCAL: The model for Darwin ARM stuff doesn't fit well
-     with the way PPC works.  You don't choose the fork that 
-     "matches" the osabi, you choose the "best match", so if you
-     are armv6, you pick armv6 if present, otherwise you pick
-     armv4t...  */
-
-  bfd *fallback = NULL;
-
-#ifdef NM_NEXTSTEP
-
-  /* We have a native ARM gdb, so query for V6 from the system.  */
-  extern int arm_mach_o_query_v6 (void);
-  if (arm_mach_o_query_v6 ())
-    osabi = GDB_OSABI_DARWINV6;
-  else
-    osabi = GDB_OSABI_DARWIN;
-
-#else	/* NM_NEXTSTEP */
-
-  /* We have a cross ARM gdb, so check if the user has set the ABI 
-     manually. If the osabi hasn't been set manually, just get the
-     best one from this file.  */
-  
-  /* Get the user set osabi, or the default one.  */
-  enum gdb_osabi default_osabi = gdbarch_lookup_osabi (NULL);
-  
-  /* Get the osabi for the bfd.  */
-  osabi = gdbarch_lookup_osabi (archive_bfd);
-  
-#endif	/* NM_NEXTSTEP */
-
-  for (;;)
-    {
-      enum gdb_osabi this_osabi;
-      abfd = bfd_openr_next_archived_file (archive_bfd, abfd);
-      if (abfd == NULL)
-	break;
-      if (! bfd_check_format (abfd, bfd_object))
-	continue;
-      this_osabi = gdbarch_lookup_osabi_from_bfd (abfd);
-      if (this_osabi == osabi)
-	{
-	  return abfd;
-	}
-      else if (this_osabi == GDB_OSABI_DARWIN)
-	fallback = abfd;
-    }
-  return fallback;
-#else	/* defined (TARGET_ARM) && defined (TM_NEXTSTEP)  */
   osabi = gdbarch_osabi (current_gdbarch);
   if ((osabi <= GDB_OSABI_UNKNOWN) || (osabi >= GDB_OSABI_INVALID))
     osabi = gdbarch_lookup_osabi (archive_bfd);
@@ -5252,7 +5180,6 @@ open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format)
         }
     }
   return abfd;
-#endif	/* defined (TARGET_ARM) && defined (TM_NEXTSTEP)  */
 }
 
 void

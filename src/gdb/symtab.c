@@ -1040,14 +1040,7 @@ init_sal (struct symtab_and_line *sal)
   /* APPLE LOCAL end subroutine inlinine  */
 }
 
-/* APPLE LOCAL begin addr_ctx.  */
-void
-init_address_context (struct address_context *addr_ctx)
-{
-  memset(addr_ctx, 0, sizeof(struct address_context));
-}
 
-/* APPLE LOCAL end addr_ctx.  */
 
 /* Find which partial symtab contains PC and SECTION.  Return 0 if
    none.  We return the psymtab that contains a symbol whose address
@@ -3626,78 +3619,6 @@ find_pc_line_pc_range (CORE_ADDR pc, CORE_ADDR *startptr, CORE_ADDR *endptr)
 struct symtab_and_line
 find_function_start_sal (struct symbol *sym, int funfirstline)
 {
-  /* APPLE LOCAL begin address context.  */
-  struct address_context pc;
-  init_address_context (&pc);
-  pc.symbol = sym;
-  /* APPLE LOCAL end address context.  */
-  
-  /* If the block structure is a little bit mangled, we can end up
-     with function sym's with a NULL block.  Don't crash.  */
-  pc.block = SYMBOL_BLOCK_VALUE (sym);
-  if (pc.block == NULL)
-    error ("Found function with NULL block: \"%s\"", SYMBOL_PRINT_NAME (sym));
-  /* APPLE LOCAL begin address ranges  */
-  pc.address = BLOCK_LOWEST_PC (pc.block);
-  /* APPLE LOCAL end address ranges  */
-  /* END APPLE LOCAL */
-  fixup_symbol_section (sym, NULL);
-  if (funfirstline)
-    {				
-      /* skip "first line" of function (which is actually its prologue) */
-      pc.bfd_section = SYMBOL_BFD_SECTION (sym);
-      /* If function is in an unmapped overlay, use its unmapped LMA
-         address, so that SKIP_PROLOGUE has something unique to work on */
-      if (section_is_overlay (pc.bfd_section) &&
-	  !section_is_mapped (pc.bfd_section))
-	pc.address = overlay_unmapped_address (pc.address, 
-					       pc.bfd_section);
-
-      pc.address += DEPRECATED_FUNCTION_START_OFFSET;
-      /* APPLE LOCAL begin address context.  */
-      /* Check if the current architecture supports the address context 
-         version of prologue skipping.  */
-      if (SKIP_PROLOGUE_ADDR_CTX_P())
-	pc.address = SKIP_PROLOGUE_ADDR_CTX (&pc);
-      else
-	pc.address = SKIP_PROLOGUE (pc.address);
-      /* APPLE LOCAL end address context.  */
-
-      /* For overlays, map pc back into its mapped VMA range */
-      pc.address = overlay_mapped_address (pc.address, 
-					   pc.bfd_section);
-    }
-  pc.sal = find_pc_sect_line (pc.address, 
-			      SYMBOL_BFD_SECTION (sym), 0);
-
-  /* Check if SKIP_PROLOGUE left us in mid-line, and the next
-     line is still part of the same function.  */
-  /* APPLE LOCAL begin address ranges  */
-  if (pc.sal.pc != pc.address
-      && block_contains_pc (SYMBOL_BLOCK_VALUE (pc.symbol), 
-			    pc.sal.end))
-  /* APPLE LOCAL end address ranges  */
-    {
-      /* First pc of next line */
-      pc.address = pc.sal.end;
-      /* Recalculate the line number (might not be N+1).  */
-      pc.sal = find_pc_sect_line (pc.address, 
-				  SYMBOL_BFD_SECTION (pc.symbol), 
-				  0);
-    }
-  pc.sal.pc = pc.address;
-
-  return pc.sal;
-}
-#if defined (USE_OLD_FIND_FUNCTION_START_SAL)
-/* Given a function symbol SYM, find the symtab and line for the start
-   of the function.
-   If the argument FUNFIRSTLINE is nonzero, we want the first line
-   of real code inside the function.  */
-
-struct symtab_and_line
-find_function_start_sal (struct symbol *sym, int funfirstline)
-{
   CORE_ADDR pc;
   struct symtab_and_line sal;
   /* APPLE LOCAL */
@@ -3746,7 +3667,7 @@ find_function_start_sal (struct symbol *sym, int funfirstline)
 
   return sal;
 }
-#endif
+
 /* If P is of the form "operator[ \t]+..." where `...' is
    some legitimate operator text, return a pointer to the
    beginning of the substring of the operator text.

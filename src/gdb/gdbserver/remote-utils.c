@@ -133,7 +133,7 @@ remote_open (char *name)
 
       port = atoi (port_str + 1);
 
-      tmp_desc = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP);
+      tmp_desc = socket (PF_INET, SOCK_STREAM, 0);
       if (tmp_desc < 0)
 	perror_with_name ("Can't open socket");
 
@@ -150,19 +150,7 @@ remote_open (char *name)
 	  || listen (tmp_desc, 1))
 	perror_with_name ("Can't bind address");
 
-      /* If port is zero, a random port will be selected, and the
-	 fprintf below needs to know what port was selected.  */
-      if (port == 0)
-	{
-	  socklen_t len = sizeof (sockaddr);
-	  if (getsockname (tmp_desc, (struct sockaddr *) &sockaddr, &len) < 0
-	      || len < sizeof (sockaddr))
-	    perror_with_name ("Can't determine port");
-	  port = ntohs (sockaddr.sin_port);
-	}
-
       fprintf (stderr, "Listening on port %d\n", port);
-      fflush (stderr);
 
       tmp = sizeof (sockaddr);
       remote_desc = accept (tmp_desc, (struct sockaddr *) &sockaddr, &tmp);
@@ -327,10 +315,6 @@ putpkt (char *buf)
 	  perror ("putpkt(write)");
 	  return -1;
 	}
-
-#if defined (NO_ACKS)
-      break;
-#endif
 
       if (remote_debug)
 	{
@@ -517,10 +501,6 @@ getpkt (char *buf)
 	}
       *bp = 0;
 
-#if defined (NO_ACKS)
-      break;
-#endif
-
       c1 = fromhex (readchar ());
       c2 = fromhex (readchar ());
 
@@ -538,7 +518,6 @@ getpkt (char *buf)
       fflush (stderr);
     }
 
-#if !defined (NO_ACKS)
   write (remote_desc, "+", 1);
 
   if (remote_debug)
@@ -546,7 +525,6 @@ getpkt (char *buf)
       fprintf (stderr, "[sent ack]\n");
       fflush (stderr);
     }
-#endif
 
   return bp - buf;
 }

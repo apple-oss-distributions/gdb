@@ -796,10 +796,6 @@ step_1 (int skip_subroutines, int single_inst, char *count_string)
   /* In synchronous case, all is well, just use the regular for loop. */
   if (!target_can_async_p ())
     {
-      /* APPLE LOCAL: Stepping command hook here.  */
-      if (stepping_command_hook)
-	stepping_command_hook ();
-
       for (; count > 0; count--)
 	{
 	  clear_proceed_status ();

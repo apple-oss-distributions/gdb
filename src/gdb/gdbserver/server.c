@@ -43,44 +43,20 @@ jmp_buf toplevel;
 
 unsigned long signal_pid;
 
-#ifdef SIGTTOU
-/* A file descriptor for the controlling terminal.  */
-int terminal_fd;
-
-/* TERMINAL_FD's original foreground group.  */
-pid_t old_foreground_pgrp;
-
-/* Hand back terminal ownership to the original foreground group.  */
-
-static void
-restore_old_foreground_pgrp (void)
-{
-  tcsetpgrp (terminal_fd, old_foreground_pgrp);
-}
-#endif
-
 static int
 start_inferior (char *argv[], char *statusptr)
 {
-#ifdef SIGTTOU
   signal (SIGTTOU, SIG_DFL);
   signal (SIGTTIN, SIG_DFL);
-#endif
 
   signal_pid = create_inferior (argv[0], argv);
 
   fprintf (stderr, "Process %s created; pid = %ld\n", argv[0],
 	   signal_pid);
-  fflush (stderr);
 
-#ifdef SIGTTOU
   signal (SIGTTOU, SIG_IGN);
   signal (SIGTTIN, SIG_IGN);
-  terminal_fd = fileno (stderr);
-  old_foreground_pgrp = tcgetpgrp (terminal_fd);
-  tcsetpgrp (terminal_fd, signal_pid);
-  atexit (restore_old_foreground_pgrp);
-#endif
+  tcsetpgrp (fileno (stderr), signal_pid);
 
   /* Wait till we are at 1st instruction in program, return signal number.  */
   return mywait (statusptr, 0);
@@ -96,7 +72,6 @@ attach_inferior (int pid, char *statusptr, int *sigptr)
     return -1;
 
   fprintf (stderr, "Attached; pid = %d\n", pid);
-  fflush (stderr);
 
   /* FIXME - It may be that we should get the SIGNAL_PID from the
      attach function, so that it can be the main thread instead of
@@ -104,12 +79,6 @@ attach_inferior (int pid, char *statusptr, int *sigptr)
   signal_pid = pid;
 
   *sigptr = mywait (statusptr, 0);
-
-  /* GDB knows to ignore the first SIGSTOP after attaching to a running
-     process using the "attach" command, but this is different; it's
-     just using "target remote".  Pretend it's just starting up.  */
-  if (*statusptr == 'T' && *sigptr == TARGET_SIGNAL_STOP)
-    *sigptr = TARGET_SIGNAL_TRAP;
 
   return 0;
 }
@@ -368,22 +337,6 @@ main (int argc, char *argv[])
       exit (1);
     }
 
-  /* APPLE LOCAL BEGIN: Add a way to turn on and off verbose debugging. */
-  if (argc > 1 && strcmp (argv[1], "--debug") == 0)
-    {
-      extern int low_debuglevel;
-      extern int excthread_debugflag;
-      int i;
-      low_debuglevel = 6;
-      excthread_debugflag = 6;
-      remote_debug = 1;
-
-      for (i = 1; i < argc-1; i++)
-	argv[i] = argv[i+1];
-	    
-      argc--;
-    }
-  /* APPLE LOCAL END */
   bad_attach = 0;
   pid = 0;
   attached = 0;
@@ -427,13 +380,6 @@ main (int argc, char *argv[])
 	}
     }
 
-  if (setjmp (toplevel))
-    {
-      fprintf (stderr, "Killing inferior\n");
-      kill_inferior ();
-      exit (1);
-    }
-
   while (1)
     {
       remote_open (argv[1]);
@@ -451,21 +397,7 @@ main (int argc, char *argv[])
 	      handle_query (own_buf);
 	      break;
 	    case 'd':
-	      /* APPLE LOCAL: Handle all the debug flags here. */
-	      {
-		extern int low_debuglevel;
-		extern int excthread_debugflag;
-		if (!low_debuglevel)
-		  low_debuglevel = 6;
-		else 
-		  low_debuglevel = 0;
-		if (!excthread_debugflag)
-		  excthread_debugflag = 6;
-		else
-		  excthread_debugflag = 0;
-
-		remote_debug = !remote_debug;
-	      }
+	      remote_debug = !remote_debug;
 	      break;
 	    case 'D':
 	      fprintf (stderr, "Detaching from inferior\n");
@@ -734,9 +666,8 @@ main (int argc, char *argv[])
 	    fprintf (stderr,
 		     "\nChild exited with status %d\n", signal);
 	  if (status == 'X')
-	    fprintf (stderr, "\nChild terminated with signal = 0x%x (%s)\n",
-		     target_signal_to_host (signal),
-		     target_signal_to_name (signal));
+	    fprintf (stderr, "\nChild terminated with signal = 0x%x\n",
+		     signal);
 	  if (status == 'W' || status == 'X')
 	    {
 	      if (extended_protocol)

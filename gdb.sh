@@ -90,7 +90,7 @@ fi
 if [ -n "$requested_architecture" ]
 then
   case $requested_architecture in
-    ppc* | i386 | x86_64 | arm*)
+    ppc* | i386 | x86_64)
      ;;
     *)
       echo Unrecognized architecture \'$requested_architecture\', using host arch. >&2
@@ -132,13 +132,6 @@ case "$architecture_to_use" in
         ;;
     i386 | x86_64)
         gdb="${GDB_ROOT}/usr/libexec/gdb/gdb-i386-apple-darwin"
-        ;;
-    arm)
-        gdb="${GDB_ROOT}/usr/libexec/gdb/gdb-arm-apple-darwin8"
-        ;;
-    armv6)
-        gdb="${GDB_ROOT}/usr/libexec/gdb/gdb-arm-apple-darwin8"
-        gdbopts="--osabi DarwinV6"
         ;;
     *)
         echo "Unknown architecture '$architecture_to_use'; using 'ppc' instead.";

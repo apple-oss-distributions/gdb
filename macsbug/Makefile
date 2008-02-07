@@ -81,11 +81,11 @@ PLUGIN_SUPPORT			= 	$(API_DIR)/gdb_plugin_support
 BUILD_VERSION			=	10.4
 
 ifndef BINUTILS_BUILD_ROOT
-BINUTILS_BUILD_ROOT = $(SDKROOT)
+BINUTILS_BUILD_ROOT = $(NEXT_ROOT)
 endif
 
 ifndef GDB_BUILD_ROOT
-GDB_BUILD_ROOT = $(SDKROOT)
+GDB_BUILD_ROOT = $(NEXT_ROOT)
 endif
 
 # The following defines $(gdb_plugin_support.o) as a function of using the Makefile

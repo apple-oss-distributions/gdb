@@ -45,6 +45,12 @@
 #define DWARF2_REG_TO_REGNUM(REG) (REG)
 #endif
 
+/* APPLE LOCAL begin print location lists  */
+static void
+print_single_dwarf_location (struct ui_file *, gdb_byte **, gdb_byte *,
+			     struct dwarf_expr_context *);
+/* APPLE LOCAL end print location lists  */
+
 /* A helper function for dealing with location lists.  Given a
    symbol baton (BATON) and a pc value (PC), find the appropriate
    location expression, set *LOCEXPR_LENGTH, and return a pointer
@@ -546,6 +552,11 @@ locexpr_describe_location (struct symbol *symbol, struct ui_file *stream)
 {
   /* FIXME: be more extensive.  */
   struct dwarf2_locexpr_baton *dlbaton = SYMBOL_LOCATION_BATON (symbol);
+  /* APPLE LOCAL begin print better location information.  */
+  struct dwarf_expr_context *ctx;
+  gdb_byte *loc_ptr;
+  gdb_byte *loc_end;
+  /* APPLE LOCAL end print better location information.  */
 
   if (dlbaton->size == 1
       && dlbaton->data[0] >= DW_OP_reg0
@@ -584,9 +595,27 @@ locexpr_describe_location (struct symbol *symbol, struct ui_file *stream)
 	return 1;
       }
   
+  /* APPLE LOCAL print better location information.  */
 
-  fprintf_filtered (stream,
-		    "a variable with complex or multiple locations (DWARF2)");
+  /* Create a context, to pass to print_single_dwarf_location.  */
+
+  ctx = new_dwarf_expr_context ();
+  ctx->baton = dlbaton;
+  ctx->read_reg = dwarf_expr_read_reg;
+  ctx->read_mem = dwarf_expr_read_mem;
+  ctx->get_frame_base = dwarf_expr_frame_base;
+  ctx->get_tls_address = dwarf_expr_tls_address;
+
+  /* Set up starting & ending pointers, to pass to 
+     print_single_dwarf_location.  */
+
+  loc_ptr = &dlbaton->data[0];
+  loc_end = &dlbaton->data[dlbaton->size];
+
+  print_single_dwarf_location (stream, &loc_ptr, loc_end, ctx);
+
+  /* APPLE LOCAL end print better location information.  */
+
   return 1;
 }
 
@@ -1138,6 +1167,7 @@ print_single_dwarf_location (struct ui_file *stream, gdb_byte **loc_ptr,
 	  break;
 	  
 	case DW_OP_APPLE_uninit:
+	  fprintf_filtered (stream, " [ uninitialized ]");
 	  break;
 	  
 	default:

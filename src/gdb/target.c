@@ -40,7 +40,6 @@
 #include "event-loop.h"
 #include "memattr.h"
 #include "gdbcore.h"
-#include "objc-lang.h"  /* for objc_clear_selector_to_implementation_cache */
 #include "checkpoint.h" /* for checkpoint_clear_inferior */
 static void target_info (char *, int);
 
@@ -983,8 +982,7 @@ memory_xfer_partial (struct target_ops *ops, void *readbuf, const void *writebuf
       break;
     }
 
-  /* APPLE LOCAL: We use -1 to mean "caching temporarily disabled.  */
-  if (region->attrib.cache == 1)
+  if (region->attrib.cache)
     {
       /* FIXME drow/2006-08-09: This call discards OPS, so the raw
 	 memory request will start back at current_target.  */
@@ -1253,16 +1251,8 @@ target_read (struct target_ops *ops,
       /* Call an observer, notifying them of the xfer progress?  */
       if (xfer == 0)
  	return xfered;
-      /* APPLE LOCAL: Don't return -1 here if we managed to get some
-	 bytes.  Return the number of bytes we got.  */
       if (xfer < 0)
-	{
-	  if (xfered == 0)
-	    return -1;
-	  else
-	    return xfered;
-	}
-      /* END APPLE LOCAL  */
+ 	return -1;
       xfered += xfer;
       QUIT;
     }
@@ -1669,8 +1659,6 @@ generic_mourn_inferior (void)
      using hit counts.  So don't clear them if we're counting hits.  */
   if (!show_breakpoint_hit_counts)
     breakpoint_clear_ignore_counts ();
-
-  objc_clear_caches ();
 
   if (deprecated_detach_hook)
     deprecated_detach_hook ();

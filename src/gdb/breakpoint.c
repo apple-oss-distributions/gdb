@@ -2486,13 +2486,14 @@ print_it_typical (bpstat bs)
 				       bs->breakpoint_at->number, 1);
       annotate_breakpoint (bs->breakpoint_at->number);
       ui_out_text (uiout, "\nBreakpoint ");
-	  
-      ui_out_print_annotation_string (uiout, 0, "reason", async_reason_lookup (EXEC_ASYNC_BREAKPOINT_HIT));
-	  
       if (ui_out_is_mi_like_p (uiout))
 	{
 	  bpstat bpstat_ptr;
 	  int any_commands = 0;
+	  
+	  ui_out_field_string (uiout, "reason", 
+			       async_reason_lookup (EXEC_ASYNC_BREAKPOINT_HIT));
+	  
 	  /* APPLE LOCAL: Print out whether the breakpoint has any
 	     commands, so the UI will know whether to expect something
 	     funny to happen.  */
@@ -2511,11 +2512,11 @@ print_it_typical (bpstat bs)
 	  else
 	    ui_out_field_string (uiout, "commands", "no");
 
-	}
-      /* APPLE LOCAL: Xcode wants to know how many times this breakpoint 
+          /* APPLE LOCAL: Xcode wants to know how many times this breakpoint 
              has been hit. */
-      ui_out_print_annotation_int (uiout, 0, "times", bs->breakpoint_at->hit_count);
-      ui_out_print_annotation_int (uiout, 1, "bkptno", bs->breakpoint_at->number);
+          ui_out_field_int (uiout, "times", bs->breakpoint_at->hit_count);
+	}
+      ui_out_field_int (uiout, "bkptno", bs->breakpoint_at->number);
       ui_out_text (uiout, ", ");
       return PRINT_SRC_AND_LOC;
       break;
@@ -2526,9 +2527,11 @@ print_it_typical (bpstat bs)
 	 to shlib event" message.) */
 
       /* APPLE LOCAL begin breakpoint MI */
-      ui_out_print_annotation_string (uiout, 0, "reason", "shlib-event");
+      if (ui_out_is_mi_like_p (uiout))
+	ui_out_field_string (uiout, "reason", "shlib-event");
+      else
       /* APPLE LOCAL end breakpoint MI */
-      ui_out_text (uiout, "Stopped due to shared library event\n");
+      printf_filtered (_("Stopped due to shared library event\n"));
       return PRINT_NOTHING;
       break;
 
@@ -2598,7 +2601,9 @@ print_it_typical (bpstat bs)
       if (bs->old_val != NULL)
 	{
 	  annotate_watchpoint (bs->breakpoint_at->number);
-	  ui_out_print_annotation_string (uiout, 0, "reason",
+	  if (ui_out_is_mi_like_p (uiout))
+	    ui_out_field_string
+	      (uiout, "reason",
 	       async_reason_lookup (EXEC_ASYNC_WATCHPOINT_TRIGGER));
 	  mention (bs->breakpoint_at);
 	  ui_out_chain = make_cleanup_ui_out_tuple_begin_end (uiout, "value");
@@ -2618,7 +2623,9 @@ print_it_typical (bpstat bs)
       break;
 
     case bp_read_watchpoint:
-      ui_out_print_annotation_string (uiout, 0, "reason",
+      if (ui_out_is_mi_like_p (uiout))
+	ui_out_field_string
+	  (uiout, "reason",
 	   async_reason_lookup (EXEC_ASYNC_READ_WATCHPOINT_TRIGGER));
       mention (bs->breakpoint_at);
       ui_out_chain = make_cleanup_ui_out_tuple_begin_end (uiout, "value");
@@ -2634,7 +2641,9 @@ print_it_typical (bpstat bs)
       if (bs->old_val != NULL)     
 	{
 	  annotate_watchpoint (bs->breakpoint_at->number);
-	  ui_out_print_annotation_string (uiout, 0, "reason",
+	  if (ui_out_is_mi_like_p (uiout))
+	    ui_out_field_string
+	      (uiout, "reason",
 	       async_reason_lookup (EXEC_ASYNC_ACCESS_WATCHPOINT_TRIGGER));
 	  mention (bs->breakpoint_at);
 	  ui_out_chain = make_cleanup_ui_out_tuple_begin_end (uiout, "value");
@@ -2648,7 +2657,9 @@ print_it_typical (bpstat bs)
       else 
 	{
 	  mention (bs->breakpoint_at);
-	  ui_out_print_annotation_string (uiout, 0, "reason",
+	  if (ui_out_is_mi_like_p (uiout))
+	    ui_out_field_string
+	      (uiout, "reason",
 	       async_reason_lookup (EXEC_ASYNC_ACCESS_WATCHPOINT_TRIGGER));
 	  ui_out_chain = make_cleanup_ui_out_tuple_begin_end (uiout, "value");
 	  ui_out_text (uiout, "\nValue = ");
@@ -2664,13 +2675,16 @@ print_it_typical (bpstat bs)
        here. */
 
     case bp_finish:
-      ui_out_print_annotation_string (uiout, 0, "reason",
+      if (ui_out_is_mi_like_p (uiout))
+	ui_out_field_string
+	  (uiout, "reason",
 	   async_reason_lookup (EXEC_ASYNC_FUNCTION_FINISHED));
       return PRINT_UNKNOWN;
       break;
 
     case bp_until:
-      ui_out_print_annotation_string (uiout, 0, "reason", "location-reached");
+      if (ui_out_is_mi_like_p (uiout))
+	ui_out_field_string (uiout, "reason", "location-reached");
       return PRINT_UNKNOWN;
       break;
 
@@ -2992,8 +3006,9 @@ watchpoint_check (void *p)
 	 in this case, by the time we call print_it_typical() this bp
 	 will be deleted already. So we have no choice but print the
 	 information here. */
-      ui_out_print_annotation_string (uiout, 0, "reason", 
-			   async_reason_lookup (EXEC_ASYNC_WATCHPOINT_SCOPE));
+      if (ui_out_is_mi_like_p (uiout))
+	ui_out_field_string
+	  (uiout, "reason", async_reason_lookup (EXEC_ASYNC_WATCHPOINT_SCOPE));
       ui_out_text (uiout, "\nWatchpoint ");
       ui_out_field_int (uiout, "wpnum", bs->breakpoint_at->number);
       ui_out_text (uiout, " deleted because the program has left the block in\n\
@@ -3155,7 +3170,7 @@ bpstat_stop_status (CORE_ADDR bp_addr, ptid_t ptid, int stopped_by_watchpoint)
     if (ep_is_exception_catchpoint (b))
       {
 	if (!current_exception_should_stop()) {
-	  // remove_breakpoints ();
+	  remove_breakpoints ();
 	  bs->stop = 0;
 	  bs->print_it = print_it_noop;
 	  continue;
@@ -7658,9 +7673,9 @@ print_exception_catchpoint (struct breakpoint *b)
         {
           annotate_catchpoint (b->number);
           print_catch_info (b);
-	  ui_out_print_annotation_string (uiout, 0, "reason", "catch-exception");
           if (ui_out_is_mi_like_p (uiout))
             {
+              ui_out_field_string (uiout, "reason", "catch-exception");
               return PRINT_SRC_AND_LOC;
             }
           else
@@ -7688,9 +7703,9 @@ print_exception_catchpoint (struct breakpoint *b)
           print_catch_info (b);
 
           /* don't bother to print location frame info */
-	  ui_out_print_annotation_string (uiout, 0, "reason", "throw-exception");
           if (ui_out_is_mi_like_p (uiout))
             {
+              ui_out_field_string (uiout, "reason", "throw-exception");
               return PRINT_SRC_AND_LOC;
             }
           else
@@ -8733,19 +8748,12 @@ breakpoint_re_set_one (void *bint)
 	  /* We may be reloading a library which we found the wrong
 	     version of at init time.  So up the load level here just
 	     to be safe.  */
-	  /* But don't do this for exception catchpoints, 'cause if
-	     the shlib changes, that's going to delete the breakpoint
-	     out from under us.  */
-	  if (b->type != bp_gnu_v3_catch_throw
-	      && b->type != bp_gnu_v3_catch_catch)
+	  if (objfile_name_set_load_state (b->requested_shlib, OBJF_SYM_ALL, 0) == -1)
 	    {
-	      if (objfile_name_set_load_state (b->requested_shlib, OBJF_SYM_ALL, 0) == -1)
-		{
-		  warning ("Couldn't raise load state for requested shlib: \"%s\" "
-			   "for breakpoint %d.\n",
-			   b->requested_shlib, b->number);
-		  return 0;
-		}
+	      warning ("Couldn't raise load state for requested shlib: \"%s\" "
+		       "for breakpoint %d.\n",
+		       b->requested_shlib, b->number);
+	      return 0;
 	    }
 	  
 	  restrict_cleanup 
@@ -8762,17 +8770,10 @@ breakpoint_re_set_one (void *bint)
       /* APPLE LOCAL begin radar 5273932  */
       else if (b->bp_objfile_name != NULL)
 	{
-	  /* But don't do this for exception catchpoints, 'cause if
-	     the shlib changes, that's going to delete the breakpoint
-	     out from under us.  */
-	  if (b->type != bp_gnu_v3_catch_throw
-	      && b->type != bp_gnu_v3_catch_catch)
+	  if (objfile_name_set_load_state (b->bp_objfile_name, OBJF_SYM_ALL, 0) == -1)
 	    {
-	      if (objfile_name_set_load_state (b->bp_objfile_name, OBJF_SYM_ALL, 0) == -1)
-		{
-		  warning ("Couldn't raise load state for requested objfile: \"%s\" "
-			   "for breakpoint %d/\n", b->bp_objfile_name, b->number);
-		}
+	      warning ("Couldn't raise load state for requested objfile: \"%s\" "
+		       "for breakpoint %d/\n", b->bp_objfile_name, b->number);
 	    }
 	  
 	  restrict_cleanup 

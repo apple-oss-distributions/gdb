@@ -1521,11 +1521,24 @@ varobj_update (struct varobj **varp, struct varobj_changelist **changelist)
     {
       int retval;
       (*varp)->error = 1;
-      if ((*varp)->root->in_scope)
-        retval = -3;
+      if ((*varp)->root->in_scope
+	  && type_changed != VAROBJ_TYPE_UNCHANGED)
+	{
+	  retval = -3;
+	  (*varp)->root->in_scope = 0;
+	}
+      else if (type_changed == VAROBJ_SCOPE_CHANGED)
+	{
+	  retval = -4;
+	  (*varp)->root->in_scope = 1;
+	}
+      else if (type_changed == VAROBJ_TYPE_UNCHANGED)
+	retval = 0;
       else
-        retval = 0;
-      (*varp)->root->in_scope = 0;
+	{
+	  retval = 0;
+	  (*varp)->root->in_scope = 0;
+	}
       return retval;
     }
   else
@@ -2064,6 +2077,8 @@ free_variable (struct varobj *var)
   xfree (var->path_expr);
   xfree (var->obj_name);
   xfree (var->dynamic_type_name);
+  if (var->value != NULL)
+    value_free (var->value);
   xfree (var);
 }
 
@@ -2563,8 +2578,16 @@ value_of_root (struct varobj **var_handle, enum varobj_type_change *type_changed
 		 block...  Then we need to select the new varobj as well. */
 	      var->root->valid_block = tmp_var->root->valid_block;
 	    }
-	  varobj_delete (tmp_var, NULL, 0);
-	  *type_changed = VAROBJ_TYPE_UNCHANGED;
+	  if (tmp_var->root->in_scope 
+	      && !var->root->in_scope)
+	    {
+	      *type_changed = VAROBJ_SCOPE_CHANGED;
+	    }
+	  else
+	    {
+	      varobj_delete (tmp_var, NULL, 0);
+	      *type_changed = VAROBJ_TYPE_UNCHANGED;
+	    }
 	}
       else
 	{

@@ -49,8 +49,6 @@
 #include "inferior.h"
 #include "demangle.h"          /* For cplus_demangle */
 #include "osabi.h"
-#include "ui-out.h"
-#include "cli-out.h"
 
 #include <ctype.h>
 
@@ -98,25 +96,6 @@ int call_po_at_unsafe_times = 0;
    sometimes we are looking at a bogus object, and just spin forever.  So 
    after we've seen this many "methods" we error out.  */
 static unsigned int objc_class_method_limit = 10000;
-
-/* We don't yet have an dynamic way of figuring out what the ObjC
-   runtime version is.  So this will override our guess.  */
-static int objc_runtime_version = 0;
-
-/* For the rb tree stuff.  */
-#include "inlining.h"
-
-/* APPLE LOCAL: This tree keeps the map of {class, selector} -> implementation.  */
-static struct rb_tree_node *implementation_tree = NULL;
-static CORE_ADDR  lookup_implementation_in_cache (CORE_ADDR class, CORE_ADDR sel);
-static void add_implementation_to_cache (CORE_ADDR class, CORE_ADDR sel, CORE_ADDR implementation);
-
-/* APPLE LOCAL: This tree keeps the map of class -> class type.  The tree is probably overkill
- in this case, but it's easy to use and we won't have all that many of them.  */
-static struct rb_tree_node *classname_tree = NULL;
-
-static char *lookup_classname_in_cache (CORE_ADDR class);
-static void add_classname_to_cache (CORE_ADDR class, char *classname);
 
 /* APPLE LOCAL: At several places we grope in the objc runtime to
    find addresses of methods and such; we need to know how large
@@ -2091,76 +2070,12 @@ _initialize_objc_language (void)
 static int 
 new_objc_runtime_internals ()
 {
-  if (objc_runtime_version == 1)
-    return 0;
-  else if (objc_runtime_version == 2)
-    return 1;
-
-#if defined (TARGET_ARM)
-  return 1;
-#else
   if (get_addrsize () == 8)
     return 1;
   else
     return 0;
-#endif
 }
 
-
-/* The first stage in calling any ObjC 2.0 functions passing in a
-   class name is to validate that this class really IS a class.  We
-   can't just call into the normal runtime methods to see if the class
-   exists, since if the class is bogus that might take the runtime
-   lock, then crash, leaving the program wedged.  The runtime provides
-   class_getClass that will do anything that might crash before taking
-   the lock.  We call that first.  
-
-   INFARGS is a pointer to a gdb value containg the class pointer.
-
-   Note: if we can't find the "class_getClass" function, we'll return a
-   zero from this call.  It's too dangerous to try to call
-   class_getName on an uninitialized object, since it can crash the
-   runtime AFTER it's taken the ObjC lock, which will bring the target
-   to a screeching halt.  So we treat not finding the validation function
-   the same as finding an invalid class pointer.
-   */
-
-static CORE_ADDR
-new_objc_runtime_class_getClass (struct value *infargs)
-{
-  static struct cached_value *validate_function = NULL;
-  static int already_warned = 0;
-  struct value *ret_value;
-
-  if (validate_function == NULL)
-    {
-      if (lookup_minimal_symbol ("gdb_class_getClass", 0, 0))
-	  validate_function = create_cached_function ("gdb_class_getClass",
-						      builtin_type_voidptrfuncptr);
-      else
-	{
-	  if (!already_warned)
-	    {
-	      already_warned = 1;
-	      warning ("Couldn't find class validation function, calling methods on"
-		       " uninitialized objects may deadlock your program.");
-	    }
-	}
-    }
-
-  if (validate_function != NULL)
-    {
-      ret_value = call_function_by_hand
-	(lookup_cached_function (validate_function),
-	 1, &infargs);
-      if (ret_value == NULL)
-	return (CORE_ADDR) 0;
-
-      return (CORE_ADDR) value_as_address (ret_value);
-    }
-  else
-    return (CORE_ADDR) 0;
-}
 
 /* Do an inferior function call into the Objective-C runtime to find
    the function address of a given class + selector.  
@@ -2181,7 +2096,6 @@ new_objc_runtime_find_impl (CORE_ADDR class, CORE_ADDR sel, int stret)
   struct value *ret_value;
   struct cleanup *scheduler_cleanup;
   CORE_ADDR retval = 0;
-  int unwind;
 
   if (!target_has_execution)
     {
@@ -2214,9 +2128,6 @@ new_objc_runtime_find_impl (CORE_ADDR class, CORE_ADDR sel, int stret)
   scheduler_cleanup = make_cleanup_set_restore_scheduler_locking_mode 
                       (scheduler_locking_on);
 
-  unwind = set_unwind_on_signal (1);
-  make_cleanup (set_unwind_on_signal, unwind);
-
   /* Remember that target_check_safe_call's behavior may depend on the
      scheduler locking mode, so do this AFTER setting the mode.  */
   if (target_check_safe_call () == 1)
@@ -2230,21 +2141,15 @@ new_objc_runtime_find_impl (CORE_ADDR class, CORE_ADDR sel, int stret)
                                           (builtin_type_void_data_ptr), sel);
       infargs[0] = classval;
       infargs[1] = selval;
-
-      retval = new_objc_runtime_class_getClass (classval);
-      if (retval == 0)
-	return 0;
-
+      
       ret_value = call_function_by_hand
                   (lookup_cached_function (stret ? function_stret : function),
                    2, infargs);
       retval = (CORE_ADDR) value_as_address (ret_value);
-      retval = gdbarch_addr_bits_remove (current_gdbarch, retval);
     }
 
   do_cleanups (scheduler_cleanup);
 
-  add_implementation_to_cache (class, sel, retval);
   return retval;
 }
 
@@ -2322,68 +2227,6 @@ read_objc_class (CORE_ADDR addr, struct objc_class *class)
    machine.  */
 #define GC_IGNORED_SELECTOR_LE 0xfffeb010
 
-/* APPLE LOCAL: Build a cache of the (class,selector)->implementation lookups
-   that we do.  These are actually fairly expensive, and for inspecting ObjC
-   objects, we tend to do the same ones over & over.  */
-
-static void
-free_rb_tree_data (struct rb_tree_node *root, void (*free_fn) (void *))
-{
-  if (root->left)
-    free_rb_tree_data (root->left, free_fn);
-
-  if (root->right)
-    free_rb_tree_data (root->right, free_fn);
-
-  if (free_fn != NULL)
-    free_fn (root->data);
-  xfree (root);
-}
-
-void
-objc_clear_caches ()
-{
-  if (implementation_tree != NULL)
-    {
-      free_rb_tree_data (implementation_tree, xfree);
-      implementation_tree = NULL;
-    }
-  if (classname_tree != NULL)
-    {
-      free_rb_tree_data (classname_tree, xfree);
-      classname_tree = NULL;
-    }
-}
-
-static CORE_ADDR 
-lookup_implementation_in_cache (CORE_ADDR class, CORE_ADDR sel)
-{
-  struct rb_tree_node *found;
-
-  found = rb_tree_find_node_all_keys (implementation_tree, class, -1, sel);
-  if (found == NULL)
-    return 0;
-  else
-      return *((CORE_ADDR *) found->data);
-}
-
-static void
-add_implementation_to_cache (CORE_ADDR class, CORE_ADDR sel, CORE_ADDR implementation)
-{
-  struct rb_tree_node *new_node = (struct rb_tree_node *) xmalloc (sizeof (struct rb_tree_node));
-  new_node->key = class;
-  new_node->secondary_key = -1;
-  new_node->third_key = sel;
-  new_node->data = xmalloc (sizeof (CORE_ADDR));
-  *((CORE_ADDR *) new_node->data) = implementation;
-  new_node->left = NULL;
-  new_node->right = NULL;
-  new_node->parent = NULL;
-  new_node->color = UNINIT;
-
-  rb_tree_insert (&implementation_tree, implementation_tree, new_node);
-}
-
 static CORE_ADDR
 find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
 {
@@ -2392,80 +2235,13 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
   int npasses;
   int addrsize = get_addrsize ();
   int total_methods = 0;
-  CORE_ADDR implementation;
-
   sel_str[0] = '\0';
-
-  implementation = lookup_implementation_in_cache (class, sel);
-  if (implementation != 0)
-    return implementation;
 
   if (new_objc_runtime_internals ())
     return (new_objc_runtime_find_impl (class, sel, 0));
 
   if (sel == GC_IGNORED_SELECTOR_LE)
     return 0;
-
-  /* Before we start trying to look at methods, let's quickly
-     check to see that the class hierarchy for the pointer we've
-     been given looks sane.  We tried to think of ways to check the
-     memory we are grubbing through to see if it looks good, but
-     there was no sure way to do that.  So the best solution is to
-     look up the class by name, and make sure the address we got
-     back is the same as the one we already had.  */
-  {
-    /* Here's a quick way to make sure that this pointer really is
-       class.  Call objc_lookUpClass on it, and if we find the class,
-       then it is real and safe to grub around in.  */
-    CORE_ADDR class_addr;
-    struct objc_class class_str;
-    char class_name[2048];
-    char *ptr;
-    struct gdb_exception e;
-
-    TRY_CATCH (e, RETURN_MASK_ALL)
-      {
-	read_objc_class (class, &class_str);
-	read_memory_string (class_str.name, class_name, 2048);
-      }
-    if (e.reason != NO_ERROR)
-      {
-	if (info_verbose)
-	  {
-	    warning ("Got error reading class or its name.");
-	  }
-	return 0;
-      }
-
-    for (ptr = class_name; *ptr != '\0'; ptr++)
-      {
-	if (!isprint (*ptr))
-	  {
-	    if (info_verbose)
-	      {
-		printf_unfiltered ("Class name \"%s\" contains a non-printing character.\n", class_name);
-	      }
-	    return 0;
-	  }
-      }
-
-    class_addr = lookup_objc_class (class_name);
-    if (class_addr == 0)
-      {
-	if (info_verbose)
-	  printf_unfiltered ("Could not look up class for name: \"%s\".\n", class_name);
-	return 0;
-      }
-    else if (class_addr != class)
-      {
-	if (info_verbose)
-	  printf_unfiltered ("Class address for name: \"%s\": 0x%s didn't match input address: 0x%s.\n", 
-		   class_name, paddr_nz (class_addr), paddr_nz (class));
-	return 0;
-      }
-  }  
-
-  /* Okay, now let's look for real.  */
 
   while (subclass != 0) 
     {
@@ -2475,7 +2251,6 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
       int class_initialized;
 
       read_objc_class (subclass, &class_str);
-
       class_initialized = ((class_str.info & 0x4L) == 0x4L);
       if (!class_initialized)
 	{
@@ -2587,10 +2362,7 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
 					   && (strcmp (name_str, sel_str) == 0))) 
 		/* FIXME: hppa arch was doing a pointer dereference
 		   here. There needs to be a better way to do that.  */
-		{
-		  add_implementation_to_cache (class, sel, meth_str.imp);
-		  return meth_str.imp;
-		}
+		return meth_str.imp;
 	    }
 	  mlistnum++;
 	}
@@ -2614,10 +2386,6 @@ find_implementation (CORE_ADDR object, CORE_ADDR sel, int stret)
   if (new_objc_runtime_internals ())
     {
       CORE_ADDR resolves_to;
-      resolves_to = lookup_implementation_in_cache (ostr.isa, sel);
-      if (resolves_to != 0)
-	return resolves_to;
-
       resolves_to = new_objc_runtime_find_impl (ostr.isa, sel, stret);
       if (resolves_to != 0)
         {
@@ -2777,10 +2545,6 @@ resolve_newruntime_objc_msgsendsuper (CORE_ADDR pc, CORE_ADDR *new_pc,
   object = read_memory_unsigned_integer (object + addrsize, addrsize);
 
   read_objc_super (object, &sstr);
-
-  res = lookup_implementation_in_cache (sstr.class, sel);
-  if (res != 0)
-    return res;
   res = new_objc_runtime_find_impl (sstr.class, sel, 0);
   if (new_pc != 0)
     *new_pc = res;
@@ -2894,113 +2658,6 @@ should_lookup_objc_class ()
   return lookup_objc_class_p;
 }
 
-int
-new_objc_runtime_get_classname (CORE_ADDR class,
-				char *class_name, int size)
-{
-  static struct cached_value *cached_class_getName = NULL;
-  struct value *classval;
-  CORE_ADDR addr;
-  struct cleanup *scheduler_cleanup;
-  static struct ui_out *null_uiout = NULL;
-  struct ui_out *old_uiout;
-  int retval = 0;
-  int unwind;
-
-  if (cached_class_getName == NULL)
-    {
-      if (lookup_minimal_symbol ("class_getName", 0, 0))
-        cached_class_getName = create_cached_function ("class_getName",
-						       builtin_type_voidptrfuncptr);
-      else
-        return 0;
-    }
-
-  /* APPLE LOCAL: Lock the scheduler before calling this so the other threads 
-     don't make progress while you are running this.  */
-  
-  scheduler_cleanup = make_cleanup_set_restore_scheduler_locking_mode 
-                      (scheduler_locking_on);
-
-  unwind = set_unwind_on_signal (1);
-  make_cleanup (set_unwind_on_signal, unwind);
-
-  /* Remember that target_check_safe_call's behavior may depend on the
-     scheduler locking mode, so do this AFTER setting the mode.  */
-  if (target_check_safe_call () == 1)
-    {
-      struct value *ret_value;
-      struct gdb_exception e;
-      
-      /* This function gets called when we are in the middle of 
-	 outputting the MI result for the creation of a varobj.
-	 So if any of these function calls crash we want to make
-	 sure their output doesn't get into the result.  So we
-	 make a null uiout from the gdb_null file stream, and swap
-	 that into the uiout while running the function calls.  */
-
-      if (null_uiout == NULL)
-	null_uiout = cli_out_new (gdb_null);
-      if (null_uiout == NULL)
-	error ("Unable to open null uiout in objc-lang.c.");
-      old_uiout = uiout;
-      uiout = null_uiout;
-      
-      TRY_CATCH (e, RETURN_MASK_ALL)
-	{
-	  classval = value_from_pointer (lookup_pointer_type 
-					 (builtin_type_void_data_ptr), class);
-	  
-	  addr = new_objc_runtime_class_getClass (classval);
-	  if (addr != 0)
-	    {
-	  
-	      ret_value = call_function_by_hand (lookup_cached_function (cached_class_getName),
-						 1, &classval);
-	      addr = value_as_address (ret_value);
-	      read_memory_string (addr, class_name, size);
-	      retval = 1;
-	    }
-	}
-      if (e.reason != NO_ERROR)
-	retval = 0;
-    }
-
-  ui_file_rewind (gdb_null);
-  uiout = old_uiout;
-  do_cleanups (scheduler_cleanup);
-  return retval;
-}
-
-static char *  
-lookup_classname_in_cache (CORE_ADDR class)
-{
-  struct rb_tree_node *found;
-
-  found = rb_tree_find_node_all_keys (classname_tree, class, -1, -1);
-  if (found == NULL)
-    return NULL;
-  else
-    return (char *) found->data;
-
-}
-
-static void 
-add_classname_to_cache (CORE_ADDR class, char *classname)
-{
-  struct rb_tree_node *new_node = (struct rb_tree_node *) xmalloc (sizeof (struct rb_tree_node));
-
-  new_node->key = class;
-  new_node->secondary_key = -1;
-  new_node->third_key = -1;
-  new_node->data = xstrdup (classname);
-  new_node->left = NULL;
-  new_node->right = NULL;
-  new_node->parent = NULL;
-  new_node->color = UNINIT;
-
-  rb_tree_insert (&classname_tree, classname_tree, new_node);
-}
 
 /* If the value VAL points to an objc object, look up its
    isa pointer, and see if you can find the type for its
@@ -3023,47 +2680,31 @@ objc_target_type_from_object (CORE_ADDR object_addr,
   struct symbol *class_symbol;
   struct type *dynamic_type = NULL;
   char class_name[256];
-  char *name_ptr;
   CORE_ADDR name_addr;
   CORE_ADDR isa_addr;
   long info_field;
-  int retval = 1;
 
   isa_addr = 
     read_memory_unsigned_integer (object_addr, addrsize);
 
   /* isa_addr now points to a struct objc_class in the inferior.  */
   
-  name_ptr = lookup_classname_in_cache (isa_addr);
-  if (name_ptr == NULL)
-    {
-      name_ptr = class_name;
-      if (new_objc_runtime_internals ())
-	retval = new_objc_runtime_get_classname (isa_addr, class_name, 256);
-      else
-	{
-	  /* APPLE LOCAL: Don't look up the dynamic type if the isa is the
-	     MetaClass class, since then we are looking at the Class object
-	     which doesn't have the fields of an object of the class.  */
-	  info_field = read_memory_unsigned_integer 
-	    (isa_addr + addrsize * 4, addrsize);
-	  if (info_field & CLS_META)
-	    return NULL;
-	  
-	  name_addr =  read_memory_unsigned_integer 
-	    (isa_addr + addrsize * 2, addrsize);
-	  
-	  read_memory_string (name_addr, class_name, 255);
-	}
-      if (retval == 0)
-	return NULL;
-      add_classname_to_cache (isa_addr, class_name);
-    }
-
+  /* APPLE LOCAL: Don't look up the dynamic type if the isa is the
+     MetaClass class, since then we are looking at the Class object
+     which doesn't have the fields of an object of the class.  */
+  info_field = read_memory_unsigned_integer 
+    (isa_addr + addrsize * 4, addrsize);
+  if (info_field & CLS_META)
+    return NULL;
+  
+  name_addr =  read_memory_unsigned_integer 
+    (isa_addr + addrsize * 2, addrsize);
+  
+  read_memory_string (name_addr, class_name, 255);
   if (class_name_ptr != NULL)
-    *class_name_ptr = xstrdup (name_ptr);
+    *class_name_ptr = xstrdup (class_name);
 
-  class_symbol = lookup_symbol (name_ptr, block, STRUCT_DOMAIN, 0, 0);
+  class_symbol = lookup_symbol (class_name, block, STRUCT_DOMAIN, 0, 0);
   if (! class_symbol)
     {
       warning ("can't find class named `%s' given by ObjC class object", class_name);
@@ -3077,7 +2718,7 @@ objc_target_type_from_object (CORE_ADDR object_addr,
       || TYPE_CODE (SYMBOL_TYPE (class_symbol)) != TYPE_CODE_CLASS)
     {
       warning ("The \"isa\" pointer gives a class name of `%s', but that isn't a type name",
-	       name_ptr);
+	       class_name);
       return NULL;
     }
   
@@ -3222,13 +2863,4 @@ _initialize_objc_lang ()
 			   "??",
 			   NULL, NULL,
 			   &setlist, &showlist);
-
-  add_setshow_zinteger_cmd ("objc-version", no_class, &objc_runtime_version,
-			   "Set the current Objc runtime version.  "
-			    "If non-zero, this will override the default selection.",
-			   "Show the current Objc runtime version.",
-			   "??",
-			   NULL, NULL,
-			   &setlist, &showlist);
-
 }

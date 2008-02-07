@@ -130,6 +130,25 @@ struct inlined_call_stack_record
   int stepped_into;
 };
 
+/* APPLE LOCAL begin subroutine inlining  */
+/* Stores inlining information from DWARF dies, to write into line
+   table entries, and (eventually) to be translated and stored into
+   the main inlining records in the per-objfile trees.  */
+
+struct dwarf_inlined_call_record {
+  unsigned file_index;
+  unsigned line;
+  unsigned column;
+  unsigned decl_file_index;
+  unsigned decl_line;
+  char *name;
+  char *parent_name;
+  CORE_ADDR lowpc;
+  CORE_ADDR highpc;
+  /* APPLE LOCAL - address ranges  */
+  struct address_range_list *ranges;
+};
+
 /* Ranges of address for current subroutine, being stepped over or through;
    at this time the assumption is that this is only needed for inlined
    subroutines.  */
@@ -281,6 +300,7 @@ extern void rb_tree_insert (struct rb_tree_node **, struct rb_tree_node *,
 			    struct rb_tree_node *);
 
 extern void inlined_subroutine_free_objfile_data (struct rb_tree_node *);
+extern void inlined_subroutine_free_objfile_call_sites (struct rb_tree_node *);
 
 extern void inlined_subroutine_objfile_relocate (struct objfile *,
 						 struct rb_tree_node *,

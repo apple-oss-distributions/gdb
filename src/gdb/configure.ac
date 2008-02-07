@@ -59,16 +59,9 @@ dnl APPLE LOCAL end mmap() always works right on Darwin.  Take our word for it.
 
 dnl APPLE LOCAL if we have mach_exc.def, use the 64 bit exceptions.
 case "$host" in
-  arm-apple-*)
-    # No 64 bit exceptions for Apple ARM
-    AC_MSG_CHECKING([whether we can use 64 bit mach exceptions])
-    MACH_EXC_SERVER_PREFACE=
-    AC_MSG_RESULT((disabled!) no)
-    AC_SUBST(MACH_EXC_SERVER_PREFACE)
-    ;;
   *-apple-darwin* | *-apple-maocsx*)
     AC_MSG_CHECKING([whether we can use 64 bit mach exceptions])
-    if test -r "$SDKROOT/usr/include/mach/mach_exc.defs"; then
+    if test -r "/usr/include/mach/mach_exc.defs"; then
       AC_DEFINE(HAVE_64_BIT_MACH_EXCEPTIONS, 1, [Define to 1 if you have 64 bit mach exceptions.])
       MACH_EXC_SERVER_PREFACE='mach_'
       AC_MSG_RESULT(yes)
@@ -84,10 +77,6 @@ dnl APPLE LOCAL check for posix_spawn and the "arch" program.  Note we don't
 dnl trust the "arch" program if the posix_spawn headers aren't present, since
 dnl Tiger has an "arch" but it only echos the current system architecture.
 case "$host" in
-  arm-apple-*)
-    # We need to turn off arch for exec for now as it doesn't support launching
-    # a specified architecture in a universal mach file.
-    ;;
   *-apple-darwin* | *-apple-macosx*)
     AC_MSG_CHECKING([whether posix_spawn supports SETEXEC])
     AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
@@ -833,10 +822,6 @@ case "$host" in
 esac
 
 case "$host" in
-  arm-apple-*)
-  # There is a Carbon for ARM, but we don't want to use it due to many differences
-  # the full version of Carbon.
-  ;;
   *-apple-darwin* | *-apple-macos*)
     AC_ARG_ENABLE(carbon-framework,
     [AC_HELP_STRING([--disable-carbon-framework],[disable Carbon framework use even when available])],
@@ -846,11 +831,11 @@ case "$host" in
       *)
         AC_MSG_ERROR([bad value '$enableval' for --disable-carbon-framework]) ;;
     esac],
-    [enable_carbon_framework=yes])
+    [enable_carbon_framework=no])
 
     AC_MSG_CHECKING([for Carbon framework])
     if test x"$enable_carbon_framework" = xyes; then
-      if test -d "$SDKROOT/System/Library/Frameworks/Carbon.framework"
+      if test -d /System/Library/Frameworks/Carbon.framework
       then
         AC_DEFINE(USE_CARBON_FRAMEWORK, 1, [Define if Carbon framework is available and we should use it.])
         CARBON_LIBS="-framework Carbon"
@@ -867,9 +852,6 @@ esac
 AC_SUBST(CARBON_LIBS)
 
 case "$host" in
-  arm-apple-*)
-  # We won't be using DebugSymbols.framework to locate dSYM files for ARM yet.
-  ;;
   *-apple-darwin* | *-apple-macos*)
     AC_ARG_ENABLE(debug-symbols-framework,
     [AC_HELP_STRING([--disable-debug-symbols-framework],[disable DebugSymbols framework use even when available])],
@@ -883,7 +865,7 @@ case "$host" in
 
     AC_MSG_CHECKING([for DebugSymbols framework])
     if test x"$enable_debug_symbols_framework" = xyes; then
-      if test -d "$SDKROOT/System/Library/PrivateFrameworks/DebugSymbols.framework"
+      if test -d /System/Library/PrivateFrameworks/DebugSymbols.framework
       then
         AC_DEFINE(USE_DEBUG_SYMBOLS_FRAMEWORK, 1, [Define if DebugSymbols framework is available and we should use it.])
         DEBUG_SYMBOLS_LIBS="-F/System/Library/PrivateFrameworks -framework DebugSymbols"
@@ -1316,20 +1298,6 @@ AC_ARG_WITH(sysroot,
 ])
 AC_SUBST(TARGET_SYSTEM_ROOT)
 AC_SUBST(TARGET_SYSTEM_ROOT_DEFINE)
-
-case "$host" in
-  *-apple-darwin* | *-apple-macos*)
-  AC_MSG_CHECKING([for CoreFoundation framework])
-  if test -d ${TARGET_SYSTEM_ROOT}/System/Library/Frameworks/CoreFoundation.framework
-  then
-    COREFOUNDATION_LIBS="-framework CoreFoundation"
-    AC_MSG_RESULT(yes)
-  else
-    AC_MSG_RESULT(no)
-  fi
-  ;;
-esac
-AC_SUBST(COREFOUNDATION_LIBS)
 
 # NOTE: Don't add -Wall or -Wunused, they both include
 # -Wunused-parameter which reports bogus warnings.

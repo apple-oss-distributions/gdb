@@ -656,7 +656,7 @@ macho_read_indirect_symbols (bfd *abfd,
               sname++;
             }
 
-          CHECK_FATAL ((strlen (sname) + sizeof ("dyld_stub_") + 1) < 4096);
+          CHECK_FATAL ((strlen (sname) + sizeof ("__dyld_stub_") + 1) < 4096);
           sprintf (nname, "dyld_stub_%s", sname);
 
           stubaddr += objfile_section_offset (objfile, osect_idx);

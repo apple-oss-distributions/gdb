@@ -104,6 +104,9 @@
    reduce the time taken to read a single byte, but reduce overall
    throughput.  */
 
+/* APPLE LOCAL: 6 works better on a remote touch device
+   than the original value of 5, as determined by empirical
+   testing.  */
 #define LINE_SIZE_POWER (6)
 #define LINE_SIZE (1 << LINE_SIZE_POWER)
 
@@ -271,7 +274,7 @@ dcache_write_line (DCACHE *dcache, struct dcache_block *db)
       else
 	reg_len = region->hi - memaddr;
 
-      if (!(region->attrib.cache == 1) || region->attrib.mode == MEM_RO)
+      if (!region->attrib.cache || region->attrib.mode == MEM_RO)
 	{
 	  memaddr += reg_len;
 	  myaddr  += reg_len;
@@ -349,7 +352,7 @@ dcache_read_line (DCACHE *dcache, struct dcache_block *db)
       else
 	reg_len = region->hi - memaddr;
 
-      if (!(region->attrib.cache == 1) || region->attrib.mode == MEM_WO)
+      if (!region->attrib.cache || region->attrib.mode == MEM_WO)
 	{
 	  memaddr += reg_len;
 	  myaddr  += reg_len;

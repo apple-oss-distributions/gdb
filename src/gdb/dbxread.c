@@ -310,7 +310,7 @@ void dbx_symfile_read (struct objfile *, int);
 
 static void dbx_symfile_finish (struct objfile *);
 
-static void record_minimal_symbol (char *, CORE_ADDR, int, int16_t, struct objfile *);
+static void record_minimal_symbol (char *, CORE_ADDR, int, struct objfile *);
 
 static void add_new_header_file (char *, int);
 
@@ -461,20 +461,14 @@ explicit_lookup_type (int real_filenum, int index)
 }
 #endif
 
-/* APPLE LOCAL: Pass in the desc along with the the type so we can
-   see if this is a "special" symbol. */
 static void
 record_minimal_symbol (char *name, CORE_ADDR address, int type,
-		       int16_t desc,
 		       struct objfile *objfile)
 {
   enum minimal_symbol_type ms_type;
   int section;
   asection *bfd_section;
-  /* APPLE LOCAL: Save the return value from 
-     prim_record_minimal_symbol_and_info so we have the ability to mark 
-     it "special".  */
-  struct minimal_symbol *msym;
+
   switch (type)
     {
     case N_TEXT | N_EXT:
@@ -595,10 +589,8 @@ record_minimal_symbol (char *name, CORE_ADDR address, int type,
       && address < lowest_text_address)
     lowest_text_address = address;
 
-  /* APPLE LOCAL: Record the msymbol & make it special if it is.  */
-  msym = prim_record_minimal_symbol_and_info
+  prim_record_minimal_symbol_and_info
     (name, address, ms_type, NULL, section, bfd_section, objfile);
-  DBX_MAKE_MSYMBOL_SPECIAL (desc, msym);
 }
 
 /* Scan and build partial symbols for a symbol file.
@@ -659,27 +651,25 @@ dbx_symfile_read (struct objfile *objfile, int mainline)
       dbx_symtab_count = DBX_NONLOCAL_STAB_COUNT (objfile);
     }
   else
+  /* APPLE LOCAL shared cache end.  */
+  if (objfile->symflags != OBJF_SYM_ALL
+      && (objfile->symflags & OBJF_SYM_EXTERN
+          || objfile->symflags & OBJF_SYM_CONTAINER)
+      && objfile->symflags & ~OBJF_SYM_LOCAL
+      && objfile->symflags & ~OBJF_SYM_DEBUG
+      && DBX_LOCAL_STAB_COUNT (objfile) != 0 
+      && DBX_NONLOCAL_STAB_COUNT (objfile) != 0
+      && !objfile_contains_objc (objfile))
     {
-      /* APPLE LOCAL shared cache end.  */
-      if (((OBJF_SYM_LEVELS_MASK & objfile->symflags) != OBJF_SYM_ALL)
-	  && (objfile->symflags & OBJF_SYM_EXTERN
-	      || objfile->symflags & OBJF_SYM_CONTAINER)
-	  && (OBJF_SYM_LEVELS_MASK & (objfile->symflags & ~OBJF_SYM_LOCAL))
-	  && (OBJF_SYM_LEVELS_MASK & (objfile->symflags & ~OBJF_SYM_DEBUG))
-	  && DBX_LOCAL_STAB_COUNT (objfile) != 0 
-	  && DBX_NONLOCAL_STAB_COUNT (objfile) != 0
-	  && !objfile_contains_objc (objfile))
-	{
-	  dbx_symtab_offset = DBX_NONLOCAL_STAB_OFFSET (objfile);
-	  dbx_symtab_count = DBX_NONLOCAL_STAB_COUNT (objfile);
-	}
-      else
-	{
-	  dbx_symtab_offset = DBX_SYMTAB_OFFSET (objfile);
-	  dbx_symtab_count = DBX_SYMCOUNT (objfile);
-	}
+      dbx_symtab_offset = DBX_NONLOCAL_STAB_OFFSET (objfile);
+      dbx_symtab_count = DBX_NONLOCAL_STAB_COUNT (objfile);
     }
-
+  else
+    {
+      dbx_symtab_offset = DBX_SYMTAB_OFFSET (objfile);
+      dbx_symtab_count = DBX_SYMCOUNT (objfile);
+    }
+      
   val = bfd_seek (sym_bfd, dbx_symtab_offset, SEEK_SET);
   if (val < 0)
     perror_with_name (objfile->name);
@@ -963,12 +953,8 @@ fill_symbuf (struct objfile *objfile)
     }
   else if (symbuf_sections == NULL)
     {
-      struct cleanup *cache_cleanup;
-      mem_disable_caching ();
-      cache_cleanup = make_cleanup (mem_enable_caching, 0);
       count = symbuf_size;
       nbytes = bfd_bread (symbuf, count, sym_bfd);
-      do_cleanups (cache_cleanup);
     }
   else
     {
@@ -1325,9 +1311,8 @@ read_dbx_dynamic_symtab (struct objfile *objfile)
 	  if (sym->flags & BSF_GLOBAL)
 	    type |= N_EXT;
 
-	  /* APPLE LOCAL: We don't know the desc here, so just pass 0.  */
 	  record_minimal_symbol ((char *) bfd_asymbol_name (sym), sym_value,
-				 type, 0, objfile);
+				 type, objfile);
 	}
     }
 
@@ -1818,9 +1803,8 @@ read_dbx_symtab (struct objfile *objfile, int dbx_symcount)
 	     (in install_minimal_symbols) so we might as well do it here. */
 	  if (leading_char == namestring[0])
 	    namestring++;
-	  /* APPLE LOCAL: pass the n_desc in case we need it.  */
 	  record_minimal_symbol (namestring, nlist.n_value,
-				   nlist.n_type, nlist.n_desc, objfile);	/* Always */
+				   nlist.n_type, objfile);	/* Always */
 	  continue;
 	}
 
@@ -5773,17 +5757,11 @@ stabsect_build_psymtabs (struct objfile *objfile, int mainline, char *stab_name,
 
   /* Now read in the string table in one big gulp.  */
 
-  {
-    struct cleanup *cache_cleanup;
-    mem_disable_caching ();
-    cache_cleanup = make_cleanup (mem_enable_caching, 0);
-    val = bfd_get_section_contents (sym_bfd,	/* bfd */
-				    stabstrsect,	/* bfd section */
-				    DBX_STRINGTAB (objfile),	/* input buffer */
-				    0,	/* offset into section */
-				    DBX_STRINGTAB_SIZE (objfile));	/* amount to read */
-    do_cleanups (cache_cleanup);
-  }
+  val = bfd_get_section_contents (sym_bfd,	/* bfd */
+				  stabstrsect,	/* bfd section */
+				  DBX_STRINGTAB (objfile),	/* input buffer */
+				  0,	/* offset into section */
+				  DBX_STRINGTAB_SIZE (objfile));	/* amount to read */
 
   if (!val)
     perror_with_name (name);

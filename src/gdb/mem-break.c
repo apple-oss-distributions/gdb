@@ -41,6 +41,10 @@
    by the caller to be long enough to save BREAKPOINT_LEN bytes (this
    is accomplished via BREAKPOINT_MAX).  */
 
+/* APPLE LOCAL: Override trust-readonly-sections.  */
+extern int set_trust_readonly (int);
+/* END APPLE LOCAL */
+
 int
 default_memory_insert_breakpoint (CORE_ADDR addr, bfd_byte *contents_cache)
 {

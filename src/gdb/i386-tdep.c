@@ -1228,8 +1228,12 @@ i386_frame_cache (struct frame_info *next_frame, void **this_cache)
   if (cache->base == 0)
     return cache;
 
-  cache->pc = frame_func_unwind (next_frame); /* function start address */
+  /* We want to make sure we get the function beginning right or
+     analyze_prologue will be reading off into the weeds.  So make sure
+     the load level is raised before we get the function pc.  */
   current_pc = frame_pc_unwind (next_frame);
+  pc_set_load_state (current_pc, OBJF_SYM_ALL, 0);
+  cache->pc = frame_func_unwind (next_frame); /* function start address */
 
   /* Only do i386_analyze_prologue () if we found a debug symbol pointing to
      the actual start of the function.  */

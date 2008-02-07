@@ -1,3 +1,40 @@
+2008-01-14  Caroline Tice  <ctice@apple.com>
+
+	* gdb.apple/nested-inlines-console.x86.exp: More modifications to 
+	work with either gcc 4.0.1 or gcc 4.2.
+	* gdb.apple/nested-inlines-mi.x86.exp: Ditto.
+
+2007-12-07  Caroline Tice  <ctice@apple.com>
+
+	* gdb.apple/nested-inlines-console.exp: Modify to work with either
+	gcc 4.0.1 or gcc 4.2.
+	* gdb.apple/nested-inlines-console.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-mi.exp: Ditto.
+	* gdb.apple/nested-inlines-mi.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-1.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-2.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-3.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-4.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-5.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-5.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-6.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-7.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-7.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-8.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-9.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-9.x86.exp: Ditto.
+	* gdb.apple/var-path-expr.cpp: Ditto.
+	* gdb.apple/gused/coalesced1.h: Ditto.
+	* gdb.base/structs.exp: Ditto.
+
+2007-12-05  Jim Ingham  <jingham@apple.com>
+
+	* gdb.base/sizeof.exp: gcc-4.2 doesn't accept -Wno-long-double
+	* gdb.base/store.exp: ditto
+	* gdb.base/structs.exp: ditto
+	* gdb.cp/gdb1355.exp: ditto
+	* gdb.cp/templates.exp: ditto
+	
 2007-10-18  Caroline Tice  <ctice@apple.com>
 
 	* gdb.cp/templates.exp: Update to cope properly with multiple

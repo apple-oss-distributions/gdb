@@ -1308,8 +1308,4 @@ void update_current_target (void);
 
 extern struct target_ops deprecated_child_ops;
 
-/* APPLE LOCAL: Override trust-readonly-sections.  */
-extern int set_trust_readonly (int);
-/* END APPLE LOCAL */
-
 #endif /* !defined (TARGET_H) */

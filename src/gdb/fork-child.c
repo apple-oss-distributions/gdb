@@ -202,11 +202,6 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
 	  arch_string = "i386";
 	else if (strcmp (osabi_name, "Darwin64") == 0)
 	  arch_string = "x86_64";
-#elif defined (TARGET_ARM)
-	if (strcmp (osabi_name, "Darwin") == 0)
-	  arch_string = "arm";
-	else if (strcmp (osabi_name, "DarwinV6") == 0)
-	  arch_string = "armv6";
 #endif
 	if (arch_string != NULL)
 	  sprintf (shell_command, "%s exec arch -arch %s ", shell_command, arch_string);
@@ -388,7 +383,7 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
 	    posix_spawnattr_t attr;
 	    int retval;
 	    size_t copied;
-	    cpu_type_t cpu = 0;
+	    cpu_type_t cpu;
 	    int count = 0;
 	    pid_t pid;
 	    const char *osabi_name = gdbarch_osabi_name (gdbarch_osabi (current_gdbarch));
@@ -419,17 +414,6 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
 	    else if (strcmp (osabi_name, "Darwin64") == 0)
 	      {
 		cpu = CPU_TYPE_X86_64;
-		count = 1;
-	      }
-#elif define (TARGET_ARM)
-	    if (strcmp (osabi_name, "Darwin") == 0)
-	      {
-		cpu = CPU_TYPE_ARM;
-		count = 1;
-	      }
-	    else if (strcmp (osabi_name, "DarwinV6") == 0)
-	      {
-		cpu = CPU_TYPE_ARM;
 		count = 1;
 	      }
 #endif
@@ -597,6 +581,13 @@ startup_inferior (int ntraps)
 
 	  if (--pending_execs == 0)
 	    break;
+
+	  /* APPLE LOCAL begin radar 5188345  */
+	  /* If inferior has exited, break out of loop  instead of
+	     attempting to resume it.  */
+	  if (PIDGET (inferior_ptid) == 0)
+	    break;
+	  /* APPLE LOCAL end radar 5188345  */
 
 	  resume (0, TARGET_SIGNAL_0);	/* Just make it go on.  */
 	}

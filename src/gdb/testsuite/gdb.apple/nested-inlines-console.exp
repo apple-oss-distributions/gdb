@@ -54,6 +54,10 @@ gdb_expect -re "$gdb_prompt $"
 
 gdb_test "break main" "Breakpoint 1 at $hex: file.*, line 12\\." "Set breakpoint at main"
 
+gdb_test "break nested-inlines.c:72" "Breakpoint 2 at $hex: file.*, line 72.*" "Set breakpoint at end of baz"
+
+gdb_test "break nested-inlines.c:50" "Breakpoint 6 at $hex: file.*, line 50.*" "Set breakpoint at end of bar"
+
 gdb_test "run" "Starting program: $binfile *\r\n\Reading symbols for shared libraries \(\[.+\]\)+ done.*Breakpoint 1, main.*" "continue to breakpoint in main()"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
@@ -64,7 +68,7 @@ gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
 gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "step" ".*fprintf .*" "Step into third inlined function (baz)"
+gdb_test "step" ".*62.*buffer = .*" "Step into third inlined function (baz)"
 
 gdb_test "next" "baz.*inlined.*" "stepping through baz (1)"
 gdb_test "next" "baz.*inlined.*" "stepping through baz (2)"
@@ -101,11 +105,13 @@ gdb_test "next" "bar.*inlined.*" "stepping through bar (11)"
 gdb_test "next" "bar.*inlined.*" "stepping through bar (12)"
 gdb_test "next" "bar.*inlined.*" "stepping through bar (13)"
 gdb_test "next" "bar.*inlined.*" "stepping through bar (14)"
-gdb_test "next" "bar.*inlined.*" "stepping through bar (15)"
-gdb_test "next" "bar.*inlined.*" "stepping through bar (16)"
-gdb_test "next" "bar.*inlined.*" "stepping through bar (17)"
-gdb_test "next" "bar.*inlined.*" "stepping through bar (18)"
-gdb_test "next" "bar.*inlined.*" "stepping through bar (19)"
+# gdb_test "next" "bar.*inlined.*" "stepping through bar (15)"
+# gdb_test "next" "bar.*inlined.*" "stepping through bar (16)"
+# gdb_test "next" "bar.*inlined.*" "stepping through bar (17)"
+# gdb_test "next" "bar.*inlined.*" "stepping through bar (18)"
+# gdb_test "next" "bar.*inlined.*" "stepping through bar (19)"
+
+gdb_test "continue" ".*Breakpoint .*, bar \\\[inlined\\\].*50.*" "Continue to end of bar"
 
 gdb_test "step" "foo.*inlined.*" "stepping out of (inlined) bar back to foo"
 
@@ -114,6 +120,8 @@ gdb_test "next" "The squareroot of.*" "stepping out of (inlined) foo back to mai
 gdb_test "continue" ".*Program exited normally.*" "Finish program"
 
 # PLAN B
+
+gdb_test "delete 2 3 4 5 6 7 8" ".*" "Delete all breakpoints except first one in main"
 
 gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
@@ -205,7 +213,7 @@ gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
 gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "step" ".*fprintf.*" "Step into third inlined function (baz)"
+gdb_test "step" ".*62.*buffer = .*" "Step into third inlined function (baz)"
 
 gdb_test "finish" ".*bar.*inlined.*n = z.*" "Finish out of inlined function (baz)"
 
@@ -227,7 +235,7 @@ gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
 gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "step" ".*fprintf.*" "Step into third inlined function (baz)"
+gdb_test "step" ".*62.*buffer = .*" "Step into third inlined function (baz)"
 
 gdb_test "next" ".*baz.*inlined.*fprintf.*" "Next in baz"
 
@@ -252,7 +260,7 @@ gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
 gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "step" ".*fprintf.*" "Step into third inlined function (baz)"
+gdb_test "step" ".*62.*buffer = .*" "Step into third inlined function (baz)"
 
 
 # gdb_test "up" ".*bar.*inlined.*" "up (to  bar)"
@@ -288,9 +296,9 @@ gdb_test "continue" ".*Program exited normally.*" "Finish program"
 
 gdb_test "disable 1" ".*" "Disable breakpoint at main."
 
-gdb_test "break bar" "Breakpoint 2 at $hex: file.*, line.*Breakpoint 3 \\(inlined bar\\).*Breakpoint 4 \\(inlined bar\\).*" "Set breakpoints at inlined function bar"
+gdb_test "break bar" "Breakpoint 9 at $hex: file.*, line.*Breakpoint 10 \\(inlined bar\\).*Breakpoint 11 \\(inlined bar\\).*" "Set breakpoints at inlined function bar"
 
-gdb_test "run" "Starting program: $binfile *\r\n\.*Breakpoint 4, bar.*inlined.*" "continue to breakpoint in bar"
+gdb_test "run" "Starting program: $binfile *\r\n\.*Breakpoint .*, bar.*inlined.*" "continue to breakpoint in bar"
 
 gdb_test "next" ".*n = z.*" "Step over inlined function (baz)"
 

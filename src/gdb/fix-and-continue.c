@@ -57,6 +57,7 @@
 #include <readline/readline.h>
 #include "osabi.h"
 #include "exceptions.h"
+#include "filenames.h"
 
 #if defined (TARGET_POWERPC)
 #include "ppc-macosx-frameinfo.h"
@@ -315,8 +316,6 @@ static const char *getbasename (const char *);
 
 static void print_active_functions (struct fixinfo *);
 
-static struct objfile *find_objfile_by_name (const char *);
-
 static struct symtab *find_symtab_by_name (struct objfile *, const char *);
 
 
@@ -353,9 +352,6 @@ fix_command (char *args, int from_tty)
   struct cleanup *cleanups;
   const char *usage = "Usage: fix bundle-filename source-filename [object-filename]";
 
-#if defined (TARGET_ARM)
-  error ("fix not supported on ARM");
-#endif
   if (!args || args[0] == '\0')
     error ("%s", usage);
 
@@ -449,6 +445,17 @@ fix_command_1 (const char *source_filename,
   
   if (solib_filename)
     {
+      /* Maybe we were passed in just the tail end of the name, e.g.
+           Jabber.FireBundle/Contents/MacOS/Jabber
+         so do a non-exact search through the objfiles before we go
+         realpathing it and such.  */
+      if (!IS_ABSOLUTE_PATH (solib_filename))
+        {
+          struct objfile *o = find_objfile_by_name (solib_filename, 0);
+          if (o && o->name)
+          solib_filename = o->name;
+        }
+
       fn = tilde_expand (solib_filename);
       if (fn)
         {
@@ -474,7 +481,7 @@ fix_command_1 (const char *source_filename,
   if (solib_filename && !file_exists_p (solib_filename))
     error ("Dylib/executable '%s' not found.", solib_filename);
 
-  if (find_objfile_by_name (bundle_filename))
+  if (find_objfile_by_name (bundle_filename, 1))
     error ("Bundle '%s' has already been loaded.", bundle_filename);
 
   wipe = set_current_language (source_filename);
@@ -490,7 +497,7 @@ fix_command_1 (const char *source_filename,
   /* Make sure the original objfile that we're 'fixing'
      has its load level set so debug info is being read in.. */
   if (solib_filename)
-    raise_objfile_load_level (find_objfile_by_name (solib_filename));
+    raise_objfile_load_level (find_objfile_by_name (solib_filename, 1));
 
   find_original_object_file_name (cur);
 
@@ -519,7 +526,7 @@ mark_previous_fixes_obsolete (struct fixinfo *cur)
 
   for (fo = cur->fixed_object_files; fo != NULL; fo = fo->next)
     {
-      fo_objfile = find_objfile_by_name (fo->bundle_filename);
+      fo_objfile = find_objfile_by_name (fo->bundle_filename, 1);
       if (fo_objfile == NULL)
         {
           warning ("fixed object file entry for '%s' has a NULL objfile ptr!  "
@@ -714,7 +721,7 @@ get_fixed_file (struct fixinfo *cur)
 
   loaded_ok = load_fixed_objfile (fixedobj->bundle_filename);
 
-  fixedobj_objfile = find_objfile_by_name (fixedobj->bundle_filename);
+  fixedobj_objfile = find_objfile_by_name (fixedobj->bundle_filename, 1);
 
   /* Even if the load_fixed_objfile() eventually failed, gdb may still believe
      a new solib was loaded successfully -- clear that out.  */
@@ -834,7 +841,7 @@ do_final_fix_fixups (struct fixinfo *cur)
   int i;
 
   most_recent_fix_objfile = find_objfile_by_name 
-                                  (cur->most_recent_fix->bundle_filename);
+                                  (cur->most_recent_fix->bundle_filename, 1);
    
   objfiles_to_update = build_list_of_objfiles_to_update (cur);
   cleanups = make_cleanup (xfree, objfiles_to_update);
@@ -911,7 +918,7 @@ find_new_static_symbols (struct fixinfo *cur,
   struct objfile *most_recent_fix_objfile;
 
   most_recent_fix_objfile = find_objfile_by_name 
-                                  (cur->most_recent_fix->bundle_filename);
+                                  (cur->most_recent_fix->bundle_filename, 1);
 
    for (j = 0; j < indirect_entry_count; j++)
      {
@@ -989,7 +996,7 @@ find_orig_static_symbols (struct fixinfo *cur,
           continue;
         }
 
-      f_objfile = find_objfile_by_name (f->bundle_filename);
+      f_objfile = find_objfile_by_name (f->bundle_filename, 1);
       f_symtab = find_symtab_by_name (f_objfile, cur->canonical_source_filename);
 
       static_bl = BLOCKVECTOR_BLOCK (BLOCKVECTOR (f_symtab), STATIC_BLOCK);
@@ -1129,7 +1136,7 @@ find_and_parse_nonlazy_ptr_sect (struct fixinfo *cur,
   *indirect_entries = NULL;
   indirect_ptr_section = NULL;
   most_recent_fix_objfile = find_objfile_by_name 
-                               (cur->most_recent_fix->bundle_filename);
+                               (cur->most_recent_fix->bundle_filename, 1);
 
 
   ALL_OBJFILE_OSECTIONS (most_recent_fix_objfile, j)
@@ -1233,7 +1240,7 @@ build_list_of_objfiles_to_update (struct fixinfo *cur)
     {
       if (i == cur->most_recent_fix)
         continue;
-      old_objfiles[j++] = find_objfile_by_name (i->bundle_filename);
+      old_objfiles[j++] = find_objfile_by_name (i->bundle_filename, 1);
     }
   old_objfiles[j] = NULL;
 
@@ -2443,27 +2450,6 @@ update_picbase_register (struct symbol *new_fun)
 #endif
 }
 
-static struct objfile *
-find_objfile_by_name (const char *name)
-{
-  struct objfile *obj;
-
-  ALL_OBJFILES (obj)
-    if (!strcmp (name, obj->name))
-      return obj;
-
-  /* In a cached symfile case, the objfile 'name' member will be the name
-     of the cached symfile, not the object file.  The objfile's bfd's filename,
-     however, will be the name of the actual object file.  So we'll search
-     those as a back-up.  */
-
-  ALL_OBJFILES (obj)
-    if (obj->obfd && !strcmp (name, obj->obfd->filename))
-      return obj;
-
-  return NULL;
-}
-
 static struct symtab *
 find_symtab_by_name (struct objfile *obj, const char *name)
 {
@@ -2612,7 +2598,7 @@ find_original_object_file (struct fixinfo *cur)
   if (cur->original_objfile_filename == NULL)
     error ("find_original_object_file() called with an empty filename!");
 
-  return find_objfile_by_name (cur->original_objfile_filename);
+  return find_objfile_by_name (cur->original_objfile_filename, 1);
 }
 
 static struct symtab *
@@ -2655,9 +2641,7 @@ raise_objfile_load_level (struct objfile *obj)
 {
   const char *name;
   struct cleanup *wipe;
-  if (obj == NULL 
-      || (OBJF_SYM_LEVELS_MASK & obj->symflags) == OBJF_SYM_ALL
-      || (OBJF_SYM_FLAGS_MASK & obj->symflags) == OBJF_SYM_DONT_CHANGE)
+  if (obj == NULL || obj->symflags == OBJF_SYM_ALL)
     return obj;
 
   name = xstrdup (obj->name);
@@ -2665,7 +2649,7 @@ raise_objfile_load_level (struct objfile *obj)
 
   objfile_set_load_state (obj, OBJF_SYM_ALL, 1);
  
-  obj = find_objfile_by_name (name);
+  obj = find_objfile_by_name (name, 1);
   do_cleanups (wipe);
   return (obj);
 }

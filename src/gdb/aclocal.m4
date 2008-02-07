@@ -3050,7 +3050,7 @@ case $host_os in
          ;;
         esac
       _LT_AC_TAGVAR(archive_cmds_need_lc, $1)=no
-      _LT_AC_TAGVAR(hardcode_direct, $1)=yes
+      _LT_AC_TAGVAR(hardcode_direct, $1)=no
       _LT_AC_TAGVAR(hardcode_automatic, $1)=yes
       _LT_AC_TAGVAR(hardcode_shlibpath_var, $1)=unsupported
       _LT_AC_TAGVAR(whole_archive_flag_spec, $1)=''
@@ -5825,7 +5825,7 @@ _LT_EOF
          ;;
       esac
       _LT_AC_TAGVAR(archive_cmds_need_lc, $1)=no
-      _LT_AC_TAGVAR(hardcode_direct, $1)=yes
+      _LT_AC_TAGVAR(hardcode_direct, $1)=no
       _LT_AC_TAGVAR(hardcode_automatic, $1)=yes
       _LT_AC_TAGVAR(hardcode_shlibpath_var, $1)=unsupported
       _LT_AC_TAGVAR(whole_archive_flag_spec, $1)=''
