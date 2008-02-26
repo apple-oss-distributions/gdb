@@ -61,6 +61,15 @@ typedef enum bfd_mach_o_i386_thread_flavour
 }
 bfd_mach_o_i386_thread_flavour;
 
+typedef enum bfd_mach_o_arm_thread_flavour
+  {
+    BFD_MACH_O_ARM_THREAD_STATE = 1,
+    BFD_MACH_O_ARM_VFP_STATE = 2,
+    BFD_MACH_O_ARM_EXCEPTION_STATE = 3,
+    BFD_MACH_O_ARM_THREAD_STATE_NONE = 4
+  }
+bfd_mach_o_arm_thread_flavour;
+
 #define BFD_MACH_O_LC_REQ_DYLD 0x80000000
 
 typedef enum bfd_mach_o_load_command_type
@@ -131,6 +140,8 @@ bfd_mach_o_cpu_type;
 typedef enum bfd_mach_o_cpu_subtype
   {
     BFD_MACH_O_CPU_SUBTYPE_POWERPC_ALL = 0,
+    BFD_MACH_O_CPU_SUBTYPE_ARM_4T = 5,
+    BFD_MACH_O_CPU_SUBTYPE_ARM_6 = 6,
     BFD_MACH_O_CPU_SUBTYPE_POWERPC_970 = 100
   }
 bfd_mach_o_cpu_subtype;
@@ -144,7 +155,8 @@ typedef enum bfd_mach_o_filetype
   BFD_MACH_O_MH_PRELOAD = 5,
   BFD_MACH_O_MH_DYLIB = 6,
   BFD_MACH_O_MH_DYLINKER = 7,
-  BFD_MACH_O_MH_BUNDLE = 8
+  BFD_MACH_O_MH_BUNDLE = 8,
+  BFD_MACH_O_MH_DYLIB_STUB = 9
 }
 bfd_mach_o_filetype;
 
@@ -501,6 +513,7 @@ typedef struct mach_o_data_struct
   bfd_mach_o_section **sections;
   bfd *ibfd;
   unsigned char uuid[16];
+  unsigned char scanning_load_cmds;
 }
 mach_o_data_struct;
 
@@ -508,6 +521,7 @@ typedef struct mach_o_data_struct bfd_mach_o_data_struct;
 
 /* APPLE LOCAL  Mach-O */
 unsigned int bfd_mach_o_version (bfd *);
+int bfd_mach_o_stub_library (bfd *);
 /* APPLE LOCAL shared cache  */
 bfd_boolean bfd_mach_o_in_shared_cached_memory (bfd *);
 

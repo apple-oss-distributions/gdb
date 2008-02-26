@@ -572,6 +572,11 @@ struct objfile
 #define OBJF_SYM_DEBUG (1 << 4)
 #define OBJF_SYM_ALL (0xff)
 
+#define OBJF_SYM_LEVELS_MASK (0xff)
+#define OBJF_SYM_FLAGS_MASK (0xff00)
+
+#define OBJF_SYM_DONT_CHANGE (1 << 8)
+
 /* The object file that the main symbol table was loaded from (e.g. the
    argument to the "symbol-file" or "file" command).  */
 

@@ -1046,10 +1046,7 @@ free_objfile_internal (struct objfile *objfile)
 
   /* APPLE LOCAL begin subroutine inlining  */
   if (objfile->inlined_subroutine_data)
-    {
-      inlined_subroutine_free_objfile_data (objfile->inlined_subroutine_data);
-      xfree (objfile->inlined_subroutine_data);
-    }
+    inlined_subroutine_free_objfile_data (objfile->inlined_subroutine_data);
   /* APPLE LOCAL end subroutine inlining  */
 }
 
@@ -1371,6 +1368,7 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
   {
     struct obj_section *s;
     bfd *abfd;
+    int idx = 0;
 
     abfd = objfile->obfd;
 
@@ -1378,10 +1376,9 @@ objfile_relocate (struct objfile *objfile, struct section_offsets *new_offsets)
 
     ALL_OBJFILE_OSECTIONS (objfile, s)
       {
-      	int idx = s->the_bfd_section->index;
-	
 	s->addr += ANOFFSET (delta, idx);
 	s->endaddr += ANOFFSET (delta, idx);
+	idx++;
       }
 
     objfile_add_to_ordered_sections (objfile);
@@ -1948,6 +1945,9 @@ objfile_set_load_state (struct objfile *o, int load_state, int force)
 {
 
   if (!force && !should_auto_raise_load_state)
+    return -2;
+
+  if (o->symflags & OBJF_SYM_DONT_CHANGE)
     return -2;
 
   /* FIXME: For now, we are not going to REDUCE the load state.  That is

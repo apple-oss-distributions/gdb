@@ -60,11 +60,11 @@ gdb_test "next" ".*foo ().*" "Step to first inlined call site"
 
 # PLAN A
 
-gdb_test "step" ".*stepping into inlined subroutine.*y = bar.*" "Step into first inlined function (foo)"
+gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*z = baz.*" "Step into second inlined function (bar)"
+gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*fprintf .*" "Step into third inlined function (baz)"
+gdb_test "step" ".*fprintf .*" "Step into third inlined function (baz)"
 
 gdb_test "next" "baz.*inlined.*" "stepping through baz (1)"
 gdb_test "next" "baz.*inlined.*" "stepping through baz (2)"
@@ -119,7 +119,7 @@ gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
 
-gdb_test "next" ".*Stepping over inlined function code.*We made it all the way to the top.*" "Next over inlined subroutine (foo)."
+gdb_test "next" ".*We made it all the way to the top.*" "Next over inlined subroutine (foo)."
 
 gdb_test "next" "We made it.*" "Next (1)"
 
@@ -131,7 +131,7 @@ gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
 
-gdb_test "step" ".*stepping into inlined subroutine.*y = bar.*" "Step into first inlined function (foo)"
+gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
 gdb_test "finish" ".*fprintf.*We made it all the way to the top.*" "Finish out of inlined function (foo)"
 
@@ -145,9 +145,9 @@ gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
 
-gdb_test "step" ".*stepping into inlined subroutine.*y = bar.*" "Step into first inlined function (foo)"
+gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
-gdb_test "next" ".*Stepping over inlined function code.*" "Next over inlined function (bar)" 
+gdb_test "next" ".*" "Next over inlined function (bar)" 
 
 gdb_test "finish" ".*fprintf.*We made it all the way to the top.*" "Finish out of inlined function (foo)"
 
@@ -161,9 +161,9 @@ gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
 
-gdb_test "step" ".*stepping into inlined subroutine.*y = bar.*" "Step into first inlined function (foo)"
+gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*z = baz.*" "Step into second inlined function (bar)"
+gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
 gdb_test "finish" ".*foo.*inlined.*sqrt.*" "Finish out of inlined function (bar)"
 
@@ -179,11 +179,11 @@ gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
 
-gdb_test "step" ".*stepping into inlined subroutine.*y = bar.*" "Step into first inlined function (foo)"
+gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*z = baz.*" "Step into second inlined function (bar)"
+gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "next" ".*Stepping over inlined function code.*" "Next over inlined function (baz)"
+gdb_test "next" ".*" "Next over inlined function (baz)"
 
 gdb_test "next" ".*bar.*inlined.*" "Next in bar"
 
@@ -201,11 +201,11 @@ gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
 
-gdb_test "step" ".*stepping into inlined subroutine.*y = bar.*" "Step into first inlined function (foo)"
+gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*z = baz.*" "Step into second inlined function (bar)"
+gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*fprintf.*" "Step into third inlined function (baz)"
+gdb_test "step" ".*fprintf.*" "Step into third inlined function (baz)"
 
 gdb_test "finish" ".*bar.*inlined.*n = z.*" "Finish out of inlined function (baz)"
 
@@ -223,11 +223,11 @@ gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
 
-gdb_test "step" ".*stepping into inlined subroutine.*y = bar.*" "Step into first inlined function (foo)"
+gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*z = baz.*" "Step into second inlined function (bar)"
+gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*fprintf.*" "Step into third inlined function (baz)"
+gdb_test "step" ".*fprintf.*" "Step into third inlined function (baz)"
 
 gdb_test "next" ".*baz.*inlined.*fprintf.*" "Next in baz"
 
@@ -248,11 +248,11 @@ gdb_test "continue" ".*Program exited normally.*" "Finish program"
 gdb_test "run" "Starting program:.*Breakpoint 1.*" "Re-starting program"
 
 gdb_test "next" ".*foo ().*" "Step to first inlined call site"
-gdb_test "step" ".*stepping into inlined subroutine.*y = bar.*" "Step into first inlined function (foo)"
+gdb_test "step" ".*y = bar.*" "Step into first inlined function (foo)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*z = baz.*" "Step into second inlined function (bar)"
+gdb_test "step" ".*z = baz.*" "Step into second inlined function (bar)"
 
-gdb_test "step" ".*stepping into inlined subroutine.*fprintf.*" "Step into third inlined function (baz)"
+gdb_test "step" ".*fprintf.*" "Step into third inlined function (baz)"
 
 
 # gdb_test "up" ".*bar.*inlined.*" "up (to  bar)"
@@ -292,7 +292,7 @@ gdb_test "break bar" "Breakpoint 2 at $hex: file.*, line.*Breakpoint 3 \\(inline
 
 gdb_test "run" "Starting program: $binfile *\r\n\.*Breakpoint 4, bar.*inlined.*" "continue to breakpoint in bar"
 
-gdb_test "next" ".*Stepping over inlined function code.*n = z.*" "Step over inlined function (baz)"
+gdb_test "next" ".*n = z.*" "Step over inlined function (baz)"
 
 gdb_test "finish" ".*foo.*inlined.*sqrt.*" "Finish out of inlined function bar"
 

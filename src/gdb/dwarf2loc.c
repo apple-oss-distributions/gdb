@@ -1222,6 +1222,8 @@ loclist_describe_location (struct symbol *symbol, struct ui_file *stream)
       print_single_dwarf_location (stream, &loc_ptr, loc_end, ctx);
 
       fprintf_filtered (stream, "\n");
+
+      free_dwarf_expr_context (ctx);
     }
 
   return 1;

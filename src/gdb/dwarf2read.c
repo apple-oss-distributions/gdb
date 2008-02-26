@@ -65,6 +65,8 @@
 #include "gdbcore.h"
 /* APPLE LOCAL - .o file translation data structure  */
 #include "dwarf2read.h"
+/* APPLE LOCAL psym equivalences  */
+#include <ctype.h>
 
 /* A note on memory usage for this file.
    
@@ -531,6 +533,15 @@ struct dwarf2_per_cu_data
   struct partial_symtab *psymtab;
 };
 
+/* APPLE LOCAL begin psym equivalences */
+
+/* This is a global flag indicating that we found partial dies with
+   'equivalence' function names, e.g. 'putenv' and '*_putenv$UNIX2003'.  */
+
+int psym_equivalences = 0;
+
+/* APPLE LOCAL end psym equivalences  */
+
 /* The line number information for a compilation unit (found in the
    .debug_line section) begins with a "statement program header",
    which contains the following information.  */
@@ -652,6 +663,11 @@ struct partial_die_info
     /* Pointers to this DIE's parent, first child, and next sibling,
        if any.  */
     struct partial_die_info *die_parent, *die_child, *die_sibling;
+
+   /* APPLE LOCAL begin psym equivalences  */
+   /* The psym equivalence name this die contains, if any.  */
+    char *equiv_name;		     
+  /* APPLE LOCAL end psym equivalences  */
   };
 
 /* This data structure holds the information of an abbrev. */
@@ -909,9 +925,12 @@ static void dwarf2_build_include_psymtabs (struct dwarf2_cu *,
 
 static void dwarf2_build_psymtabs_hard (struct objfile *, int);
 
+/* APPLE LOCAL begin psym equivalences  */
 static void scan_partial_symbols (struct partial_die_info *,
 				  CORE_ADDR *, CORE_ADDR *,
-				  struct dwarf2_cu *);
+				  struct dwarf2_cu *,
+				  struct equiv_psym_list **);
+/* APPLE LOCAL end psym equivalences  */
 
 static void add_partial_symbol (struct partial_die_info *,
 				struct dwarf2_cu *);
@@ -1762,6 +1781,8 @@ dwarf2_create_include_psymtab (char *name, struct partial_symtab *pst,
      can be used to differentiate between such include psymtabs and
      the regular ones.  */
   subpst->read_symtab_private = NULL;
+  /* APPLE LOCAL psym equivalences - Initialize field.   */
+  subpst->equiv_psyms = NULL;
 }
 
 /* Read the Line Number Program data and extract the list of files
@@ -1970,13 +1991,20 @@ dwarf2_build_psymtabs_hard (struct objfile *objfile, int mainline)
       if (comp_unit_die.has_children)
 	{
 	  struct partial_die_info *first_die;
+	  /* APPLE LOCAL psym equivalences  */
+	  struct equiv_psym_list *equiv_psyms = NULL;
 
 	  lowpc = ((CORE_ADDR) -1);
 	  highpc = ((CORE_ADDR) 0);
 
 	  first_die = load_partial_dies (abfd, info_ptr, 1, &cu);
 
-	  scan_partial_symbols (first_die, &lowpc, &highpc, &cu);
+	  /* APPLE LOCAL begin psym equivalences  */
+	  scan_partial_symbols (first_die, &lowpc, &highpc, &cu,
+				&equiv_psyms);
+
+	  pst->equiv_psyms = equiv_psyms;
+	  /* APPLE LOCAL end psym equivalences  */
 
 	  /* If we didn't find a lowpc, set it to highpc to avoid
 	     complaints from `maint check'.  */
@@ -2138,13 +2166,63 @@ create_all_comp_units (struct objfile *objfile)
   dwarf2_per_objfile->n_comp_units = n_comp_units;
 }
 
+/* APPLE LOCAL begin psym equivalences  */
+/* EQUIV_PSYMS is an array of equivalence psym names found in the
+   current compile unit so far, along with some book-keeping
+   information (size of the array, etc).  NAME is a new equivalence
+   name to be added to the list.  This function makes sure the array
+   is big enough, allocating memory and updating the book-keeping if
+   necessary, and adds the new name to the array.  */
+
+static void
+add_equiv_psym (struct equiv_psym_list **equiv_psyms,
+		char *name)
+{
+  int i;
+
+  /* If the array has never been allocated, malloc it and start it out
+     with 10 elements.  */
+
+  if (*equiv_psyms == NULL)
+    {
+      *equiv_psyms = (struct equiv_psym_list *) xmalloc 
+                                            (sizeof (struct equiv_psym_list));
+      (*equiv_psyms)->sym_list = (char **) xmalloc (10 * sizeof (char *));
+      (*equiv_psyms)->list_size = 10;
+      (*equiv_psyms)->num_syms = 0;
+      for (i = 0; i < 10; i++)
+	(*equiv_psyms)->sym_list[i] = NULL;
+    }
+
+  /* If the array is full, double its size (using realloc).  */
+
+  if ((*equiv_psyms)->num_syms == (*equiv_psyms)->list_size)
+    {
+      int new_size;
+      new_size = (*equiv_psyms)->list_size * 2;
+      (*equiv_psyms)->sym_list = (char **) xrealloc ((*equiv_psyms)->sym_list,
+						     new_size * sizeof (char *));
+      for (i = (*equiv_psyms)->list_size; i < new_size; i++)
+	(*equiv_psyms)->sym_list[i] = NULL;
+      (*equiv_psyms)->list_size = new_size;
+    }
+
+  /* Insert NAME into the list.  */
+
+  (*equiv_psyms)->sym_list[(*equiv_psyms)->num_syms++] = name;
+}
+/* APPLE LOCAL end psym equivalences  */
+
 /* Process all loaded DIEs for compilation unit CU, starting at FIRST_DIE.
    Also set *LOWPC and *HIGHPC to the lowest and highest PC values found
    in CU.  */
 
+/* APPLE LOCAL begin psym equivalences  */
 static void
 scan_partial_symbols (struct partial_die_info *first_die, CORE_ADDR *lowpc,
-		      CORE_ADDR *highpc, struct dwarf2_cu *cu)
+		      CORE_ADDR *highpc, struct dwarf2_cu *cu,
+		      struct equiv_psym_list **equiv_psyms)
+/* APPLE LOCAL end psym equivalences  */
 {
   /* APPLE LOCAL avoid unused var warnings.  */
   /* struct objfile *objfile = cu->objfile; */
@@ -2171,6 +2249,12 @@ scan_partial_symbols (struct partial_die_info *first_die, CORE_ADDR *lowpc,
 	  switch (pdi->tag)
 	    {
 	    case DW_TAG_subprogram:
+	      /* APPLE LOCAL begin psym equivalences  */
+	      /* If the partial die has an equivalence name, add it to
+		 the list for this compile unit.  */
+	      if (pdi->equiv_name)
+		add_equiv_psym (equiv_psyms, pdi->equiv_name);
+	      /* APPLE LOCAL end psym equivalences  */
 	      if (pdi->has_pc_info)
 		{
 		  if (pdi->lowpc < *lowpc)
@@ -2518,6 +2602,8 @@ add_partial_namespace (struct partial_die_info *pdi,
 {
   /* APPLE LOCAL avoid unused var warning.  */
   /* struct objfile *objfile = cu->objfile; */
+  /* APPLE LOCAL psym equivalences  */
+  struct equiv_psym_list *equiv_psyms = NULL;
 
   /* Add a symbol for the namespace.  */
 
@@ -2525,8 +2611,10 @@ add_partial_namespace (struct partial_die_info *pdi,
 
   /* Now scan partial symbols in that namespace.  */
 
+  /* APPLE LOCAL begin psym equivalences  */
   if (pdi->has_children)
-    scan_partial_symbols (pdi->die_child, lowpc, highpc, cu);
+    scan_partial_symbols (pdi->die_child, lowpc, highpc, cu, &equiv_psyms);
+  /* APPLE LOCAL end psym_equivalences  */
 }
 
 /* See if we can figure out if the class lives in a namespace.  We do
@@ -2854,6 +2942,15 @@ compare_map_entries_final_addr_index (void *thunk, const void *a, const void *b)
   CORE_ADDR addr_a = tuples[idx_a].final_addr;
   CORE_ADDR addr_b = tuples[idx_b].final_addr;
 
+  /* Fall back and sort on OSO low addrs when final addrs are the same (which
+     should only happen for stuff that didn't make it into the final 
+     executable).  */
+  if (addr_a == addr_b)
+    {
+      addr_a = tuples[idx_a].oso_low_addr;
+      addr_b = tuples[idx_b].oso_low_addr;
+    }
+
   if (addr_a == addr_b)
     return 0;
   else if (addr_a < addr_b)
@@ -2987,6 +3084,7 @@ convert_oso_map_to_final_map (struct nlist_rec *nlists,
         {
           map->tuples[j].name = nlists[i].name;
           map->tuples[j].oso_low_addr = nlists[i].addr;
+          map->tuples[j].final_addr = (CORE_ADDR) -1;
           map->tuples[j].present_in_final = 0;
           j++;
         }
@@ -3023,8 +3121,13 @@ convert_oso_map_to_final_map (struct nlist_rec *nlists,
 	  int idx = map->final_addr_index[i];
 	  final_addr = map->tuples[idx].final_addr;
 	  fprintf_unfiltered (gdb_stdlog, 
-		      "map->final_addr_index[%3d] = map->tuples[%3d] (%s)\n", 
-			      i, idx, paddr_nz (map->tuples[idx].final_addr));
+			      "map->final_addr_index[%3i] = %3i (map->tuples[%3i] oso_addr [%s - %s) final_addr = %s for %s\n", 
+			      i, idx, idx, 
+			      paddr (map->tuples[idx].oso_low_addr),
+			      paddr (map->tuples[idx].oso_high_addr),
+			      map->tuples[idx].present_in_final ?
+			      paddr (map->tuples[idx].final_addr) : "stripped",
+			      map->tuples[idx].name);
 	}
     }
 
@@ -3085,7 +3188,7 @@ convert_oso_map_to_final_map (struct nlist_rec *nlists,
   /* I can't imagine xstrdup()'ing the pst filename is actually necessary;
      if the pst goes away I'd expect all traces of this objfile's symbols
      (and therefore any pointers to the translation map) to also go away..  */
-  map->pst_filename = xstrdup (pst->filename);
+  map->pst = pst;
   return (map);
 }
 
@@ -3197,6 +3300,7 @@ create_kext_addr_map (struct nlist_rec *nlists,
         {
           map->tuples[j].name = xstrdup (nlists[i].name);
           map->tuples[j].oso_low_addr = nlists[i].addr;
+          map->tuples[j].final_addr = (CORE_ADDR) -1;
           map->tuples[j].present_in_final = 0;
           j++;
         }
@@ -3304,11 +3408,7 @@ create_kext_addr_map (struct nlist_rec *nlists,
 
   map->common_entries = 0;
   map->common_pairs = NULL;
-
-  /* I can't imagine xstrdup()'ing the pst filename is actually necessary;
-     if the pst goes away I'd expect all traces of this objfile's symbols
-     (and therefore any pointers to the translation map) to also go away..  */
-  map->pst_filename = xstrdup (pst->filename);
+  map->pst = pst;
 
   return (map);
 }
@@ -3444,7 +3544,7 @@ translate_debug_map_address (struct oso_to_final_addr_map *map,
         fprintf_unfiltered (gdb_stdlog, 
                             "debugmap: translated 0x%s to 0x%s sym '%s' in %s\n",
                             paddr_nz (oso_addr), paddr_nz (*addr), 
-                            map->tuples[0].name, map->pst_filename);
+                            map->tuples[0].name, map->pst->filename);
       return 1;
     }
 
@@ -3465,12 +3565,23 @@ translate_debug_map_address (struct oso_to_final_addr_map *map,
 
   if (match == NULL || !match->present_in_final)
     {
-      if (debug_debugmap)
-        fprintf_unfiltered (gdb_stdlog, 
-                            "debugmap: did not translate 0x%s in %s "
-                            "highpc == %d\n",
-                            paddr_nz (oso_addr), map->pst_filename,
-                            highpc);
+      if (debug_debugmap)      
+	{
+	  if (match == NULL)
+	    fprintf_unfiltered (gdb_stdlog, 
+				"debugmap: did not translate 0x%s in %s "
+				"highpc == %d\n",
+				paddr_nz (oso_addr), map->pst->filename,
+				highpc);
+	  else
+	    fprintf_unfiltered (gdb_stdlog, 
+				"debugmap: did not translate 0x%s "
+				"(dead-stripped %s) in %s highpc == %d\n",
+				paddr_nz (oso_addr), 
+				match->name,
+				map->pst->filename,
+				highpc);
+	}
       return 0;
     }
 
@@ -3503,30 +3614,54 @@ translate_debug_map_address (struct oso_to_final_addr_map *map,
 	  if (next_fa_idx_ptr - map->final_addr_index < map->entries 
 	      && *next_fa_idx_ptr < map->entries)
 	    {
-	      int new_delta = map->tuples[*next_fa_idx_ptr].final_addr - 
-			      match->final_addr;
-	      if (new_delta < delta)
+	      if (map->tuples[*next_fa_idx_ptr].present_in_final)
 		{
-		  /* The next final address was less than our current end
-		     address, we need to shrink it to match the debug map
-		     entry.  */
-		  *addr = match->final_addr + new_delta;
-		  if (debug_debugmap)
-		    fprintf_unfiltered (gdb_stdlog, 
-					"debugmap: decreasing end address for "
-					"'%s' in %s by %d bytes.\n",
-					match->name, map->pst_filename, 
-					delta - new_delta);
+		  int new_delta = map->tuples[*next_fa_idx_ptr].final_addr - 
+				  match->final_addr;
+		  if (new_delta < delta)
+		    {
+		      /* The next final address was less than our current end
+			 address, we need to shrink it to match the debug map
+			 entry.  */
+		      *addr = match->final_addr + new_delta;
+		      if (debug_debugmap)
+			fprintf_unfiltered (gdb_stdlog, 
+					    "debugmap: decreasing end address for "
+					    "'%s' in %s by %d bytes.\n",
+					    match->name, map->pst->filename, 
+					    delta - new_delta);
+		    }
 		}
 	    }
 	}
     }
 
+  /*  FIXME: The code below is not quite right; if the thing being
+      translated is not in the text section (e.g. it is in the data
+      section) this capping stuff does the wrong thing.  ctice/2007-11-15
+
+      Yeah I had some patches a while back that recorded the minsym's
+      type (mst_text, etc) in the struct oso_final_addr_tuple.  I think
+      that's necessary here.  molenda/2007-11-15 */
+
+#if 0
+  if (*addr > map->pst->texthigh)
+    {
+      if (debug_debugmap)
+	fprintf_unfiltered (gdb_stdlog, 
+			    "debugmap: address 0x%s beyond high text address "
+			    "0x%s for %s, capping to 0x%s\n",
+			    paddr_nz (*addr), paddr_nz (map->pst->texthigh), 
+			    match->name, paddr_nz (map->pst->texthigh));
+      *addr = map->pst->texthigh;
+    }
+#endif
+
   if (debug_debugmap)
     fprintf_unfiltered (gdb_stdlog, 
                         "debugmap: translated 0x%s to 0x%s sym '%s' in %s\n",
                         paddr_nz (oso_addr), paddr_nz (*addr), match->name,
-                        map->pst_filename);
+                        map->pst->filename);
   return 1;
 }
 
@@ -3560,14 +3695,14 @@ translate_common_symbol_debug_map_address (struct oso_to_final_addr_map *map,
           fprintf_unfiltered (gdb_stdlog, 
                               "debugmap: translated common symbol '%s' to 0x%s in %s\n",
                               name, paddr_nz (*addr), 
-                              map->pst_filename);
+                              map->pst->filename);
         return 1;
       }
 
   if (debug_debugmap)
     fprintf_unfiltered (gdb_stdlog, 
                         "debugmap: failed to translate common symbol '%s' in %s\n", 
-                        name, map->pst_filename);
+                        name, map->pst->filename);
   return 0;
 }
 
@@ -4491,9 +4626,6 @@ read_inlined_subroutine_scope (struct die_info *die, struct dwarf2_cu *cu)
 {
   struct die_info *parent_die;
   struct die_info *abstract_origin;
-  /* APPLE LOCAL begin address ranges  */
-  struct die_info *c;
-  /* APPLE LOCAL end address ranges  */
   struct objfile *objfile = cu->objfile;
   CORE_ADDR lowpc;
   CORE_ADDR highpc;
@@ -7316,6 +7448,58 @@ read_partial_die (struct partial_die_info *part_die,
 		part_die->name = DW_STRING (get_repository_name (&attr, cu));
 	      else
 		part_die->name = DW_STRING (&attr);
+	      /* APPLE LOCAL begin psym equivalences  */
+	      /* Check the linkage name to see if it is a psym equivalence
+		 name.  If so, fill in the equiv_name field for the part die,
+		 and set the global variable, psym_equivalences to 1.  */
+
+	      /* To be a psym equivalence name, the name must begin with
+		 '*_', must contain at least one  '$', and everything after
+		 the '$' must be uppercase, a digit or a '$'.  For
+	         example '*_putenv$UNIX2003' is a psym equivalence name for
+	         'putenv'.  */
+
+	      if (strlen (part_die->name) >=  5
+		  && part_die->name[0] == '*'
+		  && part_die->name[1] == '_')
+		{
+		  char *short_name;
+		  char *extension;
+		  char *short_end;
+		  char *end = part_die->name + strlen(part_die->name);
+		  int is_equivalence_name = 1;
+		  
+		  short_name = part_die->name + 2;
+		  extension = strchr (short_name, '$');
+		  if (extension)
+		    {
+		      short_end = extension;
+		      while (extension[0] != '\0'
+			     && extension < end
+			     && is_equivalence_name)
+			{
+			  if (!isdigit(extension[0])
+			      && !isupper(extension[0])
+			      && extension[0] != '$')
+			    is_equivalence_name = 0;
+			  extension++;
+			}
+		      
+		    }
+		  else
+		    is_equivalence_name = 0;
+		  
+		  if (is_equivalence_name)
+		    {
+		      psym_equivalences = 1;
+		      short_end[0] = '\0';
+		      part_die->name = xstrdup (short_name);
+		      part_die->equiv_name = part_die->name;
+		      short_end[0] = '$';
+		    }
+		  
+		}
+	      /* APPLE LOCAL end psym equivalences  */
 	    }
 	  break;
 	/* APPLE LOCAL end dwarf repository  */
@@ -8578,6 +8762,10 @@ check_inlined_function_calls (struct subfile *subfile, int file_index, int line,
 	  if (tmp_subfile != subfile)
 	    record_line (tmp_subfile, current->line, address, 0, 
 			 NORMAL_LT_ENTRY);
+
+	  if (dwarf2_debug_inlined_stepping)
+	    fprintf_unfiltered (gdb_stdout, "%s inlined into %s:\n", 
+				current->name, current->parent_name);
 	  
 	  record_line (tmp_subfile, current->line, current->lowpc, 
 		       current->highpc,
@@ -8631,12 +8819,9 @@ dwarf_decode_lines (struct line_header *lh, char *comp_dir, bfd *abfd,
   unsigned int bytes_read;
   unsigned char op_code, extended_op, adj_opcode;
   CORE_ADDR baseaddr;
+  CORE_ADDR final_addr;
   struct objfile *objfile = cu->objfile;
   const int decode_for_pst_p = (pst != NULL);
-
-  /* APPLE LOCAL: We'll need to skip linetable entries in functions that
-     were coalesced out.  */
-  int record_linetable_entry = 1;
 
   /* APPLE LOCAL */
   if (debug_debugmap)
@@ -8704,15 +8889,19 @@ dwarf_decode_lines (struct line_header *lh, char *comp_dir, bfd *abfd,
 	      line += lh->line_base + (adj_opcode % lh->line_range);
               lh->file_names[file - 1].included_p = 1;
               /* APPLE LOCAL: Skip linetable entries coalesced out */
-              if (!decode_for_pst_p && record_linetable_entry)
+              if (!decode_for_pst_p && translate_debug_map_address (cu->addr_map, 
+								    address, 
+								    &final_addr, 
+								    end_sequence))
                 {
 		  /* APPLE LOCAL begin subroutine inlining  */
 	          /* Append row to matrix using current values.  */
+		  final_addr += baseaddr;
 	          record_line (current_subfile, line, 
-	                       check_cu_functions (address, cu), 0, 
+	                       check_cu_functions (final_addr, cu), 0, 
 			       NORMAL_LT_ENTRY);
 		  check_inlined_function_calls (current_subfile, file, line,
-						check_cu_functions (address, cu),
+						check_cu_functions (final_addr, cu),
 						lh, cu, comp_dir);
 		  /* APPLE LOCAL end subroutine inlining  */
                 }
@@ -8741,13 +8930,17 @@ dwarf_decode_lines (struct line_header *lh, char *comp_dir, bfd *abfd,
 		  end_sequence = 1;
                   lh->file_names[file - 1].included_p = 1;
                   /* APPLE LOCAL: Skip linetable entries coalesced out */
-                  if (!decode_for_pst_p && record_linetable_entry)
+                  if (!decode_for_pst_p && 
+		      translate_debug_map_address (cu->addr_map, address, 
+						   &final_addr, end_sequence))
 		    /* APPLE LOCAL begin subroutine inlining  */
 		    {
-		      record_line (current_subfile, 0, address, 0, 
+		      final_addr += baseaddr;
+		      record_line (current_subfile, 0, final_addr, 0, 
 				   NORMAL_LT_ENTRY);
 		      check_inlined_function_calls (current_subfile, file, 0,
-						    address, lh, cu, comp_dir);
+						    final_addr, lh, cu, 
+						    comp_dir);
 		    }
 		    /* APPLE LOCAL end subroutine inlining  */
 		  break;
@@ -8755,19 +8948,7 @@ dwarf_decode_lines (struct line_header *lh, char *comp_dir, bfd *abfd,
                   /* APPLE LOCAL Add cast to avoid type mismatch in arg4 warn.*/
 		  address = read_address (abfd, line_ptr, cu, 
 					  (int *) &bytes_read);
-                  /* APPLE LOCAL: debug map */
-                  {
-                    CORE_ADDR addr;
-                    if (translate_debug_map_address (cu->addr_map, address, &addr, 0))
-                      {
-                        address = addr;
-                        record_linetable_entry = 1;
-                      }
-                    else
-                      record_linetable_entry = 0;
-                  }
 		  line_ptr += bytes_read;
-		  address += baseaddr;
 		  break;
 		case DW_LNE_define_file:
                   {
@@ -8797,14 +8978,18 @@ dwarf_decode_lines (struct line_header *lh, char *comp_dir, bfd *abfd,
 	    case DW_LNS_copy:
               lh->file_names[file - 1].included_p = 1;
               /* APPLE LOCAL: Skip linetable entries coalesced out */
-              if (!decode_for_pst_p && record_linetable_entry)
+              if (!decode_for_pst_p && translate_debug_map_address (cu->addr_map, 
+								    address, 
+								    &final_addr, 
+								    end_sequence))
 		/* APPLE LOCAL begin subroutine inlining  */
 		{
+		  final_addr += baseaddr;
 		  record_line (current_subfile, line, 
-			       check_cu_functions (address, cu), 0, 
+			       check_cu_functions (final_addr, cu), 0, 
 			       NORMAL_LT_ENTRY);
 		  check_inlined_function_calls (current_subfile, file, line,
-						check_cu_functions (address, cu),
+						check_cu_functions (final_addr, cu),
 						lh, cu, comp_dir);
 		}
 	        /* APPLE LOCAL subroutine inlining  */
@@ -14053,7 +14238,7 @@ rb_print_node (struct rb_tree_node *tree)
 	fprintf (stdout, "(Black");
       else
 	fprintf (stdout, "(Unknown");
-      fprintf (stdout, ", %d, %d, %d)\n", tree->key, tree->secondary_key,
+      fprintf (stdout, ", %Ld, %d, %Ld)\n", tree->key, tree->secondary_key,
 	       tree->third_key);
     }
 }

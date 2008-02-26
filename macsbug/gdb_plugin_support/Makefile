@@ -85,11 +85,11 @@ HFILES				=	gdb.h			\
 HEADERS				=	$(HFILES:%=$(SRCROOT)/%)
 
 ifndef BINUTILS_BUILD_ROOT
-BINUTILS_BUILD_ROOT = $(NEXT_ROOT)
+BINUTILS_BUILD_ROOT = $(SDKROOT)
 endif
 
 ifndef GDB_BUILD_ROOT
-GDB_BUILD_ROOT = $(NEXT_ROOT)
+GDB_BUILD_ROOT = $(SDKROOT)
 endif
 
 BINUTILS_FRAMEWORKS = $(BINUTILS_BUILD_ROOT)/System/Library/PrivateFrameworks
@@ -160,7 +160,7 @@ install				:	all $(DSTDIR)
 #                        *-------------*
 
 $(SYMROOT)/gdb_plugin_support.o	: 	$(OBJS)
-	ld -r $(OBJS) -o $(SYMROOT)/gdb_plugin_support.o
+	ld -r $(OBJS) -arch ppc -o $(SYMROOT)/gdb_plugin_support.o
 
 $(OFILE_DIR)/%.o		:	%.c $(HFILES)
 	$(CC) $(CFLAGS) $(RC_CFLAGS) -o $(OFILE_DIR)/$(notdir $*).o $<

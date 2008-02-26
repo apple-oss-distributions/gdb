@@ -3159,6 +3159,7 @@ check_safe_call (regex_t unsafe_functions[],
   args.unsafe_p = 0;
   args.unsafe_functions = unsafe_functions;
   args.npatterns = npatterns;
+  args.stack_depth = stack_depth;
 
   if (which_threads == CHECK_CURRENT_THREAD
       || (which_threads == CHECK_SCHEDULER_VALUE && !scheduler_lock_on_p ()))

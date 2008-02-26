@@ -1,3 +1,29 @@
+2007-10-18  Caroline Tice  <ctice@apple.com>
+
+	* gdb.cp/templates.exp: Update to cope properly with multiple
+	breakpoint choices for breakpoint on destructor.
+
+2007-09-19  Caroline Tice  <ctice@apple.com>
+
+	* gdb.apple/r5414488.exp: Correct expected line number to match new
+	gdb line-finding code.
+
+2007-08-21  Caroline Tice  <ctice@apple.com>
+
+	* gdb.apple/macscp-inlining.exp:  Don't look for 'stepping into/over
+	inlined subroutine' messages.
+	* gdb.apple/macscp-inlining.x86.exp:  Likewise.
+	* gdb.apple/nested-inlines-console.exp:  Likewise.
+	* gdb.apple/nested-inlines-console.x86.exp:  Likewise.
+
+2007-08-21  Caroline Tice  <ctice@apple.com>
+
+	* gdb.apple/r5414488.exp: Test that inlined subroutine data addresses 
+	slide correctly along with the rest of the objfile.
+	* gdb.apple/r5414488.m: File for new testcase.
+	* gdb.apple/r5414488.h: File for new testcase.
+	* gdb.apple/r5414488-libfile.m: File for new testcase.
+
 2007-07-27  Jim Ingham (jingham@apple.com)
 
 	* gdb.apple/unloading.exp: More tests.

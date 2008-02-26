@@ -45,6 +45,7 @@
 #include "block.h"
 #include "cp-support.h"
 #include "dictionary.h"
+#include "inlining.h"
 
 /* Ask buildsym.h to define the vars it normally declares `extern'.  */
 #define	EXTERN
@@ -844,6 +845,20 @@ record_line (struct subfile *subfile, int line, CORE_ADDR pc, CORE_ADDR end_pc,
 {
   struct linetable_entry *e;
   /* Ignore the dummy line number in libg.o */
+
+  if (dwarf2_debug_inlined_stepping)
+    {
+      if (entry_type != NORMAL_LT_ENTRY)
+	{
+	  if (entry_type == INLINED_CALL_SITE_LT_ENTRY)
+	    fprintf_unfiltered (gdb_stdout, "     INLINED CALL SITE,  ");
+	  else
+	    fprintf_unfiltered (gdb_stdout, "     INLINED SUBROUTINE, ");
+	  fprintf_unfiltered (gdb_stdout, "0x%x  - 0x%x, ", 
+			      (unsigned int) pc, (unsigned int) end_pc);
+	  fprintf_unfiltered (gdb_stdout, "%s:%d\n", subfile->name, line);
+	}
+    }
 
   if (line == 0xffff)
     {

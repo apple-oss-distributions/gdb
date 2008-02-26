@@ -15,6 +15,7 @@ TDEPFILES = \
 	kdp-udp.o \
 	kdp-transactions.o \
 	kdp-protocol.o \
+	remote-mobile.o \
 	macosx-tdep.o \
 	machoread.o \
 	macosx-nat-dyld.o \

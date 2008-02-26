@@ -1040,7 +1040,14 @@ init_sal (struct symtab_and_line *sal)
   /* APPLE LOCAL end subroutine inlinine  */
 }
 
+/* APPLE LOCAL begin addr_ctx.  */
+void
+init_address_context (struct address_context *addr_ctx)
+{
+  memset(addr_ctx, 0, sizeof(struct address_context));
+}
 
+/* APPLE LOCAL end addr_ctx.  */
 
 /* Find which partial symtab contains PC and SECTION.  Return 0 if
    none.  We return the psymtab that contains a symbol whose address
@@ -1437,7 +1444,8 @@ lookup_symbol_all (const char *name, const struct block *block,
   if  (!returnval)
     returnval = lookup_symbol_aux_symtabs (GLOBAL_BLOCK, modified_name, mangled_name,
 					   domain, symtab, sym_list, 1);
-  if (!returnval)
+  /* APPLE LOCAL psym equivalences  */
+  if (!returnval || psym_equivalences)
     returnval = lookup_symbol_aux_psymtabs (GLOBAL_BLOCK, modified_name, mangled_name,
 					    domain, symtab, sym_list, 1);
 
@@ -1450,7 +1458,33 @@ lookup_symbol_all (const char *name, const struct block *block,
     xfree (demangled_name);
 
   if (*sym_list)
-    return 1;
+    {
+      struct symbol_search *test_pos;
+      struct symbol_search *cur;
+      struct symbol_search *prev;
+
+      /* Remove duplicate symbols from sym_list:  Test_pos moves slowly
+	 down the list; at each point, compare the symbol in test_pos
+	 against the rest of the list and remove any duplicate occurrences
+	 of it from the rest of the list.  */
+
+      for (test_pos = *sym_list; test_pos; test_pos = test_pos->next)
+	{
+	  prev = test_pos;
+	  cur = prev->next;
+	  /* Check to see if any of the symbols in the rest of the list
+	     match the symbol in test_pos, and if so, remove them.  */
+	  while (cur)
+	    {
+	      if (cur->symbol == test_pos->symbol)
+		prev->next = cur->next;
+	      else
+		prev = cur;
+	      cur = cur->next;
+	    }
+	}
+      return 1;
+    }
   else
     return 0;
 }
@@ -1789,6 +1823,107 @@ lookup_symbol_aux_symtabs (int block_index,
   /* APPLE LOCAL end return multiple symbols  */
 }
 
+/* APPLE LOCAL begin psym equivalences  */
+/* Given two names, return 1 if the are identical or if ALTERNATE_NAME
+   is a psym equivalence name for NAME.  Return 0 otherwise.  
+
+   A psym equivalence name begins with '*_', contains at least one '$',
+   and everything after the '$' must be uppercase, a digit or anther '$'.
+   For ALTERNATE_NAME to be an equivalence name for NAME, everything
+   between '*_' and the '$' must be identical to NAME, e.g.
+   '*_putenv$UNIX2003' and 'putenv'.  */
+
+int
+psym_name_match (char *alternate_name, char *name)
+{
+  char *short_name;
+  char *extension;
+  char *short_end;
+  int match = 1;
+  int len1;
+  int len2;
+
+  if (strcmp (alternate_name, name) != 0)
+    {
+      /* If the two names don't match exactly... */
+
+      len1 = strlen (alternate_name);
+      len2 = strlen (name);
+
+      /* Make sure the alternate name is at least 3 chars longer than name  */
+
+      if (len1 > len2 + 3)
+	{
+	  /* Make sure alternate name starts with '*_'  */
+	  if (alternate_name[0] =='*'
+	      && alternate_name[1] == '_')
+	    {
+	      short_name = alternate_name + 2;
+	      /* Make sure alternate name contains a '$'  */
+	      extension = strchr (short_name, '$');
+	      if (extension)
+		{
+		  short_end = extension;
+		  extension++;
+		  short_end[0] = '\0';
+		  /* Make sure everything between '*_' and '$' matches name  */
+		  if (strcmp (short_name, name) == 0)
+		    {
+		      short_end[0] = '$';
+		      /* Make sure everything after the first '$' is either
+			 uppercase, a digit or a '$'  */
+		      while (extension < alternate_name + len1
+			     && extension[0] != '\0'
+			     && match)
+			{
+			  if (!isupper (extension[0])
+			      &&!isdigit (extension[0])
+			      && extension[0] != '$')
+			    match = 0;
+			  extension++;
+			}
+		    }
+		  else
+		    {
+		      short_end[0] = '$';
+		      match = 0;
+		    }
+		}
+	      else
+		match = 0;
+	    }
+	  else
+	    match = 0;
+	}
+      else match = 0;
+    }
+
+  return match;
+}
+
+/* Given partial symbol table, PST, and a function NAME, chec, to see if
+   PST contains a psym equivalence name for NAME.  Return 1 it so, 0 
+   otherwise.  */
+
+static int
+lookup_equiv_partial_symbol (struct partial_symtab *pst, char *name)
+{
+  int has_equivalent_symbol = 0;
+  int i;
+
+  if (psym_equivalences
+      && pst->equiv_psyms)
+    {
+      for (i =0; i < pst->equiv_psyms->num_syms && !has_equivalent_symbol;
+	   i++)
+	if (psym_name_match (pst->equiv_psyms->sym_list[i], name))
+	  has_equivalent_symbol = 1;
+    }
+
+  return has_equivalent_symbol;
+}
+/* APPLE LOCAL end psym equivalences  */
+
 /* Check to see if the symbol is defined in one of the partial
    symtabs.  BLOCK_INDEX should be either GLOBAL_BLOCK or
    STATIC_BLOCK, depending on whether or not we want to search global
@@ -1819,9 +1954,14 @@ lookup_symbol_aux_psymtabs (int block_index, const char *name,
 
   ALL_PSYMTABS (objfile, ps)
   {
+    /* APPLE LOCAL begin psym equivalences  */
+    /* Check to see if there is either a direct match, or a
+       psym equivalence match.  */
     if (!ps->readin
-	&& lookup_partial_symbol (ps, name, linkage_name,
-				  psymtab_index, domain))
+	&& (lookup_partial_symbol (ps, name, linkage_name,
+				   psymtab_index, domain)
+	    || lookup_equiv_partial_symbol (ps, name)))
+    /* APPLE LOCAL end psym equivalences  */
       {
 	s = PSYMTAB_TO_SYMTAB (ps);
         /* APPLE LOCAL: Catch a null symtab and give the user a reportable
@@ -2399,7 +2539,8 @@ find_main_psymtab (void)
 
 /* This function is very similar to lookup_block_symbol, except that instead
    of returning the first matching symbol it finds, it returns a list
-   of ALL the matching symbols it could find.  */
+   of ALL the matching symbols it could find.  Note, the result is
+   returned in a struct symbol_search, but the block field is not set.  */
 
 struct symbol_search *
 lookup_block_symbol_all (const struct block *block, const char *name,
@@ -2416,12 +2557,19 @@ lookup_block_symbol_all (const struct block *block, const char *name,
 	   sym != NULL;
 	   sym = dict_iter_name_next (name, &iter))
 	{
-	  if (SYMBOL_DOMAIN (sym) == domain
-	      && (linkage_name != NULL
-		  ? strcmp (SYMBOL_LINKAGE_NAME (sym), linkage_name) == 0 : 1))
+	  /* APPLE LOCAL begin  psym equivalences  */
+	  /* If the strings don't match directly, see if there is a
+	     psym equivalence match.  */
+	  if (SYMBOL_DOMAIN (sym) == domain)
+	    if ((linkage_name != NULL
+		 ? ((strcmp (SYMBOL_LINKAGE_NAME (sym), linkage_name) == 0)
+		    || psym_name_match (SYMBOL_LINKAGE_NAME (sym), 
+					linkage_name))
+		 : 1))
+	  /* APPLE LOCAL end psym equivalences  */
 	    {
 	      new_node = (struct symbol_search *) xmalloc (sizeof (struct symbol_search));
-	      new_node->block = block;
+	      new_node->block = 0;
 	      new_node->symbol = sym;
 	      new_node->symtab = NULL;
 	      new_node->msymbol = NULL;
@@ -2473,9 +2621,16 @@ lookup_block_symbol (const struct block *block, const char *name,
 	   sym != NULL;
 	   sym = dict_iter_name_next (name, &iter))
 	{
-	  if (SYMBOL_DOMAIN (sym) == domain
-	      && (linkage_name != NULL
-		  ? strcmp (SYMBOL_LINKAGE_NAME (sym), linkage_name) == 0 : 1))
+	  /* APPLE LOCAL begin psym equivalences  */
+	  /* If the strings don't match directly, see if there is a
+	     psym equivalence match.  */
+	  if (SYMBOL_DOMAIN (sym) == domain)
+	    if ((linkage_name != NULL
+		 ? ((strcmp (SYMBOL_LINKAGE_NAME (sym), linkage_name) == 0)
+		    || psym_name_match (SYMBOL_LINKAGE_NAME (sym), 
+					linkage_name))
+		 : 1))
+	 /* APPLE LOCAL end psym equivalences  */
 	    return sym;
 	}
       return NULL;
@@ -2966,7 +3121,7 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
 	    }
 
 	  temp_val = (struct symtab_and_line *) xmalloc 
-	                                     (sizeof (struct symtab_and_line));
+	                                      (sizeof (struct symtab_and_line));
 	  temp_val->symtab = s;
 	  temp_val->section = section;
 	  temp_val->line = prev->line;
@@ -2981,12 +3136,12 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
 	  temp_list = temp_val;
 	}
 
+      /* Put every 'item' with a pc matching prev->pc into temp_list.
+	 Those should be any/all inlined subroutine and call site
+	 entries.  */
+
       while (prev && prev->pc == pc && item->pc == prev->pc)
 	{
-	  /* Now, we need to put every 'item' with a pc matching prev->pc
-	     into temp_list.  Those should be any/all inlined subroutine
-	     and call site entries.  */
-
 	  temp_val = (struct symtab_and_line *) xmalloc 
 	                                      (sizeof (struct symtab_and_line));
 	  temp_val->symtab = s;
@@ -3120,7 +3275,7 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
 	     Also verify that there is at most one normal entry in the
 	     list.  */
 
-	  for (p = NULL, cur = temp_list; cur; )
+	  for (p = NULL, cur = temp_list; cur; cur = cur->next)
 	    {
 	      if (cur->entry_type == NORMAL_LT_ENTRY)
 		{
@@ -3145,40 +3300,45 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
 		    temp_list = cur->next;
 		  else
 		    p->next = cur->next;
-		  cur = cur->next;
+		  xfree (cur);
 		}
 	      else
 		{
 		  p = cur;
-		  cur = cur->next;
 		}
 	    }
 	}
 
       /* Remove all other NORMAL entries from temp_list */
 
-      for (p = NULL, cur = temp_list; cur; )
+      for (p = NULL, cur = temp_list; cur; cur = cur->next)
 	if (cur->entry_type == NORMAL_LT_ENTRY)
 	  {
 	    if (!p)
 	      temp_list = cur->next;
 	    else
 	      p->next = cur->next;
-	    cur = cur->next;
+            xfree (cur);
 	  }
 	else
 	  {
 	    p = cur;
-	    cur = cur->next;
 	  }
 
       
-      /* Now append the rest of  temp_list to final_var.next.  */
+      /* Now append the rest of temp_list to final_var.next.  */
+
+      /* FIXME: temp_list must be walked & freed by the callers of this
+         function.  Today, that isn't done so we're leaking these sals when
+         looking at source lines with inlined code.  */
 
       final_val.next = temp_list;
      
       if (final_val.pc == outer_call_site->pc)
-	final_val.line = outer_call_site->line;
+	{
+	  final_val.line = outer_call_site->line;
+	  final_val.symtab = outer_call_site->symtab;
+	}
  
       if (final_val.symtab == NULL)
 	warning ("Returning an unfilled final_val");
@@ -3466,6 +3626,78 @@ find_pc_line_pc_range (CORE_ADDR pc, CORE_ADDR *startptr, CORE_ADDR *endptr)
 struct symtab_and_line
 find_function_start_sal (struct symbol *sym, int funfirstline)
 {
+  /* APPLE LOCAL begin address context.  */
+  struct address_context pc;
+  init_address_context (&pc);
+  pc.symbol = sym;
+  /* APPLE LOCAL end address context.  */
+  
+  /* If the block structure is a little bit mangled, we can end up
+     with function sym's with a NULL block.  Don't crash.  */
+  pc.block = SYMBOL_BLOCK_VALUE (sym);
+  if (pc.block == NULL)
+    error ("Found function with NULL block: \"%s\"", SYMBOL_PRINT_NAME (sym));
+  /* APPLE LOCAL begin address ranges  */
+  pc.address = BLOCK_LOWEST_PC (pc.block);
+  /* APPLE LOCAL end address ranges  */
+  /* END APPLE LOCAL */
+  fixup_symbol_section (sym, NULL);
+  if (funfirstline)
+    {				
+      /* skip "first line" of function (which is actually its prologue) */
+      pc.bfd_section = SYMBOL_BFD_SECTION (sym);
+      /* If function is in an unmapped overlay, use its unmapped LMA
+         address, so that SKIP_PROLOGUE has something unique to work on */
+      if (section_is_overlay (pc.bfd_section) &&
+	  !section_is_mapped (pc.bfd_section))
+	pc.address = overlay_unmapped_address (pc.address, 
+					       pc.bfd_section);
+
+      pc.address += DEPRECATED_FUNCTION_START_OFFSET;
+      /* APPLE LOCAL begin address context.  */
+      /* Check if the current architecture supports the address context 
+         version of prologue skipping.  */
+      if (SKIP_PROLOGUE_ADDR_CTX_P())
+	pc.address = SKIP_PROLOGUE_ADDR_CTX (&pc);
+      else
+	pc.address = SKIP_PROLOGUE (pc.address);
+      /* APPLE LOCAL end address context.  */
+
+      /* For overlays, map pc back into its mapped VMA range */
+      pc.address = overlay_mapped_address (pc.address, 
+					   pc.bfd_section);
+    }
+  pc.sal = find_pc_sect_line (pc.address, 
+			      SYMBOL_BFD_SECTION (sym), 0);
+
+  /* Check if SKIP_PROLOGUE left us in mid-line, and the next
+     line is still part of the same function.  */
+  /* APPLE LOCAL begin address ranges  */
+  if (pc.sal.pc != pc.address
+      && block_contains_pc (SYMBOL_BLOCK_VALUE (pc.symbol), 
+			    pc.sal.end))
+  /* APPLE LOCAL end address ranges  */
+    {
+      /* First pc of next line */
+      pc.address = pc.sal.end;
+      /* Recalculate the line number (might not be N+1).  */
+      pc.sal = find_pc_sect_line (pc.address, 
+				  SYMBOL_BFD_SECTION (pc.symbol), 
+				  0);
+    }
+  pc.sal.pc = pc.address;
+
+  return pc.sal;
+}
+#if defined (USE_OLD_FIND_FUNCTION_START_SAL)
+/* Given a function symbol SYM, find the symtab and line for the start
+   of the function.
+   If the argument FUNFIRSTLINE is nonzero, we want the first line
+   of real code inside the function.  */
+
+struct symtab_and_line
+find_function_start_sal (struct symbol *sym, int funfirstline)
+{
   CORE_ADDR pc;
   struct symtab_and_line sal;
   /* APPLE LOCAL */
@@ -3514,7 +3746,7 @@ find_function_start_sal (struct symbol *sym, int funfirstline)
 
   return sal;
 }
-
+#endif
 /* If P is of the form "operator[ \t]+..." where `...' is
    some legitimate operator text, return a pointer to the
    beginning of the substring of the operator text.
@@ -4071,6 +4303,12 @@ search_symbols (char *regexp, domain_enum kind, int nfiles, char *files[],
 	    MSYMBOL_TYPE (msymbol) == ourtype3 ||
 	    MSYMBOL_TYPE (msymbol) == ourtype4)
 	  {
+            /* APPLE LOCAL: Don't match the dyld_stub names; no one is
+               interested in seeing them when they're doing an 'rbreak' or
+               what have you.  */
+            if (strncmp (SYMBOL_LINKAGE_NAME (msymbol), "dyld_stub_", 10) == 0)
+              continue;
+
 	    if (regexp == NULL
 		|| re_exec (SYMBOL_NATURAL_NAME (msymbol)) != 0)
 	      {

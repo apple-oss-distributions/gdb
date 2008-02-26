@@ -74,7 +74,7 @@ the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 static char *find_info_plist_filename_from_bundle_name (const char *bundle,
                                                      const char *bundle_suffix);
 
-#if HAVE_DEBUG_SYMBOLS_FRAMEWORK
+#if USE_DEBUG_SYMBOLS_FRAMEWORK
 extern CFArrayRef DBGCopyMatchingUUIDsForURL (CFURLRef path,
                                               int /* cpu_type_t */ cpuType,
                                            int /* cpu_subtype_t */ cpuSubtype);
@@ -435,6 +435,192 @@ info_trampoline_command (char *exp, int from_tty)
      paddr_nz (address), paddr_nz (trampoline), paddr_nz (objc));
 }
 
+struct sal_chain
+{
+  struct sal_chain *next;
+  struct symtab_and_line sal;
+};
+
+
+/* On some platforms, you need to turn on the exception callback
+   to hit the catchpoints for exceptions.  Not on Mac OS X. */
+
+int
+macosx_enable_exception_callback (enum exception_event_kind kind, int enable)
+{
+  return 1;
+}
+
+/* The MacOS X implemenatation of the find_exception_catchpoints
+   target vector entry.  Relies on the __cxa_throw and
+   __cxa_begin_catch functions from libsupc++.  */
+
+struct symtabs_and_lines *
+macosx_find_exception_catchpoints (enum exception_event_kind kind,
+                                   struct objfile *restrict_objfile)
+{
+  struct symtabs_and_lines *return_sals;
+  char *symbol_name;
+  struct objfile *objfile;
+  struct minimal_symbol *msymbol;
+  unsigned int hash;
+  struct sal_chain *sal_chain = 0;
+
+  switch (kind)
+    {
+    case EX_EVENT_THROW:
+      symbol_name = "__cxa_throw";
+      break;
+    case EX_EVENT_CATCH:
+      symbol_name = "__cxa_begin_catch";
+      break;
+    default:
+      error ("We currently only handle \"throw\" and \"catch\"");
+    }
+
+  hash = msymbol_hash (symbol_name) % MINIMAL_SYMBOL_HASH_SIZE;
+
+  ALL_OBJFILES (objfile)
+  {
+    for (msymbol = objfile->msymbol_hash[hash];
+         msymbol != NULL; msymbol = msymbol->hash_next)
+      if (MSYMBOL_TYPE (msymbol) == mst_text
+          && (strcmp_iw (SYMBOL_LINKAGE_NAME (msymbol), symbol_name) == 0))
+        {
+          /* We found one, add it here... */
+          CORE_ADDR catchpoint_address;
+          CORE_ADDR past_prologue;
+
+          struct sal_chain *next
+            = (struct sal_chain *) alloca (sizeof (struct sal_chain));
+
+          next->next = sal_chain;
+          init_sal (&next->sal);
+          next->sal.symtab = NULL;
+
+          catchpoint_address = SYMBOL_VALUE_ADDRESS (msymbol);
+          past_prologue = SKIP_PROLOGUE (catchpoint_address);
+
+          next->sal.pc = past_prologue;
+          next->sal.line = 0;
+          next->sal.end = past_prologue;
+
+          sal_chain = next;
+
+        }
+  }
+
+  if (sal_chain)
+    {
+      int index = 0;
+      struct sal_chain *temp;
+
+      for (temp = sal_chain; temp != NULL; temp = temp->next)
+        index++;
+
+      return_sals = (struct symtabs_and_lines *)
+        xmalloc (sizeof (struct symtabs_and_lines));
+      return_sals->nelts = index;
+      return_sals->sals =
+        (struct symtab_and_line *) xmalloc (index *
+                                            sizeof (struct symtab_and_line));
+
+      for (index = 0; sal_chain; sal_chain = sal_chain->next, index++)
+        return_sals->sals[index] = sal_chain->sal;
+      return return_sals;
+    }
+  else
+    return NULL;
+
+}
+
+/* Returns data about the current exception event */
+
+struct exception_event_record *
+macosx_get_current_exception_event ()
+{
+  static struct exception_event_record *exception_event = NULL;
+  struct frame_info *curr_frame;
+  struct frame_info *fi;
+  CORE_ADDR pc;
+  int stop_func_found;
+  char *stop_name;
+  char *typeinfo_str;
+
+  if (exception_event == NULL)
+    {
+      exception_event = (struct exception_event_record *)
+        xmalloc (sizeof (struct exception_event_record));
+      exception_event->exception_type = NULL;
+    }
+
+  curr_frame = get_current_frame ();
+  if (!curr_frame)
+    return (struct exception_event_record *) NULL;
+
+  pc = get_frame_pc (curr_frame);
+  stop_func_found = find_pc_partial_function (pc, &stop_name, NULL, NULL);
+  if (!stop_func_found)
+    return (struct exception_event_record *) NULL;
+
+  if (strcmp (stop_name, "__cxa_throw") == 0)
+    {
+
+      fi = get_prev_frame (curr_frame);
+      if (!fi)
+        return (struct exception_event_record *) NULL;
+
+      exception_event->throw_sal = find_pc_line (get_frame_pc (fi), 1);
+
+      /* FIXME: We don't know the catch location when we
+         have just intercepted the throw.  Can we walk the
+         stack and redo the runtimes exception matching
+         to figure this out? */
+      exception_event->catch_sal.pc = 0x0;
+      exception_event->catch_sal.line = 0;
+
+      exception_event->kind = EX_EVENT_THROW;
+
+    }
+  else if (strcmp (stop_name, "__cxa_begin_catch") == 0)
+    {
+      fi = get_prev_frame (curr_frame);
+      if (!fi)
+        return (struct exception_event_record *) NULL;
+
+      exception_event->catch_sal = find_pc_line (get_frame_pc (fi), 1);
+
+      /* By the time we get here, we have totally forgotten
+         where we were thrown from... */
+      exception_event->throw_sal.pc = 0x0;
+      exception_event->throw_sal.line = 0;
+
+      exception_event->kind = EX_EVENT_CATCH;
+
+
+    }
+
+#ifdef THROW_CATCH_FIND_TYPEINFO
+  typeinfo_str =
+    THROW_CATCH_FIND_TYPEINFO (curr_frame, exception_event->kind);
+#else
+  typeinfo_str = NULL;
+#endif
+
+  if (exception_event->exception_type != NULL)
+    xfree (exception_event->exception_type);
+
+  if (typeinfo_str == NULL)
+    {
+      exception_event->exception_type = NULL;
+    }
+  else
+    {
+      exception_event->exception_type = xstrdup (typeinfo_str);
+    }
+
+  return exception_event;
+}
 
 void
 update_command (char *args, int from_tty)
@@ -450,6 +636,8 @@ stack_flush_command (char *args, int from_tty)
   if (from_tty)
     printf_filtered ("Stack cache flushed.\n");
 }
+
+#if USE_CARBON_FRAMEWORK
 
 #include <Carbon/Carbon.h>
 #include <dlfcn.h>
@@ -659,12 +847,14 @@ open_command (char *args, int from_tty)
   else
     if (stat (filename, &sb) != 0)
       error ("File '%s' not found.", filename);
-
+#if USE_CARBON_FRAMEWORK
   open_file_with_LS (filename, line_no);
+#endif
 }
 
+#endif	/* #if USE_CARBON_FRAMEWORK  */
 
-#if HAVE_DEBUG_SYMBOLS_FRAMEWORK
+#if USE_DEBUG_SYMBOLS_FRAMEWORK
 
 CFMutableDictionaryRef
 create_dsym_uuids_for_path (char *dsym_bundle_path)
@@ -981,6 +1171,10 @@ macosx_locate_dsym (struct objfile *objfile)
 	 "/some/path/MyApp.app.dSYM/Contents/Resources/DWARF/MyApp" or
 	 "/some/path/MyApp.dSYM/Contents/Resources/DWARF/MyApp".  */
       strcpy (dsymfile, dirname (executable_name));
+      /* Append a directory delimiter so we don't miss shallow bundles that
+         have the dSYM appended on like "/some/path/MacApp.app.dSYM" when
+	 we start with "/some/path/MyApp.app/MyApp".  */
+      strcat (dsymfile, "/");
       while ((dot_ptr = strrchr (dsymfile, '.')))
 	{
 	  /* Find the directory delimiter that follows the '.' character since
@@ -1020,7 +1214,7 @@ macosx_locate_dsym (struct objfile *objfile)
              and search again.  */
 	  *slash_ptr = '\0';
 	}
-#if HAVE_DEBUG_SYMBOLS_FRAMEWORK
+#if USE_DEBUG_SYMBOLS_FRAMEWORK
       /* Check to see if configure detected the DebugSymbols framework, and
 	 try to use it to locate the dSYM files if it was detected.  */
       if (dsym_locate_enabled)
@@ -1034,7 +1228,7 @@ macosx_locate_dsym (struct objfile *objfile)
 struct objfile *
 macosx_find_objfile_matching_dsym_in_bundle (char *dsym_bundle_path, char **out_full_path)
 {
-#if HAVE_DEBUG_SYMBOLS_FRAMEWORK
+#if USE_DEBUG_SYMBOLS_FRAMEWORK
   CFMutableDictionaryRef paths_and_uuids;
   struct search_baton results;
   struct objfile *objfile;
@@ -1425,6 +1619,8 @@ fast_show_stack_trace_prologue (unsigned int count_limit,
 						  CORE_ADDR pc, CORE_ADDR fp))
 {
   ULONGEST pc = 0;
+  struct frame_id selected_frame_id;
+  struct frame_info *selected_frame;
 
   if (*sigtramp_start_ptr == 0)
     {
@@ -1463,7 +1659,17 @@ fast_show_stack_trace_prologue (unsigned int count_limit,
      between the real function and _start...  This will set
      us back straight, and then we can do the backtrace accurately
      from here.  */
+  /* Watch out, though.  flush_cached_frames unsets the currently
+     selected frame.  So we need to restore that.  */
+  selected_frame_id = get_frame_id (get_selected_frame (NULL));
+
   flush_cached_frames ();
+
+  selected_frame = frame_find_by_id (selected_frame_id);
+  if (selected_frame == NULL)
+    select_frame (get_current_frame ());
+  else
+    select_frame (selected_frame);
 
   /* I have to do this twice because I want to make sure that if
      any of the early backtraces causes the load level of a library
@@ -1608,6 +1814,7 @@ _initialize_macosx_tdep ()
 
   add_info ("trampoline", info_trampoline_command,
             "Resolve function for DYLD trampoline stub and/or Objective-C call");
+#if USE_CARBON_FRAMEWORK
   c = add_com ("open", class_support, open_command, _("\
 Open the named source file in an application determined by LaunchServices.\n\
 With no arguments, open the currently selected source file.\n\
@@ -1615,6 +1822,7 @@ Also takes file:line to hilight the file at the given line."));
   set_cmd_completer (c, filename_completer);
   add_com_alias ("op", "open", class_support, 1);
   add_com_alias ("ope", "open", class_support, 1);
+#endif /* #if USE_CARBON_FRAMEWORK  */
 
   add_com ("flushstack", class_maintenance, stack_flush_command,
            "Force gdb to flush its stack-frame cache (maintainer command)");

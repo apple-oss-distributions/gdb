@@ -2621,12 +2621,18 @@ varobj_pc_in_valid_block_p (struct varobj *var)
   if (fi != NULL)
     {
       cur_pc = get_frame_pc (fi);
-      
-      if ((cur_pc < var->root->valid_block->startaddr) || 
-	  (cur_pc >= var->root->valid_block->endaddr))
-	{
-	  return 0;
-	}
+      /* If we are up on the stack, then the pc is actually the
+	 RETURN pc.  We could call find_frame_sal to get the full
+	 sal for the frame, the pc there is the real caller pc if
+	 that can be determined.  But that's expensive, and since
+	 all we really care about is whether the pc is in this block
+	 or not, it's fine to just subtract 1 here before doing the
+	 comparision.  */
+
+      if (frame_relative_level (fi) > 0)
+	cur_pc -= 1;
+
+      return (block_contains_pc (var->root->valid_block, cur_pc));
     }
   else
     {

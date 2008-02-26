@@ -507,6 +507,13 @@ i386_integer_to_address (struct gdbarch *gdbarch, struct type *type,
 }
 
 
+/* Align to 16 byte boundary */
+static CORE_ADDR
+i386_macosx_frame_align (struct gdbarch *gdbarch, CORE_ADDR addr)
+{
+   return (addr & -16);
+}
+
 static void
 i386_macosx_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
@@ -530,6 +537,7 @@ i386_macosx_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 
   tdep->jb_pc_offset = 20;
   set_gdbarch_integer_to_address (gdbarch, i386_integer_to_address);
+  set_gdbarch_frame_align (gdbarch, i386_macosx_frame_align);
 }
 
 static void
@@ -632,6 +640,7 @@ i386_fast_show_stack (unsigned int count_limit, unsigned int print_limit,
      "fp" to get an actual EBP value for walking the stack.  */
 
   fp = get_frame_base (fi);
+  prev_fp = fp;             /* Start with a reasonable default value.  */
   fp = fp - 2 * wordsize;
   prev_fp = prev_fp - 2 * wordsize;
   while (1)

@@ -1,3 +1,54 @@
+2008-02-08  Greg Clayton  <gclayton@apple.com>
+
+	* Makefile: Bumped version for gdb-861.
+	
+2007-10-12  Greg Clayton  <gclayton@apple.com>
+
+	* Makefile: Bumped version to 859 for gdb-859 build.
+
+2008-01-15  Jason Molenda  (jmolenda@apple.com)
+
+	* Makefile (crossarm, cross): Run dsymutil on the sym 
+	directory gdb binary.
+
+2008-01-08  Jason Molenda  (jmolenda@apple.com)
+
+	* Makefile: Set the version string for the cross debuggers.
+	-no-cpp-precomp no longer needed.
+
+2007-11-07  Greg Clayton  <gclayton@apple.com>
+
+	*Makefile: Changed CROSS_ROOT to SDKROOT for cross and crossarm
+	targets.
+
+2007-10-12  Greg Clayton  <gclayton@apple.com>
+
+	*Makefile: Bumped version to 850 to reserve 850-900 for
+	for 'deep' builds.
+
+2007-07-24  Greg Clayton  <gclayton@apple.com>
+
+	*Makefile: CROSS_ROOT is now used to specify the SDK location
+	for cross builds.
+
+2007-06-27  Greg Clayton  <gclayton@apple.com>
+
+	* gdb.sh: Handle arm and armv6 arch variants.
+	* Makefile: Ditto.
+	(CDEBUGFLAGS): Define default value only if not already defined.
+	(crossarm): New target.
+	(cross): New target.
+	(stamp-build-gdb): Configure and build gdbserver when target 
+	is arm darwin.
+	(install-gdbserver): New target.
+	(check-args): Add arm/armv6 darwin support.
+	(install-macosx): Install gdbserver when target is arm darwin.
+	
+2007-10-12  Greg Clayton  (gclayton@apple.com)
+
+	* Makefile (GDB_RC_VERSION): Bump Leopard gdb version up to gdb-900
+	to leave a hole for other gdb builds.
+
 2007-07-10  Jason Molenda  (jmolenda@apple.com)
 
 	* Makefile (GDB_RC_VERSION): Bump Leopard gdb version up to gdb-750

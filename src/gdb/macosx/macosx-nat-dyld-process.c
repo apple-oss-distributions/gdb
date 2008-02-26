@@ -50,8 +50,10 @@
 
 #if defined (TARGET_POWERPC)
 #include "ppc-macosx-tdep.h"
-#else
+#elif defined(TARGET_I386)
 #include "i386-tdep.h"
+#elif defined(TARGET_ARM)
+#include "arm-tdep.h"
 #endif
 
 #include <sys/mman.h>
@@ -79,12 +81,16 @@ extern int dyld_reload_on_downgrade_flag;
 extern char *dyld_load_rules;
 extern char *dyld_minimal_load_rules;
 
+static int dyld_check_uuids_flag = 0;
+
 /* For the gdbarch_tdep structure so we can get the wordsize. */
 #if defined(TARGET_POWERPC)
 #include "ppc-tdep.h"
 #elif defined (TARGET_I386)
 #include "amd64-tdep.h"
 #include "i386-tdep.h"
+#elif defined (TARGET_ARM)
+#include "arm-tdep.h"
 #else
 #error "Unrecognized target architecture."
 #endif
@@ -1110,7 +1116,7 @@ dyld_load_library_from_memory (const struct dyld_path_info *d,
 }
 
 /* dyld_load_library opens the bfd for the library in E, and
-   sets some state in E.  */
+   sets some state in E.   */
 
 void
 dyld_load_library (const struct dyld_path_info *d,
@@ -1127,6 +1133,7 @@ dyld_load_library (const struct dyld_path_info *d,
   if (e->reason & dyld_reason_executable_mask)
     CHECK_FATAL (e->objfile == symfile_objfile);
 
+ try_again_please:
   /* For now, we only print any error messages the first time we try
      to load a bfd.  It would be nice to use a more subtle mechanism
      here, that would avoid repeating the error messages when we retry
@@ -1152,7 +1159,126 @@ dyld_load_library (const struct dyld_path_info *d,
   if (read_from_memory)
     dyld_load_library_from_memory (d, e, print_errors);
   else if (e->abfd == NULL)
-    dyld_load_library_from_file (d, e, print_errors);
+    {
+      dyld_load_library_from_file (d, e, print_errors);
+      if (e->abfd == NULL)
+	{
+	  read_from_memory = 1;
+	  /* If the target is "remote" we want to lower the load level
+	     on libraries that we're going to have to read out of memory.  */
+	  if (target_is_remote ())
+	    {
+	      e->load_flag = OBJF_SYM_CONTAINER;
+	    }
+	  goto try_again_please;
+	}
+      else if (bfd_mach_o_stub_library (e->abfd))
+	{
+	  /* If we find a stub library as the backing file,
+	     then switch to reading from memory.  */
+	  e->load_flag = OBJF_SYM_CONTAINER | OBJF_SYM_DONT_CHANGE;
+	  bfd_close (e->abfd);
+	  e->abfd = NULL;
+	  e->loaded_name = NULL;
+	  read_from_memory = 1;
+	  goto try_again_please;
+	}
+      else if (dyld_check_uuids_flag && e->dyld_valid)
+	{
+	  /* To speed things up in the common case where the UUID's
+	     match, we find the offset of the UUID load command in the
+	     on disk binary, and go directly to that offset in the 
+	     in memory copy.  If that is a load command, then we compare
+	     those.  If we don't find one there, then we have to search
+	     through the load commands in memory.  
+	     Note: Don't check if e->dyld_valid is not true, since then we ONLY
+	     have a file we've read from load commands for this bfd, and don't
+	     have an in memory copy yet.  */
+
+	  struct mach_o_data_struct *mdata = NULL;
+	  int i;
+	  bfd_vma uuid_addr = (bfd_vma) -1;
+	  unsigned char mem_uuid[16];
+	  int matches = 0;
+	  unsigned char file_uuid[16];
+
+	  CHECK_FATAL (bfd_mach_o_valid (e->abfd));
+	  mdata = e->abfd->tdata.mach_o_data;
+	  for (i = 0; i < mdata->header.ncmds; i++)
+	    {
+	      /* Find the UUID command in the on disk copy of the
+		 binary.  */
+	      if (mdata->commands[i].type == BFD_MACH_O_LC_UUID)
+		{
+		  uuid_addr = mdata->commands[i].offset;
+		  bfd_mach_o_get_uuid (e->abfd, file_uuid, sizeof (file_uuid));
+		  break;
+		}
+	    }
+
+	  /* If there is no UUID command, we obviously can't do any checking.  */
+	  if (uuid_addr != (bfd_vma) -1)
+	    {
+	      struct gdb_exception exc;
+	      int error;
+	      int found_uuid = 0;
+	      
+	      uuid_addr += e->dyld_addr;
+	      TRY_CATCH (exc, RETURN_MASK_ALL)
+		{
+		  error = target_read_uuid (uuid_addr, mem_uuid);
+		}
+	      
+	      /* Do the check with the UUID we found in the spot where it would be
+		 if the binaries were the same.  If that works, we're done.  Otherwise
+		 look through the in memory version directly for the LC_UUID.  */
+	      if (exc.reason == NO_ERROR && error == 0)
+		matches = (memcmp(mem_uuid, file_uuid, sizeof (file_uuid)) == 0);
+
+	      if (!matches)
+		{
+		  struct mach_header header;
+		  bfd_vma curpos = e->dyld_addr + sizeof (struct mach_header);
+		  struct load_command cmd;
+		  target_read_mach_header (e->dyld_addr, &header);
+
+		  for (i = 0; i < header.ncmds; i++)
+		    {
+		      if (target_read_load_command (curpos, &cmd) != 0)
+			break;
+		      if (cmd.cmd == BFD_MACH_O_LC_UUID)
+			{
+			  if (target_read_uuid (curpos, mem_uuid) == 0) 
+			    found_uuid = 1;
+			  break;
+			}
+		      curpos += cmd.cmdsize;
+		    }
+		  matches = (memcmp(mem_uuid, file_uuid, sizeof (file_uuid)) == 0);
+		}
+	      
+	      if (!matches)
+		{
+		  warning (_("UUID mismatch detected with the loaded library "
+			     "- on disk is:\n\t%s"),
+			   e->abfd->filename);
+		  if (ui_out_is_mi_like_p (uiout))
+		    {
+		      struct cleanup *notify_cleanup =
+			make_cleanup_ui_out_notify_begin_end (uiout, 
+							      "uuid-mismatch-with-loaded-file");
+		      ui_out_field_string (uiout, "file", e->abfd->filename);
+		      do_cleanups (notify_cleanup);
+		    }
+		  bfd_close (e->abfd);
+		  e->abfd = NULL;
+		  e->loaded_name = NULL;
+		  read_from_memory = 1;
+		  goto try_again_please;
+		}
+	    }
+	}
+    }
 
   /* If we weren't able to load the bfd, there must have been an error
      somewhere.  Flag it, so we don't print error messages the next
@@ -1302,6 +1428,11 @@ dyld_load_symfile_internal (struct dyld_objfile_entry *e,
     {
       e->loaded_addr = e->dyld_slide;
       e->loaded_addrisoffset = 1;
+    }
+
+  if (e->loaded_from_memory == 1)
+    {
+      e->loaded_memaddr = e->loaded_addr;
     }
 
   /* This is a little weird, because dlyd_load_symfile is used both
@@ -1638,6 +1769,11 @@ dyld_should_reload_objfile_for_flags (struct dyld_objfile_entry *e)
      is set.  Otherwise, only reload on upgrade. */
   if (e->load_flag == e->objfile->symflags)
     return DYLD_NO_CHANGE;
+  else if (e->objfile->symflags & OBJF_SYM_DONT_CHANGE)
+    {
+      e->load_flag = e->objfile->symflags;
+      return DYLD_NO_CHANGE;
+    }
   else if (e->load_flag & ~e->objfile->symflags)
     return DYLD_UPGRADE;
   else
@@ -1979,21 +2115,32 @@ dyld_libraries_compatible (struct dyld_path_info *d,
     return dyld_libraries_similar (d, newent, oldent);
  
   /* If either filename is non-NULL, then they must both be the same string. */
-  
+  /* Be careful, if we're loaded from memory, then the original entry just has
+     the filename from the load commands, but the made entry says "memory object...".  */
   if (oldname != NULL || newname != NULL)
     {
       if (oldname == NULL || newname == NULL)
 	return 0;
-      if (strcmp (oldname, newname) != 0)
-	return 0;
+      if (oldent->loaded_from_memory && newent->loaded_from_memory)
+	{
+	  char *mem_obj_str = "[memory object \"";
+	  int offset = strlen (mem_obj_str);
+	  if ((strstr (newname, mem_obj_str) == newname
+	       && strstr (newname, oldname) == newname + offset)
+	      ||(strstr (oldname, mem_obj_str) == oldname
+		 && strstr (oldname, newname) == oldname + offset))
+	    return dyld_libraries_similar (d, newent, oldent);
+	}
+      else
+	{
+	  if (strcmp (oldname, newname) != 0)
+	    return 0;
+	}
     }
   
-  if (dyld_always_read_from_memory_flag)
+  if (oldent->loaded_from_memory != newent->loaded_from_memory)
     {
-      if (oldent->loaded_from_memory != newent->loaded_from_memory)
-	{
-	  return 0;
-	}
+      return 0;
     }
 
    /* The same bundle can be loaded more than once under certain
@@ -2272,4 +2419,10 @@ dyld_purge_cached_libraries (struct dyld_objfile_info *info)
 void
 _initialize_macosx_nat_dyld_process ()
 {
+  add_setshow_boolean_cmd ("check-uuids", class_obscure,
+			   &dyld_check_uuids_flag, _("\
+Set if GDB should check the binary UUID between the file on disk and the one loaded in memory."), _("\
+Set if GDB should check the binary UUID between the file on disk and the one loaded in memory."), NULL,
+			   NULL, NULL,
+			   &setshliblist, &showshliblist);
 }

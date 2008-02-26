@@ -995,7 +995,7 @@ syms_from_objfile (struct objfile *objfile,
 
   /* APPLE LOCAL If our load level is higher than container, call
      symfile read fn.  */
-  if (objfile->symflags & ~OBJF_SYM_CONTAINER)
+  if ((objfile->symflags & ~OBJF_SYM_CONTAINER) & OBJF_SYM_LEVELS_MASK)
     (*objfile->sf->sym_read) (objfile, mainline);
 
   /* Don't allow char * to have a typename (else would get caddr_t).
@@ -1167,8 +1167,19 @@ append_psymbols_as_msymbols (struct objfile *objfile)
 	    {
 	      psym_addr = SYMBOL_VALUE_ADDRESS (psym);
 	      psym_osect = find_section_for_addr (objfile, psym_addr);
+	      
 	      if (psym_osect != NULL)
 		{
+		  struct minimal_symbol *msym;
+		  
+		  /* Don't overwrite an extant msym, since we might lose information
+		     that isn't known in the psymbol (like the "is_special" info.)  */
+		  msym = lookup_minimal_symbol_by_pc_section_from_objfile (psym_addr, 
+									   psym_osect->the_bfd_section, 
+									   objfile);
+		  if (msym != NULL)
+		    continue;
+
 		  if (add_prefix)
 		    {
 		      psym_linkage_name = 
@@ -1201,6 +1212,16 @@ append_psymbols_as_msymbols (struct objfile *objfile)
 
 	      if (psym_osect != NULL)
 		{
+		  struct minimal_symbol *msym;
+		  
+		  /* Don't overwrite an extant msym, since we might lose information
+		     that isn't known in the psymbol (like the "is_special" info.  */
+		  msym = lookup_minimal_symbol_by_pc_section_from_objfile (psym_addr, 
+									   psym_osect->the_bfd_section, 
+									   objfile);
+		  if (msym != NULL)
+		    continue;
+
 		  if (add_prefix)
 		    {
 		      psym_linkage_name = 
@@ -2301,7 +2322,60 @@ struct load_section_data {
   unsigned long write_count;
   unsigned long data_count;
   bfd_size_type total_size;
+
+  /* Per-section data for load_progress.  */
+  const char *section_name;
+  ULONGEST section_sent;
+  ULONGEST section_size;
+  CORE_ADDR lma;
+  gdb_byte *buffer;
 };
+
+/* Target write callback routine for load_section_callback.  */
+
+static void
+load_progress (ULONGEST bytes, void *untyped_arg)
+{
+  struct load_section_data *args = untyped_arg;
+
+  if (validate_download)
+    {
+      /* Broken memories and broken monitors manifest themselves here
+	 when bring new computers to life.  This doubles already slow
+	 downloads.  */
+      /* NOTE: cagney/1999-10-18: A more efficient implementation
+	 might add a verify_memory() method to the target vector and
+	 then use that.  remote.c could implement that method using
+	 the ``qCRC'' packet.  */
+      gdb_byte *check = xmalloc (bytes);
+      struct cleanup *verify_cleanups = make_cleanup (xfree, check);
+
+      if (target_read_memory (args->lma, check, bytes) != 0)
+	error (_("Download verify read failed at 0x%s"),
+	       paddr (args->lma));
+      if (memcmp (args->buffer, check, bytes) != 0)
+	error (_("Download verify compare failed at 0x%s"),
+	       paddr (args->lma));
+      do_cleanups (verify_cleanups);
+    }
+  args->data_count += bytes;
+  args->lma += bytes;
+  args->buffer += bytes;
+  args->write_count += 1;
+  args->section_sent += bytes;
+  if (quit_flag
+      || (deprecated_ui_load_progress_hook != NULL
+	  && deprecated_ui_load_progress_hook (args->section_name,
+					       args->section_sent)))
+    error (_("Canceled the download"));
+
+  if (deprecated_show_load_progress != NULL)
+    deprecated_show_load_progress (args->section_name,
+				   args->section_sent,
+				   args->section_size,
+				   args->data_count,
+				   args->total_size);
+}
 
 /* Callback service function for generic_load (bfd_map_over_sections).  */
 
@@ -2309,92 +2383,43 @@ static void
 load_section_callback (bfd *abfd, asection *asec, void *data)
 {
   struct load_section_data *args = data;
+  bfd_size_type size = bfd_get_section_size (asec);
+  gdb_byte *buffer;
+  struct cleanup *old_chain;
+  const char *sect_name = bfd_get_section_name (abfd, asec);
+  LONGEST transferred;
 
-  if (bfd_get_section_flags (abfd, asec) & SEC_LOAD)
-    {
-      bfd_size_type size = bfd_get_section_size (asec);
-      if (size > 0)
-	{
-	  char *buffer;
-	  struct cleanup *old_chain;
-	  CORE_ADDR lma = bfd_section_lma (abfd, asec) + args->load_offset;
-	  bfd_size_type block_size;
-	  int err;
-	  const char *sect_name = bfd_get_section_name (abfd, asec);
-	  bfd_size_type sent;
+  if ((bfd_get_section_flags (abfd, asec) & SEC_LOAD) == 0)
+    return;
 
-	  if (download_write_size > 0 && size > download_write_size)
-	    block_size = download_write_size;
-	  else
-	    block_size = size;
+  if (size == 0)
+    return;
 
-	  buffer = xmalloc (size);
-	  old_chain = make_cleanup (xfree, buffer);
+  buffer = xmalloc (size);
+  old_chain = make_cleanup (xfree, buffer);
 
-	  /* Is this really necessary?  I guess it gives the user something
-	     to look at during a long download.  */
-	  ui_out_message (uiout, 0, "Loading section %s, size 0x%s lma 0x%s\n",
-			  sect_name, paddr_nz (size), paddr_nz (lma));
+  args->section_name = sect_name;
+  args->section_sent = 0;
+  args->section_size = size;
+  args->lma = bfd_section_lma (abfd, asec) + args->load_offset;
+  args->buffer = buffer;
 
-	  bfd_get_section_contents (abfd, asec, buffer, 0, size);
+  /* Is this really necessary?  I guess it gives the user something
+     to look at during a long download.  */
+  ui_out_message (uiout, 0, "Loading section %s, size 0x%s lma 0x%s\n",
+		  sect_name, paddr_nz (size), paddr_nz (args->lma));
 
-	  sent = 0;
-	  do
-	    {
-	      int len;
-	      bfd_size_type this_transfer = size - sent;
+  bfd_get_section_contents (abfd, asec, buffer, 0, size);
 
-	      if (this_transfer >= block_size)
-		this_transfer = block_size;
-	      len = target_write_memory_partial (lma, buffer,
-						 this_transfer, &err);
-	      if (err)
-		break;
-	      if (validate_download)
-		{
-		  /* Broken memories and broken monitors manifest
-		     themselves here when bring new computers to
-		     life.  This doubles already slow downloads.  */
-		  /* NOTE: cagney/1999-10-18: A more efficient
-		     implementation might add a verify_memory()
-		     method to the target vector and then use
-		     that.  remote.c could implement that method
-		     using the ``qCRC'' packet.  */
-		  char *check = xmalloc (len);
-		  struct cleanup *verify_cleanups =
-		    make_cleanup (xfree, check);
+  transferred = target_write_with_progress (&current_target,
+					    TARGET_OBJECT_MEMORY,
+					    NULL, buffer, args->lma,
+					    size, load_progress, args);
+  if (transferred < size)
+    error (_("Memory access error while loading section %s."),
+	   sect_name);
 
-		  if (target_read_memory (lma, check, len) != 0)
-		    error (_("Download verify read failed at 0x%s"),
-			   paddr (lma));
-		  if (memcmp (buffer, check, len) != 0)
-		    error (_("Download verify compare failed at 0x%s"),
-			   paddr (lma));
-		  do_cleanups (verify_cleanups);
-		}
-	      args->data_count += len;
-	      lma += len;
-	      buffer += len;
-	      args->write_count += 1;
-	      sent += len;
-	      if (quit_flag
-		  || (deprecated_ui_load_progress_hook != NULL
-		      && deprecated_ui_load_progress_hook (sect_name, sent)))
-		error (_("Canceled the download"));
-
-	      if (deprecated_show_load_progress != NULL)
-		deprecated_show_load_progress (sect_name, sent, size,
-					       args->data_count,
-					       args->total_size);
-	    }
-	  while (sent < size);
-
-	  if (err != 0)
-	    error (_("Memory access error while loading section %s."), sect_name);
-
-	  do_cleanups (old_chain);
-	}
-    }
+  do_cleanups (old_chain);
 }
 
 void
@@ -3082,17 +3107,38 @@ reread_symbols (void)
 	  /* APPLE LOCAL: Stat the file by path, when one is
 	     available, to detect the case where the file has been
 	     replaced, but BFD still has a file descriptor open to
-	     the old version. */
+	     the old version.  */
+	  int backing_file_missing;
           {
             struct stat buf;
-            if (stat (objfile->obfd->filename, &buf) != 0)
-              new_modtime = bfd_get_mtime (objfile->obfd);
+	    backing_file_missing = 0;
+	    if (stat (objfile->obfd->filename, &buf) != 0)
+	      {
+		/* Check for NULL iostream.  If that's NULL, then
+		   bfd_get_mtime is just going to abort, which is not
+		   very friendly.  Instead, use new_modtime of -1 to
+		   indicate we can't find the file right now.  */
+		if (objfile->obfd->iostream != NULL)
+		  new_modtime = bfd_get_mtime (objfile->obfd);
+		else 
+		  backing_file_missing = 1;
+	      }
             else
               new_modtime = buf.st_mtime;
           }
           /* END APPLE LOCAL */
 
-	  if (new_modtime != objfile->mtime)
+	  if (backing_file_missing)
+	    {
+	      /* For some reason we can no longer open the backing file.
+		 We can't really clean up reasonably here, because we
+		 can't tell the shared library system that this objfile is
+		 gone.  So just continue on here, and hope that next time we
+		 run, an extant file will show up.  */
+	      warning ("Can't find backing file for \"%s\".",
+		     objfile->obfd->filename);
+	    }
+	  else if (new_modtime != objfile->mtime)
 	    {
 	      struct cleanup *old_cleanups;
 	      struct section_offsets *offsets;
@@ -3279,7 +3325,7 @@ reread_symbols (void)
 	      /* The "mainline" parameter is a hideous hack; I think leaving it
 	         zero is OK since dbxread.c also does what it needs to do if
 	         objfile->global_psymbols.size is 0.  */
-	      if (objfile->symflags & ~OBJF_SYM_CONTAINER)
+	      if ((objfile->symflags & ~OBJF_SYM_CONTAINER) & OBJF_SYM_LEVELS_MASK)
 		(*objfile->sf->sym_read) (objfile, 0);
 	      /* APPLE LOCAL don't complain about lack of symbols */
 	      objfile->flags |= OBJF_SYMS;
@@ -5138,6 +5184,57 @@ open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format)
   enum gdb_osabi osabi = GDB_OSABI_UNINITIALIZED;
   bfd *abfd = NULL;
   
+#if defined (TARGET_ARM) && defined (TM_NEXTSTEP)
+
+  /* APPLE LOCAL: The model for Darwin ARM stuff doesn't fit well
+     with the way PPC works.  You don't choose the fork that 
+     "matches" the osabi, you choose the "best match", so if you
+     are armv6, you pick armv6 if present, otherwise you pick
+     armv4t...  */
+
+  bfd *fallback = NULL;
+
+#ifdef NM_NEXTSTEP
+
+  /* We have a native ARM gdb, so query for V6 from the system.  */
+  extern int arm_mach_o_query_v6 (void);
+  if (arm_mach_o_query_v6 ())
+    osabi = GDB_OSABI_DARWINV6;
+  else
+    osabi = GDB_OSABI_DARWIN;
+
+#else	/* NM_NEXTSTEP */
+
+  /* We have a cross ARM gdb, so check if the user has set the ABI 
+     manually. If the osabi hasn't been set manually, just get the
+     best one from this file.  */
+  
+  /* Get the user set osabi, or the default one.  */
+  enum gdb_osabi default_osabi = gdbarch_lookup_osabi (NULL);
+  
+  /* Get the osabi for the bfd.  */
+  osabi = gdbarch_lookup_osabi (archive_bfd);
+  
+#endif	/* NM_NEXTSTEP */
+
+  for (;;)
+    {
+      enum gdb_osabi this_osabi;
+      abfd = bfd_openr_next_archived_file (archive_bfd, abfd);
+      if (abfd == NULL)
+	break;
+      if (! bfd_check_format (abfd, bfd_object))
+	continue;
+      this_osabi = gdbarch_lookup_osabi_from_bfd (abfd);
+      if (this_osabi == osabi)
+	{
+	  return abfd;
+	}
+      else if (this_osabi == GDB_OSABI_DARWIN)
+	fallback = abfd;
+    }
+  return fallback;
+#else	/* defined (TARGET_ARM) && defined (TM_NEXTSTEP)  */
   osabi = gdbarch_osabi (current_gdbarch);
   if ((osabi <= GDB_OSABI_UNKNOWN) || (osabi >= GDB_OSABI_INVALID))
     osabi = gdbarch_lookup_osabi (archive_bfd);
@@ -5155,6 +5252,7 @@ open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format)
         }
     }
   return abfd;
+#endif	/* defined (TARGET_ARM) && defined (TM_NEXTSTEP)  */
 }
 
 void

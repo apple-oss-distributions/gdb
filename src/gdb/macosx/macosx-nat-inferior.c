@@ -90,8 +90,11 @@
 #define SINGLE_STEP EXC_I386_SGL
 #elif defined (TARGET_POWERPC)
 #define SINGLE_STEP 5
+#elif defined (TARGET_ARM)
+#define SINGLE_STEP 5  /* ARM HACK - the system doesn't support 
+			  hardware single stepping...  */
 #else
-error unknown architecture
+#error "unknown architecture"
 #endif
 
 #define _dyld_debug_make_runnable(a, b) DYLD_FAILURE
@@ -2197,192 +2200,6 @@ macosx_async (void (*callback) (enum inferior_event_type event_type,
     }
 }
 
-struct sal_chain
-{
-  struct sal_chain *next;
-  struct symtab_and_line sal;
-};
-
-/* On some platforms, you need to turn on the exception callback
-   to hit the catchpoints for exceptions.  Not on Mac OS X. */
-
-int
-macosx_enable_exception_callback (enum exception_event_kind kind, int enable)
-{
-  return 1;
-}
-
-/* The MacOS X implemenatation of the find_exception_catchpoints
-   target vector entry.  Relies on the __cxa_throw and
-   __cxa_begin_catch functions from libsupc++.  */
-
-struct symtabs_and_lines *
-macosx_find_exception_catchpoints (enum exception_event_kind kind,
-                                   struct objfile *restrict_objfile)
-{
-  struct symtabs_and_lines *return_sals;
-  char *symbol_name;
-  struct objfile *objfile;
-  struct minimal_symbol *msymbol;
-  unsigned int hash;
-  struct sal_chain *sal_chain = 0;
-
-  switch (kind)
-    {
-    case EX_EVENT_THROW:
-      symbol_name = "__cxa_throw";
-      break;
-    case EX_EVENT_CATCH:
-      symbol_name = "__cxa_begin_catch";
-      break;
-    default:
-      error ("We currently only handle \"throw\" and \"catch\"");
-    }
-
-  hash = msymbol_hash (symbol_name) % MINIMAL_SYMBOL_HASH_SIZE;
-
-  ALL_OBJFILES (objfile)
-  {
-    for (msymbol = objfile->msymbol_hash[hash];
-         msymbol != NULL; msymbol = msymbol->hash_next)
-      if (MSYMBOL_TYPE (msymbol) == mst_text
-          && (strcmp_iw (SYMBOL_LINKAGE_NAME (msymbol), symbol_name) == 0))
-        {
-          /* We found one, add it here... */
-          CORE_ADDR catchpoint_address;
-          CORE_ADDR past_prologue;
-
-          struct sal_chain *next
-            = (struct sal_chain *) alloca (sizeof (struct sal_chain));
-
-          next->next = sal_chain;
-          init_sal (&next->sal);
-          next->sal.symtab = NULL;
-
-          catchpoint_address = SYMBOL_VALUE_ADDRESS (msymbol);
-          past_prologue = SKIP_PROLOGUE (catchpoint_address);
-
-          next->sal.pc = past_prologue;
-          next->sal.line = 0;
-          next->sal.end = past_prologue;
-
-          sal_chain = next;
-
-        }
-  }
-
-  if (sal_chain)
-    {
-      int index = 0;
-      struct sal_chain *temp;
-
-      for (temp = sal_chain; temp != NULL; temp = temp->next)
-        index++;
-
-      return_sals = (struct symtabs_and_lines *)
-        xmalloc (sizeof (struct symtabs_and_lines));
-      return_sals->nelts = index;
-      return_sals->sals =
-        (struct symtab_and_line *) xmalloc (index *
-                                            sizeof (struct symtab_and_line));
-
-      for (index = 0; sal_chain; sal_chain = sal_chain->next, index++)
-        return_sals->sals[index] = sal_chain->sal;
-      return return_sals;
-    }
-  else
-    return NULL;
-
-}
-
-/* Returns data about the current exception event */
-
-struct exception_event_record *
-macosx_get_current_exception_event ()
-{
-  static struct exception_event_record *exception_event = NULL;
-  struct frame_info *curr_frame;
-  struct frame_info *fi;
-  CORE_ADDR pc;
-  int stop_func_found;
-  char *stop_name;
-  char *typeinfo_str;
-
-  if (exception_event == NULL)
-    {
-      exception_event = (struct exception_event_record *)
-        xmalloc (sizeof (struct exception_event_record));
-      exception_event->exception_type = NULL;
-    }
-
-  curr_frame = get_current_frame ();
-  if (!curr_frame)
-    return (struct exception_event_record *) NULL;
-
-  pc = get_frame_pc (curr_frame);
-  stop_func_found = find_pc_partial_function (pc, &stop_name, NULL, NULL);
-  if (!stop_func_found)
-    return (struct exception_event_record *) NULL;
-
-  if (strcmp (stop_name, "__cxa_throw") == 0)
-    {
-
-      fi = get_prev_frame (curr_frame);
-      if (!fi)
-        return (struct exception_event_record *) NULL;
-
-      exception_event->throw_sal = find_pc_line (get_frame_pc (fi), 1);
-
-      /* FIXME: We don't know the catch location when we
-         have just intercepted the throw.  Can we walk the
-         stack and redo the runtimes exception matching
-         to figure this out? */
-      exception_event->catch_sal.pc = 0x0;
-      exception_event->catch_sal.line = 0;
-
-      exception_event->kind = EX_EVENT_THROW;
-
-    }
-  else if (strcmp (stop_name, "__cxa_begin_catch") == 0)
-    {
-      fi = get_prev_frame (curr_frame);
-      if (!fi)
-        return (struct exception_event_record *) NULL;
-
-      exception_event->catch_sal = find_pc_line (get_frame_pc (fi), 1);
-
-      /* By the time we get here, we have totally forgotten
-         where we were thrown from... */
-      exception_event->throw_sal.pc = 0x0;
-      exception_event->throw_sal.line = 0;
-
-      exception_event->kind = EX_EVENT_CATCH;
-
-
-    }
-
-#ifdef THROW_CATCH_FIND_TYPEINFO
-  typeinfo_str =
-    THROW_CATCH_FIND_TYPEINFO (curr_frame, exception_event->kind);
-#else
-  typeinfo_str = NULL;
-#endif
-
-  if (exception_event->exception_type != NULL)
-    xfree (exception_event->exception_type);
-
-  if (typeinfo_str == NULL)
-    {
-      exception_event->exception_type = NULL;
-    }
-  else
-    {
-      exception_event->exception_type = xstrdup (typeinfo_str);
-    }
-
-  return exception_event;
-}
-
 static char *macosx_unsafe_functions[] = {
   "malloc",
   "free",
@@ -2645,9 +2462,8 @@ fork_memcache_put (struct checkpoint *cp)
 
 	  if (rslt == KERN_SUCCESS)
 	    {
-	      int err;
-	      target_write_memory_partial (address, (char *)mempointer, 
-                                           memcopied, &err);
+	      target_write (&current_target, TARGET_OBJECT_MEMORY, NULL,
+			    (bfd_byte *) mempointer, address, memcopied);
 	    }
 	}
       

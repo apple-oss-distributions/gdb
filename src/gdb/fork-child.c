@@ -51,46 +51,7 @@ char *exec_pathname = NULL;
 
 extern char **environ;
 
-/* Break up SCRATCH into an argument vector suitable for passing to
-   execvp and store it in ARGV.  E.g., on "run a b c d" this routine
-   would get as input the string "a b c d", and as output it would
-   fill in ARGV with the four arguments "a", "b", "c", "d".  */
-
-static void
-breakup_args (char *scratch, char **argv)
-{
-  char *cp = scratch;
-
-  for (;;)
-    {
-      /* Scan past leading separators */
-      while (*cp == ' ' || *cp == '\t' || *cp == '\n')
-	cp++;
-
-      /* Break if at end of string.  */
-      if (*cp == '\0')
-	break;
-
-      /* Take an arg.  */
-      *argv++ = cp;
-
-      /* Scan for next arg separator */
-      while (!(*cp == '\0' || *cp == ' ' || *cp == '\t' || *cp == '\n'))
-	{
-	  cp++;
-	}
-
-      /* No separators => end of string => break */
-      if (*cp == '\0')
-	break;
-
-      /* Replace the separator with a terminator.  */
-      *cp++ = '\0';
-    }
-
-  /* Null-terminate the vector.  */
-  *argv = NULL;
-}
+/* APPLE LOCAL: I moved breakup_args from here to utils.c.  */
 
 /* When executing a command under the given shell, return non-zero if
    the '!' character should be escaped when embedded in a quoted
@@ -241,6 +202,11 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
 	  arch_string = "i386";
 	else if (strcmp (osabi_name, "Darwin64") == 0)
 	  arch_string = "x86_64";
+#elif defined (TARGET_ARM)
+	if (strcmp (osabi_name, "Darwin") == 0)
+	  arch_string = "arm";
+	else if (strcmp (osabi_name, "DarwinV6") == 0)
+	  arch_string = "armv6";
 #endif
 	if (arch_string != NULL)
 	  sprintf (shell_command, "%s exec arch -arch %s ", shell_command, arch_string);
@@ -422,7 +388,7 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
 	    posix_spawnattr_t attr;
 	    int retval;
 	    size_t copied;
-	    cpu_type_t cpu;
+	    cpu_type_t cpu = 0;
 	    int count = 0;
 	    pid_t pid;
 	    const char *osabi_name = gdbarch_osabi_name (gdbarch_osabi (current_gdbarch));
@@ -453,6 +419,17 @@ fork_inferior (char *exec_file_arg, char *allargs, char **env,
 	    else if (strcmp (osabi_name, "Darwin64") == 0)
 	      {
 		cpu = CPU_TYPE_X86_64;
+		count = 1;
+	      }
+#elif define (TARGET_ARM)
+	    if (strcmp (osabi_name, "Darwin") == 0)
+	      {
+		cpu = CPU_TYPE_ARM;
+		count = 1;
+	      }
+	    else if (strcmp (osabi_name, "DarwinV6") == 0)
+	      {
+		cpu = CPU_TYPE_ARM;
 		count = 1;
 	      }
 #endif

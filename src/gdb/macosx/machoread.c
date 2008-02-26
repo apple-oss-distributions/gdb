@@ -460,6 +460,13 @@ macho_symfile_read (struct objfile *objfile, int mainline)
   CHECK_FATAL (abfd != NULL);
   CHECK_FATAL (abfd->filename != NULL);
 
+  /* If this objfile is pointing to a stub library -- a library whose text
+     and data have been stripped -- stop processing right now.  gdb will
+     try to examine the text or data and does not handle it gracefully when
+     they are not present.  */
+  if (bfd_mach_o_stub_library (abfd))
+    return;
+
   init_minimal_symbol_collection ();
   make_cleanup_discard_minimal_symbols ();
 
@@ -649,7 +656,7 @@ macho_read_indirect_symbols (bfd *abfd,
               sname++;
             }
 
-          CHECK_FATAL ((strlen (sname) + sizeof ("__dyld_stub_") + 1) < 4096);
+          CHECK_FATAL ((strlen (sname) + sizeof ("dyld_stub_") + 1) < 4096);
           sprintf (nname, "dyld_stub_%s", sname);
 
           stubaddr += objfile_section_offset (objfile, osect_idx);

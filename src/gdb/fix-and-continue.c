@@ -147,7 +147,6 @@ struct fixinfo {
   const char *src_basename;
   const char *bundle_filename;
   const char *bundle_basename;
-  const char *object_filename;
 
   /* The original objfile (original_objfile_filename) and source file
      (canonical_source_filename) that this fixinfo structure represents.
@@ -314,10 +313,6 @@ static void mark_previous_fixes_obsolete (struct fixinfo *);
 
 static const char *getbasename (const char *);
 
-static int inferior_is_zerolinked_p (void);
-
-static void tell_zerolink (struct fixinfo *);
-
 static void print_active_functions (struct fixinfo *);
 
 static struct objfile *find_objfile_by_name (const char *);
@@ -354,10 +349,13 @@ static void
 fix_command (char *args, int from_tty)
 {
   char **argv;
-  char *object_filename, *source_filename, *bundle_filename;
+  char *source_filename, *bundle_filename;
   struct cleanup *cleanups;
   const char *usage = "Usage: fix bundle-filename source-filename [object-filename]";
 
+#if defined (TARGET_ARM)
+  error ("fix not supported on ARM");
+#endif
   if (!args || args[0] == '\0')
     error ("%s", usage);
 
@@ -383,11 +381,10 @@ fix_command (char *args, int from_tty)
       !bundle_filename || strlen (bundle_filename) == 0)
     error ("%s", usage);
 
-  /* Get third argument:  Object file name (only needed for ZeroLink) */
+  /* Ignore the third argument:  Object file name
+     This was needed for ZeroLink suport back when ZeroLink existed.  */
 
-  object_filename = argv[2];
-
-  fix_command_1 (source_filename, bundle_filename, object_filename, NULL);
+  fix_command_1 (source_filename, bundle_filename, NULL);
 
   if (!ui_out_is_mi_like_p (uiout) && from_tty)
     {
@@ -405,7 +402,6 @@ fix_command (char *args, int from_tty)
 void
 fix_command_1 (const char *source_filename,
                const char *bundle_filename,
-               const char *object_filename,
                const char *solib_filename)
 {
   struct fixinfo *cur;
@@ -418,13 +414,6 @@ fix_command_1 (const char *source_filename,
   if (source_filename == NULL || *source_filename == '\0' ||
       bundle_filename == NULL || *bundle_filename == '\0')
     error ("Source or bundle filename not provided.");
-
-  /* object_filename and bundle_filename are needed in certain circumstances;
-     F&C can potentially work without them.  Canonicalize them to NULL if 
-     they're empty. */
-
-  if (object_filename && *object_filename == '\0')
-    object_filename = NULL;
 
   if (bundle_filename && *bundle_filename == '\0')
     bundle_filename = NULL;
@@ -458,11 +447,6 @@ fix_command_1 (const char *source_filename,
   if (bundle_filename == NULL)
     error ("Bundle filename not found.");
   
-  if (object_filename && *object_filename != '\0')
-    object_filename = tilde_expand (object_filename);
-  else
-    object_filename = NULL;
-  
   if (solib_filename)
     {
       fn = tilde_expand (solib_filename);
@@ -487,9 +471,6 @@ fix_command_1 (const char *source_filename,
   if (!file_exists_p (bundle_filename))
     error ("Bundle '%s' not found.", bundle_filename);
 
-  if (object_filename && !file_exists_p (object_filename))
-    error ("Object '%s' not found.", object_filename);
-
   if (solib_filename && !file_exists_p (solib_filename))
     error ("Dylib/executable '%s' not found.", solib_filename);
 
@@ -505,9 +486,6 @@ fix_command_1 (const char *source_filename,
   cur = get_fixinfo_for_new_request (source_filename);
   cur->bundle_filename = bundle_filename;
   cur->bundle_basename = getbasename (bundle_filename);
-  cur->object_filename = object_filename;
-
-  tell_zerolink (cur);
 
   /* Make sure the original objfile that we're 'fixing'
      has its load level set so debug info is being read in.. */
@@ -527,117 +505,6 @@ fix_command_1 (const char *source_filename,
   print_active_functions (cur);
 
   do_cleanups (wipe);
-}
-
-/* If the inferior process is a zerolinked executible, and the object
-   file that we're about to replace hasn't yet been loaded in, we need
-   to reference a symbol from the file and get ZL to map in the original
-   objfile before we load the fixed version.  */
-
-/* SPI for __zero_link_force_link_object_file() return value: */
-
-enum ZLObjectFileResult {
-  zlObjectFileUnknown	      = 0,
-  zlObjectFileBeingLinked     = 1,
-  zlObjectFileAlreadyLinked   = 2,
-  zlObjectFileJustLinked      = 3,
-};
-
-static void
-tell_zerolink (struct fixinfo *cur)
-{
-  static struct cached_value *cached_zl_force_link_object_file = NULL;
-  struct value **obj_name_vec, **args, *val;
-  const char *obj_name = cur->object_filename;
-  int obj_name_len, i, retval;
-
-  /* Is this source file already been fixed in the past?  */
-  if (cur->fixed_object_files != NULL)
-    return;
-
-  /* Is the inferior using ZeroLink?  */
-  if (!inferior_is_zerolinked_p ())
-    return;
-
-  if (obj_name == NULL)
-    {
-      warning ("Inferior is a ZeroLinked, but no .o file was provided.");
-      return;
-    }
-
-  if (!lookup_minimal_symbol ("__zero_link_force_link_object_file", NULL, NULL))
-    {
-      warning ("Inferior is apparently a ZeroLink app, but "
-               "__zero_link_force_link_object_file not found.");
-      return;
-    }
-
-  if (cached_zl_force_link_object_file == NULL)
-    cached_zl_force_link_object_file = create_cached_function
-                  ("__zero_link_force_link_object_file", builtin_type_int);
-
-  obj_name_len = strlen (obj_name);
-  
-  obj_name_vec = (struct value **) alloca 
-                         (sizeof (struct value *) * (obj_name_len + 2));
-
-  for (i = 0; i < obj_name_len + 1; i++)
-    obj_name_vec[i] = value_from_longest (builtin_type_char, obj_name[i]);
-
-  args = (struct value **) alloca (sizeof (struct value *) * 3);
-  args[0] = value_array (0, obj_name_len, obj_name_vec);
-  args[1] = value_from_longest (builtin_type_int, 0);
-
-  val = call_function_by_hand_expecting_type
-      (lookup_cached_function (cached_zl_force_link_object_file), 
-       builtin_type_int, 1, args, 1);
-  
-  retval = value_as_long (val);
-
-  if (fix_and_continue_debug_flag)
-    switch (retval)
-      {
-        case zlObjectFileUnknown:
-          printf_filtered ("DEBUG: zlObjectFileUnknown result from ZL.\n");
-          break;
-        case zlObjectFileBeingLinked:
-          printf_filtered ("DEBUG: zlObjectFileBeingLinked result from ZL.\n");
-          break;
-        case zlObjectFileAlreadyLinked:
-          printf_filtered ("DEBUG: zlObjectFileAlreadyLinked result from ZL.\n");
-          break;
-        case zlObjectFileJustLinked:
-          printf_filtered ("DEBUG: zlObjectFileJustLinked result from ZL.\n");
-          break;
-        default:
-          printf_filtered ("DEBUG: Got unknown result from ZeroLink!");
-      }
-
-  if (retval == zlObjectFileAlreadyLinked || retval == zlObjectFileJustLinked)
-    return;
-  else if (retval == zlObjectFileUnknown)
-    warning ("ZeroLink says object file '%s' is unknown.", obj_name);
-  else if (retval == zlObjectFileBeingLinked)
-    warning ("ZeroLink says object file '%s' is mid-load.", obj_name);
-  else
-    warning ("Unrecognized result code from ZeroLink for obj file '%s'.", obj_name);
-}
-
-static int 
-inferior_is_zerolinked_p (void)
-{
-  int is_zl_executable = 0;
-
-  if (find_objfile_by_name (
-    "/System/Library/PrivateFrameworks/ZeroLink.framework/Versions/A/ZeroLink"))
-    {
-      is_zl_executable = 1;
-    }
-
-  if (fix_and_continue_debug_flag && is_zl_executable)
-    printf_filtered ("DEBUG: Inferior is a ZeroLink executable.\n");
-
-  return (is_zl_executable);
 }
 
 /* Step through all previously fixed versions of this .o file and
@@ -778,8 +645,6 @@ free_half_finished_fixinfo (struct fixinfo *f)
     xfree ((char *) f->src_filename);
   if (f->bundle_filename != NULL)
     xfree ((char *) f->bundle_filename);
-  if (f->object_filename != NULL)
-    xfree ((char *) f->object_filename);
   if (f->active_functions != NULL)
     free_active_threads_struct (f->active_functions);
   if (f->original_objfile_filename != NULL)
@@ -2790,7 +2655,9 @@ raise_objfile_load_level (struct objfile *obj)
 {
   const char *name;
   struct cleanup *wipe;
-  if (obj == NULL || obj->symflags == OBJF_SYM_ALL)
+  if (obj == NULL 
+      || (OBJF_SYM_LEVELS_MASK & obj->symflags) == OBJF_SYM_ALL
+      || (OBJF_SYM_FLAGS_MASK & obj->symflags) == OBJF_SYM_DONT_CHANGE)
     return obj;
 
   name = xstrdup (obj->name);
