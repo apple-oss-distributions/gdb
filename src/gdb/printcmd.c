@@ -1125,8 +1125,11 @@ address_info (char *exp, int from_tty)
      block argument is ignored and we'll mistakenly do an unscoped search.  */
 
   bl = get_selected_block (NULL);
-  while (BLOCK_FUNCTION (bl) == 0 && BLOCK_SUPERBLOCK (bl) != 0)
-    bl = BLOCK_SUPERBLOCK (bl);
+  if (bl != NULL)
+    {
+      while (BLOCK_FUNCTION (bl) == 0 && BLOCK_SUPERBLOCK (bl) != 0)
+	bl = BLOCK_SUPERBLOCK (bl);
+    }
 
   sym = lookup_symbol (exp, bl, VAR_DOMAIN, &is_a_field_of_this, 
                        (struct symtab **) NULL);

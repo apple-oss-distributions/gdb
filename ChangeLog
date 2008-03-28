@@ -1,3 +1,40 @@
+2008-03-26  Jason Molenda  (jmolenda@apple.com)
+
+	* Makefile (CDEBUGFLAGS): Add -Os back by default.
+
+2008-03-25  Jason Molenda  (jmolenda@apple.com)
+
+	* Makefile: Don't make the native-arm or cross-arm gdbs
+	setgid procmod.
+
+2008-03-24  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.sh: Set OSABIOPTS when the user specifies armv6; use it when
+	invoking gdb.
+
+2007-11-07  Greg Clayton  <gclayton@apple.com>
+
+        *Makefile: Changed CROSS_ROOT to SDKROOT for cross and crossarm
+        targets.
+
+2007-07-24  Greg Clayton  <gclayton@apple.com>
+
+        *Makefile: CROSS_ROOT is now used to specify the SDK location
+        for cross builds.
+
+2007-06-27  Greg Clayton  <gclayton@apple.com>
+
+        * gdb.sh: Handle arm and armv6 arch variants.
+        * Makefile: Ditto.
+        (CDEBUGFLAGS): Define default value only if not already defined.
+        (crossarm): New target.
+        (cross): New target.
+        (stamp-build-gdb): Configure and build gdbserver when target 
+        is arm darwin.
+        (install-gdbserver): New target.
+        (check-args): Add arm/armv6 darwin support.
+        (install-macosx): Install gdbserver when target is arm darwin.
+        
 2007-12-05  Jim Ingham  <jingham@apple.com>
 
 	* Makefile: Remove -Wno-long-double from Makefile, it is not supported

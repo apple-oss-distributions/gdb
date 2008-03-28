@@ -75,6 +75,8 @@
 #elif defined (TARGET_I386)
 #include "amd64-tdep.h"
 #include "i386-tdep.h"
+#elif defined (TARGET_ARM)
+#include "arm-tdep.h"
 #else
 #error "Unrecognized target architecture."
 #endif
@@ -201,15 +203,9 @@ static int dyld_info_process_raw (struct macosx_dyld_thread_status *status,
 static void macosx_set_auto_start_dyld (char *args, int from_tty,
                                         struct cmd_list_element *c);
 
-static int target_read_mach_header (CORE_ADDR addr, 
-				    struct mach_header *mh);
-				    
 static int target_read_dylib_command (CORE_ADDR addr, 
 				      struct dylib_command *dcmd);
 				      
-static int target_read_load_command (CORE_ADDR addr, 
-				     struct load_command *load_cmd);
-				     
 static int target_read_segment_command (CORE_ADDR addr, 
 					struct segment_command *segcmd);
 					
@@ -435,6 +431,21 @@ target_read_load_command (CORE_ADDR addr, struct load_command *s)
 }
 
 int 
+target_read_uuid (CORE_ADDR addr, unsigned char *uuid)
+{
+  int error;
+  struct uuid_command s;
+  gdb_assert (addr != INVALID_ADDRESS);
+  error = target_read_memory (addr, (gdb_byte *)&s, sizeof (s));
+  
+  if (error == 0)
+    {
+      memcpy (uuid, s.uuid, 16);
+    }
+  return error;
+}
+
+int 
 target_read_dylib_command (CORE_ADDR addr, struct dylib_command *s)
 {
   int error;
@@ -651,11 +662,12 @@ dyld_starts_here_p (mach_vm_address_t addr)
   else if (mh->magic == MH_MAGIC)
     {
       if (exec_bfd 
-	  && gdbarch_lookup_osabi_from_bfd (exec_bfd) != GDB_OSABI_DARWIN)
+	  && gdbarch_lookup_osabi_from_bfd (exec_bfd) != GDB_OSABI_DARWIN
+	  && gdbarch_lookup_osabi_from_bfd (exec_bfd) != GDB_OSABI_DARWINV6)
 	  {
 	    error ("The exec file is 64 bits but the attach target is 32 bits.\n"
 	      "Quit gdb & restart, using \"--arch\" to select the 32 bit fork of the executable.");
-	      }
+	  }
     }
 
   ret = vm_deallocate (mach_task_self (), data, data_count);
@@ -932,6 +944,11 @@ macosx_dyld_init (macosx_dyld_thread_status *s, bfd *exec_bfd)
   else
     ret = macosx_locate_dyld (&dyld_address, INVALID_ADDRESS);
 
+  if (ret != 1 && target_is_remote ())
+    {
+      ret = macosx_locate_dyld (&dyld_address, 0x2fe00000ull);
+    }
+
   if (ret != 1)
     {
       /* If we have a core file we should get our information from what is
@@ -994,10 +1011,22 @@ macosx_dyld_init (macosx_dyld_thread_status *s, bfd *exec_bfd)
          we need to use this over in the tdep.c file where we don't always
          have access to the macosx_dyld_thread_status or macosx_status
          structures.  */
-      if (header.cputype == CPU_TYPE_POWERPC || header.cputype == CPU_TYPE_I386)
+      if (header.cputype == BFD_MACH_O_CPU_TYPE_POWERPC || 
+	  header.cputype == BFD_MACH_O_CPU_TYPE_I386)
         osabi_seen_in_attached_dyld = GDB_OSABI_DARWIN;
-      else if (header.cputype == CPU_TYPE_POWERPC64 || header.cputype == GDB_CPU_TYPE_X86_64)
+      else if (header.cputype == BFD_MACH_O_CPU_TYPE_POWERPC_64 || 
+	       header.cputype == BFD_MACH_O_CPU_TYPE_X86_64)
         osabi_seen_in_attached_dyld = GDB_OSABI_DARWIN64;
+#if defined (TARGET_ARM)
+      else if (header.cputype ==  BFD_MACH_O_CPU_TYPE_ARM)
+	{
+	  if (header.cpusubtype == BFD_MACH_O_CPU_SUBTYPE_ARM_6)
+	    osabi_seen_in_attached_dyld = GDB_OSABI_DARWINV6;
+	  else
+	    osabi_seen_in_attached_dyld = GDB_OSABI_DARWIN;
+	}
+#endif
+      
     }
 
   /* Once we know the address at which dyld was loaded, we can try to
@@ -1122,8 +1151,14 @@ FETCH_ARGUMENT (int i)
       return read_memory_unsigned_integer (stack + (4 * (i + 1)), 4);
     }
 }
+#elif defined (TARGET_ARM) // NGK XXX hack
+static ULONGEST
+FETCH_ARGUMENT (int i)
+{
+  return read_register (i);
+}
 #else
-#error unknown architecture
+#error "unknown architecture"
 #endif
 
 /* Remove NUM dyld_objfile_entries listed in ENTRIES from DYLD_STATUS.  */
@@ -1394,6 +1429,7 @@ macosx_solib_add (const char *filename, int from_tty,
 	 breakpoints here after we've added all the libraries.  */
 
       breakpoint_update ();
+      objc_clear_caches ();
 
       if (maint_use_timers)
 	do_cleanups (timer_cleanup);
@@ -1742,6 +1778,14 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
   struct dylib_command dcmd;
   bfd *this_bfd = NULL;
   entry->in_shared_cache = 0;
+  struct cleanup *override_trust_readonly;
+  int old_trust_readonly;
+
+  /* Even if the library is loading in the same place as a directly linked
+     shared library that we've read in already, we still want to read the raw
+     information from memory.  */
+  old_trust_readonly = set_trust_readonly (0);
+  override_trust_readonly = make_cleanup (set_trust_readonly, old_trust_readonly);
 
   /* Determine whether the image is in the new "shared cache" region.  */
   if (s->dyld_num_shared_cache_ranges != -1)
@@ -1775,6 +1819,7 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
       warning
         ("Ignored unknown object module at 0x%s with type 0x%x\n",
          paddr_nz (header_addr), header.filetype);
+      do_cleanups (override_trust_readonly);
       return 0;
     }
 
@@ -1795,13 +1840,15 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
         }
     }
 
-  /* Look through the load commands for the image filename.  */
+  /* Look through the load commands for the image filename.  
+     Also read out the UUID if we are going to check it later.  */
 
   if (namebuf == NULL)
     {
       namebuf = xmalloc (256);
+      
       curpos = header_addr + sizeof (struct mach_header);
-
+      
       for (i = 0; i < header.ncmds; i++)
         {
 	  if (target_read_load_command (curpos, &cmd) != 0)
@@ -1817,10 +1864,10 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
           curpos += cmd.cmdsize;
         }
     }
-
+  
   /* realpath the image name -- we can get many different paths to the
      same file handed to us, so try to canonicalize them via realpath.  */
-
+  
   if (namebuf != NULL)
     {
       char buf[PATH_MAX];
@@ -1960,10 +2007,14 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
       struct bfd_section *this_sect;
       struct section_offsets *sect_offsets;
       int cur_section;
-      
-      /* See the comments above about reusing the bfd.  */
-      dyld_load_library (&(s->path_info), entry);
 
+      /* See the comments above about reusing the bfd.  */
+      /* We don't know what the slide is until we read the load commands for
+	 the binary.  Don't pretend we do or it will fool layers below us.  */
+      entry->dyld_slide = INVALID_ADDRESS;
+      dyld_load_library (&(s->path_info), entry);
+      
+      
       /* A bundle that only exists in memory (e.g. was loaded with
          mmap + NSCreateObjectFileImageFromMemory + NSLinkModule)
          may not have an on-disk file that we can find.  We should
@@ -2027,7 +2078,10 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
      "negative slide".
      e.g  0x2f00 + 0xfffffffffffff000 == 0x1f00 in 64-bit unsigned math.  */
 
-  entry->dyld_slide = header_addr - intended_loadaddr;
+  if (intended_loadaddr == INVALID_ADDRESS)
+    entry->dyld_slide = 0;
+  else
+    entry->dyld_slide = header_addr - intended_loadaddr;
   entry->dyld_valid = 1;
 
   switch (header.filetype)
@@ -2063,6 +2117,7 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
                       header.filetype);
     }
 
+  do_cleanups (override_trust_readonly);
   return 1;
 }
 
@@ -2566,7 +2621,7 @@ dyld_objfile_set_load_state (struct objfile *o, int load_state)
   DYLD_ALL_OBJFILE_INFO_ENTRIES (&macosx_dyld_status.current_info, e, i)
     if (e->objfile == o)
       {
-      found_it = e->load_flag;
+	found_it = e->load_flag;
         set_load_state_1 (e, &macosx_dyld_status.path_info, i + 1, load_state);
         break;
       }

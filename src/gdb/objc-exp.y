@@ -107,6 +107,9 @@
 #define	YYDEBUG	0		/* Default to no yydebug support.  */
 #endif
 
+/* APPLE LOCAL - Avoid calling lookup_objc_class unnecessarily.  */
+static int square_bracket_seen = 0;
+
 int
 yyparse PARAMS ((void));
 
@@ -1488,8 +1491,10 @@ yylex ()
 #endif
     case '<':
     case '>':
-    case '[':
-    case ']':
+      /* APPLE LOCAL begin avoid calling lookup_objc_class unnecessarily  */
+      /* case '[':  Moved out below.  */
+      /* case ']':  Moved out below.  */
+      /* APPLE LOCAL end avoid calling lookup_objc_class unnecessarily  */
     case '?':
     case ':':
     case '=':
@@ -1499,6 +1504,18 @@ yylex ()
       lexptr++;
       return tokchr;
 
+    /* APPLE LOCAL begin avoid calling lookup_objc_class unnecessarily  */
+    case '[':
+      square_bracket_seen = 1;
+      lexptr++;
+      return tokchr;
+
+    case ']':
+      square_bracket_seen = 0;
+      lexptr++;
+      return tokchr;
+
+    /* APPLE LOCAL end avoid calling lookup_objc_class unnecessarily  */
     case '@':
       if (strncmp(tokstart, "@selector", 9) == 0)
 	{
@@ -1828,9 +1845,12 @@ yylex ()
       {
         extern struct symbol *lookup_struct_typedef ();
         sym = lookup_struct_typedef (tmp, expression_context_block, 1);
-        if (sym)
+	/* APPLE LOCAL begin avoid calling lookup_objc_class unnecessarily  */
+        if (sym && square_bracket_seen)
           {
 	    CORE_ADDR Class = lookup_objc_class(tmp);
+	    square_bracket_seen = 0;
+	    /* APPLE LOCAL end avoid calling lookup_objc_class unnecessarily  */
 	    if (Class)
 	      {
 	        yylval.class.class = Class;

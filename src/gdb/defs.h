@@ -1043,6 +1043,7 @@ enum gdb_osabi
   /* APPLE LOCAL begin Darwin */
   GDB_OSABI_DARWIN,
   GDB_OSABI_DARWIN64,
+  GDB_OSABI_DARWINV6,
   /* APPLE LOCAL end Darwin */
 
   GDB_OSABI_QNXNTO,

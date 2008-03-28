@@ -62,6 +62,31 @@
 /* APPLE LOCAL: So we can complain.  */
 #include "complaints.h"
 
+/* APPLE LOCAL begin cache lookup values for improved performance  */
+
+asection * cached_mapped_section = NULL;
+asection * cached_overlay_section = NULL;
+struct obj_section * cached_sect_section = NULL;
+struct symtab * cached_symtab = NULL;
+struct partial_symtab * cached_psymtab = NULL;
+struct symtab_and_line * cached_pc_line = NULL;
+struct symbol * cached_pc_function = NULL;
+struct blockvector * cached_blockvector = NULL;
+int cached_blockvector_index = -1;
+struct block * cached_block = NULL;
+
+CORE_ADDR last_block_lookup_pc = INVALID_ADDRESS;
+CORE_ADDR last_blockvector_lookup_pc = INVALID_ADDRESS;
+CORE_ADDR last_function_lookup_pc = INVALID_ADDRESS;
+CORE_ADDR last_pc_line_lookup_pc = INVALID_ADDRESS;
+CORE_ADDR last_psymtab_lookup_pc = INVALID_ADDRESS;
+CORE_ADDR last_symtab_lookup_pc = INVALID_ADDRESS;
+CORE_ADDR last_sect_section_lookup_pc = INVALID_ADDRESS;
+CORE_ADDR last_mapped_section_lookup_pc = INVALID_ADDRESS;
+CORE_ADDR last_overlay_section_lookup_pc = INVALID_ADDRESS;
+
+/* APPLE LOCAL end cache lookup values for improved performance  */
+
 /* Prototypes for local functions */
 
 static void completion_list_add_name (char *, char *, int, char *, char *);
@@ -1040,7 +1065,14 @@ init_sal (struct symtab_and_line *sal)
   /* APPLE LOCAL end subroutine inlinine  */
 }
 
+/* APPLE LOCAL begin addr_ctx.  */
+void
+init_address_context (struct address_context *addr_ctx)
+{
+  memset(addr_ctx, 0, sizeof(struct address_context));
+}
 
+/* APPLE LOCAL end addr_ctx.  */
 
 /* Find which partial symtab contains PC and SECTION.  Return 0 if
    none.  We return the psymtab that contains a symbol whose address
@@ -1053,6 +1085,16 @@ find_pc_sect_psymtab (CORE_ADDR pc, asection *section)
   struct objfile *objfile;
   struct minimal_symbol *msymbol;
 
+  /* APPLE LOCAL begin cache lookup values for improved performance  */
+  if (pc == last_psymtab_lookup_pc
+      && pc == last_mapped_section_lookup_pc
+      && section == cached_mapped_section
+      && cached_psymtab)
+    return cached_psymtab;
+
+  last_psymtab_lookup_pc = pc;
+  /* APPLE LOCAL end cache lookup values for improved performance  */
+
   /* If we know that this is not a text address, return failure.  This is
      necessary because we loop based on texthigh and textlow, which do
      not include the data ranges.  */
@@ -1063,7 +1105,12 @@ find_pc_sect_psymtab (CORE_ADDR pc, asection *section)
 	  || msymbol->type == mst_abs
 	  || msymbol->type == mst_file_data
 	  || msymbol->type == mst_file_bss))
-    return NULL;
+    /* APPLE LOCAL begin cache lookup values for improved performance  */
+    {
+      cached_psymtab = NULL;
+      return NULL;
+    }
+    /* APPLE LOCAL end cache lookup values for improved performance  */
 
   /* APPLE LOCAL: Change to ALL_OBJFILES from ALL_PSYMTABS so that
      we can hoist the psymtab-invariant sections check out.  */
@@ -1089,10 +1136,24 @@ find_pc_sect_psymtab (CORE_ADDR pc, asection *section)
 	       function containing the PC.  */
 	    if (!(objfile->flags & OBJF_REORDERED) &&
 		section == 0)	/* can't validate section this way */
-	      return (pst);
+	      /* APPLE LOCAL begin cache lookup values for improved 
+		 performance  */
+	      {
+		cached_psymtab = pst;
+		return (pst);
+	      }
+	      /* APPLE LOCAL end cache lookup values for improved 
+		 performance  */
 	    
 	    if (msymbol == NULL)
-	      return (pst);
+	      /* APPLE LOCAL begin cache lookup values for improved 
+		 performance  */
+	      {
+		cached_psymtab = pst;
+		return (pst);
+	      }
+	      /* APPLE LOCAL end cache lookup values for improved 
+		 performance  */
 	    
 	    /* The code range of partial symtabs sometimes overlap, so, in
 	       the loop below, we need to check all partial symtabs and
@@ -1111,7 +1172,14 @@ find_pc_sect_psymtab (CORE_ADDR pc, asection *section)
 		    if (p != NULL
 			&& SYMBOL_VALUE_ADDRESS (p)
 			== SYMBOL_VALUE_ADDRESS (msymbol))
-		      return (tpst);
+		      /* APPLE LOCAL begin cache lookup values for improved 
+			 performance  */
+		      {
+			cached_psymtab = tpst;
+			return (tpst);
+		      }
+		    /* APPLE LOCAL end cache lookup values for improved 
+		       performance  */
 		    if (p != NULL)
 		      {
 			/* We found a symbol in this partial symtab which
@@ -1137,10 +1205,14 @@ find_pc_sect_psymtab (CORE_ADDR pc, asection *section)
 		      }
 		  }
 	      }
+	    /* APPLE LOCAL cache lookup values for improved performance  */
+	    cached_psymtab = best_pst;
 	    return (best_pst);
 	  }
       }
   }
+  /* APPLE LOCAL cache lookup values for improved performance  */
+  cached_psymtab = NULL;
   return (NULL);
 }
 
@@ -2695,6 +2767,16 @@ find_pc_sect_symtab (CORE_ADDR pc, asection *section)
   CORE_ADDR distance = 0;
   struct minimal_symbol *msymbol;
 
+  /* APPLE LOCAL begin cache lookup values for improved performance  */
+  if (pc == last_symtab_lookup_pc
+      && pc == last_mapped_section_lookup_pc
+      && cached_mapped_section == section
+      && cached_symtab)
+    return cached_symtab;
+
+  last_symtab_lookup_pc = pc;
+  /* APPLE LOCAL end cache lookup values for improved performance  */
+
   /* If we know that this is not a text address, return failure.  This is
      necessary because we loop based on the block's high and low code
      addresses, which do not include the data ranges, and because
@@ -2707,7 +2789,12 @@ find_pc_sect_symtab (CORE_ADDR pc, asection *section)
 	  || msymbol->type == mst_abs
 	  || msymbol->type == mst_file_data
 	  || msymbol->type == mst_file_bss))
-    return NULL;
+    /* APPLE LOCAL begin cache lookup values for improved performance  */
+    {
+      cached_symtab = NULL;
+      return NULL;
+    }
+    /* APPLE LOCAL end cache lookup values for improved performance  */
 
   /* Search all symtabs for the one whose file contains our address, and which
      is the smallest of all the ones containing the address.  This is designed
@@ -2753,7 +2840,14 @@ find_pc_sect_symtab (CORE_ADDR pc, asection *section)
 	  {
 	    ps = find_pc_sect_psymtab (pc, section);
 	    if (ps)
-	      return PSYMTAB_TO_SYMTAB (ps);
+	      /* APPLE LOCAL begin cache lookup values for improved 
+		 performance  */
+	      {
+		cached_symtab = PSYMTAB_TO_SYMTAB (ps);
+		return PSYMTAB_TO_SYMTAB (ps);
+	      }
+	      /* APPLE LOCAL end cache lookup values for improved 
+		 performance  */
 	  }
 	if (section != 0)
 	  {
@@ -2777,7 +2871,12 @@ find_pc_sect_symtab (CORE_ADDR pc, asection *section)
   }
 
   if (best_s != NULL)
-    return (best_s);
+    /* APPLE LOCAL begin cache lookup values for improved performance  */
+    {
+      cached_symtab = best_s;
+      return (best_s);
+    }
+    /* APPLE LOCAL end cache lookup values for improved performance  */
 
   s = NULL;
   ps = find_pc_sect_psymtab (pc, section);
@@ -2801,6 +2900,8 @@ find_pc_sect_symtab (CORE_ADDR pc, asection *section)
 		 paddr_nz (pc));
       s = PSYMTAB_TO_SYMTAB (ps);
     }
+  /* APPLE LOCAL cache lookup values for improved performance  */
+  cached_symtab = s;
   return (s);
 }
 
@@ -2813,6 +2914,64 @@ find_pc_symtab (CORE_ADDR pc)
   return find_pc_sect_symtab (pc, find_pc_mapped_section (pc));
 }
 
+/* APPLE LOCAL begin cache lookup values for improved performance  */
+struct symtab_and_line *
+copy_sal (struct symtab_and_line *orig)
+{
+  struct symtab_and_line *copy;
+  struct symtab_and_line *copy_eol;
+  struct symtab_and_line *current;
+  struct symtab_and_line *tmp;
+
+  if (orig == NULL)
+    return NULL;
+
+  /* Copy the main sal entry.  */
+
+  copy = (struct symtab_and_line *) xmalloc (sizeof (struct symtab_and_line));
+  
+  copy->symtab = orig->symtab;
+  copy->section = orig->section;
+  copy->line = orig->line;
+  copy->pc = orig->pc;
+  copy->end = orig->end;
+  copy->entry_type = orig->entry_type;
+  copy->next = NULL;
+
+  /* copy_eol points to the current end of the copy's linked list.  */
+
+  copy_eol = copy;
+
+  /* If the sal has a linked list of sals, through its 'next' field,
+     copy the linked list as well.  */
+
+  for (current = orig->next; current; current = current->next)
+    {
+      /* Create the next copy to go into the linked list.  */
+
+      tmp = (struct symtab_and_line *) xmalloc (sizeof 
+						  (struct symtab_and_line));
+      tmp->symtab = current->symtab;
+      tmp->section = current->section;
+      tmp->line = current->line;
+      tmp->pc = current->pc;
+      tmp->end = current->end;
+      tmp->entry_type = current->entry_type;
+      tmp->next = NULL;
+
+      /* Make the 'next' field of the current end of the linked list
+	 point to the new node.  */
+
+      copy_eol->next = tmp;
+
+      /* Move the end-of-list pointer to point to the new end of the list.  */
+      copy_eol = tmp;
+    }
+
+  return copy;
+}
+
+/* APPLE LOCAL end cache lookup values for improved performance  */
 
 /* Find the source file and line number for a given PC value and SECTION.
    Return a structure containing a symtab pointer, a line number,
@@ -2865,6 +3024,16 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
   /* Info on best line seen in this file.  */
 
   struct linetable_entry *prev;
+
+  /* APPLE LOCAL begin cache lookup values for improved performance  */
+  if (pc == last_pc_line_lookup_pc
+      && pc == last_overlay_section_lookup_pc
+      && section == cached_overlay_section
+      && cached_pc_line)
+    return (*cached_pc_line);
+
+  last_pc_line_lookup_pc = pc;
+  /* APPLE LOCAL end cache lookup values for improved performance  */
 
   /* If this pc is not from the current frame,
      it is the address of the end of a call instruction.
@@ -2952,7 +3121,14 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
 	  /* warning ("In stub for %s; unable to find real function/line info", SYMBOL_LINKAGE_NAME (msymbol)) */ ;
 	/* fall through */
 	else
-	  return find_pc_line (SYMBOL_VALUE (mfunsym), 0);
+	  /* APPLE LOCAL end cache lookup values for improved performance  */
+	  {
+	    struct symtab_and_line sal = find_pc_line (SYMBOL_VALUE (mfunsym), 
+						       0);
+	    cached_pc_line = copy_sal (&sal);
+	    return find_pc_line (SYMBOL_VALUE (mfunsym), 0);
+	  }
+	  /* APPLE LOCAL end cache lookup values for improved performance  */
       }
 
 
@@ -2966,6 +3142,8 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
       /* APPLE LOCAL convert from character position to
 	 line number if necessary.  */
       convert_sal (&val);
+      /* APPLE LOCAL cache lookup values for improved performance  */
+      cached_pc_line = copy_sal (&val);
       return val;
     }
 
@@ -3227,6 +3405,8 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
   if (!inlined_entries_found)
     {
       gdb_assert (val.entry_type == NORMAL_LT_ENTRY);
+      /* APPLE LOCAL cache lookup values for improved performance  */
+      cached_pc_line = copy_sal (&val);
       return val;
     }
   else    
@@ -3335,7 +3515,9 @@ find_pc_sect_line (CORE_ADDR pc, struct bfd_section *section, int notcurrent)
  
       if (final_val.symtab == NULL)
 	warning ("Returning an unfilled final_val");
-      return final_val;
+      /* APPLE LOCAL cache lookup values for improved performance  */
+      cached_pc_line = copy_sal (&final_val);
+     return final_val;
     }
   /* APPLE LOCAL end subroutine inlining  */
 }
@@ -3619,6 +3801,78 @@ find_pc_line_pc_range (CORE_ADDR pc, CORE_ADDR *startptr, CORE_ADDR *endptr)
 struct symtab_and_line
 find_function_start_sal (struct symbol *sym, int funfirstline)
 {
+  /* APPLE LOCAL begin address context.  */
+  struct address_context pc;
+  init_address_context (&pc);
+  pc.symbol = sym;
+  /* APPLE LOCAL end address context.  */
+  
+  /* If the block structure is a little bit mangled, we can end up
+     with function sym's with a NULL block.  Don't crash.  */
+  pc.block = SYMBOL_BLOCK_VALUE (sym);
+  if (pc.block == NULL)
+    error ("Found function with NULL block: \"%s\"", SYMBOL_PRINT_NAME (sym));
+  /* APPLE LOCAL begin address ranges  */
+  pc.address = BLOCK_LOWEST_PC (pc.block);
+  /* APPLE LOCAL end address ranges  */
+  /* END APPLE LOCAL */
+  fixup_symbol_section (sym, NULL);
+  if (funfirstline)
+    {				
+      /* skip "first line" of function (which is actually its prologue) */
+      pc.bfd_section = SYMBOL_BFD_SECTION (sym);
+      /* If function is in an unmapped overlay, use its unmapped LMA
+         address, so that SKIP_PROLOGUE has something unique to work on */
+      if (section_is_overlay (pc.bfd_section) &&
+	  !section_is_mapped (pc.bfd_section))
+	pc.address = overlay_unmapped_address (pc.address, 
+					       pc.bfd_section);
+
+      pc.address += DEPRECATED_FUNCTION_START_OFFSET;
+      /* APPLE LOCAL begin address context.  */
+      /* Check if the current architecture supports the address context 
+         version of prologue skipping.  */
+      if (SKIP_PROLOGUE_ADDR_CTX_P())
+	pc.address = SKIP_PROLOGUE_ADDR_CTX (&pc);
+      else
+	pc.address = SKIP_PROLOGUE (pc.address);
+      /* APPLE LOCAL end address context.  */
+
+      /* For overlays, map pc back into its mapped VMA range */
+      pc.address = overlay_mapped_address (pc.address, 
+					   pc.bfd_section);
+    }
+  pc.sal = find_pc_sect_line (pc.address, 
+			      SYMBOL_BFD_SECTION (sym), 0);
+
+  /* Check if SKIP_PROLOGUE left us in mid-line, and the next
+     line is still part of the same function.  */
+  /* APPLE LOCAL begin address ranges  */
+  if (pc.sal.pc != pc.address
+      && block_contains_pc (SYMBOL_BLOCK_VALUE (pc.symbol), 
+			    pc.sal.end))
+  /* APPLE LOCAL end address ranges  */
+    {
+      /* First pc of next line */
+      pc.address = pc.sal.end;
+      /* Recalculate the line number (might not be N+1).  */
+      pc.sal = find_pc_sect_line (pc.address, 
+				  SYMBOL_BFD_SECTION (pc.symbol), 
+				  0);
+    }
+  pc.sal.pc = pc.address;
+
+  return pc.sal;
+}
+#if defined (USE_OLD_FIND_FUNCTION_START_SAL)
+/* Given a function symbol SYM, find the symtab and line for the start
+   of the function.
+   If the argument FUNFIRSTLINE is nonzero, we want the first line
+   of real code inside the function.  */
+
+struct symtab_and_line
+find_function_start_sal (struct symbol *sym, int funfirstline)
+{
   CORE_ADDR pc;
   struct symtab_and_line sal;
   /* APPLE LOCAL */
@@ -3667,7 +3921,7 @@ find_function_start_sal (struct symbol *sym, int funfirstline)
 
   return sal;
 }
-
+#endif
 /* If P is of the form "operator[ \t]+..." where `...' is
    some legitimate operator text, return a pointer to the
    beginning of the substring of the operator text.
@@ -5607,5 +5861,37 @@ update_inlined_function_line_table_entry (CORE_ADDR start_pc,
 
   gdb_assert (done == 1);
 }
-
 /* APPLE LOCAL end address ranges  */
+
+
+/* APPLE LOCAL begin cache lookup values for improved performance  */
+
+/* Something in the objfiles has changed, so we need to throw away all
+   our cached lookup values and start again, to make sure we aren't
+   caching and returning stale data.  */
+
+void
+symtab_clear_cached_lookup_values (void)
+{
+  cached_mapped_section = NULL;
+  cached_overlay_section = NULL;
+  cached_sect_section = NULL;
+  cached_symtab = NULL;
+  cached_psymtab = NULL;
+  cached_pc_line = NULL;
+  cached_pc_function = NULL;
+  cached_blockvector = NULL;
+  cached_blockvector_index = -1;
+  cached_block = NULL;
+  
+  last_block_lookup_pc = INVALID_ADDRESS;
+  last_blockvector_lookup_pc = INVALID_ADDRESS;
+  last_function_lookup_pc = INVALID_ADDRESS;
+  last_pc_line_lookup_pc = INVALID_ADDRESS;
+  last_psymtab_lookup_pc = INVALID_ADDRESS;
+  last_symtab_lookup_pc = INVALID_ADDRESS;
+  last_sect_section_lookup_pc = INVALID_ADDRESS;
+  last_mapped_section_lookup_pc = INVALID_ADDRESS;
+  last_overlay_section_lookup_pc = INVALID_ADDRESS;
+}
+/* APPLE LOCAL end cache lookup values for improved performance  */

@@ -2071,9 +2071,7 @@ fi
 
   { echo "$as_me:$LINENO: result: $USE_MAINTAINER_MODE" >&5
 echo "${ECHO_T}$USE_MAINTAINER_MODE" >&6; }
-
-
-if test $USE_MAINTAINER_MODE = yes; then
+   if test $USE_MAINTAINER_MODE = yes; then
   MAINTAINER_MODE_TRUE=
   MAINTAINER_MODE_FALSE='#'
 else
@@ -3802,10 +3800,19 @@ esac
 
 
 case "$host" in
+  arm-apple-*)
+    # No 64 bit exceptions for Apple ARM
+    { echo "$as_me:$LINENO: checking whether we can use 64 bit mach exceptions" >&5
+echo $ECHO_N "checking whether we can use 64 bit mach exceptions... $ECHO_C" >&6; }
+    MACH_EXC_SERVER_PREFACE=
+    { echo "$as_me:$LINENO: result: (disabled!) no" >&5
+echo "${ECHO_T}(disabled!) no" >&6; }
+
+    ;;
   *-apple-darwin* | *-apple-maocsx*)
     { echo "$as_me:$LINENO: checking whether we can use 64 bit mach exceptions" >&5
 echo $ECHO_N "checking whether we can use 64 bit mach exceptions... $ECHO_C" >&6; }
-    if test -r "/usr/include/mach/mach_exc.defs"; then
+    if test -r "$SDKROOT/usr/include/mach/mach_exc.defs"; then
 
 cat >>confdefs.h <<\_ACEOF
 #define HAVE_64_BIT_MACH_EXCEPTIONS 1
@@ -3824,6 +3831,10 @@ echo "${ECHO_T}no" >&6; }
 esac
 
 case "$host" in
+  arm-apple-*)
+    # We need to turn off arch for exec for now as it doesn't support launching
+    # a specified architecture in a universal mach file.
+    ;;
   *-apple-darwin* | *-apple-macosx*)
     { echo "$as_me:$LINENO: checking whether posix_spawn supports SETEXEC" >&5
 echo $ECHO_N "checking whether posix_spawn supports SETEXEC... $ECHO_C" >&6; }
@@ -8489,7 +8500,7 @@ ia64-*-hpux*)
   ;;
 *-*-irix6*)
   # Find out which ABI we are using.
-  echo '#line 8492 "configure"' > conftest.$ac_ext
+  echo '#line 8503 "configure"' > conftest.$ac_ext
   if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -10633,11 +10644,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10636: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10647: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:10640: \$? = $ac_status" >&5
+   echo "$as_me:10651: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -10901,11 +10912,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10904: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10915: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:10908: \$? = $ac_status" >&5
+   echo "$as_me:10919: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -11005,11 +11016,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:11008: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:11019: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:11012: \$? = $ac_status" >&5
+   echo "$as_me:11023: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -13313,7 +13324,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 13316 "configure"
+#line 13327 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -13413,7 +13424,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 13416 "configure"
+#line 13427 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -15749,11 +15760,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:15752: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:15763: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:15756: \$? = $ac_status" >&5
+   echo "$as_me:15767: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -15853,11 +15864,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:15856: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:15867: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:15860: \$? = $ac_status" >&5
+   echo "$as_me:15871: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -17423,11 +17434,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:17426: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:17437: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:17430: \$? = $ac_status" >&5
+   echo "$as_me:17441: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -17527,11 +17538,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:17530: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:17541: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:17534: \$? = $ac_status" >&5
+   echo "$as_me:17545: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -19725,11 +19736,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:19728: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:19739: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:19732: \$? = $ac_status" >&5
+   echo "$as_me:19743: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -19993,11 +20004,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:19996: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:20007: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:20000: \$? = $ac_status" >&5
+   echo "$as_me:20011: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -20097,11 +20108,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:20100: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:20111: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:20104: \$? = $ac_status" >&5
+   echo "$as_me:20115: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -33078,7 +33089,7 @@ fi
     { echo "$as_me:$LINENO: checking for Carbon framework" >&5
 echo $ECHO_N "checking for Carbon framework... $ECHO_C" >&6; }
     if test x"$enable_carbon_framework" = xyes; then
-      if test -d /System/Library/Frameworks/Carbon.framework
+      if test -d "$SDKROOT/System/Library/Frameworks/Carbon.framework"
       then
 
 cat >>confdefs.h <<\_ACEOF
@@ -33102,6 +33113,9 @@ esac
 
 
 case "$host" in
+  arm-apple-*)
+  # We won't be using DebugSymbols.framework to locate dSYM files for ARM yet.
+  ;;
   *-apple-darwin* | *-apple-macos*)
     # Check whether --enable-debug-symbols-framework was given.
 if test "${enable_debug_symbols_framework+set}" = set; then
@@ -33121,7 +33135,7 @@ fi
     { echo "$as_me:$LINENO: checking for DebugSymbols framework" >&5
 echo $ECHO_N "checking for DebugSymbols framework... $ECHO_C" >&6; }
     if test x"$enable_debug_symbols_framework" = xyes; then
-      if test -d /System/Library/PrivateFrameworks/DebugSymbols.framework
+      if test -d "$SDKROOT/System/Library/PrivateFrameworks/DebugSymbols.framework"
       then
 
 cat >>confdefs.h <<\_ACEOF

@@ -1,3 +1,31 @@
+2008-02-21  Jim Ingham  <jingham@apple.com>
+
+       * mi-interp.c (mi_cmd_interpreter_exec): set
+       mi_interp_exec_cmd_did_run to 0 before executing the command.
+       (mi_insert_notify_hooks): Use the sync stepping notify
+       hooks if the target is synchronous.
+       (mi_remove_notify_hooks): Turn off the annotation printer.
+       * mi-main.c (captured_mi_execute_command): Another place
+       where we initialize mi_interp_exec_cmd_did_run.
+       Also, if after running the command we notice that the target
+       did run, then print out the prompt & *stopped so we duplicate
+       the async result.
+       (route_output_through_mi): Const-ify input strings.
+       (route_output_to_mi_result): New function.
+       (mi_interp_fake_sync_running): New function.
+       (mi_interp_sync_stepping_command_hook): New function. 
+       (mi_interp_sync_continue_command_hook): New function.
+       * mi-main.h: Declare the latter two hooks.
+
+2008-02-08  Jason Molenda  (jmolenda@apple.com)
+
+       * mi-main.c (do_timings): Enable mi-timings by default.
+
+2008-01-18  Greg Clayton  <gclayton@apple.com>
+
+        * mi-cmd-stack.c (mi_print_frame_info_lite_base): Return wether file
+        has debug info in it in the mi response.
+
 2008-01-30  Jason Molenda  (jmolenda@apple.com)
 
         * mi-main.c (start_remote_counts): Take an additional argument, the

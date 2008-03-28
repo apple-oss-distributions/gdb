@@ -1,3 +1,677 @@
+2008-03-27  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.c (free_objfile_internal): Free the cached sections
+	data structures.
+	* symtab.c: Use INVALID_ADDRESS to indicate uninitialized values
+	instead of 0.
+	(symtab_clear_cached_lookup_values): Ditto.
+
+2003-03-27  Caroline Tice  <ctice@apple.com>
+
+	* c-exp.y (square_bracket_seen): New global variable.
+	(yylex):  Make special cases for '[' and ']', to update 
+	square_bracket_seen; only call lookup_objc_class if square_bracket_seen
+	is true; then set it to false.
+	* objc-exp.y (square_bracket_seen): New global variable.
+	(yylex):  Make special cases for '[' and ']', to update 
+	square_bracket_seen; only call lookup_objc_class if square_bracket_seen
+	is true; then set it to false.
+	* varobj.c (path_expr_of_root):  New function.
+	(name_of_variable):  Call path_expr_of_root to get the path expression
+	for root variables, instead of just returning its name.
+
+2003-03-26  Jim Ingham  <jingham@apple.com>
+
+	* symfile.c (add_kext_command): Use printable_name not
+	arch_name for the warning.
+	
+2008-03-24  Jason Molenda  (jmolenda@apple.com)
+
+	Original patch by Gaius Mulley <gaius@glam.ac.uk>, edited down
+	to just the DW_TAG_set_type support by Jonas Maebe.
+
+	* dwarf2read.c (read_set_type): Record a DW_TAG_set_type die.
+	(process_die): Call it.
+	(new_symbol): Recognize the tag.
+	(read_type_die): Call it.
+
+2003-03-21  Jim Ingham  <jingham@apple.com>
+
+	* fork-child.c (fork_inferior): Switch to using posix_spawn/
+	execve for both the shell & non-shell case.  That way we can
+	ensure that even if the shell is Universal we'll run the same
+	fork of the shell as of the executable.
+	
+2008-03-18  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (watch_command_1): If the value for the watch
+	expression's type is TYPE_CODE_ERROR, discard the watchpoint.
+	
+2008-03-17  Jim Ingham  <jingham@apple.com>
+
+	* remote.c (remote_create_inferior): Use the QEnvironment packet
+	to send down the environment to the target.  Also, changed the remote
+	args code to share a buffer & cleanup with the environment code.
+	
+2008-03-12  Jason Molenda  (jmolenda@apple.com)
+
+	* objc-lang.c (find_implementation_from_class): Compare the cstring 
+	names of the classes instead of the class pointers themselves.
+	(new_objc_runtime_find_impl): Remove accidental duplicated code.
+
+2008-03-12  Caroline Tice  <ctice@apple.com>
+
+	* symfile.c (append_psymbols_as_msymbols):  Check the return value from
+	lookup_minimal_symbol_by_pc_section_from_objfile to make sure it's
+	really the same symbol before skipping over it.
+
+2008-03-10  Caroline Tice  <ctice@apple.com>
+
+	* block.c (inferior.h): New include file.
+	(blockvector_for_pc_sect):  Check to see if parameters are the same
+	as the last time this function was called; if so return 
+	cached values; otherwise find the
+	appropriate values, and re-set the cached parameters and return values.
+	(block_for_pc_sect): Likewise.
+	* blockframe.c (find_pc_sect_function): Likewise.
+	* corefile.c (reopen_exec_file): Add call to 
+	symtab_clear_cached_lookup_values.
+	* objfiles.c (find_pc_sect_section): Check to see if parameters are the
+	same as the last time this function was calle; if so return cached
+	value; otherwise find the appropriate value, and re-set the cached
+	parameters and return value.
+	* symfile.s (replace_psymbols with correct_psymbols):  Add call to
+	symtab_clear_cached_lookup_values.
+	(symbol_file_clear): Likewise.
+	(reread_symbols): Likewise.
+	(remove_symbol_file_command): Likewise.
+	(find_pc_overlay): Check to see if parameters are the
+	same as the last time this function was calle; if so return cached
+	value; otherwise find the appropriate value, and re-set the cached
+	parameters and return value.
+	(find_pc_mapped_section):  Likewise.
+	* symtab.c (cached_mapped_section, cached_overlay_section,
+	cached_sect_section, cached_symtab, cached_psymtab, cached_pc_line,
+	cached_pc_function, cached_blockvector, cached_blockvector_index,
+	cached_block, last_block_lookup_pc, last_blockvector_lookup_pc,
+	last_function_lookup_pc, last_pc_line_lookup_pc, 
+	last_psymtab_lookup_pc, last_symtab_lookup_pc, 
+	last_sect_section_lookup_pc, last_mapped_section_lookup_pc, 
+	last_overlay_section_lookup_pc):  New global variables.
+	(find_pc_sect_psymtab): Check to see if parameters are the
+	same as the last time this function was calle; if so return cached
+	value; otherwise find the appropriate value, and re-set the cached
+	parameters and return value.
+	(find_pc_sect_symtab): Likewise.
+	(find_pc_sect_line): Likewise.
+	(copy_sal):  New function.
+	(symtab_clear_cached_lookup_values): New function.
+	* symtab.h (cached_mapped_section, cached_overlay_section,
+	cached_sect_section, cached_symtab, cached_psymtab, cached_pc_line,
+	cached_pc_function, cached_blockvector, cached_blockvector_index,
+	cached_block, last_block_lookup_pc, last_blockvector_lookup_pc,
+	last_function_lookup_pc, last_pc_line_lookup_pc, 
+	last_psymtab_lookup_pc, last_symtab_lookup_pc, 
+	last_sect_section_lookup_pc, last_mapped_section_lookup_pc, 
+	last_overlay_section_lookup_pc):  New extern global variable 
+	declarations.
+	(symtab_clear_cached_lookup_values): New extern function declaration.
+
+2008-03-06  Jim Ingham  <jingham@apple.com>
+
+	*infrun.c (handle_inferior_event): Catch possible errors
+	unwinding to the caller frame.
+	
+	* printcmd.c (address_info): Don't crash if there's no
+	currently selected block.
+	
+2008-03-05  Jason Molenda  (jmolenda@apple.com)
+
+	Patch from George Helffrich.
+	* dwarf2read.c (read_common_block): Record the current die's linkage name
+	while children die processing.
+	(decode_locdesc): If parent die's linkage name was set, use it.
+
+2008-03-05  Jason Molenda  (jmolenda@apple.com)
+
+	* remote.c (PROTOCOL_LOG_COUNT): Double to 400 packets.
+	(add_pkt_to_protocol_log): Record empty replies from the remote stub.
+
+2008-03-05  Jason Molenda  (jmolenda@apple.com)
+
+	* configure.ac: Look for DebugSymbols framework in $SDKROOT.
+	* configure: Regenerated.
+
+2008-03-04  Greg Clayton  <gclayton@apple.com>
+
+	* thread.c (info_threads_command): Use ui_out functions
+	when outputting text so things stay in sync when using MI.
+
+2008-02-26  Jim Ingham  <jingham@apple.com>
+
+	* ui-out.c (ui_out_print_annotation_int): Remove errant
+	conditionalization of the char* formatting of the int.
+
+2008-02-25  Jim Ingham  <jingham@apple.com>
+
+	* arm-tdep.c (arm_macosx_in_switch_glue): New function to 
+	detect if we're in a gcc-generated function to handle a
+	switch statement's jump table.  
+	* infrun.c (struct execution_control_state): State whether
+	we're in a thumb switch statement gcc-generated function.
+	(init_execution_control_state): Init it.
+	(handle_inferior_event): If we're in a gcc-generated function
+	to handle a switch table, stepi over the instructions until 
+	we're back in the body of the real function we were stepping
+	in.
+	* config/arm/tm-arm-macosx.h (IN_SWITCH_GLUE): Define to
+	arm_macosx_in_switch_glue.
+
+2008-02-21  Jim Ingham  <jingham@apple.com>
+
+	* ui-out.c (ui_out_set_annotation_printer): New function.
+	(ui_out_print_annotation_string): New function.
+	(ui_out_print_annotation_int): New function.
+	* ui-out.h: Declare the above.
+	* breakpoint.c (print_it_typical): Route some useful bits of
+	stop information through the annotation printer.
+	(watchpoint_check): Ditto.
+	(print_exception_catchpoint): Ditto.
+	* infrun.c (print_stop_reason): Ditto.
+	(handle_inferior_event): Ditto.
+	* infcmd.c (step_1): Call the stepping_command_hook in the
+	synchronous target case.
+	
+2008-02-20  Jason Molenda  (jmolenda@apple.com)
+
+	* arm-tdep.c (arm_dwarf2_reg_to_regnum): New function to map
+	DWARF register numbers to gdb internal register numbers.
+	(arm_gdbarch_init): Add it to the gdbarch.
+	* arm-tdep.h (enum gdb_regnum): Clarify what the different register
+	names indicate.
+
+2008-02-20  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (new_objc_runtime_get_classname): Don't goto out
+	of a TRY_CATCH block...
+	
+	* cli/cli-interp.c (cli_quoted_interpreter_resume): Route the
+	stdtarg through an mi-like output as well.
+	
+2008-02-19  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (new_objc_runtime_class_getClass): New function.
+	(new_objc_runtime_find_impl): Use the above.
+	(free_rb_tree): Make more generic by taking a "free_data" function.
+	(objc_clear_caches): New function, clear both rb_tree caches.
+	(new_objc_runtime_get_classname): New function.
+	(lookup_classname_in_cache, add_classname_to_cache): Ditto.
+	(objc_target_type_from_object): Change to look in cache, and
+	to call new_objc_runtime_get_classname for Objc 2.0.
+
+	(new_objc_runtime_find_impl): Run gdbarch_addr_bits_remove on
+	the address we get back from the runtime.
+	
+	* objc-lang.h: Declare objc_clear_caches
+	* target.c (generic_mourn_inferior): Call objc_clear_caches.
+
+	* breakpoint.c (bpstat_stop_status): Don't call remove_breakpoints
+	if we aren't going to stop.  That's an anachronism.
+	* config/arm/tm-arm-macosx.h: Declare arm_throw_catch_find_typeinfo
+	and the THROW_CATCH_FIND_TYPEINFO macro.
+	
+2008-02-15  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (breakpoint_re_set_one): Don't raise the load level
+	if we are evaluating catch or throw breakpoints, since raising the
+	load level will delete the breakpoint we're evaluating.
+	* remote.c (init_remote_ops): add the MacOSX exception handling if 
+	we're on MacOS X.
+
+	* memattr.c (mem_{enable,disable}_caching): New functions.  Also
+	use -1 for cache to mean "temporarily disabled".
+	(mem_info_command): Change for new meaning of chache.
+	* memattr.h: Declare the above.
+	* dcache.c (dcache_write_line, dcache_read_line): Test for == 1, 
+	not non-zero to mean cache on.
+	* target.c (mem_xfer_partial): Ditto.
+	(target_read): Don't return 0 if you've been able to
+	read some, but not all, the requested bytes.  Return the number
+	you've read.
+	* dbxread.c (fill_symbuf): Temporarily disable caching while filling
+	the symbuf.
+	(stabsect_build_psymtabs): Ditto.
+	
+2008-02-14  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (lookup_implementation_in_cache,
+	add_implementation_to_cache, objc_clear_selector_to_implementation_cache,
+	free_rb_tree_data): New functions.
+	(new_objc_runtime_find_impl): Add then new implementation to cache.
+	(find_implementation_from_class): Look in cache first.  And add a
+	new one if found.
+	(find_implementation): Ditto.
+	(resolve_newruntime_objc_msgsendsuper): Ditto.
+	* objc-lang.h: Declare objc_clear_selector_to_implementation_cache.
+	* target.c (generic_mourn_inferior): Clear the cache.
+	
+	* symfile.c (append_psymbols_as_msymbols): Don't add a minsym if
+	it already exists in the original objfile.
+	
+2008-02-09  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (new_objc_runtime_find_impl): Check for
+	and call the new gdb_class_getClass.
+	
+2008-02-08  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (new_objc_runtime_find_impl): Set unwind_on_signal
+	off while calling the function in the runtime.
+	(find_implementation_from_class): Do more work to validate
+	the input class before looking for the method.
+
+2008-02-06  Jim Ingham  <jingham@apple.com>
+
+	* valops.c (check_safe_call): Set stack_depth in the args.
+	
+2008-02-05  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.h: Add OBJF_SYM_DONT_CHANGE and the masks
+	OBJF_SYM_LEVELS_MASK and OBJF_SYM_FLAGS_MASK.
+	* dbxread.c (dbx_symfile_read): mutatis mutandi for above.
+	* fix-and-continue.c (raise_objfile_load_level): Ditto.
+	* infrun.c (handle_inferior_event): Ditto.
+	* symfile.c (syms_from_objfile, reread_symbols): Ditto.
+	* objfiles.c (objfile_set_load_state): Enforce 
+	OBJF_SYM_DONT_CHANGE>
+	
+2008-02-01  Jim Ingham  <jingham@apple.com>
+
+	* target.h: Declare set_trust_readonly.
+	* mem-break.c: Remove extern of set_trust_readonly.
+	
+2008-01-24  Jim Ingham  <jingham@apple.com>
+
+	* memattr.h: MEM_NONE - new def'n.
+	* memattr.c (mem_command): Translate "none" to "MEM_NONE".
+	(mem_info): Print MEM_NONE as "none".
+	(_initialize_mem): Fix doc string to add "none" mode.
+	* target.c (memory_xfer_partial): Return an error if we are
+	in a MEM_NONE memory region.
+	
+2008-01-23  Greg Clayton  <gclayton@apple.com>
+
+	* arm-tdep.c (get_non_inlined_frame): New function.
+	(arm_macosx_scan_prologue): Make the FP the default framereg when
+	the current frame index isn't frame zero, or when our previous frame
+	is not a sigtramp.
+
+2008-01-21  Jim Ingham  <jingham@apple.com>
+
+	Pulling remote mobile onto the deep branch.
+	* serial.c (serial_open): Recognize the filedesc serial
+	type.
+	* config/powerpc/macosx.mt: Add remote-mobile.o.
+	* config/i386/macosx.mt: Add remote-mobile.o.
+	* config/arm/macosx.mt: Ditto.
+
+2008-01-18  Greg Clayton  <gclayton@apple.com>
+
+	* arm-tdep.c (arm_macosx_sigtramp_frame_cache): Pulled some enum
+	definitions out for use elsewhere in this source file.
+	(arm_macosx_fast_show_stack): Added fast stack support.
+	* remote.c (DEFAULT_MAX_REMOTE_PACKET_SIZE): Default to max remote
+	packet size to 2000.
+	(set_max_remote_packet_size): Allow max remote packet size to be
+	reduced below the initial max value.
+	* config/arm/tm-arm-macosx.h (arm_macosx_fast_show_stack): New
+	prototype for fast stack support.
+	(FAST_COUNT_STACK_DEPTH): New macro for fast stack support.
+
+2008-01-16  Jim Ingham  <jingham@apple.com>
+
+        * fork-child.c: Move breakup_args from here to:
+        * utils.c: here.
+        * defs.h: declare breakup_args.
+        * remote.c: Remove extern declaration for breakup_args.
+        
+2008-01-14  Jim Ingham  <jingham@apple.com>
+
+        * fork-child.c (breakup_args): Make non-static.  Also return number
+        of args.
+        * remote.c (remote_start_remote): Handle case where the remote doesn't
+        have a target when we connect.
+        (remote_open_1) Ditto.
+        (remote_create_inferior): New function.
+        (remote_attach): New function.
+        (remote_xfer_partial): If the remote side doesn't have a target
+        yet, don't try to read its memory.
+        (_initialize_remote): Add remote executable-directory set command.
+
+2008-01-10  Jason Molenda  (jmolenda@apple.com)
+
+	* configure.ac: Use Bourne shell syntax for expanding SDKROOT.
+	* configure: Regenerated.
+
+2008-01-09  Greg Clayton  <gclayton@apple.com>
+
+	* cli/cli-dump.c (g_max_binary_file_chunk): New global variable.
+	(restore_binary_file): Segment binary downloads into chunks of
+	size G_MAX_BINARY_FILE_CHUNK.
+	(set_binary_buffer_size): New function.
+	(show_binary_buffer_size): New function.
+	(set_restore_cmd): New function.
+	(show_restore_cmd): New function.
+	(_initialize_cli_dump): Add "restore" as a new prefix for 
+	set and show lists that call set_restore_cmd () and 
+	show_restore_cmd (). Added "binary-buffer-size" as a child
+	of the new "set/show restore" command.
+	* remote.c (MIN_MAX_REMOTE_PACKET_SIZE): New define.
+	(g_max_remote_packet_size): New global variable.
+	(init_remote_state): Init remote_packet_size with current value
+	of new G_MAX_REMOTE_PACKET_SIZE variable.
+	(set_max_remote_packet_size): New function.
+	(show_max_remote_packet_size): New function.
+	(show_remote_cmd): Added a call to show_max_remote_packet_size ()
+	(_initialize_remote): Added a new "set/show remote max-packet-size"
+	command.	
+
+2007-11-27  Greg Clayton  <gclayton@apple.com>
+
+	* gdbarch.sh (skip_prologue_addr_ctx): New gdb arch callback 
+	function with predicate.
+	* gdbarch.c: Regerated.
+	* gdbarch.h: Regerated.
+	* linespec.c (decode_line_2): Use new SKIP_PROLOGUE_ADDR_CTX when
+	supported by the current arch.
+	(decode_objc): Ditto.
+	(minsyms_found): Ditto.
+	(minsym_found): Ditto.
+	* fork-child.c (fork_inferior): Added ARM arch support and init 
+	CPU to zero.
+	* main.c (captured_main): Added ARM support arch support for the
+	--arch option.
+	* symtab.h (struct address_context): New address baton structure
+	for more accurately looking up address related items.
+	(init_address_context): New function prototype.
+	* symtab.c (init_address_context): New function.
+	(find_function_start_sal): Use address context when looking
+	up symtab_and_line entries if gdbarch supports it. 
+	* arm-tdep.c (arm_macosx_skip_prologue_addr_ctx): New function.
+	(arm_macosx_skip_prologue): Calls new function named
+	arm_macosx_skip_prologue_addr_ctx.
+	(arm_gdbarch_init): Register new arch function 
+	arm_macosx_skip_prologue_addr_ctx.
+	
+2007-11-06  Greg Clayton  <gclayton@apple.com>
+
+	* dummy-frame.c (dummy_frame_push): Fixed a memory leak left
+	over from an old merge.
+	* arm-tdep.c (get_arm_prologue_cache): New function.
+	(arm_macosx_scan_prologue): Use get_arm_prologue_cache to
+	safely get an OSX prologue cache, or NULL for other frames.
+	(arm_unwind_pc): Ditto.
+
+2007-10-25  Greg Clayton  <gclayton@apple.com>
+
+	* arm-tdep.h (__ARM_FP_REG): Use r7 as frame pointer when
+	TM_NEXTSTEP is defined, not TM_NEXT_STEP.
+
+2007-10-10  Greg Clayton  <gclayton@apple.com>
+
+	* aclocal.m4: Set hardcode_direct=yes for all darwin host
+	os targets to avoid libtool from expanding SDK -l options
+	incorrectly.
+	* configure: Regenerated.
+
+2007-07-10  Greg Clayton  <gclayton@apple.com>
+
+	* config.in, configure: Regenerated.
+	
+2007-07-05  Greg Clayton  <gclayton@apple.com>
+
+	* Makefile.in (COREFOUNDATION_LDFLAGS): New flags to allow 
+	linking to CoreFoundation in when we don't link to Carbon.
+	(CLIBS): Add new COREFOUNDATION_LDFLAGS to the option mix.
+	* arch-utils.c (default_dbx_make_msymbol_special): New function.
+	* arch-utils.h (default_dbx_make_msymbol_special): Added prototype.
+	* arm-tdep.c (fp_model_strings): Add "none" as a valid FP model
+	string.
+	(arm_register_name_strings): Added support for VFP registers.
+	(arm_register_offsets): New static array.
+	(builtin_type_arm_psr): New global variable.
+	(builtin_type_arm_fpscr): New global variable.
+	(show_opcode_bytes): New static variable.
+	(arm_set_show_opcode_bytes): New function.
+	(arm_prologue_cache): Added prologue_start and prev_pc_is_thumb for
+	stack crawling through code with no symbols.
+	(arm_prologue_state): New structure type.
+	(arm_scan_prolog_ftype): New function callback type.
+	(arm_opcode_info_tag): New structure type.
+	(data_proc_immediate): New function.
+	(arm_scan_prolog_insn_stmfd_sp): New callback function for macosx
+	prologue scan and skip code.
+	(arm_scan_prolog_insn_data_proc_imm): Ditto.
+	(arm_scan_prolog_insn_mov_ip_sp): Ditto.
+	(arm_scan_prolog_insn_str_rd_sp): Ditto.
+	(arm_scan_prolog_insn_stmfd_sp): Ditto.
+	(arm_scan_prolog_insn_stfe_fn_sp_minus_12): Ditto.
+	(arm_scan_prolog_insn_sfmfd_fn_4_sp): Ditto.
+	(arm_scan_prolog_insn_fstmdb): Ditto.
+	(thumb_scan_prolog_insn_push): Ditto.
+	(thumb_scan_prolog_insn_sub4_sp_imm): Ditto.
+	(thumb_scan_prolog_insn_add6_r7_sp): Ditto.
+	(thumb_scan_prolog_insn_add_sp_rm): Ditto.
+	(thumb_scan_prolog_insn_ldr_rd_pc_rel): Ditto.
+	(thumb_scan_prolog_insn_mov_r7_sp): Ditto.
+	(thumb_scan_prolog_insn_mov_rlo_rhi): Ditto.
+	(arm_opcode_info): New array for macosx prologue scan and skip code.
+	(thumb_opcode_info): Ditto.
+	(IS_THUMB_ADDR): Look at bit 1 along with bit 0 to see if an address
+	is thumb.
+	(read_thumb_instruction): New function.
+	(thumb_macosx_skip_prologue): New function.
+	(thumb_macosx_scan_prologue): New function.
+	(arm_macosx_skip_prologue): New function.
+	(arm_macosx_scan_prologue): New function.	
+	(arm_skip_prologue): Take care of more variety of register stores to 
+	the stack.
+	(thumb_scan_prologue): Use new arm_prologue_cache_t typedef and add
+	logging code.
+	(arm_prologue_prev_register): Use new arm_prologue_cache_t typedef.
+	(arm_prologue_unwind_sniffer): Ditto.
+	(arm_stub_this_id): Ditto.
+	(arm_prologue_prev_register): Ditto.
+	(arm_normal_frame_base): Ditto.
+	(arm_make_sigtramp_cache): Ditto.
+	(arm_sigtramp_this_id): Ditto.
+	(arm_sigtramp_prev_register): Ditto.
+	(arm_scan_prologue): Add logging code and use unsigned int variable
+	when parsing opcodes, init the prologue_start, prologue_end and 
+	current_pc to zero.
+	(arm_make_prologue_cache): Use arm_macosx_scan_prologue for darwin
+	ARM builds.
+	(arm_prologue_this_id): Improved stack backtracing through code 
+	without symbols.
+	(arm_macosx_sigtramp_frame_cache): New function.
+	(arm_macosx_sigtramp_frame_this_id): Ditto.
+	(arm_macosx_sigtramp_frame_prev_register): Ditto.
+	(arm_macosx_sigtramp_unwind_sniffer): New darwin sigtramp frame
+	sniffer	definition.
+	(arm_unwind_pc_using_fp): New function to improve stack backtraces 
+	through code with no symbols.
+	(arm_unwind_pc): Use the frame pointer to find previous PC and note
+	if the previous function is Thumb in the prologue cache by
+	inspecting the return address.
+	(arm_push_dummy_call): Add log levels.
+	(arm_print_float_info): Add more verbose information for VFP.
+	(build_builtin_type_arm_psr_mode_enum): New function.
+	(build_builtin_type_arm_psr): New function.
+	(build_builtin_type_arm_fpscr): New function.
+	(arm_register_type): Use new register formatters for CPSR and FPSCR
+	registers.
+	(arm_register_byte): Use new arm_register_offsets array.
+	(convert_to_extended): Change args to uint32_t types.
+	(bitcount): Change args to uint32_t types.
+	(data_proc_immediate): New function.
+	(shifted_reg_val): New function.
+	(thumb_get_next_pc): Add logging and take care of "mov pc, <Rm>"
+	instructions.
+	(arm_get_next_pc): Use uint32_t types where applicable instead of 
+	unsigned longs and added logging and use new data_proc_immediate
+	function when needed to avoid duplicated code.
+	(arm_software_single_step): Lock the scheduler when software single
+	stepping.
+	(THUMB_LE_BREAKPOINT): Use 0xDEFE as our breakpoint instruction for
+	Darwin.
+	(arm_extract_return_value): Add support for return values being VFP
+	floats on the stack.
+	(arm_store_return_value): Add support for changing return values 
+	being VFP floats on the stack.
+	(arm_return_value): New function.
+	(arm_set_show_opcode_bytes): Add the ability to show opcode bytes 
+	in disassembly.
+	(set_disassembly_style): Add fpscr support.
+	(arm_write_pc): Removed unused eflags local variable.
+	(arm_register_reggroup_p): Add VFP support.
+	(arm_gdbarch_init): Default float support to none when auto
+	detecting float support, set wordsize to 4 early, and use 
+	arm_macosx_skip_prologue and arm_macosx_sigtramp_unwind_sniffer 
+	on darwin.
+	(arm_dump_tdep): Use %s and paddr to dump tdep->lowest_pc.
+	(_initialize_arm_tdep): Build builtin types for PSR and FPSCR and
+	default default disassembly type to "gcc", add "set arm
+	show-opcode-bytes <BOOL>" command, and add VFP float support, change
+	set arm debug logging to be an integer instead of a bool for varying
+	levels of logging.
+	* arm-tdep.h (gdb_regnum): Add the ability to use a different
+	register for the ARM frame pointer and added VFP support.
+	(enum arm_float_model): Added a floating point support value for 
+	None.
+	(gdbarch_tdep): Added wordsize for DYLD support.
+	* config.in, configure: Regenerated.
+	* configure.ac: Don't try and link against the Carbon.framework or 
+	DebugSymbols.framework for ARM builds. Check for CoreFoundation and 
+	use it if it is present.
+	* configure.host: Add ARM Darwin support.
+	* dbxread.c (record_minimal_symbol): Add the description field so we 
+	can make the msymbol special if needed.
+	(read_dbx_dynamic_symtab): Pass zero to record_minimal_symbol for 
+	new description arg since we don't have one.
+	(read_dbx_symtab): Pass the n_desc field to record_minimal_symbol in 
+	case it helps us mark the symbol as special.
+	* defs.h (enum gdb_osabi): Add new GDB_OSABI_DARWINV6.
+	* fix-and-continue.c (fix_command): No support for ARM.
+	* gdbarch.c (struct gdbarch): Added make symbol special callback.
+	(gdbarch_alloc): Use default make symbol special callback.
+	(verify_gdbarch): Don't verify dbx_make_msymbol_special.
+	(gdbarch_dump): Dump dbx_make_msymbol_special.
+	(gdbarch_dbx_make_msymbol_special): New function.
+	(set_gdbarch_dbx_make_msymbol_special): New function.
+	* gdbarch.h (gdbarch_dbx_make_msymbol_special_ftype): New type.
+	(gdbarch_dbx_make_msymbol_special): Added prototype.
+	(set_gdbarch_dbx_make_msymbol_special): Added prototype.
+	(DBX_MAKE_MSYMBOL_SPECIAL): New macro.
+	* gdbarch.sh (dbx_make_msymbol_special): Added new arch callback.
+	* gdbtypes.c (build_builtin_enum): New fucnction.
+	(build_builtin_bitfield): New function.
+	* gdbtypes.h (struct gdbtypes_enum_info): New type for 
+	build_builtin_enum.
+	(gdbtypes_bitfield_info): New type for build_builtin_bitfield
+	(maintenance_print_type):
+	(build_builtin_enum): Added prototype.
+	(build_builtin_bitfield): Added prototype.
+	* main.c (captured_main): Added the ability to set the OSABI 
+	from the command line.
+	* osabi.c (gdb_osabi_name): Added "DarwinV6" as a valid darwin
+	OS ABI.
+	(gdbarch_init_osabi): For ARM targets, check it ARMV6 is supported.
+	(set_osabi): New function.
+	(set_osabi_option): New function.
+	* remote.c (init_remote_state): Increase the max packet size for ARM 
+	VFP support.
+	* symfile.c (open_bfd_matching_arch): For ARM, if we support ARMV6, 
+	use and ARMV6 slices that are available, else fall back to ARMV4.
+	* config/powerpc/macosx.mt: Re-format whitespace.
+
+2007-11-08  Greg Clayton  <gclayton@apple.com>
+
+	* dwarf2read.h (struct oso_final_addr_tuple): Changed 
+	PST_FILENAME to a partial_symtab struct pointer named PST.
+	* dwarf2read.c (compare_map_entries_final_addr_index): Added 
+	secondary sort based on oso_low_addr for final addrs that aren't
+	in the final image.
+	(convert_oso_map_to_final_map): Initialize final_addr in all 
+	tuples,	and store partial_symtab with translation map.
+	(create_kext_addr_map): Ditto.
+	(translate_debug_map_address): Make sure next FINAL_ADDR 
+	is valid when we use it, and make sure *ADDR doesn't exceed
+	the high text address of the corrseponding partial_symtab.
+	(translate_common_symbol_debug_map_address): Access partial
+	symtab filename using new PST member.
+	(dwarf_decode_lines): Don't translate line table addresses 
+	until they are about to be added so we can properly 
+	determine if we are translating addresses as HIGHPC addresses.
+
+2008-02-26  Caroline Tice  <ctice@apple.com>
+
+        * breakpoint.c (breakpoint_re_set_one): Add two local variables, found
+	and j; if more than one sal is returned for the breakpoint, loop 
+	through them trying to figure out which one is correct for the pc in 
+	the current breakpoint.  Use the last sal if we can't figure it out 
+	(fall back on original behavior).
+
+2008-02-26  Caroline Tice  <ctice@apple.com>
+
+        * dwarf2read.c (read_inlined_subroutine_scope):  Make sure the
+	caller and callee functions both have names before calling
+	dwarf2_add_to_list_of_inlined_calls.
+	* inlining.c (complaints.h): New include statement.
+	(inlined_function_add_function_names):  If caller or callee have
+	NULL function names, complain and assign "unknown function" to 
+	them.
+
+2008-02-20  Jason Molenda  (jmolenda@apple.com)
+
+        * remote.c (send_remote_max_packet_size): Rename to
+        send_remote_max_payload_size.  Send the QSetMaxPayloadSize
+        packet instead of the QSetMaxPacketSize to avoid any ambiguity 
+        in its meaning.
+
+2008-02-18  Jason Molenda  (jmolenda@apple.com)
+
+        * remote.c (send_remote_max_packet_size): Tell the remote stub the
+        maximum packet size gdb is prepared to handle.
+        (remote_start_remote): Call it.
+
+2008-02-12  Jason Molenda  (jmolenda@apple.com)
+
+        * remote.c (init_all_packet_configs): Re-enable the
+        software-breakpoint packet (Z0/z0) by default again.
+
+2008-02-12  Jim Ingham  <jingham@apple.com>
+
+        * remote.c (remote_create_inferior): Make sure the
+        sprintf doesn't overflow the buffer.
+
+2008-02-09  Jason Molenda  (jmolenda@apple.com)
+
+        * remote.c (init_all_packet_configs): Disable the
+        software-breakpoint packet (Z0/z0) by default for now.
+
+2008-02-08  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (new_objc_runtime_find_impl): Set unwind_on_signal
+	off while calling the function in the runtime.
+	(find_implementation_from_class): Do more work to validate
+	the input class before looking for the method.
+	
+2008-02-08  Jason Molenda  (jmolenda@apple.com)
+
+        * remote.c (dump_protocol_log): Quote nonprintable characters,
+        omit the mi command sequence seperator char if there is no
+        mi command sequence number.
+
 2008-02-06  Jim Ingham  <jingham@apple.com>
 
 	* valops.c (check_safe_call): Set stack_depth in the args.

@@ -434,16 +434,22 @@ info_threads_command (char *arg, int from_tty)
   for (tp = thread_list; tp; tp = tp->next)
     {
       if (ptid_equal (tp->ptid, current_ptid))
-	printf_filtered ("* ");
+	ui_out_text (uiout, "* ");
       else
-	printf_filtered ("  ");
+	ui_out_text (uiout, "  ");
 
-      printf_filtered ("%d %s", tp->num, target_tid_to_str (tp->ptid));
+      ui_out_field_int (uiout, "threadno", tp->num);
+      ui_out_text (uiout, " ");
+      ui_out_field_string (uiout, "target_tid", target_tid_to_str (tp->ptid));
 
       extra_info = target_extra_thread_info (tp);
       if (extra_info)
-	printf_filtered (" (%s)", extra_info);
-      puts_filtered ("  ");
+	{
+	  ui_out_text (uiout, " (");
+	  ui_out_field_string (uiout, "extra_info", extra_info);
+	  ui_out_text (uiout, ")");
+	}
+      ui_out_text (uiout, "  ");
 
       switch_to_thread (tp->ptid);
       print_stack_frame (get_selected_frame (NULL), 0, LOCATION);

@@ -793,6 +793,25 @@ struct badness_vector
     int *rank;
   };
 
+/* APPLE LOCAL BEGIN: Helper function type defintions for easily 
+   building bitfield built in types.  */
+struct gdbtypes_enum_info
+  {
+    const char *name;
+    int32_t value;
+  };
+
+/* Struct used by  for quickly creating enumerations to be used with */
+struct gdbtypes_bitfield_info
+  {
+    const char *name;
+    struct type *type;
+    uint8_t msbit;
+    uint8_t lsbit;
+  };
+/* APPLE LOCAL END.  */
+
+
 /* The default value of TYPE_CPLUS_SPECIFIC(T) points to the
    this shared static structure. */
 
@@ -1397,5 +1416,16 @@ extern void maintenance_print_type (char *, int);
 /* APPLE LOCAL: This is to handle arrays whose element types were undefined
    when the array type was constructed.  */
 extern void cleanup_undefined_arrays (void);
+
+/* APPLE LOCAL BEGIN: Helper functions for easily building bitfield 
+   built in types.  */
+extern struct type *build_builtin_enum (const char *name, uint32_t size, 
+					int flags, struct gdbtypes_enum_info *, 
+					uint32_t n);
+
+extern struct type *build_builtin_bitfield (const char *name, uint32_t size, 
+					    struct gdbtypes_bitfield_info *, 
+					    uint32_t n);
+/* APPLE LOCAL END.  */
 
 #endif /* GDBTYPES_H */

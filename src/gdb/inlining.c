@@ -39,6 +39,7 @@
 #include "inlining.h"
 #include "objfiles.h"
 #include "gdbthread.h"
+#include "complaints.h"
 
 extern int addressprint;
 
@@ -1617,6 +1618,17 @@ inlined_function_add_function_names (struct objfile *objfile,
   struct rb_tree_node_list *current;
   struct rb_tree_node_list *next;
   int found = 0;
+
+  if (! fn_name)
+    fn_name = xstrdup ("<unknown function>");
+  if (!calling_fn_name)
+    calling_fn_name = xstrdup ("<unknown function>");
+
+  if ((strcmp (fn_name, "<unknown function>") == 0)
+      || (strcmp (calling_fn_name, "<unknown function>") == 0))
+    complaint (&symfile_complaints, 
+ _("Missing inlined function names:  %s calling %s, at line %d (address %Ld)"), 
+	       calling_fn_name, fn_name, line, low_pc);
 
   rb_tree_find_all_matching_nodes (objfile->inlined_subroutine_data,
 				   low_pc, 0, high_pc,

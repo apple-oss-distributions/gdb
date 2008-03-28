@@ -436,6 +436,192 @@ info_trampoline_command (char *exp, int from_tty)
      paddr_nz (address), paddr_nz (trampoline), paddr_nz (objc));
 }
 
+struct sal_chain
+{
+  struct sal_chain *next;
+  struct symtab_and_line sal;
+};
+
+
+/* On some platforms, you need to turn on the exception callback
+   to hit the catchpoints for exceptions.  Not on Mac OS X. */
+
+int
+macosx_enable_exception_callback (enum exception_event_kind kind, int enable)
+{
+  return 1;
+}
+
+/* The MacOS X implemenatation of the find_exception_catchpoints
+   target vector entry.  Relies on the __cxa_throw and
+   __cxa_begin_catch functions from libsupc++.  */
+
+struct symtabs_and_lines *
+macosx_find_exception_catchpoints (enum exception_event_kind kind,
+                                   struct objfile *restrict_objfile)
+{
+  struct symtabs_and_lines *return_sals;
+  char *symbol_name;
+  struct objfile *objfile;
+  struct minimal_symbol *msymbol;
+  unsigned int hash;
+  struct sal_chain *sal_chain = 0;
+
+  switch (kind)
+    {
+    case EX_EVENT_THROW:
+      symbol_name = "__cxa_throw";
+      break;
+    case EX_EVENT_CATCH:
+      symbol_name = "__cxa_begin_catch";
+      break;
+    default:
+      error ("We currently only handle \"throw\" and \"catch\"");
+    }
+
+  hash = msymbol_hash (symbol_name) % MINIMAL_SYMBOL_HASH_SIZE;
+
+  ALL_OBJFILES (objfile)
+  {
+    for (msymbol = objfile->msymbol_hash[hash];
+         msymbol != NULL; msymbol = msymbol->hash_next)
+      if (MSYMBOL_TYPE (msymbol) == mst_text
+          && (strcmp_iw (SYMBOL_LINKAGE_NAME (msymbol), symbol_name) == 0))
+        {
+          /* We found one, add it here... */
+          CORE_ADDR catchpoint_address;
+          CORE_ADDR past_prologue;
+
+          struct sal_chain *next
+            = (struct sal_chain *) alloca (sizeof (struct sal_chain));
+
+          next->next = sal_chain;
+          init_sal (&next->sal);
+          next->sal.symtab = NULL;
+
+          catchpoint_address = SYMBOL_VALUE_ADDRESS (msymbol);
+          past_prologue = SKIP_PROLOGUE (catchpoint_address);
+
+          next->sal.pc = past_prologue;
+          next->sal.line = 0;
+          next->sal.end = past_prologue;
+
+          sal_chain = next;
+
+        }
+  }
+
+  if (sal_chain)
+    {
+      int index = 0;
+      struct sal_chain *temp;
+
+      for (temp = sal_chain; temp != NULL; temp = temp->next)
+        index++;
+
+      return_sals = (struct symtabs_and_lines *)
+        xmalloc (sizeof (struct symtabs_and_lines));
+      return_sals->nelts = index;
+      return_sals->sals =
+        (struct symtab_and_line *) xmalloc (index *
+                                            sizeof (struct symtab_and_line));
+
+      for (index = 0; sal_chain; sal_chain = sal_chain->next, index++)
+        return_sals->sals[index] = sal_chain->sal;
+      return return_sals;
+    }
+  else
+    return NULL;
+
+}
+
+/* Returns data about the current exception event */
+
+struct exception_event_record *
+macosx_get_current_exception_event ()
+{
+  static struct exception_event_record *exception_event = NULL;
+  struct frame_info *curr_frame;
+  struct frame_info *fi;
+  CORE_ADDR pc;
+  int stop_func_found;
+  char *stop_name;
+  char *typeinfo_str;
+
+  if (exception_event == NULL)
+    {
+      exception_event = (struct exception_event_record *)
+        xmalloc (sizeof (struct exception_event_record));
+      exception_event->exception_type = NULL;
+    }
+
+  curr_frame = get_current_frame ();
+  if (!curr_frame)
+    return (struct exception_event_record *) NULL;
+
+  pc = get_frame_pc (curr_frame);
+  stop_func_found = find_pc_partial_function (pc, &stop_name, NULL, NULL);
+  if (!stop_func_found)
+    return (struct exception_event_record *) NULL;
+
+  if (strcmp (stop_name, "__cxa_throw") == 0)
+    {
+
+      fi = get_prev_frame (curr_frame);
+      if (!fi)
+        return (struct exception_event_record *) NULL;
+
+      exception_event->throw_sal = find_pc_line (get_frame_pc (fi), 1);
+
+      /* FIXME: We don't know the catch location when we
+         have just intercepted the throw.  Can we walk the
+         stack and redo the runtimes exception matching
+         to figure this out? */
+      exception_event->catch_sal.pc = 0x0;
+      exception_event->catch_sal.line = 0;
+
+      exception_event->kind = EX_EVENT_THROW;
+
+    }
+  else if (strcmp (stop_name, "__cxa_begin_catch") == 0)
+    {
+      fi = get_prev_frame (curr_frame);
+      if (!fi)
+        return (struct exception_event_record *) NULL;
+
+      exception_event->catch_sal = find_pc_line (get_frame_pc (fi), 1);
+
+      /* By the time we get here, we have totally forgotten
+         where we were thrown from... */
+      exception_event->throw_sal.pc = 0x0;
+      exception_event->throw_sal.line = 0;
+
+      exception_event->kind = EX_EVENT_CATCH;
+
+
+    }
+
+#ifdef THROW_CATCH_FIND_TYPEINFO
+  typeinfo_str =
+    THROW_CATCH_FIND_TYPEINFO (curr_frame, exception_event->kind);
+#else
+  typeinfo_str = NULL;
+#endif
+
+  if (exception_event->exception_type != NULL)
+    xfree (exception_event->exception_type);
+
+  if (typeinfo_str == NULL)
+    {
+      exception_event->exception_type = NULL;
+    }
+  else
+    {
+      exception_event->exception_type = xstrdup (typeinfo_str);
+    }
+
+  return exception_event;
+}
 
 void
 update_command (char *args, int from_tty)
@@ -525,7 +711,92 @@ open_command (char *args, int from_tty)
 }
 
 
-#if USE_DEBUG_SYMBOLS_FRAMEWORK
+/* Helper function for gdb_DBGCopyMatchingUUIDsForURL.
+   Given a bfd of a MachO file, look for an LC_UUID load command
+   and return that uuid in an allocated CFUUIDRef.
+   If the file being examined is fat, we assume that the bfd we're getting
+   passed in has already been iterated over to get one of the thin forks of
+   the file.
+   It is the caller's responsibility to release the memory.
+   NULL is returned if we do not find a LC_UUID for any reason.  */
+
+static CFUUIDRef
+get_uuidref_for_bfd (struct bfd *abfd)
+{
+ uint8_t uuid[16];
+ if (abfd == NULL)
+   return NULL;
+
+ if (bfd_mach_o_get_uuid (abfd, uuid, sizeof (uuid)))
+   return CFUUIDCreateWithBytes (kCFAllocatorDefault,
+             uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5],
+             uuid[6], uuid[7], uuid[8], uuid[9], uuid[10], uuid[11],
+             uuid[12], uuid[13], uuid[14], uuid[15]);
+
+ return NULL;
+}
+
+/* This is an implementation of the DebugSymbols framework's
+   DBGCopyMatchingUUIDsForURL function.  Given the path to a
+   dSYM file (not the bundle directory but the actual dSYM dwarf
+   file), it will return a CF array of UUIDs that this file has.  
+   Normally depending on DebugSymbols.framework isn't a problem but
+   we don't have this framework on all platforms and we want the
+   "add-dsym" command to continue to work without it. */
+
+static CFMutableArrayRef
+gdb_DBGCopyMatchingUUIDsForURL (const char *path)
+{
+  if (path == NULL || path[0] == '\0')
+    return NULL;
+
+  CFAllocatorRef alloc = kCFAllocatorDefault;
+  CFMutableArrayRef uuid_array = NULL;
+
+  bfd *abfd = symfile_bfd_open (path, 0);
+  if (abfd == NULL)
+    return NULL;
+  if (bfd_check_format (abfd, bfd_archive)
+      && strcmp (bfd_get_target (abfd), "mach-o-fat") == 0)
+    {
+      bfd *nbfd = NULL;
+      for (;;)
+        {
+          nbfd = bfd_openr_next_archived_file (abfd, nbfd);
+          if (nbfd == NULL)
+            break;
+          if (!bfd_check_format (nbfd, bfd_object) 
+              && !bfd_check_format (nbfd, bfd_archive))
+            continue;
+          CFUUIDRef nbfd_uuid = get_uuidref_for_bfd (nbfd);
+          if (nbfd_uuid != NULL)
+            {
+              if (uuid_array == NULL)
+                uuid_array = CFArrayCreateMutable(alloc, 0, &kCFTypeArrayCallBacks);
+              if (uuid_array)
+                CFArrayAppendValue (uuid_array, nbfd_uuid);
+              CFRelease (nbfd_uuid);
+            }
+        }
+
+    }
+  else
+   {
+      CFUUIDRef abfd_uuid = get_uuidref_for_bfd (abfd);
+      if (abfd_uuid != NULL)
+        {
+          if (uuid_array == NULL)
+            uuid_array = CFArrayCreateMutable(alloc, 0, &kCFTypeArrayCallBacks);
+          if (uuid_array)
+            CFArrayAppendValue (uuid_array, abfd_uuid);
+          CFRelease (abfd_uuid);
+        }
+    }
+
+  bfd_close (abfd);
+  return uuid_array;
+}
+
 
 CFMutableDictionaryRef
 create_dsym_uuids_for_path (char *dsym_bundle_path)
@@ -602,9 +873,7 @@ create_dsym_uuids_for_path (char *dsym_bundle_path)
 	  if (path_url == NULL)
 	    continue;
 	  
-	  uuid_array = DBGCopyMatchingUUIDsForURL (path_url, 
-						   CPU_TYPE_ANY, 
-						   CPU_SUBTYPE_MULTIPLE);
+	  uuid_array = gdb_DBGCopyMatchingUUIDsForURL (path);
 	  if (uuid_array != NULL)
 	    CFDictionarySetValue (paths_and_uuids, path_url, uuid_array);
 	  
@@ -705,6 +974,7 @@ locate_dsym_mach_in_bundle (CFUUIDRef uuid_ref, char *dsym_bundle_path)
 
 }
 
+#if USE_DEBUG_SYMBOLS_FRAMEWORK
 /* Locate a full path to the dSYM mach file within the dSYM bundle using
    OJBFILE's uuid and the DebugSymbols.framework. The DebugSymbols.framework 
    will used using the current set of global DebugSymbols.framework defaults 
@@ -842,6 +1112,10 @@ macosx_locate_dsym (struct objfile *objfile)
 	 "/some/path/MyApp.app.dSYM/Contents/Resources/DWARF/MyApp" or
 	 "/some/path/MyApp.dSYM/Contents/Resources/DWARF/MyApp".  */
       strcpy (dsymfile, dirname (executable_name));
+      /* Append a directory delimiter so we don't miss shallow bundles that
+         have the dSYM appended on like "/some/path/MacApp.app.dSYM" when
+	 we start with "/some/path/MyApp.app/MyApp".  */
+      strcat (dsymfile, "/");
       while ((dot_ptr = strrchr (dsymfile, '.')))
 	{
 	  /* Find the directory delimiter that follows the '.' character since
@@ -895,7 +1169,6 @@ macosx_locate_dsym (struct objfile *objfile)
 struct objfile *
 macosx_find_objfile_matching_dsym_in_bundle (char *dsym_bundle_path, char **out_full_path)
 {
-#if USE_DEBUG_SYMBOLS_FRAMEWORK
   CFMutableDictionaryRef paths_and_uuids;
   struct search_baton results;
   struct objfile *objfile;
@@ -956,9 +1229,6 @@ macosx_find_objfile_matching_dsym_in_bundle (char *dsym_bundle_path, char **out_
  cleanup_and_return:
   CFRelease (paths_and_uuids);
   return out_objfile;
-#else
-  return NULL;
-#endif
 }
 
 /* Given a path to a kext bundle look in the Info.plist and retrieve

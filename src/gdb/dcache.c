@@ -274,7 +274,7 @@ dcache_write_line (DCACHE *dcache, struct dcache_block *db)
       else
 	reg_len = region->hi - memaddr;
 
-      if (!region->attrib.cache || region->attrib.mode == MEM_RO)
+      if (!(region->attrib.cache == 1) || region->attrib.mode == MEM_RO)
 	{
 	  memaddr += reg_len;
 	  myaddr  += reg_len;
@@ -352,7 +352,7 @@ dcache_read_line (DCACHE *dcache, struct dcache_block *db)
       else
 	reg_len = region->hi - memaddr;
 
-      if (!region->attrib.cache || region->attrib.mode == MEM_WO)
+      if (!(region->attrib.cache == 1) || region->attrib.mode == MEM_WO)
 	{
 	  memaddr += reg_len;
 	  myaddr  += reg_len;

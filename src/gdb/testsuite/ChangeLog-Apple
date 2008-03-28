@@ -1,3 +1,44 @@
+2008-03-19  Jason Molenda  (jmolenda@apple.com)
+
+	* lib/gdb.exp (default_gdb_start): Set locate-dsym to 0 so if the
+	person running the test has system library dSYMs somewhere, the
+	testsuites won't be perturbed.
+
+2007-03-14  Caroline Tice  <ctice@apple.com>
+
+	* gdb.apple/nested-inlines-xcode-1.exp: Update to work with latest
+	versions of gcc & gdb.
+	* gdb.apple/nested-inlines-xcode-1.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-2.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-2.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-3.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-3.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-4.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-4.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-5.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-5.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-6.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-6.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-7.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-7.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-8.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-8.x86.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-9.exp: Ditto.
+	* gdb.apple/nested-inlines-xcode-9.x86.exp: Ditto.
+
+2008-03-05  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/bp-cond-objc.exp: Loosen regexp a little.
+	* gdb.apple/dirname-tab.exp: Handle another error condition correctly.
+	* gdb.apple/info-pid.exp: Expect the mi timings output.
+	* gdb.apple/ostype.exp: Expect the mi timings output.
+	* gdb.apple/single-def-classdef.cc: Add a new test function.
+	* gdb.apple/single-def-classdef.h: Add a new test function.
+	* gdb.apple/xcode/stack-list-frames-lite.exp: Expect has_debug field
+	in s-l-f-l output.
+	* gdb.apple/xcode/stack-list-frames-lite-sigtramp.exp: Expect the
+	mi timings output.
+
 2008-01-14  Caroline Tice  <ctice@apple.com>
 
 	* gdb.apple/nested-inlines-console.x86.exp: More modifications to 

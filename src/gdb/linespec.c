@@ -855,10 +855,28 @@ decode_line_2 (struct symbol *sym_arr[], int nelts, int nsyms, int funfirstline,
       values.sals[i].line = 0;
       values.sals[i].end = 0;
       values.sals[i].pc = SYMBOL_VALUE_ADDRESS (sym_arr[i]);
-      if (funfirstline)
-	values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
-
       values.sals[i].section = SYMBOL_BFD_SECTION (sym_arr[i]);
+      if (funfirstline)
+	{
+	  /* APPLE LOCAL begin address context.  */
+	  /* Check if the current gdbarch supports a safer and more accurate
+	     version of prologue skipping that takes an address context.  */
+	  if (SKIP_PROLOGUE_ADDR_CTX_P ())
+	    {
+	      struct address_context sym_addr_ctx;
+	      init_address_context (&sym_addr_ctx);
+	      sym_addr_ctx.address = values.sals[i].pc;
+	      sym_addr_ctx.symbol = sym_arr[i];
+	      sym_addr_ctx.bfd_section = SYMBOL_BFD_SECTION (sym_arr[i]);
+	      values.sals[i].pc = SKIP_PROLOGUE_ADDR_CTX (&sym_addr_ctx);
+	    }
+	  else
+	    {
+	      values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+	    }
+	  /* APPLE LOCAL end address context.  */
+	}
+
       if (!accept_all)
         printf_filtered ("[%d]    %s\n",
                          (i + 2),
@@ -1696,7 +1714,25 @@ decode_objc (char **argptr, int funfirstline, struct symtab *file_symtab,
 	  values.sals[0].end = 0;
 	  values.sals[0].pc = SYMBOL_VALUE_ADDRESS (sym_arr[0]);
           if (funfirstline)
-	    values.sals[0].pc = SKIP_PROLOGUE (values.sals[0].pc);
+	    {
+	      /* APPLE LOCAL begin address context.  */
+	      /* Check if the current gdbarch supports a safer and more accurate
+		 version of prologue skipping that takes an address context.  */
+	      if (SKIP_PROLOGUE_ADDR_CTX_P ())
+		{
+		  struct address_context sym_addr_ctx;
+		  init_address_context (&sym_addr_ctx);
+		  sym_addr_ctx.address = values.sals[0].pc;
+		  sym_addr_ctx.symbol = sym;
+		  sym_addr_ctx.bfd_section = SYMBOL_BFD_SECTION (sym_arr[0]);
+		  values.sals[0].pc = SKIP_PROLOGUE_ADDR_CTX (&sym_addr_ctx);
+		}
+	      else
+		{
+		  values.sals[0].pc = SKIP_PROLOGUE (values.sals[0].pc);
+		}
+	      /* APPLE LOCAL end address context.  */
+	    }
 	    
 	  values.sals[0].section = SYMBOL_BFD_SECTION (sym_arr[0]);
 	}
@@ -3010,7 +3046,25 @@ minsyms_found (int funfirstline, int equivalencies,
       if (funfirstline)
 	{
 	  values.sals[i].pc += DEPRECATED_FUNCTION_START_OFFSET;
-	  values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+
+	  /* APPLE LOCAL begin address context.  */
+	  /* Check if the current gdbarch supports a safer and more accurate
+	     version of prologue skipping that takes an address context.  */
+	  if (SKIP_PROLOGUE_ADDR_CTX_P ())
+	    {
+	      struct address_context sym_addr_ctx;
+	      init_address_context (&sym_addr_ctx);
+	      sym_addr_ctx.address = values.sals[i].pc;
+	      sym_addr_ctx.bfd_section = values.sals[i].section;
+	      sym_addr_ctx.sal = values.sals[i];
+	      sym_addr_ctx.msymbol = current->msymbol;
+	      values.sals[i].pc = SKIP_PROLOGUE_ADDR_CTX (&sym_addr_ctx);
+	    }
+	  else
+	    {
+	      values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+	    }
+	  /* APPLE LOCAL end address context.  */
 	}
     }
 
@@ -3025,7 +3079,24 @@ minsyms_found (int funfirstline, int equivalencies,
       if (funfirstline)
 	{
 	  values.sals[i].pc += DEPRECATED_FUNCTION_START_OFFSET;
-	  values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+	  /* APPLE LOCAL begin address context.  */
+	  /* Check if the current gdbarch supports a safer and more accurate
+	     version of prologue skipping that takes an address context.  */
+	  if (SKIP_PROLOGUE_ADDR_CTX_P ())
+	    {
+	      struct address_context sym_addr_ctx;
+	      init_address_context (&sym_addr_ctx);
+	      sym_addr_ctx.address = values.sals[i].pc;
+	      sym_addr_ctx.bfd_section = values.sals[i].section;
+	      sym_addr_ctx.sal = values.sals[i];
+	      sym_addr_ctx.msymbol = msym;
+	      values.sals[i].pc = SKIP_PROLOGUE_ADDR_CTX (&sym_addr_ctx);
+	    }
+	  else
+	    {
+	      values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+	    }
+	  /* APPLE LOCAL end address context.  */
 	}
     }
 
@@ -3105,7 +3176,24 @@ minsym_found (int funfirstline, int equivalencies,
       if (funfirstline)
 	{
 	  values.sals[i].pc += DEPRECATED_FUNCTION_START_OFFSET;
-	  values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+	  /* APPLE LOCAL begin address context.  */
+	  /* Check if the current gdbarch supports a safer and more accurate
+	     version of prologue skipping that takes an address context.  */
+	  if (SKIP_PROLOGUE_ADDR_CTX_P ())
+	    {
+	      struct address_context sym_addr_ctx;
+	      init_address_context (&sym_addr_ctx);
+	      sym_addr_ctx.address = values.sals[i].pc;
+	      sym_addr_ctx.bfd_section = values.sals[i].section;
+	      sym_addr_ctx.sal = values.sals[i];
+	      sym_addr_ctx.msymbol = msym;
+	      values.sals[i].pc = SKIP_PROLOGUE_ADDR_CTX (&sym_addr_ctx);
+	    }
+	  else
+	    {
+	      values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+	    }
+	  /* APPLE LOCAL end address context.  */
 	}
     }
 

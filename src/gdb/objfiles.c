@@ -1050,6 +1050,12 @@ free_objfile_internal (struct objfile *objfile)
   if (objfile->inlined_call_sites)
     inlined_subroutine_free_objfile_call_sites (objfile->inlined_call_sites);
   /* APPLE LOCAL end subroutine inlining  */
+
+  /* Can't tell whether one of the sections in this objfile is
+     one of the one's we've cached over in symfile.c, so let's clear
+     it here to be safe.  */
+  symtab_clear_cached_lookup_values ();
+
 }
 
 /* APPLE LOCAL: clear_objfile deletes all the data
@@ -1480,18 +1486,38 @@ find_pc_sect_section (CORE_ADDR pc, struct bfd_section *section)
   struct obj_section *s;
   struct objfile *objfile;
 
+  /* APPLE LOCAL begin cache lookup values for improved performance  */
+  if (pc == last_sect_section_lookup_pc
+      && pc == last_mapped_section_lookup_pc
+      && section == cached_mapped_section)
+    return cached_sect_section;
+
+  last_sect_section_lookup_pc = pc;
+  /* APPLE LOCAL end cache lookup values for improved performance  */
+
   /* APPLE LOCAL begin search in ordered sections */
   s = find_pc_sect_in_ordered_sections (pc, section);
   if (s != NULL)
-    return (s);
+  /* APPLE LOCAL begin cache lookup values for improved performance  */
+    {
+      cached_sect_section = s;
+      return (s);
+    }
+  /* APPLE LOCAL end cache lookup values for improved performance  */
   /* APPLE LOCAL end search in ordered sections */
   
   ALL_OBJSECTIONS (objfile, s)
     if (objfile->separate_debug_objfile_backlink == NULL
         && (section == 0 || section == s->the_bfd_section) 
 	&& s->addr <= pc && pc < s->endaddr)
-      return (s);
+      /* APPLE LOCAL begin cache lookup values for improved performance  */
+      {
+	cached_sect_section = s;
+	return (s);
+      }
 
+  cached_sect_section = NULL;
+  /* APPLE LOCAL end cache lookup values for improved performance  */
   return (NULL);
 }
 
@@ -1959,6 +1985,9 @@ objfile_set_load_state (struct objfile *o, int load_state, int force)
 {
 
   if (!force && !should_auto_raise_load_state)
+    return -2;
+
+  if (o->symflags & OBJF_SYM_DONT_CHANGE)
     return -2;
 
   /* FIXME: For now, we are not going to REDUCE the load state.  That is

@@ -1423,6 +1423,22 @@ struct symtabs_and_lines
 };
 
 
+/* APPLE LOCAL begin address context.  */
+struct address_context
+{
+  CORE_ADDR address; /* The address described in this context baton.  */
+  asection *bfd_section; /* BFD section for ADDRESS.  */
+  struct block *block;	/* The lowest block associated with ADDRESS.  */
+  struct minimal_symbol *msymbol; /* The min symbol for ADDRESS.  */
+  struct partial_symbol *psymbol; /* The partial symbol for ADDRESS.  */
+  struct symbol *symbol; /* The symbol for ADDRESS.  */
+  struct symtab_and_line sal;
+};
+
+extern void init_address_context (struct address_context *addr_ctx);
+
+/* APPLE LOCAL begin address context.  */
+
 
 /* Some types and macros needed for exception catchpoints.
    Can't put these in target.h because symtab_and_line isn't
@@ -1634,5 +1650,31 @@ extern int psym_name_match (char *, char *);
 
 /* APPLE LOCAL end psym equivalences  */
 
+/* APPLE LOCAL begin cache lookup values for improved performance  */
+
+extern asection * cached_mapped_section;
+extern asection * cached_overlay_section;
+extern struct obj_section * cached_sect_section;
+extern struct symtab * cached_symtab;
+extern struct partial_symtab * cached_psymtab;
+extern struct symtab_and_line * cached_pc_line;
+extern struct symbol * cached_pc_function;
+extern struct blockvector * cached_blockvector;
+extern int cached_blockvector_index;
+extern struct block * cached_block;
+
+extern CORE_ADDR last_block_lookup_pc;
+extern CORE_ADDR last_blockvector_lookup_pc;
+extern CORE_ADDR last_function_lookup_pc;
+extern CORE_ADDR last_pc_line_lookup_pc;
+extern CORE_ADDR last_psymtab_lookup_pc;
+extern CORE_ADDR last_symtab_lookup_pc;
+extern CORE_ADDR last_sect_section_lookup_pc;
+extern CORE_ADDR last_mapped_section_lookup_pc;
+extern CORE_ADDR last_overlay_section_lookup_pc;
+
+void symtab_clear_cached_lookup_values (void);
+
+/* APPLE LOCAL end cache lookup values for improved performance  */
 
 #endif /* !defined(SYMTAB_H) */

@@ -750,6 +750,10 @@ struct dwarf_block
 /* APPLE LOCAL avoid unused var warning.  */
 /* static struct partial_die_info zeroed_partial_die; */
 
+/* APPLE LOCAL: Track the current common block symbol so we can properly 
+   offset addresses within that common block.  */
+static char *decode_locdesc_common = NULL;
+
 /* FIXME: decode_locdesc sets these variables to describe the location
    to the caller.  These ought to be a structure or something.   If
    none of the flags are set, the object lives at the address returned
@@ -1272,6 +1276,8 @@ static void dwarf2_add_dependence (struct dwarf2_cu *,
 static void dwarf2_mark (struct dwarf2_cu *);
 
 static void dwarf2_clear_marks (struct dwarf2_per_cu_data *);
+
+static void read_set_type (struct die_info *, struct dwarf2_cu *);
 
 /* Try to locate the sections we need for DWARF 2 debugging
    information and return true if we have enough to do something.  */
@@ -4254,6 +4260,9 @@ process_die (struct die_info *die, struct dwarf2_cu *cu)
     case DW_TAG_subroutine_type:
       read_subroutine_type (die, cu);
       break;
+    case DW_TAG_set_type:
+      read_set_type (die, cu);
+      break;
     case DW_TAG_array_type:
       read_array_type (die, cu);
       break;
@@ -4635,10 +4644,13 @@ read_inlined_subroutine_scope (struct die_info *die, struct dwarf2_cu *cu)
   /* APPLE LOCAL end address ranges  */
 
   /* Check to make sure the compiler found the call site information before
-     we try to make use of it.  */
+     we try to make use of it.  Also make sure we have names for the caller
+     and callee functions.  */
 
   if (file_attr 
-      && line_attr)
+      && line_attr
+      && name
+      && parent_name)
     /* APPLE LOCAL begin address ranges  */
     dwarf2_add_to_list_of_inlined_calls (objfile, file_attr, line_attr, 
 					 column_attr, lowpc, highpc, ranges, 
@@ -6159,6 +6171,15 @@ read_array_order (struct die_info *die, struct dwarf2_cu *cu)
     };
 }
 
+/* Extract all information from a DW_TAG_set_type DIE and put it in
+   the DIE's type field. */
+
+static void
+read_set_type (struct die_info *die, struct dwarf2_cu *cu)
+{
+  if (die->type == NULL)
+    die->type = create_set_type ((struct type *) NULL, die_type (die, cu));
+}
 
 /* First cut: install each common block member as a global variable.  */
 
@@ -6169,6 +6190,16 @@ read_common_block (struct die_info *die, struct dwarf2_cu *cu)
   struct attribute *attr;
   struct symbol *sym;
   CORE_ADDR base = (CORE_ADDR) 0;
+
+  /* APPLE LOCAL: Keep track of the current common block name so we can
+     offset symbols within that block that we find while processing this
+     DIE or its children.  */
+  struct attribute *nattr;
+  nattr = dwarf2_attr (die, DW_AT_MIPS_linkage_name, cu);
+  if (!nattr)
+    nattr = dwarf2_attr (die, DW_AT_name, cu);
+  if (nattr)
+    decode_locdesc_common = DW_STRING (nattr);
 
   attr = dwarf2_attr (die, DW_AT_location, cu);
   if (attr)
@@ -6204,6 +6235,9 @@ read_common_block (struct die_info *die, struct dwarf2_cu *cu)
 	  child_die = sibling_die (child_die);
 	}
     }
+  /* APPLE LOCAL:  Finished processing addresses that may be relative to
+     this common block.  */
+  decode_locdesc_common = NULL;
 }
 
 /* Read a C++ namespace.  */
@@ -9704,6 +9738,7 @@ new_symbol (struct die_info *die, struct type *type, struct dwarf2_cu *cu)
 	case DW_TAG_class_type:
 	case DW_TAG_structure_type:
 	case DW_TAG_union_type:
+	case DW_TAG_set_type:
 	case DW_TAG_enumeration_type:
 	  SYMBOL_CLASS (sym) = LOC_TYPEDEF;
 	  SYMBOL_DOMAIN (sym) = STRUCT_DOMAIN;
@@ -10064,6 +10099,9 @@ read_type_die (struct die_info *die, struct dwarf2_cu *cu)
       break;
     case DW_TAG_array_type:
       read_array_type (die, cu);
+      break;
+    case DW_TAG_set_type:
+      read_set_type (die, cu);
       break;
     case DW_TAG_pointer_type:
       read_tag_pointer_type (die, cu);
@@ -11573,7 +11611,18 @@ decode_locdesc (struct dwarf_block *blk, struct dwarf2_cu *cu)
           /* APPLE LOCAL: debug map */
           {
             CORE_ADDR addr;
-            if (translate_debug_map_address (cu->addr_map, 
+            /* APPLE LOCAL: If we're in the middle of processing a 
+               DW_TAG_common_block, DW_OP_addr refers to an offset within 
+               that common block, I guess. */
+            if (decode_locdesc_common &&
+                translate_common_symbol_debug_map_address (cu->addr_map, 
+                                           decode_locdesc_common, &addr))
+             {
+                CORE_ADDR off = read_address (objfile->obfd, &data[i], cu,
+                                            (int *) &bytes_read);
+                stack[++stacki] = addr + off;
+             }
+            else if (translate_debug_map_address (cu->addr_map, 
                                           read_address (objfile->obfd, &data[i],
 					  cu, (int *) &bytes_read), &addr, 0))
               stack[++stacki] = addr;
