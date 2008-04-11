@@ -1257,6 +1257,7 @@ macosx_mourn_inferior ()
   macosx_dyld_mourn_inferior ();
 
   macosx_clear_pending_events ();
+  remove_thread_event_breakpoints ();
 }
 
 void
@@ -1654,6 +1655,11 @@ macosx_child_attach (char *args, int from_tty)
       return;
     }
   
+  /* A native (i386) gdb trying to attach to a translated (ppc) app will
+     result in a gdb crash.  Let's flag it as an error instead.  */
+  if (!can_attach (pid))
+    error ("Unable to attach to process-id %d, it is a ppc app running in translation", pid);
+   
   macosx_create_inferior_for_task (macosx_status, itask, pid);
 
   macosx_exception_thread_create (&macosx_status->exception_status,
@@ -2068,7 +2074,7 @@ macosx_ptrace_him (int pid)
 static void
 macosx_child_create_inferior (char *exec_file, char *allargs, char **env,
 			      int from_tty)
-{
+{  
   if ((exec_bfd != NULL) &&
       (exec_bfd->xvec->flavour == bfd_target_pef_flavour
        || exec_bfd->xvec->flavour == bfd_target_pef_xlib_flavour))

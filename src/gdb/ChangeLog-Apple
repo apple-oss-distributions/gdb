@@ -1,3 +1,64 @@
+2008-04-10  Jason Molenda  (jmolenda@apple.com)
+
+	* breakpoint.c (breakpoint_re_set_one): Handle catch/throw breakpoints
+	like normal breakpoints.
+	(tell_breakpoints_objfile_changed_internal): Handle catch/throw
+	breakpoints like normal breakpoints.
+
+2008-04-08  Jason Molenda  (jmolenda@apple.com)
+
+	* linespec.c (decode_line_1): Correctly advance the character
+	pointer in the case where we have multiple source files that
+	matched but only one actually turned out to have lines.
+
+2008-04-08  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (value_nsstring): Make the function type
+	that creates the nsstring actually be "returns NSString *"
+	rather than "returns void *".  Our attempts to fix the
+	value up after the fact didn't work.
+
+	* breakpoint.c (breakpoint_re_set_one): Thread creation
+	breakpoints need to be relocated.
+	
+2008-04-04  Greg Clayton  <gclayton@apple.com>
+
+	* remote.c (remote_attach): Clear up error display.
+	* config/tm-macosx.h (ATTACH_DETACH): Define this for any Mac OSX
+	target (including cross builds).
+	* config/tm-macosx.h (ATTACH_NO_WAIT): Ditto.
+	* config/nm-macosx.h (ATTACH_DETACH): Moved to tm-macosx.h.
+	* config/nm-macosx.h (ATTACH_NO_WAIT): Ditto.
+
+2008-04-04  Jim Ingham  <jingham@apple.com>
+
+	* remote.c (complete_create_or_attach): New function.
+	(remote_create_inferior): Factored out common bits into
+	complete_create_or_attach.
+	(remote_attach): New implementation.
+	
+2008-04-03  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (fix_and_continue_supported): Not supported on
+	arm.
+
+2008-04-03  Jim Ingham  <jingham@apple.com>
+
+	* remote.c (remote_create_inferior): Query the success of the launch
+	attempt before proceeding.
+	
+2008-04-01  Jason Molenda  (jmolenda@apple.com)
+
+	* remote.c (getpkt_sane): If the watchdog timer times out, there's a
+	good chance someone unplugged the remote device we were talking to.
+	Change the error message to mention this possibility explicitly.
+
+2008-04-01  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (new_objc_runtime_find_impl): If the implementation
+	is _objc_msgForward then the object doesn't respond to the 
+	selector.  Return 0 in this case.
+	
 2008-03-27  Jim Ingham  <jingham@apple.com>
 
 	* objfiles.c (free_objfile_internal): Free the cached sections

@@ -1,10 +1,74 @@
+2008-04-10  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-inferior.c (macosx_child_attach): Pass the pid
+	the "error", the format string expects it.
+	(macosx_child_create_inferior): Back out setting thread create
+	breakpoints.  
+	
+2008-04-09  Jason Molenda  (jmolenda@apple.com)
+
+        * macosx-nat-dyld.c (macosx_dyld_add_libraries): Add a timestamp
+        to the =shlibs-added async notification messages.
+
+2008-04-08  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat.c (can_attach): Print a warning that the attach is
+	going to fail if we're an x86 native gdb attaching to a ppc app
+	running in translation.
+	* macosx-nat-inferior.c (macosx_child_attach): See if can_attach
+	approves of attaching to the process before we try.
+
+2008-04-08  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c (dyld_info_process_raw): Don't truncate dylib names
+	we get from dyld at the first colon character.
+
+2008-04-08  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c (dyld_specify_symbol_file_command): Removed.
+	(specify_symfile_helper): Removed.
+	(_initialize_macosx_nat_dyld): Don't register the 
+	sharedlibrary specify-symbol-file command.
+	* macosx-nat-dyld-process.c: Comment updated.
+	* macosx-nat-dyld-info.h: Comment updated.
+
+2008-04-08  Jim Ingham  <jingham@apple.com>
+
+	* i386-macosx-nat-exec.c (i386_macosx_dr_set): Set the watchpoints
+	in all threads.
+	* macosx-nat-inferior.c (macosx_child_mourn_inferior): Remove the
+	thread event breakpoints.
+	(macosx_child_create_inferior): Set the thread event breakpoints.
+	
+2008-04-07  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-macosx-tdep.c (i386_throw_catch_find_typeinfo): Add support
+	for x86-64 as well.
+
+2008-04-07  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-macosx-tdep.c (i386_throw_catch_find_typeinfo): Find the
+	name of the C++ exception being caught/thrown.
+	* tm-i386-macosx.h (THROW_CATCH_FIND_TYPEINFO): Define.
+
+2008-04-03  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-process.c (dyld_add_image_libraries): Skip over
+	@rpath dylib load commands for now, don't warn about not being able
+	to find them pre-execution.
+
+2008-04-03  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c (pre_slide_libraries_flag): Enable
+	'sharedlibrary pre-slide-libraries' by default.
+
 2008-03-27  Jason Molenda  (jmolenda@apple.com)
 
 	* macosx-tdep.c (get_uuidref_for_bfd, gdb_DBGCopyMatchingUUIDsForURL):
 	New functions.  Remove dependency on the DebugSymbols framework for 
 	simple add-dsym usage.
-	(create_dsym_uuids_for_path): Call gdb_DBGCopyMatchingUUIDsForURL instead
-	of the DebugSymbols framework.
+	(create_dsym_uuids_for_path): Call gdb_DBGCopyMatchingUUIDsForURL 
+	instead of the DebugSymbols framework.
 	(macosx_find_objfile_matching_dsym_in_bundle): Enable the use of this
 	function even if DebugSymbols is not present.
 

@@ -8663,20 +8663,8 @@ breakpoint_re_set_one (void *bint)
 	       b->number);
       return 0;
       /* APPLE LOCAL begin gnu_v3 breakpoints */
-      /* The gnu_v3 catch & throw breakpoints could exist in shared
-	 libraries, and therefore might very well have slid.  But we can't reset
-         them here or we will mess them up.  Instead, we let the code in
-         tell_breakpoints_objfile_changed delete them, then we reset them in
-         update_exception_catchpoints.  */
-      /* The exception to this is if we already set the catchpoint, and then
-	 we re-ran and reset it before the shared library was loaded so we
-	 miss moving the breakpoint over the prologue.  Then we do need to
-	 re-do the breakpoint here.  */
     case bp_gnu_v3_catch_throw:
     case bp_gnu_v3_catch_catch:
-      if (b->bp_set_state != bp_state_waiting_load)
-	break;
-      /* else fall thru */
       /* APPLE LOCAL end gnu_v3 breakpoints */
     case bp_breakpoint:
     /* APPLE LOCAL begin subroutine inlining  */
@@ -8685,6 +8673,9 @@ breakpoint_re_set_one (void *bint)
     case bp_hardware_breakpoint:
     case bp_catch_load:
     case bp_catch_unload:
+      /* APPLE LOCAL: Our thread event breakpoint is set in a library
+	 that will slide, so we need to reset it.  */
+    case bp_thread_event:
       if (b->addr_string == NULL)
 	{
 	  /* Anything without a string can't be re-set. */
@@ -9124,10 +9115,6 @@ breakpoint_re_set_one (void *bint)
       /* This breakpoint is special, it's set up when the inferior
          starts and we really don't want to touch it.  */
     case bp_shlib_event:
-
-      /* Like bp_shlib_event, this breakpoint type is special.
-	 Once it is set up, we do not want to touch it.  */
-    case bp_thread_event:
 
       /* Keep temporary breakpoints, which can be encountered when we step
          over a dlopen call and SOLIB_ADD is resetting the breakpoints.
@@ -10044,38 +10031,23 @@ tell_breakpoints_objfile_changed_internal (struct objfile *objfile,
 	    {
 	      if (b->bp_objfile == objfile)
 		{
-		  /* Resetting these catch & throw breakpoints through
-		     the normal means works poorly.  That's hard to fix
-		     so better to just delete them & let create_exception_catchpoints
-		     recreate them correctly.  
-		     FIXME: This will probably not work right with the HP style
-		     catchpoints, but I will cross that bridge when this code
-		     makes it into the FSF gdb...  */
-		  if (b->type == bp_gnu_v3_catch_throw ||
-		      b->type == bp_gnu_v3_catch_catch)
-		    {
-		      delete_breakpoint (b);
-		    }
-		  else
-		    {
-		      b->bp_set_state = bp_state_unset;
-		      if (set_pending)
-			b->pending = 1;
-		      /* APPLE LOCAL begin radar 5273932  */
-		      /* Save name of objfile in bp_objfile_name, so
-			 that if we attempt to reset the breakpoint
-			 (in breakpoint_re_set_one), because, for
-			 example, we have slid addresses, we will
-			 have a record as to where the breakpoint is supposed
-			 to be set (namely, in the same objfile where we 
-			 originally set it).  */
-		      if (b->bp_objfile->name)
-			b->bp_objfile_name = xstrdup (b->bp_objfile->name);
-		      /* APPLE LOCAL end radar 5273932  */
-		      b->bp_objfile = NULL;
-		    }
-		}
-	    }
+		  b->bp_set_state = bp_state_unset;
+                  if (set_pending)
+                    b->pending = 1;
+                  /* APPLE LOCAL begin radar 5273932  */
+                  /* Save name of objfile in bp_objfile_name, so
+                     that if we attempt to reset the breakpoint
+                     (in breakpoint_re_set_one), because, for
+                     example, we have slid addresses, we will
+                     have a record as to where the breakpoint is supposed
+                     to be set (namely, in the same objfile where we 
+                     originally set it).  */
+                  if (b->bp_objfile->name)
+                    b->bp_objfile_name = xstrdup (b->bp_objfile->name);
+                  /* APPLE LOCAL end radar 5273932  */
+                  b->bp_objfile = NULL;
+                }
+            }
 	  else if (b->bp_set_state != bp_state_unset)
 	    {
 	      struct obj_section *osect;

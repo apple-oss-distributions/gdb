@@ -332,6 +332,8 @@ value_nsstring (char *ptr, int len)
   struct value *function, *nsstringValue;
   struct symbol *sym;
   struct type *type;
+  static struct type *func_type = NULL;
+  struct type *ret_type;
 
   if (!target_has_execution)
     return 0;		/* Can't call into inferior to create NSString.  */
@@ -347,22 +349,32 @@ value_nsstring (char *ptr, int len)
   stringValue[2] = value_string (ptr, len);
   stringValue[2] = value_coerce_array (stringValue[2]);
 
+  /* APPLE LOCAL: Make a function type that actually returns an
+     (NSString *) since if we just pass voidptrfuncptr then the
+     value's enclosing type is wrong, and that can cause problems
+     later on.  */
+
+  if (func_type == NULL)
+    func_type = alloc_type (NULL);
+  func_type = make_function_type (type, &func_type);
+  ret_type = lookup_pointer_type (func_type);
+
   if (lookup_minimal_symbol ("_NSNewStringFromCString", 0, 0))
     {
       function = find_function_in_inferior ("_NSNewStringFromCString",
-					    builtin_type_voidptrfuncptr);
+					    ret_type);
       nsstringValue = call_function_by_hand (function, 1, &stringValue[2]);
     }
   else if (lookup_minimal_symbol ("istr", 0, 0))
     {
       function = find_function_in_inferior ("istr",
-					    builtin_type_voidptrfuncptr);
+					    ret_type);
       nsstringValue = call_function_by_hand (function, 1, &stringValue[2]);
     }
   else if (lookup_minimal_symbol ("+[NSString stringWithCString:]", 0, 0))
     {
       function = find_function_in_inferior("+[NSString stringWithCString:]",
-					   builtin_type_voidptrfuncptr);
+					   ret_type);
       stringValue[0] = value_from_longest 
                            (builtin_type_long, lookup_objc_class ("NSString"));
       stringValue[1] = value_from_longest 
@@ -372,7 +384,6 @@ value_nsstring (char *ptr, int len)
   else
     error (_("NSString: internal error -- no way to create new NSString"));
 
-  deprecated_set_value_type (nsstringValue, type);
   return nsstringValue;
 }
 
@@ -2221,6 +2232,7 @@ new_objc_runtime_find_impl (CORE_ADDR class, CORE_ADDR sel, int stret)
     {
       struct value *classval, *selval;
       struct value *infargs[2];
+      char *imp_name;
 
       classval = value_from_pointer (lookup_pointer_type 
                                           (builtin_type_void_data_ptr), class);
@@ -2231,18 +2243,34 @@ new_objc_runtime_find_impl (CORE_ADDR class, CORE_ADDR sel, int stret)
 
       retval = new_objc_runtime_class_getClass (classval);
       if (retval == 0)
-	return 0;
+	goto cleanups;
 
       ret_value = call_function_by_hand
                   (lookup_cached_function (stret ? function_stret : function),
                    2, infargs);
       retval = (CORE_ADDR) value_as_address (ret_value);
       retval = gdbarch_addr_bits_remove (current_gdbarch, retval);
+      /* If the current object doesn't respond to this selector, then
+	 the implementation function will be "_objc_msgForward" or
+	 "_objc_msgForward_stret".  We don't want to call those since
+	 it is most likely just going to crash, and Greg says that not
+	 all implementations of objc_msgForward follow the standard
+	 ABI anyway...  */
+      if (find_pc_partial_function (retval, &imp_name, NULL, NULL))
+	{
+	  if (strcmp (imp_name, "_objc_msgForward") == 0
+	      || strcmp (imp_name, "_objc_msgForward_stret") == 0)
+	    {
+	      retval = 0;
+	      goto cleanups;
+	    }
+	}
     }
 
-  do_cleanups (scheduler_cleanup);
-
   add_implementation_to_cache (class, sel, retval);
+
+ cleanups:
+  do_cleanups (scheduler_cleanup);
   return retval;
 }
 

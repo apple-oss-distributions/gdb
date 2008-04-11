@@ -2666,6 +2666,12 @@ fix_and_continue_supported (void)
   if (exec_bfd == NULL)
     return -1;
 
+  /* Not supported on ARM, neither remote nor native.  */
+
+#if defined (TARGET_ARM)
+  return 0;
+#endif
+
   /* F&C is not supported on ppc64 yet. */
 
   if (gdbarch_lookup_osabi (exec_bfd) == GDB_OSABI_DARWIN64)

@@ -29,6 +29,7 @@
 #include <mach/vm_region.h>
 #include <mach/machine/vm_param.h>
 #include <mach-o/loader.h>
+#include <sys/time.h>
 
 #include "defs.h"
 #include "inferior.h"
@@ -47,6 +48,8 @@
 #include "objc-lang.h"
 #include "gdbarch.h"
 #include "arch-utils.h"
+#include "ui-out.h"
+#include "osabi.h"
 
 #ifdef USE_MMALLOC
 #include <mmalloc.h>
@@ -107,7 +110,7 @@ int dyld_load_dyld_shlib_symbols_flag = 1;
 int dyld_load_cfm_shlib_symbols_flag = 1;
 int dyld_print_basenames_flag = 0;
 int dyld_reload_on_downgrade_flag = 0;
-static int pre_slide_libraries_flag = 0;
+static int pre_slide_libraries_flag = 1;
 char *dyld_load_rules = NULL;
 char *dyld_minimal_load_rules = NULL;
 static char *shlib_path_subst_cmd_args = NULL;
@@ -1261,6 +1264,14 @@ macosx_dyld_add_libraries (struct macosx_dyld_thread_status *dyld_status,
             notify_cleanup = make_cleanup_ui_out_notify_begin_end (uiout,
                                                               "shlibs-added");
             dyld_print_entry_info (entry, shlibnum, 0);
+            if (ui_out_is_mi_like_p (uiout))
+              {
+                struct timeval t;
+                make_cleanup_ui_out_tuple_begin_end (uiout, "time");
+                gettimeofday (&t, NULL);
+                ui_out_field_fmt (uiout, "now", "%u.%06u", 
+                             (unsigned int) t.tv_sec, (unsigned int) t.tv_usec);
+              }
             do_cleanups (notify_cleanup);
 	    /* We have to add objfiles to the list of objfiles which
 	       should be scanned for new breakpoints when we see them
@@ -1829,15 +1840,6 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
     {
       xfree (namebuf);
       namebuf = NULL;
-    }
-
-  if (namebuf != NULL)
-    {
-      char *s = strchr (namebuf, ':');
-      if (s != NULL)
-        {
-          *s = '\0';
-        }
     }
 
   /* Look through the load commands for the image filename.  
@@ -2588,22 +2590,6 @@ dyld_remove_symbol_file_command (char *args, int from_tty)
   dyld_generic_command_with_helper (args, from_tty, remove_helper);
 }
 
-static void
-specify_symfile_helper (struct dyld_path_info *d,
-                        struct dyld_objfile_entry *e,
-                        struct objfile *o, int index,
-                      const char *arg)
-{
-  e->user_name = xstrdup (arg);
-  e->loaded_error = 0;
-}
-
-static void
-dyld_specify_symbol_file_command (char *args, int from_tty)
-{
-  dyld_generic_command_with_helper (args, from_tty, specify_symfile_helper);
-}
-
 /* objfile_set_load_state
 
    Given objfile O, this changes the load state to LOAD_STATE.  This
@@ -3332,9 +3318,6 @@ _initialize_macosx_nat_dyld ()
 
   add_cmd ("remove-symbol-file", class_run, dyld_remove_symbol_file_command,
            "Remove a symbol file.", &shliblist);
-
-  add_cmd ("specify-symbol-file", class_run, dyld_specify_symbol_file_command,
-           "Specify the symbol file for a sharedlibrary entry.", &shliblist);
 
   add_cmd ("set-load-state", class_run, dyld_set_load_state_command,
            "Set the load level of a library (given by the index from \"info sharedlibrary\").",

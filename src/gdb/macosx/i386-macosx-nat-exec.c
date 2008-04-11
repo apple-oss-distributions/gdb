@@ -341,65 +341,81 @@ i386_macosx_dr_set (int regnum, uint32_t value)
 #ifndef HAVE_X86_DEBUG_STATE32_T
   return;
 #else
-  int current_pid;
   thread_t current_thread;
   x86_debug_state_t dr_regs;
   kern_return_t ret;
   unsigned int dr_count = x86_DEBUG_STATE_COUNT;
+  thread_array_t thread_list;
+  unsigned int nthreads;
+  int i;
 
   gdb_assert (regnum >= 0 && regnum <= DR_CONTROL);
 
-  current_pid = ptid_get_pid (inferior_ptid);
-  current_thread = ptid_get_tid (inferior_ptid);
-
-  dr_regs.dsh.flavor = x86_DEBUG_STATE32;
-  dr_regs.dsh.count = x86_DEBUG_STATE32_COUNT;
-  dr_count = x86_DEBUG_STATE_COUNT;
-  ret = thread_get_state (current_thread, x86_DEBUG_STATE, 
-                          (thread_state_t) &dr_regs, &dr_count);
-
+  /* We have to set the watchpoint value in all the threads.  */
+  ret = task_threads (macosx_status->task, &thread_list, &nthreads);
   if (ret != KERN_SUCCESS)
     {
-      printf_unfiltered ("Error reading debug registers thread 0x%x via thread_get_state\n", (int) current_thread);
+      printf_unfiltered ("Error getting the task threads for task: 0x%x.\n",
+			 (int) macosx_status->task);
       MACH_CHECK_ERROR (ret);
     }
 
-  switch (regnum) 
+  for (i = 0; i < nthreads; i++)
     {
-      case 0:
-        dr_regs.uds.ds32.dr0 = value;
-        break;
-      case 1:
-        dr_regs.uds.ds32.dr1 = value;
-        break;
-      case 2:
-        dr_regs.uds.ds32.dr2 = value;
-        break;
-      case 3:
-        dr_regs.uds.ds32.dr3 = value;
-        break;
-      case 4:
-        dr_regs.uds.ds32.dr4 = value;
-        break;
-      case 5:
-        dr_regs.uds.ds32.dr5 = value;
-        break;
-      case 6:
-        dr_regs.uds.ds32.dr6 = value;
-        break;
-      case 7:
-        dr_regs.uds.ds32.dr7 = value;
-        break;
-    }
+      current_thread = thread_list[i];
 
-  ret = thread_set_state (current_thread, x86_DEBUG_STATE, 
-                          (thread_state_t) &dr_regs, dr_count);
-
-  if (ret != KERN_SUCCESS)
-    {
-      printf_unfiltered ("Error writing debug registers thread 0x%x via thread_get_state\n", (int) current_thread);
-      MACH_CHECK_ERROR (ret);
+      dr_regs.dsh.flavor = x86_DEBUG_STATE32;
+      dr_regs.dsh.count = x86_DEBUG_STATE32_COUNT;
+      dr_count = x86_DEBUG_STATE_COUNT;
+      ret = thread_get_state (current_thread, x86_DEBUG_STATE, 
+			      (thread_state_t) &dr_regs, &dr_count);
+      
+      if (ret != KERN_SUCCESS)
+	{
+	  printf_unfiltered ("Error reading debug registers thread 0x%x via thread_get_state\n", (int) current_thread);
+	  MACH_CHECK_ERROR (ret);
+	}
+      
+      switch (regnum) 
+	{
+	case 0:
+	  dr_regs.uds.ds32.dr0 = value;
+	  break;
+	case 1:
+	  dr_regs.uds.ds32.dr1 = value;
+	  break;
+	case 2:
+	  dr_regs.uds.ds32.dr2 = value;
+	  break;
+	case 3:
+	  dr_regs.uds.ds32.dr3 = value;
+	  break;
+	case 4:
+	  dr_regs.uds.ds32.dr4 = value;
+	  break;
+	case 5:
+	  dr_regs.uds.ds32.dr5 = value;
+	  break;
+	case 6:
+	  dr_regs.uds.ds32.dr6 = value;
+	  break;
+	case 7:
+	  dr_regs.uds.ds32.dr7 = value;
+	  break;
+	}
+      
+      ret = thread_set_state (current_thread, x86_DEBUG_STATE, 
+			      (thread_state_t) &dr_regs, dr_count);
+      
+      if (ret != KERN_SUCCESS)
+	{
+	  printf_unfiltered ("Error writing debug registers thread "
+			     "0x%x via thread_get_state\n", (int) current_thread);
+	  MACH_CHECK_ERROR (ret);
+	}
     }
+  ret = vm_deallocate (mach_task_self (), (vm_address_t) thread_list, 
+			(nthreads * sizeof (int)));
 #endif /* HAVE_X86_DEBUG_STATE32_T */
 }
 

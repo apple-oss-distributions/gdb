@@ -2737,6 +2737,31 @@ remote_open_1 (char *name, int from_tty, struct target_ops *target,
 }
   
 /* APPLE LOCAL Implementation of remote_create_inferior and remote_attach.  */
+static void
+complete_create_or_attach (int from_tty)
+{
+  struct remote_state *rs = get_remote_state ();
+
+  /* Now send the restart packet.  Then we will wait for the remote to
+     start up.  */
+  struct gdb_exception ex;
+  ex = catch_exception (uiout, remote_start_remote, NULL, RETURN_MASK_ALL);
+  if (ex.reason < 0)
+    {
+      pop_target ();
+      throw_exception (ex);
+    }
+  
+  /* Now indicate we have a remote target:  */
+  rs->has_target = 1;
+  
+  /* And not that we have a target, redo the dyld information.  */
+  macosx_dyld_create_inferior_hook ();
+  if (exec_bfd)
+    remote_check_symbols (symfile_objfile);
+  
+  observer_notify_inferior_created (&current_target, from_tty);
+}
 
 /* We printf lengths & index's.  We need to know what size to allocate for them.
    20 is the length of 0xffffffffffffffff as an int.  Probably big enough.  */
@@ -2746,7 +2771,7 @@ remote_create_inferior (char *exec_file, char *allargs, char **env, int from_tty
 {
   struct remote_state *rs = get_remote_state ();
   char *buf = alloca (rs->remote_packet_size);
-  char *pkt_buffer;
+  char *pkt_buffer = NULL;
   int exec_len;
   int args_len;
   int argnum;
@@ -2869,35 +2894,50 @@ remote_create_inferior (char *exec_file, char *allargs, char **env, int from_tty
   else if (buf[0] != 'O' && buf[1] != 'K')
     error ("Unknown packet reply: \"%s\" to remote arguments packet.", buf);
 
-  /* Now send the restart packet.  Then we will wait for the remote to
-     start up.  */
-  {
-    struct gdb_exception ex;
-    ex = catch_exception (uiout, remote_start_remote, NULL, RETURN_MASK_ALL);
-    if (ex.reason < 0)
-      {
-	pop_target ();
-	throw_exception (ex);
-      }
-  }
+  /* debugserver actually replies to the A packet before starting up the app,
+     so then if it fails to start up, we don't get a useful error code.  
+     So I'm sending a "how about that startup" packet to retrieve that if 
+     there is an error code.  */
 
-  /* Now indicate we have a remote target:  */
-  rs->has_target = 1;
+  putpkt ("qLaunchSuccess");
+  getpkt (buf, rs->remote_packet_size, 0);
+  if (buf[0] == 'E')
+    {
+      pop_target ();
+      error ("Error launching remote program: %s.", buf+1);
+    }
 
-  /* And not that we have a target, redo the dyld information.  */
-  macosx_dyld_create_inferior_hook ();
-  if (exec_bfd)
-    remote_check_symbols (symfile_objfile);
-  
-  observer_notify_inferior_created (&current_target, from_tty);
-
+  complete_create_or_attach (from_tty);
 }
 
 void
 remote_attach (char *args, int from_tty)
 {
-  error ("Remote Attach not currently implemented.\n");
+  struct remote_state *rs = get_remote_state ();
+  char *buf = alloca (rs->remote_packet_size);
+  char *endptr;
+  pid_t remote_pid;
+  int timed_out;
+
+  if (args == NULL || *args == '\0')
+    error ("No pid supplied to attach.");
+
+  remote_pid = strtol (args, &endptr, 0);
+  if (*endptr != '\0')
+    error ("Junk at the end of pid string: \"%s\".", endptr);
+
+  sprintf (buf, "vAttach;%x", remote_pid);
+  putpkt (buf);
+  timed_out = getpkt_sane (buf, rs->remote_packet_size, 0);
+  
+  if (timed_out)
+    error ("Attach attempt timed out.");
+  else if (*buf == '\0' || *buf == 'E')
+    error ("Attach failed: '%s'", buf);
+
+  complete_create_or_attach (from_tty);
 }
+
 /* END APPLE LOCAL */
 
 /* This takes a program previously attached to and detaches it.  After
@@ -4906,7 +4946,8 @@ getpkt_sane (char *buf,
 		{
 		  QUIT;
 		  target_mourn_inferior ();
-		  error (_("Watchdog has expired.  Target detached."));
+                  /* APPLE LOCAL: More explicit error message.  */
+		  error (_("Watchdog has expired.  Remote device was disconnected?  Debugging session terminated."));
 		}
 	      if (remote_debug)
 		fputs_filtered ("Timed out.\n", gdb_stdlog);
@@ -6038,6 +6079,7 @@ Specify the serial device it is connected to\n\
   remote_ops.to_open = remote_open;
   remote_ops.to_close = remote_close;
   remote_ops.to_create_inferior = remote_create_inferior;
+  remote_ops.to_attach = remote_attach;
   remote_ops.to_detach = remote_detach;
   remote_ops.to_disconnect = remote_disconnect;
   remote_ops.to_resume = remote_resume;

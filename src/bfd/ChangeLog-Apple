@@ -1,3 +1,10 @@
+2008-03-31  Jason Molenda  (jmolenda@apple.com)
+
+	* tekhex.c (first_phase): Allocate space for a new symbol name
+	in a char* buf and point the symbol.name record to point to it
+	instead of allocating it in the symbol.name const char* record
+	and casting away the constness.
+
 2008-03-27  Jason Molenda  (jmolenda@apple.com)
 
 	* mach-o.h: Add LC_LAZY_LOAD_DYLIB, LC_ENCRYPTION_INFO.

@@ -262,6 +262,19 @@ dyld_add_image_libraries (struct dyld_objfile_info *info, bfd *abfd)
                       continue;
                     }
 		  name[dcmd->name_len] = '\0';
+
+                  /* Ignore dylibs starting with "@rpath" because we don't 
+                     know how to resolve them correctly yet.  This means
+                     people who want to put breakpoints in one of these
+                     dylibs will have to use a future-breakpoint instead;
+                     not the end of the world.  */
+                  if (strncmp (name, "@rpath", 6) == 0)
+                    {
+                      xfree (name);
+                      name = NULL;
+                      break;
+                    }
+
 		  fixed_name = dyld_fix_path (name);
 		  if (fixed_name != name)
 		    {
@@ -273,6 +286,11 @@ dyld_add_image_libraries (struct dyld_objfile_info *info, bfd *abfd)
               default:
                 abort ();
               }
+
+            /* If NAME is null, this is an @rpath dylib that
+               we want to skip over.  */
+            if (name == NULL)
+              continue;
 
             if (name[0] == '\0')
               {
@@ -1828,12 +1846,11 @@ dyld_is_objfile_loaded (struct objfile *obj)
   if (obj->separate_debug_objfile_backlink != NULL)
     return dyld_is_objfile_loaded (obj->separate_debug_objfile_backlink);
     
-  /* A SYMS_ONLY_OBJFILE is an objfile added by the user, either with
-     add-symbol-file or "sharedlibrary specify-symbol-file"; it shadows
-     an actually loaded & resident objfile, but breakpoints will be
-     associated with the syms-only-objfile.  So under the theory that
-     users don't add-symbol-file things which haven't been loaded yet,
-     set breakpoints in this unconditionally.  */
+  /* A SYMS_ONLY_OBJFILE is an objfile added by the user with
+     add-symbol-file; it shadows an actually loaded & resident objfile, 
+     but breakpoints will be associated with the syms-only-objfile.  
+     So under the theory that users don't add-symbol-file things which 
+     haven't been loaded yet, set breakpoints in this unconditionally.  */
   if (obj->syms_only_objfile == 1)
     return 1;
 

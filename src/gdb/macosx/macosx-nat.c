@@ -252,7 +252,13 @@ can_attach (pid_t target_pid)
 
       /* Support debugging of classic runtime infrastructure */
       if (target_is_classic == 1)
-        return 1;
+        {
+          /* For most people, their gdb will immediately be killed off
+             because apps running under translated are marked PT_DENY_ATTACH. */
+          warning ("Attempting to attach to a PPC process with an i386 "
+                   "native gdb - attach will not succeed.");
+          return 1;
+        }
 
       /* List processes we couldn't get classic status of.  Fixme - these
          are all processes running under other uids so we can't inspect

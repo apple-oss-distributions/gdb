@@ -1342,6 +1342,12 @@ decode_line_1 (char **argptr, int funfirstline, struct symtab *default_symtab,
             final_result.sals[0].line = parsed_lineno;
             final_result.sals[0].symtab = file_symtab_arr[0];
           }
+
+        /* We had multiple matching sals but only one (final_result.nelts == 1)
+           actually worked out.  Make sure to advance *argptr over the 
+           line number specification or we'll get an error about junk at the
+           end of the linespec.  */
+        *argptr = q;
         return final_result;
       }
       else
