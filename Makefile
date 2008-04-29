@@ -1,5 +1,5 @@
 GDB_VERSION = 6.3.50-20050815
-GDB_RC_VERSION = 954
+GDB_RC_VERSION = 956
 
 BINUTILS_VERSION = 2.13-20021117
 BINUTILS_RC_VERSION = 46
@@ -175,6 +175,13 @@ CONFIG_OTHER_OPTIONS?=--disable-serial-configure
 ifneq ($(findstring macosx,$(CANONICAL_ARCHS))$(findstring darwin,$(CANONICAL_ARCHS)),)
 CC = gcc -arch $(HOST_ARCHITECTURE)
 CC_FOR_BUILD = SDKROOT= gcc
+
+# Unset this when building Canadian Cross.  (e.g. an arm native gdb built on an
+# i386 system)  This will have a setting like "10.5" which is not valid on the
+# iPhone OS platform and our compiler will get linker errors when running
+# autoconf tests.
+MACOSX_DEPLOYMENT_TARGET=
+
 ifndef CDEBUGFLAGS
 CDEBUGFLAGS = -gdwarf-2
 endif

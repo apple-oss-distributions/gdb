@@ -734,6 +734,11 @@ scan_bfd_for_memory_groups (struct bfd *abfd, struct pre_run_memory_map *map)
           current_bucket_start_addr = this_seg_start;
           current_bucket_end_addr = current_bucket_start_addr +
                      ((this_seg_len / map->bucket_size) + 1) * map->bucket_size;
+          /* Did we overflow?  We don't round current_bucket_start_addr down
+             to a bucket boundary so if it's right near the top of memory,
+             current_bucket_start_addr + bucket_size may overflow.  */
+          if (current_bucket_end_addr < current_bucket_start_addr)
+            current_bucket_end_addr = (CORE_ADDR) -1;
           continue;
         }
 
@@ -757,6 +762,11 @@ scan_bfd_for_memory_groups (struct bfd *abfd, struct pre_run_memory_map *map)
                      (((this_seg_end - current_bucket_start_addr) / 
                         map->bucket_size) + 1)
                      * map->bucket_size;
+          /* Did we overflow?  We don't round current_bucket_start_addr down  
+             to a bucket boundary so if it's right near the top of memory,  
+             current_bucket_start_addr + bucket_size may overflow.  */
+          if (current_bucket_end_addr < current_bucket_start_addr)
+            current_bucket_end_addr = (CORE_ADDR) -1;
           continue;
         }
 
@@ -787,7 +797,11 @@ scan_bfd_for_memory_groups (struct bfd *abfd, struct pre_run_memory_map *map)
       current_bucket_start_addr = this_seg_start;
       current_bucket_end_addr = current_bucket_start_addr +    
                  ((this_seg_len / map->bucket_size) + 1) * map->bucket_size;
-    
+      /* Did we overflow?  We don't round current_bucket_start_addr down  
+         to a bucket boundary so if it's right near the top of memory,  
+         current_bucket_start_addr + bucket_size may overflow.  */
+      if (current_bucket_end_addr < current_bucket_start_addr)
+        current_bucket_end_addr = (CORE_ADDR) -1;
     }
 
   /* Update the number of buckets used by the last memory group we saw.  */
@@ -799,6 +813,16 @@ scan_bfd_for_memory_groups (struct bfd *abfd, struct pre_run_memory_map *map)
       fp->groups[fp->num].length = 
                    (current_bucket_end_addr - current_bucket_start_addr) / 
                     map->bucket_size;
+
+      /* Does this grouping overflow?  We don't round current_bucket_start_addr
+         down  to a bucket boundary so if it's right near the top of memory,  
+         current_bucket_start_addr + bucket_size may overflow.  If so, remember
+         to add one to the bucket calculation.  */
+      CORE_ADDR recalculated_endaddr = current_bucket_start_addr + 
+                             (map->bucket_size * fp->groups[fp->num].length);
+      if (recalculated_endaddr < current_bucket_end_addr)
+        fp->groups[fp->num].length += 1;
+
       fp->num++;
     }
   else
@@ -1189,7 +1213,7 @@ dyld_load_library (const struct dyld_path_info *d,
 	    }
 	  goto try_again_please;
 	}
-      else if (bfd_mach_o_stub_library (e->abfd))
+      else if (bfd_mach_o_stub_library (e->abfd) || bfd_mach_o_encrypted_binary (e->abfd))
 	{
 	  /* If we find a stub library as the backing file,
 	     then switch to reading from memory.  */

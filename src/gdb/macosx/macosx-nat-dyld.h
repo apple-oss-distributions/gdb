@@ -61,7 +61,16 @@ struct macosx_dyld_thread_status
 
   struct breakpoint *dyld_breakpoint;
 
+  /* There are two ways to tell if libSystem's version of
+     malloc is initialized.  If dyld_version is 1, then 
+     you have to break on malloc_inited_breakpoint, and 
+     if you hit it, then everything is kosher.  */
   struct breakpoint *malloc_inited_breakpoint;
+  /* if dyld_version is 2 or greater, there's a bool
+     in the dyld all_image_infos structure that tells us
+     this directly.  */
+
+  int libsystem_initialized;
 
   CORE_ADDR dyld_addr;
   CORE_ADDR dyld_slide;

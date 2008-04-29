@@ -1,7 +1,7 @@
 #! /bin/sh
 
 host_architecture=""
-requested_architecture=""
+requested_architecture="UNSET"
 architecture_to_use=""
 
 # classic-inferior-support
@@ -75,6 +75,13 @@ case "$1" in
     translate_mode=1
     shift;;
 esac
+
+if [ -z "$requested_architecture" ]
+then
+  echo ERROR: No architecture specified with -arch argument. >&2
+  exit 1
+fi
+[ "$requested_architecture" = "UNSET" ] && requested_architecture=""
 
 if [ $translate_mode -eq 1 ]
 then

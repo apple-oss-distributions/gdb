@@ -18,6 +18,7 @@ TDEPFILES = \
 	remote-mobile.o \
         macosx-tdep.o \
         machoread.o \
+	macosx-nat-cmds-load.o \
        	macosx-nat-dyld.o \
 	macosx-nat-dyld-path.o \
 	macosx-nat-dyld-info.o \

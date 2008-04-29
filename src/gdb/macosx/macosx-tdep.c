@@ -58,6 +58,7 @@ the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.  */
 #include "regcache.h"
 #include "source.h"
 #include "completer.h"
+#include "exceptions.h"
 
 #include <dirent.h>
 #include <libgen.h>
@@ -752,9 +753,15 @@ gdb_DBGCopyMatchingUUIDsForURL (const char *path)
 
   CFAllocatorRef alloc = kCFAllocatorDefault;
   CFMutableArrayRef uuid_array = NULL;
+  struct gdb_exception e;
+  bfd *abfd;
 
-  bfd *abfd = symfile_bfd_open (path, 0);
-  if (abfd == NULL)
+  TRY_CATCH (e, RETURN_MASK_ERROR)
+  {
+    abfd = symfile_bfd_open (path, 0);
+  }
+  
+  if (abfd == NULL || e.reason == RETURN_ERROR)
     return NULL;
   if (bfd_check_format (abfd, bfd_archive)
       && strcmp (bfd_get_target (abfd), "mach-o-fat") == 0)
@@ -852,7 +859,9 @@ create_dsym_uuids_for_path (char *dsym_bundle_path)
   
   while (dsym_path == NULL && (dp = readdir (dirp)) != NULL)
     {
-      /* Don't search directories.  */
+      /* Don't search directories.  Note, some servers return DT_UNKNOWN
+         for everything, so you can't assume this test will keep you from
+	 trying to read directories...  */
       if (dp->d_type == DT_DIR)
 	continue;
       

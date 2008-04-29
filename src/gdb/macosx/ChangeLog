@@ -1,3 +1,51 @@
+2008-04-28  Jim Ingham  <jingham@apple.com>
+
+	* machoread.c (macho_symfile_read): If the binary is encrypted, 
+	then skip the on disk version.  It will just confuse us.
+	* macosx-nat-dyld-process.c (dyld_load_library): Read encrypted
+	binaries from memory.
+	
+2008-04-25  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat.c (can_attach): Don't issue warning if this is a native
+	gdb and the target pid is a translated process.
+	(is_pid_classic): Make externally visible.
+	* macosx-nat.h: Add prototype for is_pid_classic.
+	* macosx-nat-inferior.c (macosx_child_attach): Check explicitly for
+	an i386 gdb attaching to a translated process; issue the warning here.
+
+2008-04-25  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c (malloc_inited_callback): Add 
+	malloc_inited_callback_alt to record an alternate mangling scheme
+	for this symbol.
+	(macosx_set_start_breakpoint): Check for both versions.
+
+2008-04-24  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-dyld.c (struct dyld_raw_infos): Add fields for new
+	struct members.
+	(macosx_init_addresses): If this is dyld struct v2, use the 
+	libsystem_initialized information.
+	(macosx_set_start_breakpoint): Continue using old scheme for
+	determining if malloc is safe on dyld struct v1.
+	(macosx_solib_add): Refresh the dyld info to see if malloc is
+	now safe.
+	(dyld_info_process_raw): Read the new field.
+	* macosx-nat-dyld.h (struct macosx_dyld_thread_status): Added field.
+
+2008-04-21  Jim Ingham  <jingham@apple.com>
+
+	* macosx-tdep.c (gdb_DBGCopyMatchintUUIDsForURL): TRY_CATCH
+	around the call to symfile_open_bfd.
+	(create_dsym_uuids_for_path): Add a comment.
+	
+2008-04-17  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-process.c (scan_bfd_for_memory_groups): Guard against
+	overflowing a CORE_ADDR when calculating the end of the current
+	grouping.
+
 2008-04-10  Jim Ingham  <jingham@apple.com>
 
 	* macosx-nat-inferior.c (macosx_child_attach): Pass the pid

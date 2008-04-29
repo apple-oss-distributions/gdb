@@ -24,7 +24,6 @@
 #include <mach/mach.h>
 
 #include <mach-o/nlist.h>
-#include <mach-o/dyld_debug.h>
 
 #include <mach/mach_error.h>
 

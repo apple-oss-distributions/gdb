@@ -833,7 +833,9 @@ print_single_dwarf_location (struct ui_file *stream, gdb_byte **loc_ptr,
 		     "used either alone or in conjuction with DW_OP_piece."));
 	      
 	  result = op - DW_OP_reg0;
-	  fprintf_filtered (stream, "in register %d", (unsigned int) result);
+	  /* APPLE LOCAL print register name instead of number.  */
+	  fprintf_filtered (stream, "in register %s", 
+			    REGISTER_NAME (DWARF2_REG_TO_REGNUM (result)));
 	      
 	  break;
 	      
@@ -844,8 +846,9 @@ print_single_dwarf_location (struct ui_file *stream, gdb_byte **loc_ptr,
 	      && *op_ptr != DW_OP_APPLE_uninit)
 	    error (_("DWARF-2 expression error: DW_OP_reg operations must be "
 		     "used either alone or in conjuction with DW_OP_piece."));
-	      
-	  fprintf_filtered (stream, "in register %d", (unsigned int) reg);
+	  /* APPLE LOCAL print register name instead of number.  */
+	  fprintf_filtered (stream, "in register %s", 
+			    REGISTER_NAME (DWARF2_REG_TO_REGNUM (reg)));
 	  break;
 	      
 	case DW_OP_breg0:
@@ -1246,12 +1249,12 @@ loclist_describe_location (struct symbol *symbol, struct ui_file *stream)
       ctx->get_frame_base = dwarf_expr_frame_base;
       ctx->get_tls_address = dwarf_expr_tls_address;
 
-      fprintf_filtered (stream, "   0x%s - 0x%s: ", paddr_nz (low), 
+      /* APPLE LOCAL begin Don't print extra newline at end of list.  */
+      fprintf_filtered (stream, "\n   0x%s - 0x%s: ", paddr_nz (low), 
                         paddr_nz (high));
       
       print_single_dwarf_location (stream, &loc_ptr, loc_end, ctx);
-
-      fprintf_filtered (stream, "\n");
+      /* APPLE LOCAL end Don't print extra newline at end of list.  */
 
       free_dwarf_expr_context (ctx);
     }

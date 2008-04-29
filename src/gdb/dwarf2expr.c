@@ -760,10 +760,14 @@ execute_stack_op (struct dwarf_expr_context *ctx,
 
 	/* APPLE LOCAL begin variable initialized status  */
 	case DW_OP_APPLE_uninit:
+#if 0
+          /* gcc-4.2 is not outputting trustworthy DW_OP_APPLE_uninit flags; 
+             ignore them for now.  */
 	  ctx->var_status = 0;
 	  /* If the variable is uninitialized, throw an error instead of
 	     trying to evaluate it.  */
 	  throw_error (GENERIC_ERROR, "Variable is currently uninitialized.");
+#endif
 	  goto no_push;
 	/* APPLE LOCAL end variable initialized status  */
 

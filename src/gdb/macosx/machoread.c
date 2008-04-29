@@ -467,6 +467,11 @@ macho_symfile_read (struct objfile *objfile, int mainline)
   if (bfd_mach_o_stub_library (abfd))
     return;
 
+  /* Also, if the binary is encrypted, then it will only confuse us.  We'll skip
+     reading this in, and gdb will read it from memory later on.  */
+  if (bfd_mach_o_encrypted_binary (abfd))
+    return;
+
   init_minimal_symbol_collection ();
   make_cleanup_discard_minimal_symbols ();
 

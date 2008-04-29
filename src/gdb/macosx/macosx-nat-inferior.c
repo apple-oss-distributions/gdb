@@ -1657,9 +1657,10 @@ macosx_child_attach (char *args, int from_tty)
   
   /* A native (i386) gdb trying to attach to a translated (ppc) app will
      result in a gdb crash.  Let's flag it as an error instead.  */
-  if (!can_attach (pid))
-    error ("Unable to attach to process-id %d, it is a ppc app running in translation", pid);
-   
+  if (is_pid_classic (getpid ()) == 0 && is_pid_classic (pid) == 1)
+    warning ("Attempting to attach to a PPC process with an i386 "
+             "native gdb - attach will not succeed.");
+
   macosx_create_inferior_for_task (macosx_status, itask, pid);
 
   macosx_exception_thread_create (&macosx_status->exception_status,

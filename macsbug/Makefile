@@ -224,7 +224,7 @@ install				:	all $(DSTDIR)
 
 $(SYMROOT)/$(PLUGIN) 		: 	gdb_plugin_support.o $(OBJS) 
 	$(CC) $(LDFLAGS) $(OBJS) -arch ppc $(gdb_plugin_support.o) -o $(SYMROOT)/$(PLUGIN)
-	$(FIXUP)
+	-$(FIXUP)
 
 $(OFILE_DIR)/MacsBug_utils.o 	: 	MacsBug_utils.c MacsBug_testing.i 	\
 					$(HFILES) 				\

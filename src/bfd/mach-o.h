@@ -516,6 +516,7 @@ typedef struct mach_o_data_struct
   bfd *ibfd;
   unsigned char uuid[16];
   int scanning_load_cmds;
+  int encrypted;
 }
 mach_o_data_struct;
 
@@ -524,6 +525,7 @@ typedef struct mach_o_data_struct bfd_mach_o_data_struct;
 /* APPLE LOCAL  Mach-O */
 unsigned int bfd_mach_o_version (bfd *);
 int bfd_mach_o_stub_library (bfd *);
+bfd_boolean bfd_mach_o_encrypted_binary (bfd *);
 /* APPLE LOCAL shared cache  */
 bfd_boolean bfd_mach_o_in_shared_cached_memory (bfd *);
 

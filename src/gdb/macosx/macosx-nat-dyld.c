@@ -131,17 +131,22 @@ int dyld_stop_on_shlibs_updated = 1;
 int dyld_combine_shlibs_added = 1;
 
 /* This is the function that libSystem calls to tell dyld that 
-   the malloc system has been initialized.  */
+   the malloc system has been initialized.  
+   This function name can be mangled in one of two ways.  We must check
+   for both.  */
 
 char *malloc_inited_callback = "_Z21registerThreadHelpersPKN4dyld16LibSystemHelpersE";
+char *malloc_inited_callback_alt = "_ZL21registerThreadHelpersPKN4dyld16LibSystemHelpersE";
 
 /* A structure filled in by dyld in the inferior process.
-   There is only one of these in the inferior.  */
+   There is only one of these in the inferior.  
+   This is an internal representation of the 'struct dyld_all_image_infos' 
+   defined in <mach-o/dyld_images.h> */
 
 struct dyld_raw_infos
 {
-  uint32_t version;             /* MacOS X 10.4 == 1 */
-  uint32_t num_info;            /* Number of elements in the following array */
+  uint32_t version;          /* MacOS X 10.4 == 1; 2 == after Mac OS X 10.5 */
+  uint32_t num_info;         /* Number of elements in the following array */
 
   /* Array of images (struct dyld_raw_info here in gdb) that are loaded
      in the inferior process.
@@ -165,6 +170,16 @@ struct dyld_raw_infos
      This is either 4 or 8 bytes in the inferior, depending on wordsize. */
 
   CORE_ADDR dyld_notify;
+
+  int process_detached_from_shared_region;
+
+  /* The following fields are only present when version is higher than 1.  */
+
+  /* This field indicates that the malloc library in libSystem is ready
+     to use.  It is set by dyld.  */
+  int libsystem_initialized;
+
+  CORE_ADDR dyld_image_load_address;
 };
 
 /* A structure filled in by dyld in the inferior process.
@@ -328,6 +343,12 @@ macosx_init_addresses (macosx_dyld_thread_status *s)
   dyld_read_raw_infos (s->dyld_image_infos, &infos);
 
   s->dyld_version = infos.version;
+  if (infos.version >= 2)
+    {
+      s->libsystem_initialized = infos.libsystem_initialized;
+      macosx_set_malloc_inited (s->libsystem_initialized);
+    }
+
   if (s->dyld_slide != INVALID_ADDRESS)
     s->dyld_notify = infos.dyld_notify + s->dyld_slide;
   else
@@ -1086,33 +1107,52 @@ macosx_set_start_breakpoint (macosx_dyld_thread_status *s, bfd *exec_bfd)
       changed_breakpoints = 1;
     }
 
-  if (status->malloc_inited_breakpoint == NULL)
+  /* We only have to bother with the malloc initialized breakpoint in
+     version 1 dyld.  With version 2 there is an explicit field in the
+     dyld_all_image_infos structure telling us whether it is
+     initialized or not.  */
+  if (s->dyld_version == 1)
     {
-      struct cleanup *free_adorned;
-
-      char *adorned_name = xmalloc (strlen (malloc_inited_callback) + strlen (dyld_symbols_prefix)
-				    + 1);
-      free_adorned = make_cleanup (xfree, adorned_name);
-
-      strcpy (adorned_name, dyld_symbols_prefix);
-      strcat (adorned_name, malloc_inited_callback);
-      malloc_inited = lookup_minimal_symbol (adorned_name, NULL, NULL);
-      do_cleanups (free_adorned);
-      if (malloc_inited != NULL)
+      if (status->malloc_inited_breakpoint == NULL)
 	{
-	  status->malloc_inited_breakpoint = create_solib_event_breakpoint
-	    (SYMBOL_VALUE_ADDRESS (malloc_inited));
-	  changed_breakpoints = 1;
-	}
-      else
-	{
-	  /* If I don't find the malloc symbol I'd better turn on 
-	     malloc inited now, since there won't be another good 
-	     chance to do so.  This could happen with a totally static
-	     binary, or if somebody set the dyld load state to container.  */
-	  warning ("Could not find malloc init callback function.  "
-		   "\nMake sure malloc is initialized before calling functions.");
-	  macosx_set_malloc_inited (1);
+	  struct cleanup *free_adorned;
+	  
+          /* The malloc_inited_callback function has two possible mangled
+             forms.  We have to check for both.  */
+
+	  char *adorned_name = xmalloc (strlen (malloc_inited_callback) + 
+                                        strlen (dyld_symbols_prefix) + 1);
+	  free_adorned = make_cleanup (xfree, adorned_name);
+	  strcpy (adorned_name, dyld_symbols_prefix);
+	  strcat (adorned_name, malloc_inited_callback);
+	  
+	  char *adorned_name_alt = xmalloc (strlen (malloc_inited_callback_alt)
+                                        + strlen (dyld_symbols_prefix) + 1);
+	  make_cleanup (xfree, adorned_name_alt);
+	  strcpy (adorned_name_alt, dyld_symbols_prefix);
+	  strcat (adorned_name_alt, malloc_inited_callback_alt);
+
+	  malloc_inited = lookup_minimal_symbol (adorned_name, NULL, NULL);
+          if (malloc_inited == NULL)
+	    malloc_inited = lookup_minimal_symbol (adorned_name_alt, NULL, NULL);
+  
+	  do_cleanups (free_adorned);
+	  if (malloc_inited != NULL)
+	    {
+	      status->malloc_inited_breakpoint = create_solib_event_breakpoint
+		(SYMBOL_VALUE_ADDRESS (malloc_inited));
+	      changed_breakpoints = 1;
+	    }
+	  else
+	    {
+	      /* If I don't find the malloc symbol I'd better turn on 
+		 malloc inited now, since there won't be another good 
+		 chance to do so.  This could happen with a totally static
+		 binary, or if somebody set the dyld load state to container.  */
+	      warning ("Could not find malloc init callback function.  "
+		       "\nMake sure malloc is initialized before calling functions.");
+	      macosx_set_malloc_inited (1);
+	    }
 	}
     }
 
@@ -1342,6 +1382,19 @@ macosx_solib_add (const char *filename, int from_tty,
 
   if (dyld_status->dyld_num_shared_cache_ranges == -1)
     macosx_init_dyld_cache_ranges (dyld_status);
+
+  /* If we have version 2 of the dyld_all_image_infos structure,
+     and we haven't seen the libsystem_initialized set yet, check
+     again here.  */
+  if (dyld_status->dyld_version >= 2 
+      && macosx_get_malloc_inited () != 1 
+      && dyld_status->dyld_image_infos != INVALID_ADDRESS)
+    {
+      struct dyld_raw_infos info;
+      dyld_read_raw_infos (dyld_status->dyld_image_infos, &info);
+      dyld_status->libsystem_initialized = info.libsystem_initialized;
+      macosx_set_malloc_inited (dyld_status->libsystem_initialized);
+    }
 
   /* If the inferior stopped at the dyld notification function,
      some file images have been loaded or removed.  */
@@ -2134,19 +2187,41 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
 static void
 dyld_read_raw_infos (CORE_ADDR addr, struct dyld_raw_infos *info)
 {
-  gdb_byte *buf = (gdb_byte *) alloca (sizeof (struct dyld_raw_infos));
   int wordsize = gdbarch_tdep (current_gdbarch)->wordsize;
+
+  /* Version 1 of struct dyld_all_image_infos is
+       8 + (2 * wordsize) + 1 == 17, struct size is 20 bytes
+     Version 2 of struct dyld_all_image_infos is currently
+       8 + (2 * wordsize) + 1 + 1 + wordsize == 22, struct size is 24 bytes
+      (2 bytes of padding come after the two bool members)  
+     (struct sizes with the assumption that wordisze == 4)
+  */
+
+  int dyld_all_image_infos_size_v1 = 8 + (2 * wordsize) + 4;
+  int dyld_all_image_infos_size_v2 = 8 + (2 * wordsize) + 4 + wordsize;
+  gdb_byte *buf = (gdb_byte *) alloca (dyld_all_image_infos_size_v2);
 
   gdb_assert (addr != INVALID_ADDRESS);
 
-  /* The struct dyld_raw_infos in the inferior consists of two 4-byte
-     words and two (inferior) wordsize words.  */
-  target_read_memory (addr, buf, 8 + wordsize * 2);
+  /* Only read the "v1" size out of memory in this one read -- we'll fetch
+     post-v1 fields out of memory individually if this is a post-v1 dyld.  */
+  target_read_memory (addr, buf, dyld_all_image_infos_size_v1);
 
   info->version = extract_unsigned_integer (buf, 4);
   info->num_info = extract_unsigned_integer (buf + 4, 4);
   info->info_array = extract_unsigned_integer (buf + 8, wordsize);
   info->dyld_notify = extract_unsigned_integer (buf + 8 + wordsize, wordsize);
+  info->process_detached_from_shared_region = 
+                      extract_unsigned_integer (buf + 8 + wordsize * 2, 1);
+
+  /* Read the 'libSystemInitialized' bool.  */
+  if (info->version >= 2)
+    {
+      target_read_memory (addr + 8 + wordsize * 2 + 1, buf, 1);
+      info->libsystem_initialized = extract_unsigned_integer (buf, 1);
+    }
+  else
+    info->libsystem_initialized = -1;
 }
 
 /* Read an array of NUM dyld_raw_info structures out of the inferior's
@@ -2198,6 +2273,14 @@ dyld_info_read_raw (struct macosx_dyld_thread_status *status,
   struct dyld_raw_info *ninfo;
 
   dyld_read_raw_infos (status->dyld_image_infos, &info);
+  /* For version 2 of the all_image_infos structure we should check
+     to see if libsystem is initialized...  In truth, we only need to
+     do this if it is not already initialized, but this doesn't hurt.  */
+  if (info.version >= 2)
+    {
+      status->libsystem_initialized = info.libsystem_initialized;
+      macosx_set_malloc_inited (status->libsystem_initialized);
+    }
 
   ninfo = xmalloc (info.num_info * sizeof (struct dyld_raw_info));
 

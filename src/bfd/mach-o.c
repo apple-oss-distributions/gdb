@@ -2133,7 +2133,17 @@ bfd_mach_o_scan_read_command (bfd *abfd, bfd_mach_o_load_command *command)
     case BFD_MACH_O_LC_CODE_SIGNATURE:
     case BFD_MACH_O_LC_SEGMENT_SPLIT_INFO:
     case BFD_MACH_O_LC_LAZY_LOAD_DYLIB:
+      break;
     case BFD_MACH_O_LC_ENCRYPTION_INFO:
+      {
+	char cryptid_buf[4];
+
+	bfd_seek (abfd, command->offset + 16, SEEK_SET);
+	if (bfd_bread ((PTR) cryptid_buf, 4, abfd) != 4)
+	  return -1;
+	
+	abfd->tdata.mach_o_data->encrypted = (bfd_h_get_32 (abfd, cryptid_buf));
+      }
       break;
     default:
       fprintf (stderr, "unable to read unknown load command 0x%lx\n",
@@ -2382,6 +2392,7 @@ bfd_mach_o_mkobject (bfd *abfd)
   mdata->nsects = 0;
   mdata->sections = NULL;
   mdata->ibfd = NULL;
+  mdata->encrypted = 0;
 
   return TRUE;
 }
@@ -2921,6 +2932,19 @@ bfd_mach_o_get_uuid (bfd *abfd, unsigned char *buf, unsigned long buf_len)
 	}
     }
   return FALSE;
+}
+
+/* Return TRUE if ABFD is an encrypted binary.  In this case, gdb
+   won't want to look at the contents of the binary on disk, but 
+   rather read it from memory.  */
+
+bfd_boolean
+bfd_mach_o_encrypted_binary (bfd *abfd)
+{
+  if (abfd->tdata.mach_o_data->encrypted == 0)
+    return FALSE;
+  else
+    return TRUE;
 }
 
 /* Add free_cached_info functions so we can actually close the

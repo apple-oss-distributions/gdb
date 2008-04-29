@@ -32,7 +32,7 @@
 
 #include <mach/machine/thread_status.h>
 /* This is for thread_suspend.  */
-#include <mach/ppc/thread_act.h>
+#include <mach/arm/thread_act.h>
 
 #include "macosx-threads.h"
 #include "macosx-low.h"

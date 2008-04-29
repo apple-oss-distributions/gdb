@@ -1,3 +1,32 @@
+2008-04-28  Jason Molenda  (jmolenda@apple.com)
+
+	* dwarf2expr.c (execute_stack_op): Don't mark variables as
+	unavailable when we see DW_OP_APPLE_uinit for now.
+
+2008-04-24  Caroline Tice  <ctice@apple.com>
+
+	* dwarf2loc.c (print_single_dwarf_location): Apply 
+	DWARF2_REG_TO_REGNUM before calling REGISTER_NAME.
+
+2008-04-24  Caroline Tice  <ctice@apple.com>
+
+	* dwarf2loc.c (print_single_dwarf_location): Print out register
+	names instead of register numbers.
+	(loclist_describe_location):  Avoid extra newline at the end of
+	a location list.
+
+2008-04-23  Jason Molenda  (jmolenda@apple.com)
+
+	* config/arm/macosx.mt, config/i386/macosx.mt, config/ppc/macosx.mt:
+	Add macosx-nat-cmds-load.o so the load-plugin command can be used for
+	cross debuggers.
+
+2008-04-21  Jim Ingham  <jingham@apple.com>
+
+	* arm-tdep.c (arm_gdbarch_init): Don't add the "stub" sniffers on 
+	Mac OS X, they're for something we don't have, and sometimes they
+	fire errantly and mess up the backtrace.
+	
 2008-04-10  Jason Molenda  (jmolenda@apple.com)
 
 	* breakpoint.c (breakpoint_re_set_one): Handle catch/throw breakpoints
