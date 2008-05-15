@@ -233,6 +233,8 @@ macosx_inferior_resume_mach (macosx_inferior_status *s, int count)
       kret = task_resume (s->task);
       if (kret != KERN_SUCCESS)
         {
+	  inferior_debug (2, "resume task failed, (suspend count: %d)\n",
+			  s->suspend_count);
           return kret;
         }
       s->suspend_count--;

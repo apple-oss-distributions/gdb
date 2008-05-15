@@ -1,3 +1,55 @@
+2008-05-09  Greg Clayton  <gclayton@apple.com>
+
+	* remote.c (remote_create_inferior): Increase timeout for the launch
+	success put packet (and get packet) to 30 seconds so it doesn't 
+	timeout and quit too soon.
+
+2008-05-11  Jim Ingham  <jingham@apple.com>
+
+	* arm-tdep.c (arm_macosx_skip_prologue_addr_ctx): Don't look up
+	the block value of a symbol without making sure it is LOC_BLOCK.
+	
+2008-05-09  Jim Ingham  <jingham@apple.com>
+
+	* varobj.c (path_expr_of_root, cplus_path_expr_of_child): Put
+	a single quote around the type name when casting to the dynamic
+	type.  Otherwise namespaces choke in the class name choke the
+	expression parser.
+	
+2008-05-09  Greg Clayton  <gclayton@apple.com>
+
+	* remote.c (remote_create_inferior): Increase timeout for the launch
+	success packet to 30 seconds so it doesn't timeout and quit too soon.
+
+2008-05-08  Jim Ingham  <jingham@apple.com>
+
+	* gdbtypes.c (is_ancestor_by_name): New function.
+	* gdbtypes.h (is_ancestor_by_name): Declare it.
+	* symtab.c (lookup_type_aux): If we are in a class method,
+	short-circuit the lookup of the class name.
+	
+2008-05-02  Caroline Tice  <ctice@apple.com>
+
+	* inlining.c (print_inlined_frame):  Make sure the temp_frame_stack
+	gets updated if appropriate.
+
+2008-04-30  Jason Molenda  (jmolenda@apple.com)
+
+	* remote.c (struct protocol_log): Make the protocol_log array 
+	dynamically allocated.
+	(initialize_protocol_log): Allocate space for the protocol_log array
+	on the heap.
+	(init_remote_state): Mov call to initialize_protocol_log so it is only
+	initialized when a remote target has been specified. 
+	(_initialize_remote): Remove call to initialize_protocol_log.
+	(dump_protocol_log, add_pkt_to_protocol_log): Update to work with 
+	new protocol_log array bounds.
+
+2008-04-29  Jason Molenda  (jmolenda@apple.com)
+
+	* symfile.c (add_symbol_file_command): Don't print "_addr" after the
+	segment name.
+
 2008-04-28  Jason Molenda  (jmolenda@apple.com)
 
 	* dwarf2expr.c (execute_stack_op): Don't mark variables as

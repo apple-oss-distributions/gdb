@@ -108,6 +108,7 @@ extern macosx_dyld_thread_status macosx_dyld_status;
    are never more than two today.  */
 
 struct bfd_memory_footprint {
+  const char *filename;         /* filename of this bfd */
   CORE_ADDR seg1addr;           /* Address of the __TEXT segment */
   int num;                      /* Number of bucket groupings in use */
   int num_allocated;            /* Number of bucket grouping slots allocated */
@@ -702,6 +703,7 @@ scan_bfd_for_memory_groups (struct bfd *abfd, struct pre_run_memory_map *map)
                      xmalloc (sizeof (struct bfd_memory_footprint_group) * 2);
   fp->num = 0;
   fp->num_allocated = 2;
+  fp->filename = abfd->filename;
 
   for (asect = abfd->sections; asect != NULL; asect = asect->next)
     {
@@ -945,14 +947,27 @@ hole_at_p (struct pre_run_memory_map *map,
     return 0;
 }
 
+/* Given a list of memory buckets required for this bfd in FP, and a
+   starting bucket number in MAP, mark the appropriate buckets in 
+   MAP as used.  */
+
 static void
 mark_buckets_as_used (struct pre_run_memory_map *map, int startingbucket, 
                       struct bfd_memory_footprint *fp)
 {
   int memgrp, k;
   for (memgrp = 0; memgrp < fp->num; memgrp++)
-    for (k = 0; k < fp->groups[memgrp].length; k++)
-      map->buckets[startingbucket + fp->groups[memgrp].offset + k] = 1;
+    {
+      struct bfd_memory_footprint_group *group = &fp->groups[memgrp];
+      int initial_bkt = startingbucket + group->offset;
+
+      if (initial_bkt + group->length > map->number_of_buckets)
+        warning ("sharedlibrary preload-libraries exceeded map array while "
+                 "processing '%s'", fp->filename);
+      for (k = 0; k < group->length; k++)
+        if (initial_bkt + k < map->number_of_buckets)
+          map->buckets[initial_bkt + k] = 1;
+    }
 }
 
 void

@@ -196,17 +196,17 @@ fetch_inferior_registers (int regno)
     {
       if ((regno == -1) || IS_GP_REGNUM (regno))
         {
-          gdb_i386_thread_state_t gp_regs;
-          unsigned int gp_count = GDB_i386_THREAD_STATE_COUNT;
+          gdb_x86_thread_state_t gp_regs;
+          unsigned int gp_count = GDB_x86_THREAD_STATE_COUNT;
           kern_return_t ret = thread_get_state
-            (current_thread, GDB_i386_THREAD_STATE, (thread_state_t) & gp_regs,
+            (current_thread, GDB_x86_THREAD_STATE, (thread_state_t) & gp_regs,
              &gp_count);
 	  if (ret != KERN_SUCCESS)
 	    {
 	      printf ("Error calling thread_get_state for GP registers for thread 0x%ulx", current_thread);
 	      MACH_CHECK_ERROR (ret);
 	    }
-          i386_macosx_fetch_gp_registers (&gp_regs);
+          i386_macosx_fetch_gp_registers (&(gp_regs.uts.ts32));
           fetched++;
         }
 
@@ -288,12 +288,14 @@ store_inferior_registers (int regno)
     {
       if ((regno == -1) || IS_GP_REGNUM (regno))
         {
-          gdb_i386_thread_state_t gp_regs;
+          gdb_x86_thread_state_t gp_regs;
           kern_return_t ret;
-          i386_macosx_store_gp_registers (&gp_regs);
-          ret = thread_set_state (current_thread, GDB_i386_THREAD_STATE,
+          gp_regs.tsh.flavor = GDB_x86_THREAD_STATE32;
+          gp_regs.tsh.count = GDB_x86_THREAD_STATE32_COUNT;
+          i386_macosx_store_gp_registers (&(gp_regs.uts.ts32));
+          ret = thread_set_state (current_thread, GDB_x86_THREAD_STATE,
                                   (thread_state_t) & gp_regs,
-                                  GDB_i386_THREAD_STATE_COUNT);
+                                  GDB_x86_THREAD_STATE_COUNT);
           MACH_CHECK_ERROR (ret);
         }
 

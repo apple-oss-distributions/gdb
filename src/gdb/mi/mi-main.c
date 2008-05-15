@@ -2156,6 +2156,20 @@ mi_execute_async_cli_command (char *mi, char *args, int from_tty)
       /* Do this before doing any printing.  It would appear that some
          print code leaves garbage around in the buffer. */
       do_cleanups (old_cleanups);
+
+      /* We should do whatever breakpoint actions are pending.
+       This works even if the breakpoint command causes the target
+       to continue, but we won't exit bpstat_do_actions here till
+       the target is all the way stopped.
+
+       Note, I am doing this before putting out the *stopped.  If we
+       told the UI that we had stopped & continued again, we would
+       have to figure out how to tell it that as well.  This is
+       easier.  If the command continues the target, the UI will
+       just think it hasn't stopped yet, which is probably also
+       okay.  */
+       bpstat_do_actions (&stop_bpstat);
+
       /* If the target was doing the operation synchronously we fake
          the stopped message. */
       if (current_command_token)

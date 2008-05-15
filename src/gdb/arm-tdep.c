@@ -986,7 +986,9 @@ arm_macosx_skip_prologue_addr_ctx (struct address_context *pc_addr_ctx)
      the scheduler.  */
 
   /* See what the symbol table says.  */
-  if (pc_addr_ctx->symbol && SYMBOL_BLOCK_VALUE (pc_addr_ctx->symbol))
+  if (pc_addr_ctx->symbol 
+      && SYMBOL_CLASS (pc_addr_ctx->symbol) == LOC_BLOCK
+      && SYMBOL_BLOCK_VALUE (pc_addr_ctx->symbol))
     {
       prologue_start = SYMBOL_BLOCK_VALUE (pc_addr_ctx->symbol)->startaddr;
       prologue_end =  SYMBOL_BLOCK_VALUE (pc_addr_ctx->symbol)->endaddr;

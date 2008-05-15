@@ -1311,6 +1311,8 @@ extern int get_discrete_bounds (struct type *, LONGEST *, LONGEST *);
 extern int get_array_bounds (struct type *, LONGEST *, LONGEST *, LONGEST *);
 
 extern int is_ancestor (struct type *, struct type *);
+/* APPLE LOCAL: Version where we only know the ancestor by name: */
+int is_ancestor_by_name (const char *base, struct type *dclass);
 
 extern int has_vtable (struct type *);
 

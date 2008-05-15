@@ -2453,7 +2453,7 @@ path_expr_of_root (struct varobj *var)
       root_type = get_type_deref (var, &root_is_ptr);
       if (root_is_ptr)
 	{
-	  const char *format = "((%s *) (%s))";
+	  const char *format = "(('%s' *) (%s))";
 	  dynamic_expr = TYPE_NAME (root_type);
 	  dynamic_expr_len = strlen (dynamic_expr);
 	  if (dynamic_expr_len > 0)
@@ -3983,7 +3983,7 @@ cplus_path_expr_of_child (struct varobj *parent, int index)
 	    }
 	  if (dynamic_expr_len > 0)
 		{
-		  const char *format = "((%s *) ((%s)%s%s))";
+		  const char *format = "(('%s' *) ((%s)%s%s))";
 		  path_expr = (char *) xmalloc (dynamic_expr_len + parent_len
 						+ join_expr_len + child_len + strlen (format) - 6 + 1);
 		  sprintf (path_expr, format, dynamic_expr, parent_expr, join_expr, child_name);
@@ -4003,8 +4003,8 @@ cplus_path_expr_of_child (struct varobj *parent, int index)
 
 	  if (is_ptr)
 	    {
-	      path_expr = (char *) xmalloc (parent_len + child_len + 7 + 1);
-	      sprintf (path_expr, "((%s *) %s)", child_name, parent_expr);
+	      path_expr = (char *) xmalloc (parent_len + child_len + 9 + 1);
+	      sprintf (path_expr, "(('%s' *) %s)", child_name, parent_expr);
 	    }
 	  else
 	    {

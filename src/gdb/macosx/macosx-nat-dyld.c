@@ -970,7 +970,14 @@ macosx_dyld_init (macosx_dyld_thread_status *s, bfd *exec_bfd)
 
   if (ret != 1 && target_is_remote ())
     {
+      /* On an iPhone we can find dyld at 0x2fe00000.
+         On a PPC app running under Rosetta, we'll find dyld at 0x8fc00000.
+         We need to add a remote protocol packet which will iterate over
+         allocated memory regions and look for a dyld on the remote side
+         instead of hardcoding these.  */
       ret = macosx_locate_dyld (&dyld_address, 0x2fe00000ull);
+      if (ret != 1)
+        ret = macosx_locate_dyld (&dyld_address, 0x8fc00000ull);
     }
 
   if (ret != 1)

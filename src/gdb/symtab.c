@@ -1674,6 +1674,49 @@ lookup_symbol_aux (const char *name, const char *linkage_name,
 
       if (v && check_field (v, name))
 	{
+	  /* APPLE LOCAL: If we find that we are in a class method, I
+	     want to treat the case where NAME is the name of the
+	     class specially.  Both returning with is_a_field_of_this
+	     as 1, or falling through to the la_lookup_symbol_nonlocal
+	     below tends to pull up the constructor rather than the
+	     class type symbol most of the time.  But that is almost
+	     never what you want.  In fact, you almost always just
+	     want the class type symbol.  
+	     For instance, you get here if you are doing:
+	         print (Foo *) this
+	     for class Foo.  You don't get here when you do:
+                 break Foo::Foo
+	     since that doesn't set IS_A_FIELD_OF_THIS.
+	     So I check here if the NAME passed in is either the class
+	     name of "this" or one of its ancestors, and if it is
+	     preferentially return that.  */
+
+	  struct type *val_type;
+	  
+	  val_type = value_type (v);
+	  if (val_type) 
+	    {
+	      CHECK_TYPEDEF (val_type);
+	      if (TYPE_CODE (val_type) == TYPE_CODE_PTR)
+		val_type = TYPE_TARGET_TYPE (val_type);
+	      
+	      if (TYPE_CODE (val_type) == TYPE_CODE_STRUCT)
+		{
+		  char *this_class_name;
+		  this_class_name = TYPE_NAME (val_type);
+		  if ((this_class_name != NULL && strcmp (this_class_name, name) == 0)
+		      || is_ancestor_by_name (name, val_type))
+		    {
+		      const struct block *global_block = block_global_block (block);
+		      
+		      if (global_block != NULL)
+			sym = lookup_symbol_aux_block (name, linkage_name, global_block,
+						       domain, symtab);
+		      if (sym != NULL)
+			return sym;
+		    }
+		}
+	    }
 	  *is_a_field_of_this = 1;
 	  if (symtab != NULL)
 	    *symtab = NULL;

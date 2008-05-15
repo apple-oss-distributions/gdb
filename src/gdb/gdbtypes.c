@@ -2148,7 +2148,26 @@ is_ancestor (struct type *base, struct type *dclass)
   return 0;
 }
 
+/* APPLE LOCAL: Like is_ancestor except that we only have the name of
+   BASE, not the type.  */
+int
+is_ancestor_by_name (const char *base, struct type *dclass)
+{
+  int i;
 
+  CHECK_TYPEDEF (dclass);
+
+  if (TYPE_NAME (dclass) &&
+      !strcmp (base, TYPE_NAME (dclass)))
+    return 1;
+
+  for (i = 0; i < TYPE_N_BASECLASSES (dclass); i++)
+    if (is_ancestor_by_name (base, TYPE_BASECLASS (dclass, i)))
+      return 1;
+
+  return 0;
+
+}
 
 /* See whether DCLASS has a virtual table.  This routine is aimed at
    the HP/Taligent ANSI C++ runtime model, and may not work with other

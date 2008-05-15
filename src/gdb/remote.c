@@ -206,6 +206,7 @@ char *remote_exec_dir;
 /* APPLE LOCAL */
 static void start_remote_timer (void);
 static void end_remote_timer (void);
+static void initialize_protocol_log (void);
 
 /* Description of the remote protocol.  Strictly speaking, when the
    target is open()ed, remote.c should create a per-target description
@@ -256,6 +257,21 @@ struct remote_stats *current_remote_stats = NULL;
 uint64_t total_packets_sent = 0;
 uint64_t total_packets_received = 0;
 char *remote_debugflags = NULL;
+
+#define PROTOCOL_LOG_BUFSIZE 2048
+enum pkt_direction {sent_from_gdb, received_by_gdb};
+struct protocol_log_entry {
+  enum pkt_direction direction;
+  struct timeval tv;
+  char mi_token[16];
+  char packet[PROTOCOL_LOG_BUFSIZE];
+};
+
+struct protocol_log {
+  int head;
+  int max_ent;
+  struct protocol_log_entry *ents;
+} protocol_log;
 
 /* APPLE LOCAL: Make the gdb remote protocol ack packets optional.
    It would be straightforward to only have the NO_ACK_MODE boolean
@@ -347,6 +363,9 @@ init_remote_state (struct gdbarch *gdbarch)
   /* We added this for the case where you tell the stub what it's
      target is.  In the normal case, we always have a target.  */
   rs->has_target = 1;
+
+  /* APPLE LOCAL */
+  initialize_protocol_log ();
 
   return rs;
 }
@@ -456,21 +475,6 @@ struct memory_packet_config
   int fixed_p;
 };
 
-#define PROTOCOL_LOG_BUFSIZE 2048
-enum pkt_direction {sent_from_gdb, received_by_gdb};
-struct protocol_log_entry {
-  enum pkt_direction direction;
-  struct timeval tv;
-  char mi_token[16];
-  char packet[PROTOCOL_LOG_BUFSIZE];
-};
-
-#define PROTOCOL_LOG_COUNT 400
-struct protocol_log {
-  int head;
-  struct protocol_log_entry ents[PROTOCOL_LOG_COUNT];
-} protocol_log;
-
 /* APPLE LOCAL:  Dump a stack trace of gdb to stderr at the current
    location in remote.c.  There's nothing specific about remote.c in this
    function's behavior right now but let's keep it static so we can customize
@@ -486,11 +490,16 @@ remote_backtrace_self ()
 }
 
 static void
-initalize_protocol_log ()
+initialize_protocol_log ()
 {
   int i;
   protocol_log.head = 0;
-  for (i = 0; i < PROTOCOL_LOG_COUNT; i++)
+  protocol_log.max_ent = 800;
+  if (protocol_log.ents != NULL)
+    xfree (protocol_log.ents);
+  protocol_log.ents = xmalloc (sizeof (struct protocol_log_entry) * 
+                                                      protocol_log.max_ent);
+  for (i = 0; i < protocol_log.max_ent; i++)
     protocol_log.ents[i].packet[0] = '\0';
 }
 
@@ -513,7 +522,7 @@ add_pkt_to_protocol_log (const char *p, enum pkt_direction direction)
   else
     cur->mi_token[0] = '\0';
   protocol_log.head++;
-  if (protocol_log.head == PROTOCOL_LOG_COUNT)
+  if (protocol_log.head == protocol_log.max_ent)
     protocol_log.head = 0;
 }
 
@@ -535,7 +544,7 @@ dump_protocol_log ()
   /* protocol_log.head is actually the oldest entry in the ring buffer but 
      I skip over it to simplify the loop conditional expression below.  */
   int i = protocol_log.head + 1;
-  if (i == PROTOCOL_LOG_COUNT)
+  if (i == protocol_log.max_ent)
     i = 0;
   while (i != protocol_log.head)
     {
@@ -562,7 +571,7 @@ dump_protocol_log ()
             }
           fprintf_filtered (gdb_stderr, "\n");
         }
-      if (++i == PROTOCOL_LOG_COUNT)
+      if (++i == protocol_log.max_ent)
         i = 0;
     }
 }
@@ -2787,6 +2796,8 @@ remote_create_inferior (char *exec_file, char *allargs, char **env, int from_tty
   int envnum;
   int packet_len;
   int max_size;
+  int timed_out;
+
   
   /* First send down the environment array. 
      We are using a packet of the form:
@@ -2899,9 +2910,22 @@ remote_create_inferior (char *exec_file, char *allargs, char **env, int from_tty
      So I'm sending a "how about that startup" packet to retrieve that if 
      there is an error code.  */
 
+  /* Increase the timeout for qLaunchSuccess to 30 seconds to match how long
+     the debugserver will wait for the inferior to give us its process ID.  */
+  int old_remote_timeout = remote_timeout;
+  remote_timeout = 30;	
+
   putpkt ("qLaunchSuccess");
-  getpkt (buf, rs->remote_packet_size, 0);
-  if (buf[0] == 'E')
+  timed_out = getpkt_sane(buf, rs->remote_packet_size, 0);
+
+  remote_timeout = old_remote_timeout;
+  
+  if (timed_out)
+    {
+      pop_target ();
+      error ("Error launching timed out.");
+    }
+  else if (buf[0] == 'E')
     {
       pop_target ();
       error ("Error launching remote program: %s.", buf+1);
@@ -6379,9 +6403,6 @@ _initialize_remote (void)
   /* Hook into new objfile notification.  */
   remote_new_objfile_chain = deprecated_target_new_objfile_hook;
   deprecated_target_new_objfile_hook  = remote_new_objfile;
-
-  /* APPLE LOCAL */
-  initalize_protocol_log ();
 
 #if 0
   init_remote_threadtests ();

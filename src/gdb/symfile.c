@@ -877,7 +877,9 @@ syms_from_objfile (struct objfile *objfile,
 	      else
 		addrs->other[i].addr = lower_offset;
 	    }
-	  /* APPLE LOCAL huh? */
+	  /* We've now converted the addrs struct from a series of 
+             absolute addresses to a series of offsets from where the
+             file was supposed to load.  */
 	  addrs->addrs_are_offsets = 1;
 	}
     }
@@ -1528,10 +1530,11 @@ symbol_file_add_with_addrs_or_offsets_using_objfile (struct objfile *in_objfile,
 	  if (uuid_matches)
 	    {
 #ifdef TM_NEXTSTEP
-	      /* This should really be a symbol file reader function to go along with
-		 sym_offsets, but I don't want to have to push all the changes through
-		 for that right now.  Note, if we've called into here, we're using
-		 offsets, not the addrs_to_use, so NULL that out.  */
+	      /* This should really be a symbol file reader function to go 
+                 along with sym_offsets, but I don't want to have to push 
+                 all the changes through for that right now.  Note, if we've 
+                 called into here, we're using offsets, not the addrs_to_use, 
+                 so NULL that out.  */
 	      macho_calculate_offsets_for_dsym (objfile, debug_bfd, addrs_to_use, offsets, num_offsets,
 						&sym_offsets, &num_sym_offsets);
 	      addrs_to_use = NULL;
@@ -1539,12 +1542,12 @@ symbol_file_add_with_addrs_or_offsets_using_objfile (struct objfile *in_objfile,
 	      
 	      objfile->separate_debug_objfile
 		= symbol_file_add_with_addrs_or_offsets_using_objfile (objfile->separate_debug_objfile,
-								       debug_bfd, from_tty, 
-								       addrs_to_use, 
-								       sym_offsets, num_sym_offsets, 0, 
-								       flags | OBJF_SEPARATE_DEBUG_FILE,
-								       symflags, mapaddr, prefix,
-								       not_loaded_kext_bundle);
+					       debug_bfd, from_tty, 
+					       addrs_to_use, 
+					       sym_offsets, num_sym_offsets, 0, 
+					       flags | OBJF_SEPARATE_DEBUG_FILE,
+					       symflags, mapaddr, prefix,
+					       not_loaded_kext_bundle);
 	      
 	      objfile->separate_debug_objfile->separate_debug_objfile_backlink
 		= objfile;
@@ -2756,7 +2759,7 @@ add_symbol_file_command (char *args, int from_tty)
 	     entered on the command line. */
 	  section_addrs->other[sec_num].name = sec;
 	  section_addrs->other[sec_num].addr = addr;
-	  printf_unfiltered ("\t%s_addr = 0x%s\n",
+	  printf_unfiltered ("\t%s = 0x%s\n",
 			     sec, paddr_nz (addr));
 	  sec_num++;
 	  

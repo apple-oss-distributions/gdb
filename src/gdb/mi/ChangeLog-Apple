@@ -1,3 +1,8 @@
+2008-05-12  Jim Ingham  <jingham@apple.com>
+
+	* mi-main.c (mi_execute_async_cli_command): In the synchronous
+	target case, do the breakpoint actions after running the target.
+	
 2008-02-21  Jim Ingham  <jingham@apple.com>
 
        * mi-interp.c (mi_cmd_interpreter_exec): set

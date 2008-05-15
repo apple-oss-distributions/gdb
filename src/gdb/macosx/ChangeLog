@@ -1,3 +1,27 @@
+2008-05-12  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-process.c (mark_buckets_as_used): Fix boundary
+	test thinko in warning message.
+
+2008-05-09  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c (macosx_dyld_init): Look for remote dyld at 
+	0x8fc00000 to account for PPC programs running in translation.
+
+2008-05-09  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-process.c (struct bfd_memory_footprint): Record
+	a pointer to the bfd's filename.
+	(mark_buckets_as_used): Detect attempts to write past the end of
+	the memory map; issue a warning about which bfd caused it and 
+	skip marking those buckets.
+
+2008-05-02  Jim Ingham  <jingham@apple.com>
+
+	* i386-macosx-nat-exec.c (fetch_inferior_registers): Use
+	GDB_x86_THREAD_STATE32 rather than GDB_i386_THREAD_STATE32.
+	(store_inferior_registers): Ditto.
+	
 2008-04-28  Jim Ingham  <jingham@apple.com>
 
 	* machoread.c (macho_symfile_read): If the binary is encrypted, 

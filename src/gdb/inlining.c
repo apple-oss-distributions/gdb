@@ -2186,6 +2186,9 @@ print_inlined_frame (struct frame_info *fi, int print_level,
   int line;
   struct inlined_function_data *stack_ptr;
 
+  if (get_frame_pc (fi) != stop_pc)
+    update_tmp_frame_stack (get_frame_pc (fi));
+
   if (global_inlined_call_stack.nelts > 0)
     stack_ptr = &global_inlined_call_stack;
   else
