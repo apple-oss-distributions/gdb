@@ -1,3 +1,7 @@
+2008-09-25  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (enable_command): Use ALL_BREAKPOINTS_SAFE.
+	
 2008-06-26  Greg Clayton  <gclayton@apple.com>
 
 	* valops.c (value_full_object): Add try/catch around 
