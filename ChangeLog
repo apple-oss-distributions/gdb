@@ -1,19 +1,14 @@
-2008-09-26  Greg Clayton  <gclayton@apple.com>
+2008-07-31  Greg Clayton  <gclayton@apple.com>
 
-	Merged fixes from kirkwood branch that allows cross builds and native
-	builds:
-
-	2008-07-31  Greg Clayton  <gclayton@apple.com>
-
-    	* Makefile (CANONICAL_ARCHS): Sort the items in this variable
-    	so check-args can have fewer permutations.
-    	(check-args): Recognize arm, i386 and ppc as a plausible variant and
-    	rely on sorted CANONICAL_ARCHS.
-    	(CONFIGURE_OPTIONS): Added a "filter-out" make command to remove
-    	extra whitespace when some settings don't have any value.
-    	(EFLAGS): Ditto.
-    	(cross): Cleaned up redundant defintions for cross_arch_full shell
-    	variable.
+   	* Makefile (CANONICAL_ARCHS): Sort the items in this variable
+   	so check-args can have fewer permutations.
+   	(check-args): Recognize arm, i386 and ppc as a plausible variant and
+   	rely on sorted CANONICAL_ARCHS.
+   	(CONFIGURE_OPTIONS): Added a "filter-out" make command to remove
+   	extra whitespace when some settings don't have any value.
+   	(EFLAGS): Ditto.
+   	(cross): Cleaned up redundant defintions for cross_arch_full shell
+   	variable.
 
 2008-08-20  Greg Clayton  <gclayton@apple.com>
 
