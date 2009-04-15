@@ -882,6 +882,10 @@ struct symtab
 
   char *debugformat;
 
+  /* String of producer version information.  May be zero.  */
+
+  char *producer;
+
   /* String of version information.  May be zero.  */
 
   char *version;
@@ -1646,7 +1650,7 @@ extern void update_inlined_function_line_table_entry (CORE_ADDR, CORE_ADDR,
    names were found and recorded when processing the partial dies.  */
 extern int psym_equivalences;
 
-extern int psym_name_match (char *, char *);
+extern int psym_name_match (const char *, const char *);
 
 /* APPLE LOCAL end psym equivalences  */
 

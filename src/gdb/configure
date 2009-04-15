@@ -3831,10 +3831,6 @@ echo "${ECHO_T}no" >&6; }
 esac
 
 case "$host" in
-  arm-apple-*)
-    # We need to turn off arch for exec for now as it doesn't support launching
-    # a specified architecture in a universal mach file.
-    ;;
   *-apple-darwin* | *-apple-macosx*)
     { echo "$as_me:$LINENO: checking whether posix_spawn supports SETEXEC" >&5
 echo $ECHO_N "checking whether posix_spawn supports SETEXEC... $ECHO_C" >&6; }

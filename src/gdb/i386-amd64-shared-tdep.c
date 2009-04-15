@@ -151,6 +151,53 @@ i386_picbase_setup_pattern_p (CORE_ADDR memaddr, enum i386_regnum *regnum)
   return 1;
 }
 
+/* Return non-zero if MEMADDR is an instruction that subtracts a value from the
+   stack pointer (esp) - typically seen in the middle of a function prologue.
+   In an -fomit-frame-pointer program this instruction may be the only 
+   identifiable prologue instruction outside register saves.  
+
+   The return value is the esp displacement.  0 indicates that this is not
+   a sub $esp instruction.  A positive value, e.g. 0x1c, indicates that 12 is
+   to be subtracted from $esp.
+
+   There are several patterns for this instruction; the disassembler should be
+   used to iterate over it.  */
+
+int32_t
+i386_sub_esp_pattern_p (CORE_ADDR memaddr)
+{
+  gdb_byte op;
+  int rexmode = 0;
+
+  op = read_memory_unsigned_integer (memaddr, 1);
+  if (op == 0x48)
+    {
+      rexmode = 1;
+      op = read_memory_unsigned_integer (++memaddr, 1);
+    }
+
+  /* sub with 8-bit immediate operand.  */
+  if (op == 0x83
+      && read_memory_unsigned_integer (memaddr + 1, 1) == 0xec)
+    {
+      return (int8_t) read_memory_integer (memaddr + 2, 1);
+    }
+
+  /* sub with 32-bit immediate operand.  */
+  if (op == 0x81
+      && read_memory_unsigned_integer (memaddr + 1, 1) == 0xec)
+    {
+      /* If this is an imm64, just toss the higher 32 bits.  I'm not going
+         to weep if we get a stack displacement > 4GB wrong.  */
+      if (rexmode)
+        return read_memory_integer (memaddr + 2, 8) & 0xffffffff;
+      else
+        return (int) read_memory_integer (memaddr + 2, 4);
+    }
+
+  return 0;
+}
+
 static struct type *
 init_vector_type (struct type *elt_type, int n)
 {

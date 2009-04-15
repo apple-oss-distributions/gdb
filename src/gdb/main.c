@@ -38,6 +38,8 @@
 #include "gdb_string.h"
 #include "event-loop.h"
 #include "ui-out.h"
+#include "osabi.h"
+#include "arch-utils.h"
 
 #include "interps.h"
 #include "main.h"
@@ -717,19 +719,19 @@ extern int gdbtk_test (char *);
       char *arch_string = NULL;
       char *osabi_string;
 #if defined (TARGET_POWERPC)
-      if (strcmp (initial_arch, "ppc") == 0)
-	{
-	  arch_string = "powerpc:common";
-	  osabi_string = "Darwin";
-	}
-      else if (strcmp (initial_arch, "ppc64") == 0)
+      if (strcmp (initial_arch, "ppc64") == 0)
 	{
 	  arch_string = "powerpc:common64";
 	  osabi_string = "Darwin64";
 	}
+      else if (strstr (initial_arch, "ppc") == initial_arch)
+	{
+	  arch_string = "powerpc:common";
+	  osabi_string = "Darwin";
+	}
       else
 	  warning ("invalid argument \"%s\" for \"--arch\", should be one of "
-		 "\"ppc\" or \"ppc64\"\n", initial_arch);
+		 "\"ppc*\" or \"ppc64\"\n", initial_arch);
 #elif defined (TARGET_I386)
       if (strcmp (initial_arch, "i386") == 0)
 	{
@@ -750,21 +752,51 @@ extern int gdbtk_test (char *);
 	  arch_string = "arm";
 	  osabi_string = "Darwin";
 	}
-      else if (strcmp (initial_arch, "armv6") == 0)
+      else if (strstr (initial_arch, "armv4") == initial_arch)
+	{
+	  arch_string = "armv4t";
+	  osabi_string = "Darwin";
+	}
+      else if (strstr (initial_arch, "armv6") == initial_arch)
 	{
 	  arch_string = "armv6";
 	  osabi_string = "DarwinV6";
 	}
+      else if (strstr (initial_arch, "armv7") == initial_arch)
+	{
+	  arch_string = "armv7";
+	  osabi_string = "DarwinV7";
+	}
       else
 	warning ("invalid argument \"%s\" for \"--arch\", should be one of "
-		 "\"armv\" or \"armv6\"\n", initial_arch);
+		 "\"arm\", \"armv4*\", \"armv6*\", or \"armv7*\"\n", 
+		 initial_arch);
 #endif
       if (arch_string != NULL)
 	{
 	  set_architecture_from_string (arch_string);
 	  set_osabi_from_string (osabi_string);
 	}
+      else
+	{
+#if defined (TARGET_ARM) && defined (NM_NEXTSTEP)
+	  /* Always set the OSABI so we are sure to pick up the right slices 
+	     for ARM.  */
+	  extern enum gdb_osabi arm_set_osabi_from_host_info ();
+	  arm_set_osabi_from_host_info ();
+#endif	
+	}
     }
+#if defined (TARGET_ARM) && defined (NM_NEXTSTEP)
+  else
+    {
+      /* Always set the OSABI so we are sure to pick up the right slices 
+         for ARM.  */
+      extern enum gdb_osabi arm_set_osabi_from_host_info ();
+      arm_set_osabi_from_host_info ();
+    }
+#endif	
+
 #else
   warning ("--arch option not supported in this gdb.");
 #endif
@@ -852,7 +884,9 @@ extern int gdbtk_test (char *);
     if (((globalbuf.st_dev != cwdbuf.st_dev) || (globalbuf.st_ino != cwdbuf.st_ino))
 	&& ((homebuf.st_dev != cwdbuf.st_dev) || (homebuf.st_ino != cwdbuf.st_ino)))
       {
-	catch_command_errors (source_file, gdbinit, 0, RETURN_MASK_ALL);
+        /* APPLE LOCAL: fix for CVE-2005-1705 */
+        if (cwdbuf.st_uid == getuid ())
+	  catch_command_errors (source_file, gdbinit, 0, RETURN_MASK_ALL);
       }
   
   /* These need to be set this late in the initialization to ensure that

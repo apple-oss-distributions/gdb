@@ -33,6 +33,8 @@
 #include "gdbcmd.h"
 #include "gdb_string.h"
 
+#include "inlining.h"
+
 /* Dummy frame.  This saves the processor state just prior to setting
    up the inferior function call.  Older targets save the registers
    on the target stack (but that really slows down function calls).  */

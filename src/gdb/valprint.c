@@ -938,7 +938,7 @@ val_elt_addr (struct type *type, const gdb_byte *valaddr,
   else if (stride == -1)
     i = (upperbound - i);
   else
-    internal_error (__FILE__, __LINE__, _("unsupported stride %lld"), stride);
+    internal_error (__FILE__, __LINE__, _("unsupported stride %ld"), stride);
 
   elttype = TYPE_TARGET_TYPE (type);
   eltlen = TYPE_LENGTH (check_typedef (elttype));
@@ -1392,8 +1392,6 @@ show_print (char *args, int from_tty)
 void
 _initialize_valprint (void)
 {
-  struct cmd_list_element *c;
-
   add_prefix_cmd ("print", no_class, set_print,
 		  _("Generic command for setting how things print."),
 		  &setprintlist, "set print ", 0, &setlist);

@@ -884,8 +884,6 @@ parse_frame_specification_1 (const char *frame_exp, const char *message,
     numargs = 0;
   else
     {
-      char *addr_string;
-      struct cleanup *tmp_cleanup;
 
       numargs = 0;
       while (1)
@@ -1005,7 +1003,7 @@ frame_info (char *addr_exp, int from_tty)
   struct symbol *func;
   struct symtab *s;
   struct frame_info *calling_frame_info;
-  int i, count, numregs;
+  int numregs;
   char *funname = 0;
   enum language funlang = language_unknown;
   const char *pc_regname;

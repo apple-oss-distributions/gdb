@@ -9628,13 +9628,8 @@ static void
 enable_command (char *args, int from_tty)
 {
   struct breakpoint *bpt;
-  struct breakpoint *tmp;
-
   if (args == 0)
-    /* APPLE LOCAL: Use ALL_BREAKPOINTS_SAFE since enabling a
-       breakpoint could actually add breakpoints to the breakpoint
-       chain.  */
-    ALL_BREAKPOINTS_SAFE (bpt, tmp)
+    ALL_BREAKPOINTS (bpt)
       switch (bpt->type)
       {
       case bp_none:

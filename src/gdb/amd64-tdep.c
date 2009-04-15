@@ -24,6 +24,7 @@
 #include "arch-utils.h"
 #include "block.h"
 #include "dummy-frame.h"
+#include "exceptions.h"
 #include "frame.h"
 #include "frame-base.h"
 #include "frame-unwind.h"
@@ -34,6 +35,7 @@
 #include "regcache.h"
 #include "regset.h"
 #include "symfile.h"
+#include "complaints.h"
 
 #include "gdb_assert.h"
 
@@ -215,8 +217,11 @@ amd64_dwarf_reg_to_regnum (int reg)
   if (reg >= 0 && reg < amd64_dwarf_regmap_len)
     regnum = amd64_dwarf_regmap[reg];
 
+  /* APPLE LOCAL: Make this a complaint.
+     We can hit this when trying to initialize the table of registers for
+     a CFI program run.  See the comment at the top of dwarf2_frame_cache() */
   if (regnum == -1)
-    warning (_("Unmapped DWARF Register #%d encountered."), reg);
+    complaint (&symfile_complaints, _("Unmapped DWARF Register #%d encountered."), reg);
 
   return regnum;
 }
@@ -866,9 +871,6 @@ amd64_analyze_prologue (CORE_ADDR pc, CORE_ADDR current_pc,
 			struct frame_info *next_frame,
                         struct amd64_frame_cache *cache)
 {
-  static gdb_byte proto[3] = { 0x48, 0x89, 0xe5 }; /* movq %rsp, %rbp */
-  gdb_byte buf[3];
-  gdb_byte op;
   int non_prologue_insn_limit = 64; /* Stop looking after 64 unknown insn */
   int insn_seen;
   int must_have_stack_frame = 0;
@@ -1024,6 +1026,29 @@ amd64_frame_this_id (struct frame_info *next_frame, void **this_cache,
   if (cache->base == 0)
     return;
 
+  /* If this is the sentinel frame, make sure the frame base we get
+     from it is readable, otherwise we aren't going to get anywhere,
+     and we should just stop now... */
+  if (get_frame_type (next_frame) == SENTINEL_FRAME)
+    {
+      struct gdb_exception e;
+      TRY_CATCH (e, RETURN_MASK_ERROR)
+	{
+	  gdb_byte buf[8];
+	  read_memory (cache->base, buf, 8);
+	}
+      if (e.reason != NO_ERROR)
+	{
+	  extern int frame_debug;
+	  if (frame_debug)
+	    printf ("Terminating backtrace of thread: 0x%lx with unreadible "
+		    "initial stack address at 0x%s.\n", 
+		    inferior_ptid.tid, paddr_nz (cache->base));
+	  *this_id = null_frame_id;
+	  return;
+	}
+    }
+
   if (get_frame_type (next_frame) != SENTINEL_FRAME
       && get_prev_frame (next_frame) != NULL
       && frame_pc_unwind (get_prev_frame (next_frame)) == 0)
@@ -1088,7 +1113,10 @@ static const struct frame_unwind amd64_frame_unwind =
 {
   NORMAL_FRAME,
   amd64_frame_this_id,
-  amd64_frame_prev_register
+  amd64_frame_prev_register,
+  NULL,   /* const struct frame_data *unwind_data */
+  NULL,   /* frame_sniffer_ftype *sniffer */
+  NULL    /* frame_prev_pc_ftype *prev_pc */
 };
 
 static const struct frame_unwind *
@@ -1161,7 +1189,10 @@ static const struct frame_unwind amd64_sigtramp_frame_unwind =
 {
   SIGTRAMP_FRAME,
   amd64_sigtramp_frame_this_id,
-  amd64_sigtramp_frame_prev_register
+  amd64_sigtramp_frame_prev_register,
+  NULL,   /* const struct frame_data *unwind_data */
+  NULL,   /* frame_sniffer_ftype *sniffer */
+  NULL    /* frame_prev_pc_ftype *prev_pc */
 };
 
 static const struct frame_unwind *

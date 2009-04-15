@@ -1939,74 +1939,49 @@ lookup_symbol_aux_symtabs (int block_index,
    and everything after the '$' must be uppercase, a digit or anther '$'.
    For ALTERNATE_NAME to be an equivalence name for NAME, everything
    between '*_' and the '$' must be identical to NAME, e.g.
-   '*_putenv$UNIX2003' and 'putenv'.  */
+   '*_putenv$UNIX2003' and 'putenv'.  
+
+   Returns 1 if ALTERNATE_NAME is an equivalence name for NAME, or
+   if they are string-compare equal.  */
 
 int
-psym_name_match (char *alternate_name, char *name)
+psym_name_match (const char *alternate_name, const char *name)
 {
-  char *short_name;
-  char *extension;
-  char *short_end;
-  int match = 1;
-  int len1;
-  int len2;
+  int len1, len2;
 
-  if (strcmp (alternate_name, name) != 0)
+  if (strcmp (alternate_name, name) == 0)
+    return 1;
+
+  /* Make sure the alternate_name is at least 3 chars longer than name  */
+  len1 = strlen (alternate_name);
+  len2 = strlen (name);
+  if (len1 < len2 + 3)
+    return 0;
+
+  /* Equivalence symbols start with *_ */
+  if (alternate_name[0] !='*' || alternate_name[1] != '_')
+    return 0;
+  alternate_name += 2;
+
+  /* Following the *_, a copy of the symbol name */
+  if (strncmp (alternate_name, name, len2) != 0)
+    return 0;
+
+  /* Following the *_, the symbol name, expect a '$' */
+  if (alternate_name[len2] != '$')
+    return 0;
+  alternate_name += len2;
+
+  while (*alternate_name != '\0')
     {
-      /* If the two names don't match exactly... */
-
-      len1 = strlen (alternate_name);
-      len2 = strlen (name);
-
-      /* Make sure the alternate name is at least 3 chars longer than name  */
-
-      if (len1 > len2 + 3)
-	{
-	  /* Make sure alternate name starts with '*_'  */
-	  if (alternate_name[0] =='*'
-	      && alternate_name[1] == '_')
-	    {
-	      short_name = alternate_name + 2;
-	      /* Make sure alternate name contains a '$'  */
-	      extension = strchr (short_name, '$');
-	      if (extension)
-		{
-		  short_end = extension;
-		  extension++;
-		  short_end[0] = '\0';
-		  /* Make sure everything between '*_' and '$' matches name  */
-		  if (strcmp (short_name, name) == 0)
-		    {
-		      short_end[0] = '$';
-		      /* Make sure everything after the first '$' is either
-			 uppercase, a digit or a '$'  */
-		      while (extension < alternate_name + len1
-			     && extension[0] != '\0'
-			     && match)
-			{
-			  if (!isupper (extension[0])
-			      &&!isdigit (extension[0])
-			      && extension[0] != '$')
-			    match = 0;
-			  extension++;
-			}
-		    }
-		  else
-		    {
-		      short_end[0] = '$';
-		      match = 0;
-		    }
-		}
-	      else
-		match = 0;
-	    }
-	  else
-	    match = 0;
-	}
-      else match = 0;
+      if (!isupper (*alternate_name) 
+          &&!isdigit (*alternate_name)
+          && *alternate_name != '$')
+        return 0;
+      alternate_name++;
     }
 
-  return match;
+  return 1;
 }
 
 /* Given partial symbol table, PST, and a function NAME, chec, to see if
@@ -2142,12 +2117,15 @@ lookup_symbol_aux_psymtabs (int block_index, const char *name,
 		/* APPLE LOCAL fix-and-continue */
 		if (!sym || SYMBOL_OBSOLETED (sym))
 		  {
-		complaint (&symfile_complaints, "Internal: %s symbol `%s' found in %s psymtab but not in symtab."
-			   "\n%s may be an inlined function, or may be a template function\n"
-			   "(if a template, try specifying an instantiation: %s<type>).",
-			   block_index == GLOBAL_BLOCK ? "global" : "static",
-			   name, ps->filename, name, name);
-		return NULL;
+		    complaint (&symfile_complaints, 
+			       "Internal: %s symbol `%s' found in %s psymtab but not in symtab."
+			       "\n%s may be an inlined function, or may be a template function\n"
+			       "(if a template, try specifying an instantiation: %s<type>).",
+			       block_index == GLOBAL_BLOCK ? "global" : "static",
+			       name, ps->filename, name, name);
+		    /* APPLE LOCAL: If this symtab got it wrong, continue looking
+		       for one that doesn't.  We used to return NULL here.  */
+		    continue;
 		  }
 	      }
 	    if (symtab != NULL)

@@ -382,6 +382,7 @@ extern struct cleanup *make_cleanup_ui_file_delete (struct ui_file *);
 /* APPLE LOCAL begin cleanup */
 struct cleanup *make_cleanup_ui_out_delete (struct ui_out *);
 struct cleanup *make_cleanup_restore_uiout (struct ui_out *);
+struct cleanup *make_cleanup_ui_out_suppress_output (struct ui_out *cur_uiout);
 /* APPLE LOCAL end cleanup */
 
 struct section_addr_info;
@@ -1044,6 +1045,7 @@ enum gdb_osabi
   GDB_OSABI_DARWIN,
   GDB_OSABI_DARWIN64,
   GDB_OSABI_DARWINV6,
+  GDB_OSABI_DARWINV7,
   /* APPLE LOCAL end Darwin */
 
   GDB_OSABI_QNXNTO,

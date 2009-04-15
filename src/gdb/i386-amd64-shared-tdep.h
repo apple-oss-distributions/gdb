@@ -9,6 +9,8 @@ int i386_mov_esp_ebp_pattern_p (CORE_ADDR memaddr);
 int i386_push_ebp_pattern_p (CORE_ADDR memaddr);
 int i386_ret_pattern_p (CORE_ADDR memaddr);
 int i386_picbase_setup_pattern_p (CORE_ADDR memaddr, enum i386_regnum *regnum);
+int32_t i386_sub_esp_pattern_p (CORE_ADDR memaddr);
+
 struct type * build_builtin_type_vec128i_big (void);
 
 

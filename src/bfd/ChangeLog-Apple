@@ -1,20 +1,41 @@
-2008-10-17  Jason Molenda  (jmolenda@apple.com)
+2008-07-01  Greg Clayton  <gclayton@apple.com>
 
-	* mach-o.h (bfd_mach_o_load_command_type): Add BFD_MACH_O_LC_DYLD_INFO
-	and BFD_MACH_O_LC_DYLD_INFO_ONLY.
-	* mach-o.c (bfd_mach_o_write_contents): Ignore them.
-	(bfd_mach_o_scan_read_command): Ignore them.
+	* archures.c: Added bfd_mach_arm_7.
+	* bfd-in2.h: Ditto.
+	* cpu-arm.c (arch_info_struct): Added armv7 arch info.
+	(architectures): Ditto.
+	* mach-o.c (bfd_mach_o_convert_architecture): Added armv7 subtype
+	support.
+	* mach-o.h (bfd_mach_o_cpu_subtype): Ditto.
 
-2008-08-20  Jason Molenda  (jmolenda@apple.com)
+2008-06-27  Jason Molenda  (jmolenda@apple.com)
 
-	* mach-o.c (bfd_mach_o_core_file_matches_executable_p): Remove
-	ATTRIBUTE_UNUSED parameters to function; the compiler would choose to
-	do no comparison sometimes and just return 'true'.
+	* archures.c: Update to FSF gdb sources from 2007-07-02.
+	* bfd-in2.h: Ditto.
+	* bfd-in.h: Regenerated.
+	* cpu-arm.c: Ditto.
 
-2008-08-13  Jim Ingham <jingham@apple.com>
+2008-06-26  Jason Molenda  (jmolenda@apple.com)
 
-	* mach-o.c (bfd_mach_o_core_file_matches_executable_p): compare the
-	cputypes of the core files & return false if they don't match.
+	* config.bfd: Remove recognition of x86_64 so we don't build for this
+	until it is fully working.
+
+2008-06-26  Jason Molenda  (jmolenda@apple.com)
+
+	* mach-o.c (bfd_mach_o_scan_read_dysymtab_symbol): Correct expression
+	to mask off flag bits from the indirect symbol name index.
+
+2008-06-16  Jason Molenda  (jmolenda@apple.com)
+
+	* config.bfd: Recognize x86_64 arch.
+	* mach-o.c (bfd_mach_o_scan_read_dysymtab_symbol): Strip off the
+	indirect symbol bit flags before treating this as an index.
+	* po/Make-in: Fix shell typeo.
+
+2008-05-20  Jason Molenda  (jmolenda@apple.com)
+
+	* mach-o.c (bfd_mach_o_make_bfd_section): The section types are
+	constants, not bitfield values.
 
 2008-04-28  Jim Ingham  <jingham@apple.com>
 

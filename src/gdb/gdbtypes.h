@@ -106,6 +106,7 @@ enum type_code
     TYPE_CODE_STRUCT,		/* C struct or Pascal record */
     TYPE_CODE_UNION,		/* C union or Pascal variant part */
     TYPE_CODE_ENUM,		/* Enumeration type */
+    TYPE_CODE_FLAGS,            /* Bit flags type */
     TYPE_CODE_FUNC,		/* Function type */
     TYPE_CODE_INT,		/* Integer type */
 
@@ -141,6 +142,19 @@ enum type_code
     /* C++ */
     TYPE_CODE_MEMBER,		/* Member type */
     TYPE_CODE_METHOD,		/* Method type */
+
+    /* Pointer-to-member-function type.  This describes how to access a
+       particular member function of a class (possibly a virtual
+       member function).  The representation may vary between different
+       C++ ABIs.  */
+    TYPE_CODE_METHODPTR,
+
+    /* Pointer-to-member type.  This is the offset within a class to some
+       particular data member.  The only currently supported representation
+       uses an unbiased offset, with -1 representing NULL; this is used
+       by the Itanium C++ ABI (used by GCC on all platforms).  */
+    TYPE_CODE_MEMBERPTR,
+
     TYPE_CODE_REF,		/* C++ Reference types */
 
     TYPE_CODE_CHAR,		/* *real* character type */
@@ -303,6 +317,10 @@ enum type_code
    interpretation. Optionally marks ordinary, fixed-size GDB type. */
 
 #define TYPE_FLAG_FIXED_INSTANCE (1 << 15)
+
+/* APPLE LOCAL: This type is a "Closure struct".  It's both a structure,
+   AND it is treated by the compiler as a "function pointer".  */
+#define TYPE_FLAG_APPLE_CLOSURE (1 << 16)
 
 /*  Array bound type.  */
 enum array_bound_type
@@ -1428,6 +1446,7 @@ extern struct type *build_builtin_enum (const char *name, uint32_t size,
 extern struct type *build_builtin_bitfield (const char *name, uint32_t size, 
 					    struct gdbtypes_bitfield_info *, 
 					    uint32_t n);
+extern struct type *get_closure_dynamic_type (struct value *in_value);
 /* APPLE LOCAL END.  */
 
 #endif /* GDBTYPES_H */

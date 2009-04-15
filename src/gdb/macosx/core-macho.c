@@ -342,7 +342,8 @@ struct core_cached_registers_raw
 struct core_cached_registers_raw
 {
       gdb_arm_thread_state_t *arm_gp_regs;
-      gdb_arm_thread_fpstate_t *arm_fp_regs;
+      gdb_arm_thread_vfpv1_state_t *arm_vfpv1_regs;
+      gdb_arm_thread_vfpv3_state_t *arm_vfpv3_regs;
 };
 
 #else
@@ -404,8 +405,11 @@ core_fetch_cached_thread_registers ()
   if (cached_regs_raw->arm_gp_regs)
     arm_macosx_fetch_gp_registers_raw (cached_regs_raw->arm_gp_regs);
 
-  if (cached_regs_raw->arm_fp_regs)
-    arm_macosx_fetch_vfp_registers_raw (cached_regs_raw->arm_fp_regs);
+  if (cached_regs_raw->arm_vfpv1_regs)
+    arm_macosx_fetch_vfpv1_regs_raw (cached_regs_raw->arm_vfpv1_regs);
+
+  if (cached_regs_raw->arm_vfpv3_regs)
+    arm_macosx_fetch_vfpv3_regs_raw (cached_regs_raw->arm_vfpv3_regs);
 
 #else
 
@@ -494,7 +498,6 @@ core_cache_section_registers (asection *sec, int flavour,
 	   memory leak since we will copy out just what we need into a new
 	   buffer.  */
 	ULONGEST sub_flavour = extract_unsigned_integer ((const gdb_byte *)regs, 4);
-	ULONGEST count = extract_unsigned_integer ((const gdb_byte *)regs, 4);
 	if (sub_flavour == BFD_MACH_O_i386_THREAD_STATE)
 	  {
 	    gdb_assert (cached_regs_raw->i386_gp_regs == NULL);
@@ -522,7 +525,6 @@ core_cache_section_registers (asection *sec, int flavour,
 	   memory leak since we will copy out just what we need into a new
 	   buffer.  */
 	ULONGEST sub_flavour = extract_unsigned_integer ((const gdb_byte *)regs, 4);
-	ULONGEST count = extract_unsigned_integer ((const gdb_byte *)regs, 4);
 	if (sub_flavour == BFD_MACH_O_i386_FLOAT_STATE)
 	  {
 	    gdb_assert (cached_regs_raw->i386_fp_regs == NULL);
@@ -555,8 +557,16 @@ core_cache_section_registers (asection *sec, int flavour,
       break;
       
     case BFD_MACH_O_ARM_VFP_STATE:
-      cached_regs_raw->arm_fp_regs = (gdb_arm_thread_fpstate_t *) regs;
-      regs = NULL;
+      if (size/4 == GDB_ARM_THREAD_FPSTATE_VFPV1_COUNT)
+	{
+	  cached_regs_raw->arm_vfpv1_regs = (gdb_arm_thread_vfpv1_state_t *) regs;
+	  regs = NULL;
+	}
+      else if (size/4 == GDB_ARM_THREAD_FPSTATE_VFPV3_COUNT)
+	{
+	  cached_regs_raw->arm_vfpv3_regs = (gdb_arm_thread_vfpv3_state_t *) regs;
+	  regs = NULL;
+	}
       break;
     }
 #else
@@ -685,8 +695,11 @@ delete_core_thread_state_cache (struct thread_info *thrd_info)
       if (cached_regs_raw->arm_gp_regs) 
 	xfree (cached_regs_raw->arm_gp_regs);
 	
-      if (cached_regs_raw->arm_fp_regs) 
-	xfree (cached_regs_raw->arm_fp_regs);
+      if (cached_regs_raw->arm_vfpv1_regs) 
+	xfree (cached_regs_raw->arm_vfpv1_regs);
+	
+      if (cached_regs_raw->arm_vfpv3_regs) 
+	xfree (cached_regs_raw->arm_vfpv3_regs);
 	
 #else
 #error "unsupported architecture"
@@ -858,8 +871,11 @@ core_store_registers (int regno)
   if (cached_regs_raw->arm_gp_regs)
     arm_macosx_store_gp_registers_raw (cached_regs_raw->arm_gp_regs);
 
-  if (cached_regs_raw->arm_fp_regs)
-    arm_macosx_store_vfp_registers_raw (cached_regs_raw->arm_fp_regs);
+  if (cached_regs_raw->arm_vfpv1_regs)
+    arm_macosx_store_vfpv1_regs_raw (cached_regs_raw->arm_vfpv1_regs);
+    
+  if (cached_regs_raw->arm_vfpv3_regs)
+    arm_macosx_store_vfpv3_regs_raw (cached_regs_raw->arm_vfpv3_regs);
     
 #else
 #error "unsupported architecture"

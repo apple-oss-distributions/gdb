@@ -70,6 +70,12 @@ static int end_fun_absolute_p = 0;
 /* APPLE LOCAL */
 #include "block.h"
 
+/* APPLE LOCAL: prototype for macosx_get_osabi_from_dyld_entry */
+#ifdef MACOSX_DYLD
+#include "macosx-nat-dyld.h"
+#endif
+
+
 #include "gdb_assert.h"
 #include "gdb_string.h"
 
@@ -620,7 +626,7 @@ dbx_symfile_read (struct objfile *objfile, int mainline)
   int dbx_symtab_count;
   /* APPLE LOCAL: timers */
   static int timer = -1;
-  struct cleanup *timer_cleanup;
+  struct cleanup *timer_cleanup = NULL;
 
   /* APPLE LOCAL: If this is a dSYM that has minimal symbols, don't read the
      minsyms or we'll end up with duplicated minsyms.  */
@@ -2085,7 +2091,7 @@ read_dbx_symtab (struct objfile *objfile, int dbx_symcount)
 	    static int prev_so_symnum = -10;
 	    static int first_so_symnum;
 	    char *p;
-	    static char *dirname_nso;
+	    static char *dirname_nso = NULL;
 	    int prev_textlow_not_set;
 
 	    valu = nlist.n_value + objfile_text_section_offset (objfile);
@@ -2157,7 +2163,7 @@ read_dbx_symtab (struct objfile *objfile, int dbx_symcount)
 	      {
 		/* Save the directory name SOs locally, then save it into
 		   the psymtab when it's created below. */
-	        dirname_nso = namestring;
+	        dirname_nso = xstrdup (namestring);
 	        continue;		
 	      }
             /* APPLE LOCAL: Try getting the file's language from 'desc' field */
@@ -2226,12 +2232,19 @@ read_dbx_symtab (struct objfile *objfile, int dbx_symcount)
 	       immediately follow the first.  */
 
 	    if (!pst)
-	      pst = start_psymtab (objfile,
+              {
+	        pst = start_psymtab (objfile,
 				   namestring, valu,
 				   first_so_symnum * symbol_size,
 				   objfile->global_psymbols.next,
 				   /* APPLE LOCAL symbol prefixes */
 				   objfile->static_psymbols.next, prefix);
+                if (pst && dirname_nso && pst->dirname == NULL)
+                  {
+                    pst->dirname = dirname_nso;
+                    dirname_nso = NULL;
+                  }
+              }
 
             /* APPLE LOCAL: If there is a symbol separation file, put it in the 
                dependency list for this N_SO psymtab...  */
@@ -3347,7 +3360,7 @@ struct bfd *
 open_bfd_from_oso (struct partial_symtab *pst, int *cached)
 {
   struct bfd *oso_bfd, *retval;
-  long mtime;
+  long mtime = 0;
   char *oso_name;
   long oso_mtime;
   char *archive_name;
@@ -3355,6 +3368,8 @@ open_bfd_from_oso (struct partial_symtab *pst, int *cached)
 
   *cached = 0;
 
+  oso_bfd = NULL;
+  retval = NULL;
   oso_name = PSYMTAB_OSO_NAME (pst);
   oso_mtime = PSYMTAB_OSO_MTIME (pst);
 
@@ -3371,7 +3386,12 @@ open_bfd_from_oso (struct partial_symtab *pst, int *cached)
         }
       if (bfd_check_format (oso_bfd, bfd_archive))
 	{
-	  oso_bfd = open_bfd_matching_arch (oso_bfd, bfd_object);
+	  enum gdb_osabi oso_osabi = GDB_OSABI_UNKNOWN;
+#ifdef MACOSX_DYLD
+	  if (pst->objfile && pst->objfile->obfd)
+	    oso_osabi = macosx_get_osabi_from_dyld_entry (pst->objfile->obfd);
+#endif
+	  oso_bfd = open_bfd_matching_arch (oso_bfd, bfd_object, oso_osabi);
 	  if (oso_bfd == NULL)
 	    error ("Could not open OSO file matching current "
 		   "architecture for \"%s\".",
@@ -3419,7 +3439,13 @@ open_bfd_from_oso (struct partial_symtab *pst, int *cached)
 	  /* GRRR...  Archives of type mach-o-fat are fat files, not 
 	     .a files.  So look for the .a file matching the current'
 	     architecture.  */
-	  archive_bfd = open_bfd_matching_arch (archive_bfd, bfd_archive);
+	  enum gdb_osabi oso_osabi = GDB_OSABI_UNKNOWN;
+#ifdef MACOSX_DYLD
+	  if (pst->objfile && pst->objfile->obfd)
+	    oso_osabi = macosx_get_osabi_from_dyld_entry (pst->objfile->obfd);
+#endif
+	  archive_bfd = open_bfd_matching_arch (archive_bfd, bfd_archive, 
+					        oso_osabi);
 
 	  if (archive_bfd == NULL)
 	    {
@@ -3496,7 +3522,7 @@ oso_scan_partial_symtab (struct partial_symtab *pst)
   unsigned char type;
   const char *prefix;
   int current_list_element = -1;
-  struct partial_symtab *current_pst;
+  struct partial_symtab *current_pst = NULL;
   struct objfile *objfile;
   char leading_char;
   /* Index within current psymtab dependency list */
@@ -4538,7 +4564,7 @@ read_ofile_symtab_from_oso (struct partial_symtab *pst, struct bfd *oso_bfd)
        symnum < num_syms;
        symnum++)
     {
-      CORE_ADDR offset;
+      CORE_ADDR offset = 0;
 
       QUIT;			/* Allow this to be interruptable */
 
@@ -4563,7 +4589,7 @@ read_ofile_symtab_from_oso (struct partial_symtab *pst, struct bfd *oso_bfd)
       if (type == N_BNSYM)
 	{
 	  struct internal_nlist tmp_nlist;
-	  struct partial_symbol *fun_psym;
+	  struct partial_symbol *fun_psym = NULL;
 	  char *fun_namestring;
 	  int scan_ptr = symnum;
 	  int old_symbuf_idx = symbuf_idx;

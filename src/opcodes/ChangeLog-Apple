@@ -1,3 +1,13 @@
+2008-11-21  Greg Clayton  <gclayton@apple.com>
+
+	* arm-dis.c: Updated thumb ldmia instruction to handle the case
+	where Rn is in the register list and thus shouldn't be updated.
+
+2008-06-27  Jason Molenda  (jmolenda@apple.com)
+
+	* arm-dis.c: Update to FSF gdb sources from 2007-07-02.  This has
+	the Apple local changes merged in.
+
 2007-11-06  Greg Clayton  <gclayton@apple.com>
 
         * arm-dis.c (print_insn_thumb32): Fixed BLX(1) offset for thumb.

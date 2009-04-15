@@ -466,6 +466,19 @@ struct target_ops
        from that objfile.)  */
     int (*to_check_is_objfile_loaded) (struct objfile *objfile);
 
+    /* APPLE LOCAL: Check if a step is not completed due to target specific
+       circumstances. This was added for ARM (Thumb actually) seeing as a
+       32 bit thumb instruction can stop half way through itself when using
+       IMVA mismatch stepping.  */
+    int (*to_keep_going) (CORE_ADDR stop_pc);
+
+    /* APPLE LOCAL: Added support for target specific information to be
+       stored in the thread specific inferior_status to allow targets to
+       save/restore thread specific data between context switches.  */
+    void * (*to_save_thread_inferior_status) ();
+    void (*to_restore_thread_inferior_status) (void *);
+    void (*to_free_thread_inferior_status) (void *);
+
     int to_magic;
     /* Need sub-structure for target machine related rather than comm related?
      */
@@ -931,7 +944,7 @@ extern int gdb_override_async;
 
 /* Use this to set the override of async behavior.
    Set ON to 1 to turn on the override, 0 to turn it off. */
-extern void gdb_set_async_override (int on);
+void gdb_set_async_override (void *on);
 
 /* Can the target support asynchronous execution? */
 #define target_can_async_p() (gdb_override_async ? 0 : current_target.to_can_async_p ())
@@ -1072,6 +1085,26 @@ extern void (*deprecated_target_new_objfile_hook) (struct objfile *);
 
 #define target_check_is_objfile_loaded(OBJFILE) \
     (current_target.to_check_is_objfile_loaded) (OBJFILE)
+
+/*
+ * APPLE LOCAL: complex step support.
+ */
+
+#define target_keep_going(PC) \
+    (current_target.to_keep_going) (PC)
+
+/*
+ * APPLE LOCAL target specific inferior_status support.
+ */
+
+#define target_save_thread_inferior_status() \
+    (current_target.to_save_thread_inferior_status) ()
+
+#define target_restore_thread_inferior_status(VOID_PTR) \
+    (current_target.to_restore_thread_inferior_status) (VOID_PTR)
+
+#define target_free_thread_inferior_status(VOID_PTR) \
+    (current_target.to_free_thread_inferior_status) (VOID_PTR)
 
 /* Thread-local values.  */
 #define target_get_thread_local_address \
@@ -1297,7 +1330,9 @@ extern enum target_signal target_signal_from_command (int);
 
 /* Any target can call this to switch to remote protocol (in remote.c). */
 extern void push_remote_target (char *name, int from_tty);
-
+/* APPLE LOCAL: target remote-macosx equivalent of push_remote_target().  */
+extern void push_remote_macosx_target (char *name, int from_tty);
+
 /* Imported from machine dependent code */
 
 /* Blank target vector entries are initialized to target_ignore. */
@@ -1310,6 +1345,7 @@ extern struct target_ops deprecated_child_ops;
 
 /* APPLE LOCAL: Override trust-readonly-sections.  */
 extern int set_trust_readonly (int);
+void set_trust_readonly_cleanup (void *new);
 /* END APPLE LOCAL */
 
 #endif /* !defined (TARGET_H) */

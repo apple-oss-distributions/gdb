@@ -754,11 +754,11 @@ gdb_DBGCopyMatchingUUIDsForURL (const char *path)
   CFAllocatorRef alloc = kCFAllocatorDefault;
   CFMutableArrayRef uuid_array = NULL;
   struct gdb_exception e;
-  bfd *abfd;
+  bfd *abfd = NULL;
 
   TRY_CATCH (e, RETURN_MASK_ERROR)
   {
-    abfd = symfile_bfd_open (path, 0);
+    abfd = symfile_bfd_open (path, 0, GDB_OSABI_UNKNOWN);
   }
   
   if (abfd == NULL || e.reason == RETURN_ERROR)
@@ -872,17 +872,13 @@ create_dsym_uuids_for_path (char *dsym_bundle_path)
 	{
 	  CFURLRef path_url = NULL;
 	  CFArrayRef uuid_array = NULL;
-	  CFStringRef path_cfstr = NULL;
 	  /* Re-use the path each time and only copy the 
 	     directory entry name just past the 
 	     ".../Contents/Resources/DWARF/" part of PATH.  */
 	  strcpy(&path[path_len], dp->d_name);
-	  path_cfstr = CFStringCreateWithCString (NULL, path,  
-						  kCFStringEncodingUTF8);
-	  path_url = CFURLCreateWithFileSystemPath (NULL, path_cfstr,
-                                                    kCFURLPOSIXPathStyle, 0);
+	  path_url = CFURLCreateWithBytes (NULL, (UInt8 *) path, full_path_len, 
+					   kCFStringEncodingUTF8, NULL);
 	  
-	  CFRelease (path_cfstr), path_cfstr = NULL;
 	  if (path_url == NULL)
 	    continue;
 	  

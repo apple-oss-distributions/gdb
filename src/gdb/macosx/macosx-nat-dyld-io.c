@@ -98,7 +98,6 @@ size_t
 inferior_read_memory_partial (CORE_ADDR addr, int nbytes, gdb_byte *mbuf)
 {
   size_t nbytes_read = 0;
-  int error = 0;
 
   volatile struct gdb_exception except;
 

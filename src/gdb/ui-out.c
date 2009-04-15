@@ -474,7 +474,6 @@ ui_out_field_int (struct ui_out *uiout,
   int fldno;
   int width;
   int align;
-  struct ui_out_level *current = current_level (uiout);
 
   verify_field (uiout, &fldno, &width, &align);
 
@@ -491,7 +490,6 @@ ui_out_field_fmt_int (struct ui_out *uiout,
   int fldno;
   int width;
   int align;
-  struct ui_out_level *current = current_level (uiout);
 
   verify_field (uiout, &fldno, &width, &align);
 

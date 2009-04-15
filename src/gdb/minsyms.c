@@ -145,7 +145,6 @@ lookup_minimal_symbol_all (const char *name, const char *sfile,
 			   struct objfile *objf, struct symbol_search **sym_list)
 {
   struct symbol_search *node;
-  struct symbol_search *current;
   struct objfile *objfile;
   struct minimal_symbol *msymbol;
   struct minimal_symbol *found_symbol = NULL;

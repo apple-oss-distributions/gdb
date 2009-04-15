@@ -1,17 +1,23 @@
 GDB_VERSION = 6.3.50-20050815
-GDB_RC_VERSION = 967
+GDB_RC_VERSION = 1119
 
 BINUTILS_VERSION = 2.13-20021117
 BINUTILS_RC_VERSION = 46
 
+# Uncomment line below for debugging shell commands
+# SHELL = /bin/sh -x
+
 .PHONY: all clean configure build install installsrc installhdrs headers \
 	build-core build-binutils build-gdb \
-	install-frameworks-headers\
+	install-frameworks-headers \
 	install-frameworks-macosx \
 	install-binutils-macosx \
 	install-gdb-fat \
 	install-chmod-macosx install-chmod-macosx-noprocmod \
-	install-clean install-source check
+	install-clean install-source check \
+	cross-installhdrs \
+	cross-install-frameworks-headers \
+	cross-install-frameworks-headers-finalize
 
 
 # Get the correct setting for SYSTEM_DEVELOPER_TOOLS_DOC_DIR if 
@@ -49,7 +55,15 @@ CANONICAL_ARCHS := $(subst macos:i386:$(RC_RELEASE),i386-apple-darwin,$(CANONICA
 CANONICAL_ARCHS := $(subst macos:x86_64:$(RC_RELEASE),x86_64-apple-darwin,$(CANONICAL_ARCHS))
 CANONICAL_ARCHS := $(subst macos:ppc:$(RC_RELEASE),powerpc-apple-darwin,$(CANONICAL_ARCHS))
 CANONICAL_ARCHS := $(subst macos:arm:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:armv4:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:armv4t:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:armv5:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:armv5t:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
 CANONICAL_ARCHS := $(subst macos:armv6:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:armv6t:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:armv6t2:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:armv7:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
+CANONICAL_ARCHS := $(subst macos:armv7t:$(RC_RELEASE),arm-apple-darwin,$(CANONICAL_ARCHS))
 
 CANONICAL_ARCHS := $(sort $(CANONICAL_ARCHS))
 
@@ -157,11 +171,7 @@ CONFIG_ENABLE_BUILD_WARNINGS=--enable-build-warnings
 CONFIG_ENABLE_TUI=--disable-tui
 CONFIG_ALL_BFD_TARGETS=
 CONFIG_ALL_BFD_TARGETS=
-ifeq "$(CANONICAL_ARCHS)" "arm-apple-darwin"
-	CONFIG_64_BIT_BFD=
-else
-	CONFIG_64_BIT_BFD=--enable-64-bit-bfd
-endif
+CONFIG_64_BIT_BFD=--enable-64-bit-bfd
 CONFIG_WITH_MMAP=--with-mmap
 CONFIG_ENABLE_SHARED=--disable-shared
 CONFIG_MAINTAINER_MODE=
@@ -316,18 +326,18 @@ crossarm:;
 
 cross: 	LIBEXEC_GDB_DIR=usr/libexec/gdb
 cross:;
+	$(SUBMAKE) $(MACOSX_FLAGS) install-gdb-macosx-common
 	echo BUILDING CROSS $(RC_CROSS_ARCHS) for HOST $(RC_ARCHS); \
-        for cross_arch in $(RC_CROSS_ARCHS); do \
+	set -e; for cross_arch in $(RC_CROSS_ARCHS); do \
 		cross_arch_full=$${cross_arch}; \
-		if [[ "$${cross_arch}" == "armv6" ]] ; then \
+		if [[ "$${cross_arch}" =~ arm.* ]] ; then \
 			cross_arch=arm; \
 		fi; \
 		target_arch_vendor_os="$${cross_arch}-apple-darwin"; \
 		curr_symroot_output_file="$(SYMROOT)/$(LIBEXEC_GDB_DIR)/gdb-$${target_arch_vendor_os}" ; \
-		$(RM)  "$${curr_symroot_output_file}"; \
 		for host_arch in $(RC_ARCHS); do \
 			host_arch_full="$${host_arch}"; \
-			if [[ "$${host_arch}" == "armv6" ]] ; then \
+			if [[ "$${host_arch}" =~ arm.* ]] ; then \
 				host_arch="arm"; \
 			fi; \
 			echo "BUILDING CROSS $${cross_arch_full} for HOST $${host_arch_full}"; \
@@ -368,6 +378,49 @@ cross:;
 	sed -e 's/version=.*/version=$(GDB_VERSION)-$(GDB_RC_VERSION)/' \
                 < $(SRCROOT)/gdb.sh > ${DSTROOT}/usr/bin/gdb; \
 	chmod 755 ${DSTROOT}/usr/bin/gdb; \
+
+
+cross-installhdrs:
+	$(SUBMAKE) $(MACOSX_FLAGS) install-clean ; \
+	echo BUILDING CROSS $(RC_CROSS_ARCHS) for HOST $(RC_ARCHS); \
+		for cross_arch in $(RC_CROSS_ARCHS); do \
+		cross_arch_full=$${cross_arch}; \
+		if [[ "$${cross_arch}" =~ arm.* ]] ; then \
+			cross_arch=arm; \
+		fi; \
+		target_arch_vendor_os="$${cross_arch}-apple-darwin"; \
+		for host_arch in $(RC_ARCHS); do \
+			host_arch_full="$${host_arch}"; \
+			if [[ "$${host_arch}" =~ arm.* ]] ; then \
+				host_arch="arm"; \
+			fi; \
+			echo "BUILDING CROSS $${cross_arch_full} for HOST $${host_arch_full}"; \
+			host_arch_vendor_os="$${host_arch}-apple-darwin"; \
+			curr_objroot="$(OBJROOT)/$${host_arch_full}-apple-darwin--$${cross_arch_full}-apple-darwin"; \
+			$(RM) -r "$${curr_objroot}"; \
+			$(INSTALL) -c -d "$${curr_objroot}"; \
+			if [[ "$${cross_arch}" == "$${host_arch}" ]] ; then \
+				echo INSTALLHDRS native with -isystem = $(SDKROOT)/usr/include; \
+				curr_sdkroot="$(SDKROOT)/usr/include"; \
+			else \
+				echo INSTALLHDRS cross with -isystem = $(CROSS_BUILD_SDKROOT)/usr/include; \
+				curr_sdkroot="$(CROSS_BUILD_SDKROOT)/usr/include"; \
+			fi; \
+			(cd "$${curr_objroot}"/ && \
+				$(CONFIGURE_ENV) CC="cc -arch $${host_arch_full}" $(MACOSX_FLAGS) $(SRCTOP)/src/configure \
+					--host=$${host_arch_vendor_os} \
+					--target=$${target_arch_vendor_os} \
+					--build=$(BUILD_ARCH) \
+					CFLAGS=" -isystem $${curr_sdkroot} $(CDEBUGFLAGS)" \
+					$(CONFIGURE_OPTIONS) \
+				); \
+			$(SUBMAKE) $${curr_objroot}/stamp-build-headers ; \
+			$(SUBMAKE) $(MACOSX_FLAGS) CURRENT_ROOT=$(SYMROOT) CROSS_ARCH=$${cross_arch} CROSS_ARCH_FULL=$${cross_arch_full} HOST_ARCH=$${host_arch} HOST_ARCH_FULL=$${host_arch_full} cross-install-frameworks-headers ; \
+			$(SUBMAKE) $(MACOSX_FLAGS) CURRENT_ROOT=$(DSTROOT) CROSS_ARCH=$${cross_arch} CROSS_ARCH_FULL=$${cross_arch_full} HOST_ARCH=$${host_arch} HOST_ARCH_FULL=$${host_arch_full} cross-install-frameworks-headers ; \
+		done; \
+	done; \
+	$(SUBMAKE) CURRENT_ROOT=$(SYMROOT) $(MACOSX_FLAGS) cross-install-frameworks-headers-finalize ; \
+	$(SUBMAKE) CURRENT_ROOT=$(DSTROOT) $(MACOSX_FLAGS) cross-install-frameworks-headers-finalize ; \
 
 
 $(OBJROOT)/%/stamp-rc-configure:
@@ -479,6 +532,69 @@ install-frameworks-headers:
 				> $(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/$${i}.framework/Versions/A/Headers/machine/$${h}; \
 		done; \
 	done
+
+cross-install-frameworks-headers-finalize:
+
+	cd "$(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/gdb.framework/Versions/A/Headers/machine" \
+		&& cross_dirs=`find . -type d`; \
+	set -e; for h in $(TEMPLATE_HEADERS); do \
+		hg=`echo $${h} | sed -e 's/\.h//' -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`; \
+		aggregate_cross_file=$(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/gdb.framework/Versions/A/Headers/machine/$${h}; \
+		echo "#ifndef _CONFIG_$${hg}_H_\n#define _CONFIG_$${hg}_H_\n#include <mach/mach.h>\n" > "$${aggregate_cross_file}" ; \
+		for cross_dir in $${cross_dirs}; do \
+			cross_dir=`echo $${cross_dir} | sed -e 's/^\.//' -e 's/\///'`; \
+			if [[ -n "$${cross_dir}" && -e "$${cross_dir}/$${h}" ]]; then \
+				host_arch=`echo "$${cross_dir}" | sed -e 's/\([^-]*\).*/\1/'`; \
+				cross_arch=`echo "$${cross_dir}" | sed -e 's/.*--\([^-]*\).*/\1/'`; \
+				if [[ "$${host_arch}" == "$${cross_arch}" ]]; then \
+					echo "#if defined (NM_NEXTSTEP) && defined (TM_NEXTSTEP) && defined (__$${host_arch}__)" >> "$${aggregate_cross_file}" ; \
+					echo "#include \"machine/$${cross_dir}/$${h}\"" >> "$${aggregate_cross_file}" ; \
+				else \
+					cross_arch_caps=`echo "$${cross_arch}" | sed -e 's/ppc/POWERPC/' -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`; \
+					echo "#if !defined (NM_NEXTSTEP) && defined (TM_NEXTSTEP) && defined (TARGET_$${cross_arch_caps}) && defined (__$${host_arch}__)" >> "$${aggregate_cross_file}" ; \
+					echo "#include \"machine/$${cross_dir}/$${h}\"" >> "$${aggregate_cross_file}" ; \
+				fi ; \
+			fi ; \
+		done ; \
+		echo "#else\n#error unknown architecture\n#endif\n\n#endif\n" >> "$${aggregate_cross_file}" ; \
+	done
+
+cross-install-frameworks-headers:
+
+	$(INSTALL) -c -d $(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)
+
+	set -e;	for i in $(FRAMEWORKS); do \
+		framedir=$(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/$${i}.framework; \
+		$(INSTALL) -c -d $${framedir}/Versions/A/PrivateHeaders; \
+		$(INSTALL) -c -d $${framedir}/Versions/A/Headers; \
+		ln -sf A $${framedir}/Versions/Current; \
+		ln -sf Versions/Current/PrivateHeaders $${framedir}/PrivateHeaders; \
+		ln -sf Versions/Current/Headers $${framedir}/Headers; \
+	done
+
+	set -e; for i in $(FRAMEWORKS); do \
+		l=`echo $${i} | sed -e 's/liberty/libiberty/;' -e 's/binutils/\./;' -e 's/gdb/\./;'`; \
+		(cd "$(OBJROOT)/$(HOST_ARCH_FULL)-apple-darwin--$(CROSS_ARCH_FULL)-apple-darwin/$${l}/$${i}.framework/Versions/A" \
+		 && $(TAR) --exclude=CVS -cf - Headers) \
+		| \
+		(cd "$(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/$${i}.framework/Versions/A" \
+		 && $(TAR) -xf -); \
+	done
+
+	rm -rf "$(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/gdb.framework/Versions/A/Headers/machine/$(HOST_ARCH)-apple-darwin--$(CROSS_ARCH)-apple-darwin"; \
+	mkdir -p "$(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/gdb.framework/Versions/A/Headers/machine/$(HOST_ARCH)-apple-darwin--$(CROSS_ARCH)-apple-darwin"; \
+	(cd "$(OBJROOT)/$(HOST_ARCH_FULL)-apple-darwin--$(CROSS_ARCH_FULL)-apple-darwin/gdb.framework/Versions/A/Headers/machine" && $(TAR) --exclude=CVS -cf - *) \
+		| (cd "$(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/gdb.framework/Versions/A/Headers/machine/$(HOST_ARCH)-apple-darwin--$(CROSS_ARCH)-apple-darwin" && $(TAR) -xf -);
+
+cross-install-frameworks-headers-remove:
+
+	for h in $(TEMPLATE_HEADERS); do \
+		hg=`echo $${h} | sed -e 's/\.h//' -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`; \
+		rm -f $(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/gdb.framework/Versions/A/Headers/$${h}; \
+		ln -s machine/$${h} $(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/gdb.framework/Versions/A/Headers/$${h}; \
+		cat template.h | sed -e "s/@file@/$${h}/g" -e "s/@FILEGUARD@/_CONFIG_$${hg}_H_/" \
+			> $(CURRENT_ROOT)/$(PRIVATE_FRAMEWORKS_DIR)/gdb.framework/Versions/A/Headers/machine/$${h}; \
+	done; 
 
 install-frameworks-resources:
 
@@ -770,12 +886,16 @@ else
 endif
 
 installhdrs:
+ifeq ($(RC_CROSS_ARCHS),)
 	$(SUBMAKE) check-args
 	$(SUBMAKE) configure 
 	$(SUBMAKE) build-headers
 	$(SUBMAKE) install-clean
 	$(SUBMAKE) $(MACOSX_FLAGS) CURRENT_ROOT=$(SYMROOT) install-frameworks-headers
 	$(SUBMAKE) $(MACOSX_FLAGS) CURRENT_ROOT=$(DSTROOT) install-frameworks-headers
+else
+	$(SUBMAKE) $(MACOSX_FLAGS) cross-installhdrs
+endif
 
 installsrc:
 	$(SUBMAKE) check

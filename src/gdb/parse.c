@@ -805,7 +805,7 @@ prefixify_expression (struct expression *expr)
 int
 length_of_subexp (struct expression *expr, int endpos)
 {
-  int oplen, args, i;
+  int oplen, args;
 
   operator_length (expr, endpos, &oplen, &args);
 
@@ -977,7 +977,6 @@ prefixify_subexp (struct expression *inexpr,
   int args;
   int i;
   int *arglens;
-  enum exp_opcode opcode;
 
   operator_length (inexpr, inend, &oplen, &args);
 
@@ -1297,8 +1296,6 @@ static void build_parse (void);
 static void
 build_parse (void)
 {
-  int i;
-
   msym_text_symbol_type =
     init_type (TYPE_CODE_FUNC, 1, 0, "<text variable, no debug info>", NULL);
   TYPE_TARGET_TYPE (msym_text_symbol_type) = builtin_type_error;

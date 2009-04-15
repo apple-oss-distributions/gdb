@@ -1462,7 +1462,8 @@ pre_load_and_check_file (struct fixinfo *cur)
   struct objfile *new_objfile;
   struct cleanup *cleanups;
 
-  object_bfd = symfile_bfd_open_safe (cur->bundle_filename, 0);
+  object_bfd = symfile_bfd_open_safe (cur->bundle_filename, 0, 
+				      GDB_OSABI_UNKNOWN);
   new_objfile = symbol_file_add_bfd_safe (object_bfd, 0, 0, 0, 0, 0, 
                                           OBJF_SYM_ALL, (CORE_ADDR) NULL, NULL,
                                           NULL);

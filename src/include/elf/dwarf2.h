@@ -379,6 +379,8 @@ enum dwarf_attribute
     DW_AT_APPLE_repository_specification   = 0x2504,
     DW_AT_APPLE_repository_import          = 0x2505,
     DW_AT_APPLE_repository_abstract_origin = 0x2506,
+    /* Apple Extensions for closures  */
+    DW_AT_APPLE_closure = 0x3fe4,
     /* UPC extension.  */
     DW_AT_upc_threads_scaled = 0x3210,
     /* PGI (STMicroelectronics) extensions.  */

@@ -481,7 +481,8 @@ bfd_mach_o_convert_architecture (bfd_mach_o_cpu_type mtype,
 	*subtype = bfd_mach_arm_4T;
       else if (msubtype == BFD_MACH_O_CPU_SUBTYPE_ARM_6)
 	*subtype = bfd_mach_arm_6;
-
+      else if (msubtype == BFD_MACH_O_CPU_SUBTYPE_ARM_7)
+	*subtype = bfd_mach_arm_7;
       break;
     case BFD_MACH_O_CPU_TYPE_MC88000: *type = bfd_arch_m88k; break;
     case BFD_MACH_O_CPU_TYPE_SPARC:
@@ -912,8 +913,6 @@ bfd_mach_o_write_contents (bfd *abfd)
 	case BFD_MACH_O_LC_SUB_FRAMEWORK:
 	case BFD_MACH_O_LC_LAZY_LOAD_DYLIB:
 	case BFD_MACH_O_LC_ENCRYPTION_INFO:
-	case BFD_MACH_O_LC_DYLD_INFO:
-	case BFD_MACH_O_LC_DYLD_INFO_ONLY:
 	  break;
 	default:
 	  fprintf (stderr,
@@ -1044,16 +1043,16 @@ bfd_mach_o_make_bfd_section (bfd *abfd, bfd_mach_o_section *section)
   if ((section->flags & BFD_MACH_O_SECTION_TYPE_MASK) == BFD_MACH_O_S_ZEROFILL 
       || (section->flags & BFD_MACH_O_SECTION_TYPE_MASK) == BFD_MACH_O_S_GB_ZEROFILL)
     {
-    bfdsec->flags = SEC_ALLOC;
+      bfdsec->flags = SEC_ALLOC;
     }
   else if ((section->flags & BFD_MACH_O_SECTION_TYPE_MASK) == BFD_MACH_O_S_ATTR_DEBUG 
            || strcmp (section->segname, "__DWARF") == 0)
     {
-    bfdsec->flags = SEC_HAS_CONTENTS;
+      bfdsec->flags = SEC_HAS_CONTENTS;
     }
   else
     {
-    bfdsec->flags = SEC_HAS_CONTENTS | SEC_LOAD | SEC_ALLOC | SEC_CODE;
+      bfdsec->flags = SEC_HAS_CONTENTS | SEC_LOAD | SEC_ALLOC | SEC_CODE;
     }
 
   /* The __TEXT.__text segment is always readonly. */
@@ -2148,8 +2147,6 @@ bfd_mach_o_scan_read_command (bfd *abfd, bfd_mach_o_load_command *command)
     case BFD_MACH_O_LC_CODE_SIGNATURE:
     case BFD_MACH_O_LC_SEGMENT_SPLIT_INFO:
     case BFD_MACH_O_LC_LAZY_LOAD_DYLIB:
-    case BFD_MACH_O_LC_DYLD_INFO:
-    case BFD_MACH_O_LC_DYLD_INFO_ONLY:
       break;
     case BFD_MACH_O_LC_ENCRYPTION_INFO:
       {
@@ -2218,14 +2215,6 @@ bfd_mach_o_scan_start_address (bfd *abfd)
   bfd_mach_o_data_struct *mdata = abfd->tdata.mach_o_data;
   bfd_mach_o_thread_command *cmd = NULL;
   unsigned long i;
-
-  /* dyld for instance DOES have LC_UNIXTHREAD commands - the kernel
-     needs this to load dyld and let it go - which in turn loads the
-     binary...  But this isn't what we mean by the start address.  
-     You can't have a start address if you aren't an executable...  */
-
-  if (mdata->header.filetype != BFD_MACH_O_MH_EXECUTE)
-    return 0;
 
   for (i = 0; i < mdata->header.ncmds; i++)
     {
@@ -2930,12 +2919,10 @@ bfd_mach_o_core_file_failing_signal (bfd *abfd ATTRIBUTE_UNUSED)
 }
 
 bfd_boolean
-bfd_mach_o_core_file_matches_executable_p (bfd *core_bfd, bfd *exec_bfd)
+bfd_mach_o_core_file_matches_executable_p (bfd *core_bfd ATTRIBUTE_UNUSED,
+					   bfd *exec_bfd ATTRIBUTE_UNUSED)
 {
-  if (core_bfd->tdata.mach_o_data->header.cputype == exec_bfd->tdata.mach_o_data->header.cputype)
   return TRUE;
-  else
-    return FALSE;
 }
 
 bfd_boolean        

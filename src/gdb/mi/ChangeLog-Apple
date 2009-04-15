@@ -1,3 +1,8 @@
+2009-04-10  Jim Ingham  <jingham@apple.com>
+
+        * mi-main.c (mi_cmd_target_attach): Pass -waitfor down to the
+	lower level attach.
+
 2008-09-23  Greg Clayton  <gclayton@apple.com>
 
 	* mi-cmd-stack.c (mi_cmd_stack_list_args): Store the frame id for a
@@ -8,6 +13,22 @@
 
 	* mi-cmd-stack.c (mi_cmd_file_list_globals): Use the separate debug
 	file when a full path to a shared library is provided.
+
+2008-06-17  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmd-break.c (mi_cmd_break_catch): Remove unused variables.
+	* mi-cmd-file.c (mi_cmd_file_list_exec_source_file): Same.
+	* mi-interp.c (mi_interpreter_exec): Same.
+	* mi-main.c (captured_mi_execute_command): Same.
+
+2008-06-16  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmd-var.c (mi_cmd_var_evaluate_expression): Use 
+	set_unwind_on_signal_cleanup.
+	* mi-main.c (mi_cmd_data_evaluate_expression): Use 
+	set_unwind_on_signal_cleanup.
+	(mi_execute_async_cli_command): Correct cast.
+	(mi_exec_async_cli_cmd_continuation): Correct cast.
 
 2008-05-12  Jim Ingham  <jingham@apple.com>
 

@@ -36,6 +36,9 @@
 #include "gdb_string.h"
 #include "infcall.h"
 #include "dummy-frame.h"
+#include <sys/time.h>
+#include "exceptions.h"
+
 /* APPLE LOCAL checkpointing */
 extern void begin_inferior_call_checkpoints (void);
 extern void end_inferior_call_checkpoints (void);
@@ -117,6 +120,15 @@ set_unwind_on_signal (int new_val)
   int old_val = unwind_on_signal_p;
   unwind_on_signal_p = new_val;
   return old_val;
+}
+
+/* A variant that can be registered with make_cleanup() without any
+   sizeof int == sizeof void* assumptions.  */
+
+void
+set_unwind_on_signal_cleanup (void *new_val)
+{
+  unwind_on_signal_p = (int) new_val;
 }
 
 static void
@@ -330,6 +342,33 @@ push_dummy_code (struct gdbarch *gdbarch,
   else    
     return generic_push_dummy_code (gdbarch, sp, funaddr, using_gcc,
 				    args, nargs, value_type, real_pc, bp_addr);
+}
+
+/* APPLE LOCAL: Added the ability to time out the hand function
+   call.  */
+
+static int timer_fired;
+static int hand_call_function_timeout;
+
+int 
+set_hand_function_call_timeout (int newval)
+{
+  int oldvalue = hand_call_function_timeout;
+  hand_call_function_timeout = newval;
+  return oldvalue;
+}
+
+int
+hand_function_call_timeout_p ()
+{
+  return timer_fired;
+}
+
+static void
+handle_alarm_while_calling (int signo)
+{
+  timer_fired = 1;
+  target_stop ();
 }
 
 /* All this stuff with a dummy frame may seem unnecessarily complicated
@@ -830,7 +869,39 @@ You must use a pointer to function type variable. Command ignored."), arg_name);
     hand_call_ptid = inferior_ptid;
     make_cleanup (do_reset_hand_call_ptid, NULL);
 
-    proceed (real_pc, TARGET_SIGNAL_0, 0);
+    if (hand_call_function_timeout != 0)
+      {
+	struct itimerval itval;
+	struct gdb_exception e;
+	
+	itval.it_interval.tv_sec = 0;
+	itval.it_interval.tv_usec = 0;
+	
+	itval.it_value.tv_sec = hand_call_function_timeout/1000000;
+	itval.it_value.tv_usec = hand_call_function_timeout% 1000000;
+	
+	timer_fired = 0;
+	signal (SIGALRM, handle_alarm_while_calling);
+	setitimer (ITIMER_REAL, &itval, NULL);
+	
+	TRY_CATCH (e, RETURN_MASK_ERROR)
+	  {
+	    proceed (real_pc, TARGET_SIGNAL_0, 0);
+	  }
+	itval.it_value.tv_sec = 0;
+	itval.it_value.tv_usec = 0;
+	setitimer (ITIMER_REAL, &itval, NULL);
+	signal (SIGALRM, SIG_DFL);
+	
+	if (e.reason != NO_ERROR)
+	  throw_exception (e);
+	
+      }
+    else
+      {
+	timer_fired  = 0;
+	proceed (real_pc, TARGET_SIGNAL_0, 0);
+      }
 
     hand_call_ptid = minus_one_ptid;
 
@@ -843,6 +914,12 @@ You must use a pointer to function type variable. Command ignored."), arg_name);
       
     discard_cleanups (old_cleanups);
   }
+
+  if (timer_fired)
+    {
+      frame_pop (get_current_frame ());
+      error ("User called function timer expired.  Aborting call.");
+    }
 
   if (stopped_by_random_signal || !stop_stack_dummy)
     {
@@ -1055,5 +1132,16 @@ to disable these inferior function calls."),
 			   NULL,
 			   &setlist, &showlist);
 #endif
+  add_setshow_zinteger_cmd ("target-function-call-timeout", class_obscure,
+			    &hand_call_function_timeout, "\
+Set a timeout for gdb issued function calls in the target program.", "	\
+Show the timeout for gdb issued function calls in the target program.", " \
+The hand-function-call-timeout sets a watchdog timer on calls made by gdb in\n \
+the address space of the program being debugged.  The value is in microseconds.\n\
+A value of zero disables the timer.",
+                            NULL,
+                            NULL,
+			    &setlist, &showlist);
+   
 
 }

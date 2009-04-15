@@ -306,6 +306,8 @@ extern LONGEST unpack_field_as_long (struct type *type,
 				     const gdb_byte *valaddr,
 				     int fieldno);
 
+extern void pack_long (gdb_byte *buf, struct type *type, LONGEST num);
+
 extern struct value *value_from_longest (struct type *type, LONGEST num);
 extern struct value *value_from_pointer (struct type *type, CORE_ADDR addr);
 extern struct value *value_from_double (struct type *type, DOUBLEST num);
@@ -588,7 +590,7 @@ extern CORE_ADDR legacy_push_arguments (int nargs, struct value ** args,
 					CORE_ADDR sp, int struct_return,
 					CORE_ADDR struct_addr);
 
-extern struct cached_value *create_cached_function (char *, struct type *);
+struct cached_value * create_cached_function (const char *, struct type *);
 
 extern struct value *lookup_cached_function (struct cached_value *cval);
 
@@ -614,5 +616,8 @@ extern int check_safe_call (regex_t unsafe[],
 			    enum check_which_threads which_thread);
 /* APPLE LOCAL end check safe call  */
 int set_unwind_on_signal (int new_val);
+/* APPLE LOCAL: Variant for use in make_cleanup calls.  */
+void set_unwind_on_signal_cleanup (void *new_val);
+
 
 #endif /* !defined (VALUE_H) */

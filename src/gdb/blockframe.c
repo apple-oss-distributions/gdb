@@ -102,8 +102,6 @@ addr_inside_main_func (CORE_ADDR pc)
 
 	  if (BLOCK_RANGES (bl))
 	    {
-	      int last = BLOCK_RANGES (bl)->nelts - 1;
-
 	      symfile_objfile->ei.main_func_lowpc = BLOCK_LOWEST_PC (bl);
 	      symfile_objfile->ei.main_func_highpc = BLOCK_HIGHEST_PC (bl);
 	    }

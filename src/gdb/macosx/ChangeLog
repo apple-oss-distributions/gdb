@@ -1,7 +1,178 @@
-2008-09-26  Greg Clayton  <gclayton@apple.com>
+2009-04-06  Greg Clayton  <gclayton@apple.com>
 
-	* remote-kdp.c (async_remote_interrupt): Changed the default 
-	query to yes.
+	* macosx-nat-infthread.c (modify_trace_bit): Only reset the value in
+	MACOSX_HALF_STEP_PC when we are setting the trace bit.
+	(_initialize_threads): Initialize MACOSX_HALF_STEP_PC in the 
+	global ARM_MACOSX_TDEP_INF_STATUS structure.
+
+2009-04-03  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-dyld.h (macosx_dyld_create_inferior_hook): Prototype now
+	takes a CORE_ADDR arg.
+	* macosx-nat-dyld.c (macosx_init_addresses): Check if the 
+	DYLD_IMAGE_INFOS address is already filled in before trying to look it
+	up. This allows us to get the value from a remote target which can 
+	avoid us extracting the incorrect symbol from the on disk dyld which
+	may not match the remote dyld.
+	(macosx_dyld_create_inferior_hook): Take an ALL_IMAGE_INFO_ADDR arg
+	that allows targets to detect where the shared library info is without
+	reading it from the on disk version.
+	* macosx-nat-inferior.c (macosx_child_create_inferior): Call the
+	macosx_dyld_create_inferior_hook() function with an invalid all image
+	infos address so that it gets it from the on disk dyld.
+
+2009-03-05  Greg Clayton  <gclayton@apple.com>
+
+	* machoread.c (macho_calculate_offsets_for_dsym): Handle the addr
+	that we get passed when somebody does: "add-symbol-file <bin> <addr>".
+
+2009-02-21  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-dyld.c (target_is_remote): Recognize "remote-macosx" as
+	a remote target.
+
+2009-02-13  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-dyld-process.c (dyld_add_inserted_libraries): Fixup
+	the framework path using the shlib pathname substitutions before
+	calling realpath.
+
+2009-02-12  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-utils.c (macosx_print_extra_stop_info): Show 
+	EXC_BAD_ACCESS code values for EXC_ARM_DA_ALIGN and EXC_ARM_DA_DEBUG.
+
+2009-02-10  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-dyld.c (dyld_read_raw_infos): Strip bit zero for ARM
+	targets for the DYLD_NOTIFY address.
+
+2009-02-03  Greg Clayton  <gclayton@apple.com>
+
+	* arm-macosx-tdep.c (arm_macosx_in_switch_glue): New function.
+	(arm_macosx_keep_going): Ditto.
+	(arm_macosx_save_thread_inferior_status): Ditto.
+	(arm_macosx_restore_thread_inferior_status): Ditto.
+	(arm_macosx_free_thread_inferior_status): Ditto.
+	(arm_macosx_init_abi): When the arm single stepping is set to auto,
+	use software single step by default for armv4.
+	(arm_macosx_init_abi_v6): When the arm single stepping is set to auto,
+	use hardware single step if "hw.optional.breakpoint" is valid and
+	returns non-zero, else default to hardware single stepping.
+	(arm_macosx_init_abi_v7): When the arm single stepping is set to auto,
+	use hardware single step if "hw.optional.breakpoint" is valid and
+	returns non-zero, else default to software single stepping to get
+	around a silicon issue.
+	* arm-macosx-tdep.h (arm_macosx_keep_going): Added prototype.
+	(arm_macosx_save_thread_inferior_status): Ditto.
+	(arm_macosx_restore_thread_inferior_status): Ditto.
+	(arm_macosx_free_thread_inferior_status): Ditto.
+	* macosx-nat-inferior.c (arm_macosx_in_switch_glue): Removed function.
+	(macosx_keep_going): Ditto.
+	(macosx_save_thread_inferior_status): Ditto.
+	(macosx_restore_thread_inferior_status): Ditto.
+	(macosx_free_thread_inferior_status): Ditto.
+	(_initialize_macosx_inferior): Use arm functions from 
+	arm-macosx-tdep.c in the target vector for ARM only of course.
+
+2009-02-02  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-dyld-process.c (dyld_is_objfile_loaded): Always
+	return true if dyld support is disabled.
+	* macosx-nat-inferior.c (macosx_keep_going): Make globally visible
+	for use in "target remote-macosx".
+	(macosx_save_thread_inferior_status): Ditto.
+	(macosx_restore_thread_inferior_status): Ditto.
+	* remote-mobile.c (remote_mobile_open): Push "remote-macosx" target
+	instead of the "remote" target so we still get dyld support.
+
+2009-01-16  Greg Clayton  <gclayton@apple.com>
+	
+	* arm-macosx-nat-exec.c (fetch_inferior_registers): Set the osabi if
+	it is still unset using new arm_set_osabi_from_host_info function.
+	* arm-macosx-tdep.c (arm_mach_o_query_v6): Removed function.
+	(arm_mach_o_query_v7): Removed function.
+	(arm_host_osabi): New function that gest osabi from the host info.
+	(arm_mach_o_osabi_sniffer): Use host inferred osabi when opening files
+	in universal files.
+	(arm_macosx_init_abi): Disable software single stepping.
+	(arm_macosx_init_abi_v6): Disable software single stepping.
+	* arm-macosx-thread-status.h (struct gdb_arm_thread_debug_state): New
+	structure for debug registers (BRP/WRP pairs) on ARM.
+	* macosx-nat-inferior.c (arm_macosx_in_switch_glue): Relocated from
+	arm-tdep.c.
+	(macosx_keep_going): New function for complex hardware stepping and
+	for stepping over __switch glue that goes through the target vector.
+	(macosx_save_thread_inferior_status): Ditto.
+	(macosx_restore_thread_inferior_status): Ditto.
+	(macosx_free_thread_inferior_status): Ditto.
+	(_initialize_macosx_inferior): Hookup the new macosx_keep_going,
+	macosx_save_thread_inferior_status, macosx_free_thread_inferior_status,
+	and macosx_restore_thread_inferior_status target vectors for ARM.
+	* macosx-nat-infthread.c (modify_trace_bit): Implemented hw single 
+	stepping for ARM that uses the BVR/BCR hardware breakpoint registers.
+
+2008-12-05  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-dyld.c (macosx_init_addresses): Make sure we have the
+	correct slice of dyld when we go to init the dyld addresses.
+
+2008-11-18  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-inferior.c (macosx_child_create_inferior): Don't call
+	posix_spawnattr_setbinpref_np for ARM targets until we can also set
+	the cpu subtype.
+
+2008-11-18  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_objfile_entry_in_shared_cache): New
+	function.
+	(dyld_objfile_entry_osabi): New function.
+	(dyld_objfile_entry_clear): Clear the mach_header in the new 
+	MEM_HEADER member.
+	(dyld_objfile_entry_compare): Compare the new MEM_HEADER member.
+	* macosx-nat-dyld-info.h (struct dyld_objfile_entry): Added a new
+	mach_header structure member as MEM_HEADER, and removed the 
+	IN_SHARED_CACHE member.
+	(dyld_objfile_entry_in_shared_cache): New prototype.
+	(dyld_objfile_entry_osabi): New prototype.
+	* macosx-nat-dyld-process.c (dyld_load_library_from_file): Supply
+	GDB_OSABI_UNKNOWN to symfile_bfd_open_safe.
+	(dyld_load_symfile_internal): Use new function called
+	dyld_objfile_entry_in_shared_cache to determine if dyld_objfile_entry
+	are in the shared cache.
+	(dyld_objfile_move_load_data): Extract the OSABI from the DST before
+	closing it and use that extracted OSABI if we need to reload the
+	symbols.
+	* macosx-nat-dyld.c (macosx_solib_add_dyld_objfile_entries): New 
+	global that gives access to the dyld objfile entries as they are
+	being processed.
+	(num_macosx_solib_add_dyld_objfile_entries): New global count for
+	macosx_solib_add_dyld_objfile_entries.
+	(macosx_init_dyld_cache_ranges): Removed function.
+	(macosx_dyld_init): Use mach_header store in main dyld info struct 
+	and removed call to macosx_init_dyld_cache_ranges.
+	(macosx_solib_add): Removed call to macosx_init_dyld_cache_ranges and
+	initialize the globals num_macosx_solib_add_dyld_objfile_entries
+	and macosx_solib_add_dyld_objfile_entries as new entries are 
+	processed.
+	(macosx_dyld_thread_init): Removed initializers for in the
+	dyld_shared_cache_ranges, dyld_num_shared_cache_ranges, and 
+	dyld_shared_cache_array members in macosx_dyld_thread_status. 
+	(macosx_dyld_thread_clear): Removed code that cleared the
+	dyld_shared_cache_array member in macosx_dyld_thread_status.
+	(macosx_get_osabi_from_dyld_entry): New function.
+	(get_sectoffs_for_shared_cache_dylib): Reuse mach_header in the
+	dyld_objfile_entry instead of reading it again.
+	(dyld_info_process_raw): Ditto and removed code that reads the
+	shared cache array as we now get the data from the mach_header in
+	each dyld_objfile_entry.
+	* macosx-nat-dyld.h (struct macosx_dyld_thread_status): Removed
+	dyld_shared_cache_ranges, dyld_num_shared_cache_ranges, and
+	dyld_shared_cache_array members as they are no longer needed.
+	(macosx_get_osabi_from_dyld_entry): New prototype.
+	* macosx-tdep.c (gdb_DBGCopyMatchingUUIDsForURL): Supply 
+	GDB_OSABI_UNKNOWN to symfile_bfd_open.
 
 2008-09-26  Greg Clayton  <gclayton@apple.com>
 
@@ -16,19 +187,220 @@
 	(async_remote_interrupt): If target_stop is a nop, then query the
 	user if they would like the cleanly disconnect.
 
-2008-07-18  Greg Clayton  <gclayton@apple.com>
+2008-09-23  Greg Clayton  <gclayton@apple.com>
 
-	* macosx-tdep.c (create_dsym_uuids_for_path): Create CFURL with
-	CFURLCreateWithFileSystemPath instead of CFURLCreateWithBytes
-	or special URL characters will not allow a correct path to be
-	extracted with CFURLGetFileSystemRepresentation.
+	* macosx-nat-inferior.c (macosx_print_extra_stop_info): Removed.
+	* macosx-nat-utils.c (macosx_print_extra_stop_info):  Moved from
+	macosx-nat-inferior.c so cross builds can use it.
 
-2008-05-29  Jim Ingham  <jingham@apple.com>
+2008-09-18  Greg Clayton  <gclayton@apple.com>
 
-	* macosx-nat-inferior.c (macosx_child_create_inferior): New 
-	version for ARM.
-	(macosx_child_attach): Allow suppression of the "Attach" message.
+	* arm-macosx-regnums.h (ARM_MACOSX_NUM_VFP_PSEUDO_REGS): Renamed to
+	ARM_MACOSX_NUM_VFPV1_PSEUDO_REGS.
+	(ARM_MACOSX_NUM_VFPV3_REGS): New define.
+	(ARM_MACOSX_NUM_VFPV3_PSEUDO_REGS): New define.
+	(ARM_V7_MACOSX_NUM_REGS): New define.
+	*arm-macosx-tdep.h (arm_macosx_fetch_vfp_registers): Renamed to 
+	arm_macosx_fetch_vfpv1_regs.
+	(arm_macosx_fetch_vfp_registers_raw): Renamed to 
+	arm_macosx_fetch_vfpv1_regs.
+	(arm_macosx_store_vfp_registers): Renamed to 
+	arm_macosx_store_vfpv1_regs.
+	(arm_macosx_store_vfp_registers_raw): Renamed to 
+	(arm_macosx_store_vfpv1_regs_raw): New prototype.
+	(arm_macosx_fetch_vfpv3_regs): New prototype.
+	(arm_macosx_fetch_vfpv3_regs_raw): New prototype.
+	(arm_macosx_store_vfpv3_regs): New prototype.
+	(arm_macosx_store_vfpv3_regs_raw): New prototype.
+	* arm-macosx-thread-status.h (gdb_arm_thread_fpstate): Renamed to 
+	gdb_arm_thread_vfpv1_state.
+	(gdb_arm_thread_vfpv3_state): New structure definition.
+	(gdb_arm_thread_fpstate_t): Renamed to gdb_arm_thread_vfpv1_state_t.
+	(gdb_arm_thread_vfpv3_state_t): New typedef.
+	(GDB_ARM_THREAD_FPSTATE_COUNT) Renamed to 
+	GDB_ARM_THREAD_FPSTATE_VFPV1_COUNT.
+	(GDB_ARM_THREAD_FPSTATE_VFPV3_COUNT): New define.
+	* arm-macosx-nat-exec.c (collect_unsigned_int): Renamed to 
+	collect_uint32.
+	(collect_uint64): New function.
+	(supply_unsigned_int): Renamed to supply_uint32.
+	(supply_uint64): New function.
+	(arm_macosx_fetch_gp_registers): Use supply_uint32.
+	(arm_macosx_store_gp_registers): Use collect_uint32.
+	(arm_macosx_fetch_vfp_registers): Renamed to 
+	arm_macosx_fetch_vfpv1_regs and use supply_uint32.
+	(arm_macosx_fetch_vfp_registers_raw): Renamed to 
+	arm_macosx_fetch_vfpv1_regs_raw.
+	(arm_macosx_fetch_vfpv3_regs): New function.
+	(arm_macosx_fetch_vfpv3_regs_raw): New function.
+	(arm_macosx_store_vfp_registers): Renamed to 
+	arm_macosx_store_vfpv1_regs.
+	(arm_macosx_fetch_vfp_registers): Renamed to 
+	arm_macosx_fetch_vfpv1_regs.
+	(arm_macosx_store_vfpv3_regs): New function.
+	(arm_macosx_store_vfpv3_regs_raw): New function.
+	(fetch_inferior_registers): Detect armv7 when the osabi isn't set yet
+	and then use the vfp_version in the arch tdep info to determine
+	which VFPs to read.
+	(store_inferior_registers): Use the vfp_version in the arch tdep 
+	info to determine which VFPs to write.
+	* arm-macosx-tdep.c (builtin_type_arm_psr): Moved here from 
+	arm-tdep.c.
+	(builtin_type_arm_fpscr): Ditto.
+	(build_builtin_type_arm_psr_mode_enum): Ditto.
+	(build_builtin_type_arm_psr): Ditto.
+	(build_builtin_type_arm_fpscr): Ditto.
+	(arm_mach_o_osabi_sniffer): Cleaned up a few warnings.
+	(arm_mach_o_osabi_sniffer_use_dyld_hint): Ditto.
+	(arm_macosx_print_float_info_vfp): New VFP specific verseion that
+	has the contents of what used to be in arm_print_float_info that were
+	specific to VFP.
+	(arm_macosx_pseudo_register_read_vfpv1): New function.
+	(arm_macosx_pseudo_register_write_vfpv1): New function.
+	(arm_macosx_pseudo_register_read_vfpv3): New function.
+	(arm_macosx_pseudo_register_write_vfpv3): New function.
+	(arm_macosx_register_type_vfpv1): New function.
+	(arm_macosx_register_type_vfpv3): New function.
+	(arm_macosx_register_name_vfpv1): New function.
+	(arm_macosx_register_name_vfpv3): New function.
+	(arm_macosx_register_byte_vfpv1): New function.
+	(arm_macosx_register_byte_vfpv3): New function.
+	(g_reginfo_arm_vfpv1): Register definitions for VFP version 1.
+	(g_reginfo_arm_vfpv3): Register definitions for VFP version 3.
+	(arm_macosx_init_abi): Init the arch tdep's new vfp_version to 
+	ARM_VFP_UNSUPPORTED.
+	(arm_macosx_init_abi_v6): Init the arch tdep's new vfp_version to 
+	ARM_VFP_VERSION_1 and register all needed vfp version 1 register 
+	callbacks with the gdbarch.
+	(arm_macosx_init_abi_v7): New function.
+	(_initialize_arm_macosx_tdep): Init BUILTIN_TYPE_ARM_PSR,
+	BUILTIN_TYPE_ARM_FPSCR, G_REGINFO_ARM_VFPV1, G_REGINFO_ARM_VFPV3, and
+	init the DarwinV7 osabi with the new arm_macosx_init_abi_v7 function.
+	* core-macho.c (core_cached_registers_raw): Renamed ARM_FP_REGS to 
+	ARM_VFPV1_REGS and added ARM_VFPV3_REGS to the struct.
+	(core_fetch_cached_thread_registers): Fetch VFPv3 registers if 
+	available.
+	(core_cache_section_registers): Cache VFPv1 and VFPv3 registers if
+	they are in the core sections.
+	(delete_core_thread_state_cache): Cleanup the new VFPv3 register 
+	cache.
+	(core_store_registers): Store VFPv3 registes if they are cached.
+	* remote-kdp.c (kdp_fetch_registers_arm): Detect and read VFPv1 or
+	VFPv3 registers based on the arch tdep's VFP_VERSION member.
+	(kdp_store_registers_arm): Detect and write VFPv1 or
+	VFPv3 registers based on the arch tdep's VFP_VERSION member.
+
+2008-08-07  Greg Clayton  <gclayton@apple.com>
+
+	* arm-macosx-tdep.c (_initialize_arm_macosx_tdep): Added armv4/armv4t
+	as a supported osabi.
+
+2008-07-01  Greg Clayton  <gclayton@apple.com>
+
+	* arm-macosx-nat-exec.c (arm_macosx_fetch_vfp_registers): Use new
+	VFP regnum defines.
+	(arm_macosx_fetch_vfp_registers_raw): Ditto.
+	(arm_macosx_store_vfp_registers): Ditto.
+	(arm_macosx_store_vfp_registers_raw): Ditto.
+	(arm_macosx_stab_reg_to_regnum): Ditto.
+	(fetch_inferior_registers): Read VFP regs for DarwinV7.
+	(store_inferior_registers): Write VFP regs for DarwinV7.
+	* arm-macosx-regnums.h (ARM_MACOSX_IS_VFP_RELATED_REGNUM): Use new
+	VFP regnum defines.
+	* arm-macosx-tdep.c (arm_mach_o_query_v7): New function for checking
+	if armv7 is supported on current processor.
+	(arm_mach_o_osabi_sniffer): We now sniff for armv7 and use the 
+	highest possible variant from any universal binaries.
+	(arm_mach_o_osabi_sniffer_use_dyld_hint): Sniff for armv7.
+	(arm_pseudo_register_read): Added VFPv3 and SIMD support.
+	(arm_pseudo_register_write): Ditto.
+	(_initialize_arm_macosx_tdep): Register DARWINV7 as a valid osabi.
+	* macosx-nat-dyld.c (macosx_dyld_init): Watch for armv7 in dyld.
+	(dyld_starts_here_p): Watch for armv7 as a valid 32 bit arch.
 	
+2008-06-20  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-inferior-util.c (macosx_inferior_resume_ptrace):
+	Another inferior_debug printout.
+	* macosx-nat-inferior.c: Add look_up_class.  This is just a 
+	bandaid till we get the "will objc runtime lock" function.
+	* macosx-nat-mutils.c (macosx_allocate_space_in_inferior):
+	Convert to using make_cleanup_ui_out_suppress_output.
+	
+2008-06-17  Jason Molenda  (jmolenda@apple.com)
+
+	* core-macho.c (core_cache_section_registers): Remove unused variables.
+	* macosx-nat-dyld-io.c (inferior_read_memory_partial): Same.
+	* macosx-nat-dyld.c (dyld_info_process_raw): Same.
+	* remote-kdp.c (kdp_fetch_registers_i386): Same.
+
+	* macosx-nat-dyld.c (target_read_segment_command, 
+	target_extract_segment_command, target_extract_segment_command_64, 
+	target_read_segment_command_64): Removed.
+
+2008-06-16  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-macosx-tdep.c (i386_macosx_fetch_fp_registers,
+	x86_64_macosx_fetch_fp_registers, i386_macosx_store_fp_registers,
+	x86_64_macosx_store_fp_registers): Cast fxsave arg to i387_swap_fxsave.
+	* macosx-nat-dyld.c (dyld_info_process_raw): Use 
+	set_trust_readonly_cleanup.
+	* macosx-nat-inferior.c (cpfork_info, fork_memcache_put): Print addrs
+	correctly.
+
+2008-06-03  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-process.c (dyld_load_symfile_internal): Don't adjust
+	the commpage addresses when adding it as a symbol file.
+
+2008-05-30  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-macosx-tdep.c (amd64_macosx_thread_state_addr): New function
+	to find saved context for x86_64 _sigtramp.
+	(x86_macosx_init_abi_64): Register it.
+
+2008-05-23  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c (macosx_get_malloc_inited): Double check to see
+	if libsystem has been sufficiently set up to start making malloc calls,
+        instead of checking just when we see shlib loads.
+
+2008-05-20  Jason Molenda  (jmolenda@apple.com)
+
+	* machoread.c (macho_symfile_read): Read the eh_frames unwind tables
+	if present and if the user has set 'use-eh-frame-info'.
+
+2008-04-24  Derek Kumar <drk@apple.com>
+
+        * remote-kdp.c (kdp_fetch_registers_x86_64): Correctly test for
+        x86_64 general purpose regnums.
+        (kdp_store_registers_x86_64): Ditto.  Don't do anything for
+        floating point registers; they are unused in kernel code.
+
+2008-01-25  Shantonu Sen  <ssen@apple.com>
+
+       * kdp-protocol.c (read64u, write64u): New primitives for
+       marshalling/unmarshalling 64-bit fields in KDP protocol
+       (kdp_req_string): Add KDP_READMEM64, KDP_WRITEMEM64,
+       KDP_BREAKPOINT64_SET, KDP_BREAKPOINT64_REMOVE, KDP_KERNELVERSION.
+       (kdp_log_packet, kdp_marshal, kdp_unmarshal): Ditto.
+       * kdp-protocol.h: Add KDP_READMEM64, KDP_WRITEMEM64,
+       KDP_BREAKPOINT64_SET, KDP_BREAKPOINT64_REMOVE, KDP_KERNELVERSION.
+       Add kdp_readmem64_req_t, kdp_writemem64_req_t, kdp_breakpoint64_req_t,
+       kdp_kernelversion_req_t.
+       * remote-kdp.c (convert_host_type, kdp_set_trace_bit,
+       kdp_fetch_registers_x86_64, kdp_store_registers_x86_64): Add
+       support for fetching state from a remote x86_64 kernel.
+       (_initialize_remote_kdp, kdp_kernelversion_command): Add
+       "kdp-kernelversion" command to bootstrap identification of
+       remote kernel binary.
+       (kdp_insert_breakpoint, kdp_xfer_memory): Use new 64-bit
+       wide requests when the remote target supports version 11
+       of the KDP protocol or higher
+       (kdp_attach): Set $kdp_protocol_version and
+       $gdb_kdp_support_level so that kernel macros can
+       gracefully support new debugger/KDP functionality.
+
 2008-05-12  Jason Molenda  (jmolenda@apple.com)
 
 	* macosx-nat-dyld-process.c (mark_buckets_as_used): Fix boundary

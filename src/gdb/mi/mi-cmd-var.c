@@ -982,7 +982,8 @@ mi_cmd_var_evaluate_expression (char *command, char **argv, int argc)
   
   old_chain = make_cleanup (null_cleanup, NULL);
   if (unwinding_was_requested)
-    make_cleanup (set_unwind_on_signal, set_unwind_on_signal (1));
+    make_cleanup (set_unwind_on_signal_cleanup, 
+                  (void *) set_unwind_on_signal (1));
 
   var = varobj_get_handle (expr);
   if (var == NULL)

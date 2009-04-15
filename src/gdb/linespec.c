@@ -1772,7 +1772,6 @@ decode_compound (char **argptr, int funfirstline, char ***canonical,
   char *p2;
   char *saved_arg2 = *argptr;
   char *temp_end;
-  struct symbol *sym;
   /* The symtab that SYM was found in.  */
   struct symtab *sym_symtab;
   char *copy;
@@ -2880,8 +2879,7 @@ symbols_found (int funfirstline, char ***canonical, char *copy,
 
   canonical_arr = (char **) xmalloc (num_syms * sizeof (char *));
   memset (canonical_arr, 0, num_syms * sizeof (char *));
-  if (canonical != NULL)
-    *canonical = canonical_arr;
+  *canonical = canonical_arr;
 
   for (current = sym_list, i = 0; current; current = current->next, i++)
     {

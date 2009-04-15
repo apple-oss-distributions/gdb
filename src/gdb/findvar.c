@@ -662,7 +662,6 @@ addresses have not been bound by the dynamic loader. Try again when executable i
 struct value *
 value_from_register (struct type *type, int regnum, struct frame_info *frame)
 {
-  struct gdbarch *gdbarch = get_frame_arch (frame);
   struct value *v = allocate_value (type);
   CHECK_TYPEDEF (type);
 
@@ -723,7 +722,7 @@ value_from_register (struct type *type, int regnum, struct frame_info *frame)
 	    ++local_regnum))
 	{
 	  int realnum;
-	  int optim;
+	  enum opt_state optim;
 	  enum lval_type lval;
 	  CORE_ADDR addr;
 	  frame_register (frame, local_regnum, &optim, &lval, &addr,

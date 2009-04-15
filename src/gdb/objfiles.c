@@ -53,6 +53,7 @@
 #ifdef MACOSX_DYLD
 #include "inferior.h"
 #include "macosx-nat-dyld.h"
+#include "mach-o.h"
 #endif
 
 /* Prototypes for local functions */
@@ -2257,7 +2258,7 @@ objfile_section_offset (struct objfile *objfile, int sect_idx)
 
   if (err_str != NULL)
     {
-      internal_error (__FILE__, __LINE__, err_str);
+      internal_error (__FILE__, __LINE__, "%s", err_str);
       return (CORE_ADDR) -1;
     }
 

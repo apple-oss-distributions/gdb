@@ -163,7 +163,6 @@ do_mixed_source_and_assembly (struct ui_out *uiout,
   int i;
   int out_of_order = 0;
   int next_line = 0;
-  CORE_ADDR pc;
   int num_displayed = 0;
   struct cleanup *ui_out_chain;
   struct cleanup *ui_out_tuple_chain = make_cleanup (null_cleanup, 0);
@@ -408,7 +407,7 @@ gdb_disassembly (struct ui_out *uiout,
 static
 int gdbarch_instruction_length (struct gdbarch *gdbarch)
 {
-  struct bfd_arch_info *info = gdbarch_bfd_arch_info (gdbarch);
+  const struct bfd_arch_info *info = gdbarch_bfd_arch_info (gdbarch);
 
   switch (info->arch)
     {

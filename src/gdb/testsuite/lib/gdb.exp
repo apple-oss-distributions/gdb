@@ -1133,7 +1133,9 @@ proc default_gdb_start {extra_flags} {
 
     gdb_stop_suppressing_tests;
 
-    set res [default_gdb_run "$GDB -nw $GDBFLAGS $extra_flags [host_info gdb_opts]"]
+# APPLE LOCAL: Change gdb_opts from host_info to target_info because I don't
+# see how you're supposed to add stuff to the host_info collection.  whatever.
+    set res [default_gdb_run "$GDB -nw $GDBFLAGS $extra_flags [target_info gdb_opts]"]
 
     if { $res < 0 } { return res }
 

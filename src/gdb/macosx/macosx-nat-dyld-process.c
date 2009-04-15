@@ -158,6 +158,13 @@ dyld_add_inserted_libraries (struct dyld_objfile_info *info,
       CHECK_FATAL (s2 != NULL);
 
       tmp_name = savestring (s1, (s2 - s1));
+      char *fixed_name = dyld_fix_path (tmp_name);
+      if (fixed_name != tmp_name)
+	{
+	  xfree (tmp_name);
+	  tmp_name = fixed_name;
+	}
+
       real_name = xmalloc (PATH_MAX + 1);
       if (realpath (tmp_name, real_name) != NULL)
 	{
@@ -696,7 +703,8 @@ scan_bfd_for_memory_groups (struct bfd *abfd, struct pre_run_memory_map *map)
 {
   asection *asect;
   int seg1addr_set = 0;
-  CORE_ADDR current_bucket_start_addr, current_bucket_end_addr;
+  CORE_ADDR current_bucket_start_addr = (CORE_ADDR)-1;
+  CORE_ADDR current_bucket_end_addr = (CORE_ADDR)-1;
   struct bfd_memory_footprint *fp = (struct bfd_memory_footprint *)
                                xmalloc (sizeof (struct bfd_memory_footprint));
   fp->groups = (struct bfd_memory_footprint_group *) 
@@ -1106,7 +1114,7 @@ dyld_load_library_from_file (const struct dyld_path_info *d,
     gdb_stderr = gdb_null;
     CHECK_FATAL (e->abfd == NULL);
 
-    e->abfd = symfile_bfd_open_safe (name, 0);
+    e->abfd = symfile_bfd_open_safe (name, 0, GDB_OSABI_UNKNOWN);
 
     gdb_stderr = prev_stderr;
 
@@ -1276,7 +1284,7 @@ dyld_load_library (const struct dyld_path_info *d,
 	  if (uuid_addr != (bfd_vma) -1)
 	    {
 	      struct gdb_exception exc;
-	      int error;
+	      int error = 0;
 	      int found_uuid = 0;
 	      
 	      uuid_addr += e->dyld_addr;
@@ -1514,7 +1522,8 @@ dyld_load_symfile_internal (struct dyld_objfile_entry *e,
          compute the offsets -- dylibs in the shared cache have
          different slide values for different sections.  */
 
-      if (e->in_shared_cache && e->dyld_section_offsets == NULL
+      if (dyld_objfile_entry_in_shared_cache(e) 
+	  && e->dyld_section_offsets == NULL
           && e->dyld_valid)
         e->dyld_section_offsets = 
                   get_sectoffs_for_shared_cache_dylib (e, e->loaded_addr);
@@ -1642,10 +1651,13 @@ dyld_load_symfile_internal (struct dyld_objfile_entry *e,
 	    {
 	      if (!using_orig_objfile)
 		{
+                  /* Pass a NULL value instead of ADDRS -- we don't want to
+                     adjust/slide any of the comm page symbols.  Their 
+                     addresses are absolute and are already correct.  */
 		  e->commpage_objfile =
 		    symbol_file_add_bfd_safe (e->commpage_bfd, 
 					      0, 
-					      addrs,
+					      NULL,
 					      0,
 					      0, 0, 
 					      e->load_flag, 
@@ -1656,11 +1668,14 @@ dyld_load_symfile_internal (struct dyld_objfile_entry *e,
 		{
 		  TRY_CATCH (exc, RETURN_MASK_ALL)
 		    {
+                      /* Pass a NULL value instead of ADDRS -- we don't want to
+                         adjust/slide any of the comm page symbols.  Their 
+                         addresses are absolute and are already correct.  */
 		      e->commpage_objfile =
 			symbol_file_add_bfd_using_objfile (e->commpage_objfile,
 							   e->commpage_bfd, 
 							   0, 
-							   addrs, 
+							   NULL, 
 							   0,
 							   0, 0, 
 							   e->load_flag, 
@@ -1868,10 +1883,14 @@ remove_objfile_from_dyld_records (struct objfile *obj)
    If we the OBJ objfile record exists because of a program's load command,
    or it was loaded when the program was running but the inferior has exited
    (has been target_mourn_inferior'ed), we return 0.  */
+extern int inferior_auto_start_dyld_flag;
 
 int
 dyld_is_objfile_loaded (struct objfile *obj)
 {
+  if (inferior_auto_start_dyld_flag == 0)
+    return 1;
+
   struct dyld_objfile_entry *e;
   int i;
   struct macosx_dyld_thread_status *status = &macosx_dyld_status;
@@ -2207,53 +2226,90 @@ dyld_libraries_compatible (struct dyld_path_info *d,
 
 void
 dyld_objfile_move_load_data (struct dyld_objfile_entry *src,
-                             struct dyld_objfile_entry *dest)
+                             struct dyld_objfile_entry *dst)
 {
-  gdb_assert (dest->commpage_bfd == NULL);
+  bfd *dst_bfd = NULL;
+  bfd *src_bfd = NULL;
+  int reload = 0;
+  enum gdb_osabi reload_osabi = GDB_OSABI_UNKNOWN;
+  gdb_assert (dst->commpage_bfd == NULL);
 
-  /* dyld_info_process_raw has to open the bfd for the objfile,
+  /* dyld_info_process_raw will open the bfd for the objfile and it 
      so we try to reuse it.  But when the library was read at startup,
-     then the old dyld_objfile_entry already has a bfd.  Use that one,
-     and close the dest one.  */
+     then the old dyld_objfile_entry already has a bfd.  We will use the
+     original one in SRC unless the one in DST is valid the 32/64 bit-ness
+     differs, or the cputype/subtypes don't match.  */
+  
+  if (dst->abfd)
+    dst_bfd = dst->abfd;
+  else if (dst->objfile && dst->objfile->obfd)
+    dst_bfd = dst->objfile->obfd;
 
-  if (dest->abfd != NULL && src->abfd != dest->abfd)
-    bfd_close (dest->abfd);
+  if (src->abfd)
+    src_bfd = src->abfd;
+  else if (src->objfile && src->objfile->obfd)
+    src_bfd = src->objfile->obfd;
+  
+  if (dst_bfd && src_bfd)
+    {
+      struct mach_o_data_struct *dst_mdata = dst_bfd->tdata.mach_o_data;
+      struct mach_o_data_struct *src_mdata = src_bfd->tdata.mach_o_data;
+      if (dst_mdata && src_mdata && dst_mdata != src_mdata)
+	{
+	  if (dst_mdata->header.magic != src_mdata->header.magic ||
+	      dst_mdata->header.cputype != src_mdata->header.cputype ||
+	      dst_mdata->header.cpusubtype != src_mdata->header.cpusubtype)
+	    {
+	      reload = 1;
+	      reload_osabi = macosx_get_osabi_from_dyld_entry (dst_bfd);
+	    }
+	}
+    }
 
-  gdb_assert (src->objfile == dest->objfile || dest->objfile == NULL);
-  gdb_assert (dest->commpage_objfile == NULL);
+  if (dst-> abfd != NULL && src->abfd != dst->abfd)
+      bfd_close (dst->abfd);
 
-  dest->abfd = src->abfd;
-  dest->objfile = src->objfile;
+  gdb_assert (src->objfile == dst->objfile || dst->objfile == NULL);
+  gdb_assert (dst->commpage_objfile == NULL);
+
+  dst->abfd = src->abfd;
+  dst->objfile = src->objfile;
+
+  /* Check to see if we have a slice of an objfile, but not the right slice.
+   In this case, reload the symbols with the different OSABI
+   will differ.  */
+  if (reload)
+    reread_symbols_for_objfile (dst->objfile, 0, reload_osabi);
 
   if (src->dyld_valid == 0 
-      && dest->dyld_valid == 1 
+      && dst->dyld_valid == 1 
       && src->pre_run_slide_addr_valid == 1
       && src->pre_run_slide_addr != 0)
     {
-      dyld_slide_objfile (dest->objfile, dest->dyld_slide, 0);
+      dyld_slide_objfile (dst->objfile, dst->dyld_slide, 0);
     }
 
-  dest->commpage_bfd = src->commpage_bfd;
-  dest->commpage_objfile = src->commpage_objfile;
+  dst->commpage_bfd = src->commpage_bfd;
+  dst->commpage_objfile = src->commpage_objfile;
 
   /* If we are re-running, and haven't resolved the new load data
      flags, go ahead and pick them up from the previous run. */
 
-  if (src->load_flag > 0 && dest->load_flag < 0)
+  if (src->load_flag > 0 && dst->load_flag < 0)
     {
-      dest->load_flag = src->load_flag;
+      dst->load_flag = src->load_flag;
     }
 
-  dest->prefix = src->prefix;
-  dest->loaded_name = src->loaded_name;
-  dest->loaded_memaddr = src->loaded_memaddr;
-  dest->loaded_addr = src->loaded_addr;
-  dest->loaded_offset = src->loaded_offset;
-  dest->loaded_addrisoffset = src->loaded_addrisoffset;
-  dest->loaded_from_memory = src->loaded_from_memory;
-  dest->loaded_error = src->loaded_error;
-  dest->pre_run_slide_addr_valid = src->pre_run_slide_addr_valid;
-  dest->pre_run_slide_addr = src->pre_run_slide_addr;
+  dst->prefix = src->prefix;
+  dst->loaded_name = src->loaded_name;
+  dst->loaded_memaddr = src->loaded_memaddr;
+  dst->loaded_addr = src->loaded_addr;
+  dst->loaded_offset = src->loaded_offset;
+  dst->loaded_addrisoffset = src->loaded_addrisoffset;
+  dst->loaded_from_memory = src->loaded_from_memory;
+  dst->loaded_error = src->loaded_error;
+  dst->pre_run_slide_addr_valid = src->pre_run_slide_addr_valid;
+  dst->pre_run_slide_addr = src->pre_run_slide_addr;
 
   src->objfile = NULL;
   src->abfd = NULL;
@@ -2423,7 +2479,7 @@ dyld_shlibs_updated (struct dyld_objfile_info *info)
 void
 dyld_update_shlibs (struct dyld_path_info *d, struct dyld_objfile_info *result)
 {
-  struct cleanup *timer_cleanup;
+  struct cleanup *timer_cleanup = NULL;
   static int dyld_timer = -1;
   CHECK_FATAL (result != NULL);
 

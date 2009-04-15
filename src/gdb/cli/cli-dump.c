@@ -76,7 +76,6 @@ scan_expression_with_cleanup (char **cmd, const char *def)
 static void
 do_fclose_cleanup (void *arg)
 {
-  FILE *file = arg;
   fclose (arg);
 }
 
@@ -240,7 +239,6 @@ dump_memory_to_file (char *cmd, char *mode, char *file_format)
   void *buf;
   char *lo_exp;
   char *hi_exp;
-  int len;
 
   /* Open the file.  */
   filename = scan_filename_with_cleanup (&cmd, NULL);
@@ -578,8 +576,8 @@ restore_binary_file (char *filename, struct callback_data *data)
 	perror_with_name (filename);
     
       /* Now write the buffer into target memory. */
-       printf_unfiltered ("\rWriting 0x%x bytes to 0x%x", len, 
-			  data->load_start + data->load_offset );
+       printf_unfiltered ("\rWriting 0x%s bytes to 0x%s", paddr_nz (len),
+			  paddr_nz (data->load_start + data->load_offset));
        gdb_flush (gdb_stdout);
        status = target_write_memory (data->load_start + data->load_offset, 
 				     buf, len);
@@ -778,7 +776,7 @@ _initialize_cli_dump (void)
 		  &restore_set_cmdlist, "set restore ",
 		  0 /* allow-unknown */, &setlist);
   add_prefix_cmd ("restore", no_class, show_restore_cmd, 
-		  _("\Show current restore specific command settings"),
+		  _("Show current restore specific command settings"),
 		  &restore_show_cmdlist, "show restore ",
 		  0 /* allow-unknown */, &showlist);
 

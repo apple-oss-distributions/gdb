@@ -1860,7 +1860,7 @@ print_object_command (char *args, int from_tty)
              "child process"));
 
   unwind = set_unwind_on_signal (1);
-  cleanup_chain = make_cleanup (set_unwind_on_signal, unwind);
+  cleanup_chain = make_cleanup (set_unwind_on_signal_cleanup, (void *) unwind);
 
   description = call_function_by_hand (function, 1, &object);
 
@@ -2115,7 +2115,6 @@ new_objc_runtime_internals ()
 #endif
 }
 
-
 /* The first stage in calling any ObjC 2.0 functions passing in a
    class name is to validate that this class really IS a class.  We
    can't just call into the normal runtime methods to see if the class
@@ -2159,13 +2158,26 @@ new_objc_runtime_class_getClass (struct value *infargs)
 
   if (validate_function != NULL)
     {
-      ret_value = call_function_by_hand
-	(lookup_cached_function (validate_function),
-	 1, &infargs);
-      if (ret_value == NULL)
-	return (CORE_ADDR) 0;
+      struct gdb_exception e;
+      int old_timeout = set_hand_function_call_timeout (500000);
+      
+      TRY_CATCH (e, RETURN_MASK_ALL)
+	{		    
+	  ret_value = call_function_by_hand
+	    (lookup_cached_function (validate_function),
+	     1, &infargs);
+	}
 
-      return (CORE_ADDR) value_as_address (ret_value);
+      set_hand_function_call_timeout (old_timeout);
+      
+      if (e.reason != NO_ERROR || ret_value == NULL)
+	{
+	  if (hand_function_call_timeout_p ())
+	    warning ("Call to get object type timed out.  Most likely somebody has the objc runtime lock.");
+	  return (CORE_ADDR) 0;	  
+	}
+      else
+	return (CORE_ADDR) value_as_address (ret_value);
     }
   else
     return (CORE_ADDR) 0;
@@ -2224,7 +2236,12 @@ new_objc_runtime_find_impl (CORE_ADDR class, CORE_ADDR sel, int stret)
                       (scheduler_locking_on);
 
   unwind = set_unwind_on_signal (1);
-  make_cleanup (set_unwind_on_signal, unwind);
+  make_cleanup (set_unwind_on_signal_cleanup, (void *) unwind);
+
+  /* find_impl is never called directly by the user, so we should not
+     tell her if something goes wrong, we should just clean up and 
+     handle the error appropriately.  */
+  make_cleanup_ui_out_suppress_output (uiout);
 
   /* Remember that target_check_safe_call's behavior may depend on the
      scheduler locking mode, so do this AFTER setting the mode.  */
@@ -2243,11 +2260,12 @@ new_objc_runtime_find_impl (CORE_ADDR class, CORE_ADDR sel, int stret)
 
       retval = new_objc_runtime_class_getClass (classval);
       if (retval == 0)
-	goto cleanups;
+	  goto cleanups;
 
       ret_value = call_function_by_hand
                   (lookup_cached_function (stret ? function_stret : function),
                    2, infargs);
+      
       retval = (CORE_ADDR) value_as_address (ret_value);
       retval = gdbarch_addr_bits_remove (current_gdbarch, retval);
       /* If the current object doesn't respond to this selector, then
@@ -2265,9 +2283,13 @@ new_objc_runtime_find_impl (CORE_ADDR class, CORE_ADDR sel, int stret)
 	      goto cleanups;
 	    }
 	}
-    }
 
-  add_implementation_to_cache (class, sel, retval);
+      add_implementation_to_cache (class, sel, retval);
+    }
+  else
+    {
+      warning ("Not safe to look up objc runtime data.");
+    }
 
  cleanups:
   do_cleanups (scheduler_cleanup);
@@ -2942,8 +2964,6 @@ new_objc_runtime_get_classname (CORE_ADDR class,
   struct value *classval;
   CORE_ADDR addr;
   struct cleanup *scheduler_cleanup;
-  static struct ui_out *null_uiout = NULL;
-  struct ui_out *old_uiout;
   int retval = 0;
   int unwind;
 
@@ -2963,7 +2983,14 @@ new_objc_runtime_get_classname (CORE_ADDR class,
                       (scheduler_locking_on);
 
   unwind = set_unwind_on_signal (1);
-  make_cleanup (set_unwind_on_signal, unwind);
+  make_cleanup (set_unwind_on_signal_cleanup, (void *) unwind);
+  /* This function gets called when we are in the middle of outputting
+     the MI result for the creation of a varobj.  So if any of these
+     function calls crash we want to make sure their output doesn't
+     get into the result.  So we make a null uiout from the gdb_null
+     file stream, and swap that into the uiout while running the
+     function calls.  */
+  make_cleanup_ui_out_suppress_output (uiout);
 
   /* Remember that target_check_safe_call's behavior may depend on the
      scheduler locking mode, so do this AFTER setting the mode.  */
@@ -2971,20 +2998,6 @@ new_objc_runtime_get_classname (CORE_ADDR class,
     {
       struct value *ret_value;
       struct gdb_exception e;
-      
-      /* This function gets called when we are in the middle of 
-	 outputting the MI result for the creation of a varobj.
-	 So if any of these function calls crash we want to make
-	 sure their output doesn't get into the result.  So we
-	 make a null uiout from the gdb_null file stream, and swap
-	 that into the uiout while running the function calls.  */
-
-      if (null_uiout == NULL)
-	null_uiout = cli_out_new (gdb_null);
-      if (null_uiout == NULL)
-	error ("Unable to open null uiout in objc-lang.c.");
-      old_uiout = uiout;
-      uiout = null_uiout;
       
       TRY_CATCH (e, RETURN_MASK_ALL)
 	{
@@ -3006,8 +3019,6 @@ new_objc_runtime_get_classname (CORE_ADDR class,
 	retval = 0;
     }
 
-  ui_file_rewind (gdb_null);
-  uiout = old_uiout;
   do_cleanups (scheduler_cleanup);
   return retval;
 }

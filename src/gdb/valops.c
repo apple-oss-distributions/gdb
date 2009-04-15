@@ -36,6 +36,7 @@
 #include "regcache.h"
 #include "cp-abi.h"
 #include "exceptions.h"
+#include "dictionary.h"
 /* APPLE LOCAL: Needed for check_safe_call.  */
 #include "gdbthread.h"
 #include "gdb.h"
@@ -202,7 +203,7 @@ allocate_space_in_inferior_malloc (int len)
   blocklen = value_from_longest (builtin_type_int, (LONGEST) len);
 
   unwind = set_unwind_on_signal (1);
-  cleanup_chain = make_cleanup (set_unwind_on_signal, unwind);
+  cleanup_chain = make_cleanup (set_unwind_on_signal_cleanup, (void *) unwind);
 
   val = call_function_by_hand (lookup_cached_function (fval), 1, &blocklen);
 
@@ -592,7 +593,6 @@ value_fetch_lazy (struct value *val)
   CORE_ADDR addr = VALUE_ADDRESS (val) + value_offset (val);
   int length = TYPE_LENGTH (value_enclosing_type (val));
 
-  struct type *type = value_type (val);
   if (length)
     read_memory (addr, value_contents_all_raw (val), length);
 
@@ -2034,8 +2034,6 @@ find_overload_match (struct type **arg_types, int nargs, char *name, int method,
   int num_fns = 0;		/* Number of overloaded instances being considered */
   struct type *basetype = NULL;
   int boffset;
-  int ix;
-  int static_offset;
   struct cleanup *old_cleanups = NULL;
 
   const char *obj_type_name = NULL;

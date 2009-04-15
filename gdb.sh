@@ -53,16 +53,23 @@ unset DYLD_INSERT_LIBRARIES
 
 host_architecture=`/usr/bin/arch 2>/dev/null` || host_architecture=""
 
-if [ -z "$host_architecture" ]; then
+if [ "$host_architecture" == "arm" ]; then
+  host_cpusubtype=`sysctl hw.cpusubtype | awk '{ print $NF }'` || host_cputype=""
+  case "$host_cpusubtype" in
+    6) host_architecture="armv6" ;;
+    7) host_architecture="armv5" ;;
+    9) host_architecture="armv7" ;;
+  esac
+elif [ -z "$host_architecture" ]; then
     echo "There was an error executing 'arch(1)'; assuming 'i386'.";
     host_architecture="i386";
 fi
 
 
 case "$1" in
- --help)
+  --help)
     echo "  --translate        Debug applications running under translation." >&2
-    echo "  -arch i386|armv6|x86_64|ppc     Specify a gdb targetting a specific architecture" >&2
+    echo "  -arch i386|arm|armv6|armv7|x86_64|ppc     Specify a gdb targetting a specific architecture" >&2
     ;;
   -arch=* | -a=* | --arch=*)
     requested_architecture=`echo "$1" | sed 's,^[^=]*=,,'`
@@ -153,7 +160,9 @@ else
     file_archs=`file "$core_file" | awk '{ print $NF }'`
   else
     if [ -n "$exec_file" ]; then
-      file_archs=`file "$exec_file" | grep -v universal | awk '{ print $NF }'`
+      if [ ! -d "$exec_file" ]; then
+      	lipo_info=`lipo -info "$exec_file" 2>/dev/null` && file_archs=`echo -n "$lipo_info" | sed 's/.*: //'`
+      fi
     fi
   fi
 
@@ -227,6 +236,9 @@ case "$architecture_to_use" in
       case "$architecture_to_use" in
         armv6) 
           osabiopts="--osabi DarwinV6" 
+          ;;
+        armv7) 
+          osabiopts="--osabi DarwinV7" 
           ;;
         *)
           # Make the REQUESTED_ARCHITECTURE the empty string so

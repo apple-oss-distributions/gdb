@@ -266,9 +266,9 @@ dump_objfile (struct objfile *objfile)
 	  printf_filtered ("%s at ", psymtab->filename);
 	  gdb_print_host_address (psymtab, gdb_stdout);
  	  printf_filtered (" from ");
- 	  gdb_print_host_address (psymtab->textlow, gdb_stdout);
+          printf_filtered ("0x%s", paddr_nz (psymtab->textlow));
  	  printf_filtered (" to ");
- 	  gdb_print_host_address (psymtab->texthigh, gdb_stdout);
+          printf_filtered ("0x%s", paddr_nz (psymtab->texthigh));
  	  if (psymtab->objfile != objfile)
   	    {
 	      printf_filtered (" (NOT ON CHAIN)");
@@ -445,7 +445,7 @@ dump_symtab_1 (struct objfile *objfile, struct symtab *symtab,
 {
   int i;
   struct dict_iterator iter;
-  int len, blen;
+  int len;
   struct linetable *l;
   struct blockvector *bv;
   struct symbol *sym;

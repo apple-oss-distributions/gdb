@@ -944,9 +944,6 @@ static void dwarf2_psymtab_to_symtab (struct partial_symtab *);
 
 static void psymtab_to_symtab_1 (struct partial_symtab *);
 
-/* APPLE LOCAL debug map take a bfd parameter */
-char *dwarf2_read_section (struct objfile *, bfd *, asection *);
-
 static void dwarf2_read_abbrevs (bfd *abfd, struct dwarf2_cu *cu);
 
 static void dwarf2_free_abbrev_table (void *);
@@ -1519,7 +1516,7 @@ dwarf2_scan_pubtype_for_psymbols (struct partial_symtab *pst,
   if (abfd == NULL)
     {
       warning ("Could not open OSO file %s "
-	       "to scan for pubtypes for objfile %s\n", 
+	       "to scan for pubtypes for objfile %s", 
 	       PSYMTAB_OSO_NAME (pst), 
 	       objfile->name ? objfile->name : "<unknown>");
       if (maint_use_timers)
@@ -1618,9 +1615,16 @@ dwarf2_scan_pubtype_for_psymbols (struct partial_symtab *pst,
 		 typedef or a tag name.  So add it to both.  Yuck...
 		 But we want this scan to be really fast, so we don't
 		 want to have to peek into the .debug_info.  */
+	      /* Also, when we build psymtabs by scanning the actual
+		 DWARF, we put the types in the global psymtabs for C++,
+		 and the local one for C.  Since we can't tell the language
+		 from the pubtypes table, we have to just choose one.
+		 Putting it in the global table makes "ptype struct foo"
+		 work correctly, so let's do that.  */
+
 	      add_psymbol_to_list (type_name, type_name_length - 1,
 				   STRUCT_DOMAIN, LOC_TYPEDEF,
-				   &objfile->static_psymbols,
+				   &objfile->global_psymbols,
 				   0, 0,
 				   psymtab_language, objfile);
 	      add_psymbol_to_list (type_name, type_name_length - 1,
@@ -2916,7 +2920,13 @@ compare_map_entries_oso_addr (const void *a, const void *b)
   struct oso_final_addr_tuple *map_b = (struct oso_final_addr_tuple *) b;
 
   if (map_a->oso_low_addr == map_b->oso_low_addr)
-    return 0;
+    {
+      if (map_a->present_in_final == map_b->present_in_final)
+	return 0;
+      if (map_a->present_in_final < map_b->present_in_final)
+	return -1;
+      return 1;
+    }
   if (map_a->oso_low_addr < map_b->oso_low_addr)
     return -1;
   return 1;
@@ -3090,21 +3100,56 @@ convert_oso_map_to_final_map (struct nlist_rec *nlists,
 
   /* Initialize the oso_high_addr entries */
 
-  for (i = 0; i < map->entries - 1; i++)
-    map->tuples[i].oso_high_addr = map->tuples[i + 1].oso_low_addr;
-  map->tuples[map->entries - 1].oso_high_addr = (CORE_ADDR) -1;
+  if (map->entries > 1)
+    {
+      j = 0;  /* This holds valid the tuple insert index.  */
 
-  /* Allocate the final_addr_index array.  */
-  map->final_addr_index = (int *) xmalloc (sizeof (int) * map->entries);
+      for (i = 0; i < map->entries - 1; i++)
+	{
+	  if (map->tuples[i].oso_low_addr == map->tuples[i+1].oso_low_addr &&
+	      map->tuples[i].present_in_final == 0)
+	    {
+	      if (debug_debugmap)
+	      	{
+		  fprintf_unfiltered (gdb_stdlog, 
+				      "debugmap: removing tuple[%i] ('%s')\n", 
+				      i, map->tuples[i].name);
+		}
+	      continue; /* Skip useless tuple, and don't increment J.  */
+	    }
+	  
+	  /* If we have skipped some tuples, we need to copy subsequent ones 
+	     back to fill the gaps.  */
+	  if (j < i)
+	    map->tuples[j] = map->tuples[i];
+	    
+	  map->tuples[j].oso_high_addr = map->tuples[i+1].oso_low_addr;
+	  j++;
+	}
+		
+      gdb_assert(j <= map->entries);
+      map->tuples[j].oso_high_addr = (CORE_ADDR) -1;
+      /* Adjust the number of tuple if they changed.  */
+      map->entries = j + 1;
+      
+      /* Allocate the final_addr_index array.  */
+      map->final_addr_index = (int *) xmalloc (sizeof (int) * map->entries);
 
-  /* Initialize final_addr_index so it can be sorted using qsort_r.  */
-  for (i = 0; i < map->entries; i++)
-    map->final_addr_index[i] = i; 
+      /* Initialize final_addr_index so it can be sorted using qsort_r.  */
+      for (i = 0; i < map->entries; i++)
+        map->final_addr_index[i] = i; 
   
-  /* Sort the final_addr_index array.  */
-  qsort_r (map->final_addr_index, map->entries, sizeof (int), 
-	   map->tuples, compare_map_entries_final_addr_index);
-
+      /* Sort the final_addr_index array.  */
+      qsort_r (map->final_addr_index, map->entries, sizeof (int), 
+	       map->tuples, compare_map_entries_final_addr_index);
+    }
+  else if (map->entries == 1)
+    {
+      map->tuples[0].oso_high_addr = (CORE_ADDR) -1;
+      map->final_addr_index = (int *) xmalloc (sizeof (int));
+      map->final_addr_index[0] = 0; 
+    }
+ 
   /* Print out the final addr indexes array.  */
   if (debug_debugmap >= 6)
     {
@@ -3370,20 +3415,55 @@ create_kext_addr_map (struct nlist_rec *nlists,
 
   /* Initialize the oso_high_addr entries */
 
-  for (i = 0; i < map->entries - 1; i++)
-    map->tuples[i].oso_high_addr = map->tuples[i + 1].oso_low_addr;
-  map->tuples[map->entries - 1].oso_high_addr = (CORE_ADDR) -1;
+  if (map->entries > 1)
+    {
+      j = 0;  /* This holds valid the tuple insert index.  */
 
-  /* Allocate the final_addr_index array.  */
-  map->final_addr_index = (int *) xmalloc (sizeof (int) * map->entries);
-                             
-  /* Initialize final_addr_index so it can be sorted using qsort_r.  */
-  for (i = 0; i < map->entries; i++)
-    map->final_addr_index[i] = i;
-     
-  /* Sort the final_addr_index array.  */
-  qsort_r (map->final_addr_index, map->entries, sizeof (int),
-           map->tuples, compare_map_entries_final_addr_index);
+      for (i = 0; i < map->entries - 1; i++)
+	{
+	  if (map->tuples[i].oso_low_addr == map->tuples[i+1].oso_low_addr &&
+	      map->tuples[i].present_in_final == 0)
+	    {
+	      if (debug_debugmap)
+	      	{
+		  fprintf_unfiltered (gdb_stdlog, 
+				      "debugmap: removing tuple[%i] ('%s')\n", 
+				      i, map->tuples[i].name);
+		}
+	      continue; /* Skip useless tuple, and don't increment J.  */
+	    }
+	  
+	  /* If we have skipped some tuples, we need to copy subsequent ones 
+	     back to fill the gaps.  */
+	  if (j < i)
+	    map->tuples[j] = map->tuples[i];
+	    
+	  map->tuples[j].oso_high_addr = map->tuples[i+1].oso_low_addr;
+	  j++;
+	}
+		
+      gdb_assert(j <= map->entries);
+      map->tuples[j].oso_high_addr = (CORE_ADDR) -1;
+      /* Adjust the number of tuple if they changed.  */
+      map->entries = j + 1;
+      
+      /* Allocate the final_addr_index array.  */
+      map->final_addr_index = (int *) xmalloc (sizeof (int) * map->entries);
+
+      /* Initialize final_addr_index so it can be sorted using qsort_r.  */
+      for (i = 0; i < map->entries; i++)
+        map->final_addr_index[i] = i; 
+  
+      /* Sort the final_addr_index array.  */
+      qsort_r (map->final_addr_index, map->entries, sizeof (int), 
+	       map->tuples, compare_map_entries_final_addr_index);
+    }
+  else if (map->entries == 1)
+    {
+      map->tuples[0].oso_high_addr = (CORE_ADDR) -1;
+      map->final_addr_index = (int *) xmalloc (sizeof (int));
+      map->final_addr_index[0] = 0; 
+    }
   
   /* Print out the final addr indexes array.  */
   if (debug_debugmap >= 6)
@@ -3412,17 +3492,12 @@ static int
 compare_translation_tuples_highpc (const void *key, const void *arrmem)
 {
   CORE_ADDR oso_addr = *((CORE_ADDR *) key);
-  CORE_ADDR tuple_oso_low_addr = 
-                 ((struct oso_final_addr_tuple *) arrmem)->oso_low_addr;
-  CORE_ADDR tuple_oso_high_addr = 
-                 ((struct oso_final_addr_tuple *) arrmem)->oso_high_addr;
+  struct oso_final_addr_tuple *tuple = (struct oso_final_addr_tuple *) arrmem;
 
-  if (oso_addr == tuple_oso_high_addr)
-    return 0;
-  if (oso_addr < tuple_oso_high_addr && oso_addr > tuple_oso_low_addr)
-    return 0;
-  if (oso_addr < tuple_oso_high_addr)
+  if (oso_addr <= tuple->oso_low_addr)
     return -1;
+  if (oso_addr <= tuple->oso_high_addr)
+    return 0;
   return 1;
 }
 
@@ -3432,18 +3507,12 @@ static int
 compare_translation_tuples_nothighpc (const void *key, const void *arrmem)
 {
   CORE_ADDR oso_addr = *((CORE_ADDR *) key);
-  CORE_ADDR tuple_oso_low_addr = 
-                 ((struct oso_final_addr_tuple *) arrmem)->oso_low_addr;
-  CORE_ADDR tuple_oso_high_addr = 
-                 ((struct oso_final_addr_tuple *) arrmem)->oso_high_addr;
+  struct oso_final_addr_tuple *tuple = (struct oso_final_addr_tuple *) arrmem;
 
-  if (oso_addr == tuple_oso_low_addr)
-    return 0;
-  if (oso_addr > tuple_oso_low_addr && oso_addr < tuple_oso_high_addr)
-    return 0;
-  if (oso_addr < tuple_oso_low_addr)
+  if (oso_addr < tuple->oso_low_addr)
     return -1;
-
+  if (oso_addr < tuple->oso_high_addr)
+    return 0;
   return 1;
 }
 
@@ -3457,14 +3526,11 @@ static int
 compare_translation_tuples_inclusive (const void *key, const void *arrmem)
 {
   CORE_ADDR oso_addr = *((CORE_ADDR *) key);
-  CORE_ADDR tuple_oso_low_addr = 
-                 ((struct oso_final_addr_tuple *) arrmem)->oso_low_addr;
-  CORE_ADDR tuple_oso_high_addr = 
-                 ((struct oso_final_addr_tuple *) arrmem)->oso_high_addr;
+  struct oso_final_addr_tuple *tuple = (struct oso_final_addr_tuple *) arrmem;
 
-  if (oso_addr < tuple_oso_low_addr)
+  if (oso_addr < tuple->oso_low_addr)
     return -1;
-  if (oso_addr >= tuple_oso_low_addr && oso_addr <= tuple_oso_high_addr)
+  if (oso_addr <= tuple->oso_high_addr)
     return 0;
   return 1;
 }
@@ -3687,7 +3753,8 @@ dwarf2_kext_psymtab_to_symtab (struct partial_symtab *pst)
   if (PSYMTAB_OSO_NAME (pst) == NULL || pst->readin)
     return;
 
-  oso_bfd = symfile_bfd_open (pst->objfile->not_loaded_kext_filename, 0);
+  oso_bfd = symfile_bfd_open (pst->objfile->not_loaded_kext_filename, 0, 
+			      GDB_OSABI_UNKNOWN);
   if (oso_bfd == NULL)
     error ("Couldn't unloaded kext file '%s'", 
            pst->objfile->not_loaded_kext_filename);
@@ -3793,7 +3860,12 @@ dwarf2_debug_map_psymtab_to_symtab (struct partial_symtab *pst)
           return;
         }
       else
-        error ("Couldn't open object file '%s'", PSYMTAB_OSO_NAME (pst));
+	{
+	  /* Otherwise, warn, say we've read it in, and return.  */
+	  warning ("Couldn't open object file '%s'", PSYMTAB_OSO_NAME (pst));
+	  pst->readin = 1;
+	  return;
+	}
     }
   if (!bfd_check_format (oso_bfd, bfd_object))
     warning ("Not in bfd_object form");
@@ -4200,7 +4272,7 @@ process_full_comp_unit (struct dwarf2_per_cu_data *per_cu)
       highpc = cu->per_cu->psymtab->texthigh;
     }
 
-  symtab = end_symtab (highpc + baseaddr, objfile, SECT_OFF_TEXT (objfile));
+  symtab = end_symtab (highpc, objfile, SECT_OFF_TEXT (objfile));
 
   /* Set symtab language to language from DW_AT_language.
      If the compilation is from a C file generated by language preprocessors,
@@ -4431,6 +4503,7 @@ read_file_scope (struct die_info *die, struct dwarf2_cu *cu)
 
   start_symtab (name, comp_dir, lowpc);
   record_debugformat ("DWARF 2");
+  record_producer (cu->producer);
 
   initialize_cu_func_list (cu);
 
@@ -4649,6 +4722,8 @@ read_inlined_subroutine_scope (struct die_info *die, struct dwarf2_cu *cu)
 
   if (file_attr 
       && line_attr
+      && decl_file
+      && decl_line
       && name
       && parent_name)
     /* APPLE LOCAL begin address ranges  */
@@ -5816,6 +5891,11 @@ read_structure_type (struct die_info *die, struct dwarf2_cu *cu)
   else
     TYPE_RUNTIME (type) = CPLUS_RUNTIME;
 
+  /* APPLE LOCAL: See if this is a Closure struct.  */
+  attr = dwarf2_attr (die, DW_AT_APPLE_closure, cu);
+  if (attr)
+    TYPE_FLAGS (type) |= TYPE_FLAG_APPLE_CLOSURE;
+  
   processing_current_prefix = previous_prefix;
   if (back_to != NULL)
     do_cleanups (back_to);
@@ -7589,6 +7669,7 @@ find_partial_die_in_comp_unit (unsigned long offset, struct dwarf2_cu *cu)
   part_die.offset = offset;
   lookup_die = htab_find_with_hash (cu->partial_dies, &part_die, offset);
 
+  /* FIXME: Remove this once <rdar://problem/6193416> is fixed */
   if (lookup_die == NULL)
     internal_error (__FILE__, __LINE__,
 		    _("could not find partial DIE in cache\n"));
@@ -8616,8 +8697,15 @@ check_inlined_function_calls (struct subfile *subfile, int file_index, int line,
   struct dwarf_inlined_call_record *current = NULL;
   struct objfile *objfile = cu->objfile;
   struct subfile *tmp_subfile = NULL;
+  struct subfile *call_site_subfile;
+  struct subfile *decl_site_subfile;
   struct rb_tree_node *rb_node;
   int done = 0;
+  char *fname1;
+  char *fname2;
+  char *fname3;
+  char *call_filename;
+  char *decl_filename;
 
   if (!objfile->inlined_call_sites)
     return;
@@ -8629,6 +8717,13 @@ check_inlined_function_calls (struct subfile *subfile, int file_index, int line,
   while (!done)
     {
       current = NULL;
+      call_site_subfile = NULL;
+      decl_site_subfile = NULL;
+      call_filename = NULL;
+      decl_filename = NULL;
+      fname1 = NULL;
+      fname2 = NULL;
+      fname3 = NULL;
 
       /* Look for an inlining instance with the address and file_index passed
 	 in.  */
@@ -8637,10 +8732,18 @@ check_inlined_function_calls (struct subfile *subfile, int file_index, int line,
 					      objfile->inlined_call_sites, 
 					      address, file_index);
 
+      /* The secondary key in the rb_tree corresponds to the file index of
+	 the call_site file.  It is possible that the subfile parameter
+	 will not match either the call_site or the decl_site for the
+	 inlined subroutine, in which case we will need to find (or
+	 create) the correct subfile records for either or both of those
+	 files.  */
+
       if (rb_node 
 	  && rb_node->secondary_key == file_index)
 	{
 	  tmp_subfile = subfile;
+	  call_site_subfile = subfile;
 	  current = (struct dwarf_inlined_call_record *) rb_node->data;
 	}
       else
@@ -8650,99 +8753,172 @@ check_inlined_function_calls (struct subfile *subfile, int file_index, int line,
 	     differnt file_index than was passed in.  */
 
 	  if (!rb_node)
-	    rb_node = rb_tree_find_and_remove_node (&(objfile->inlined_call_sites), 
-						    objfile->inlined_call_sites, 
-						    address, -1);
+	    rb_node = rb_tree_find_and_remove_node 
+	                                      (&(objfile->inlined_call_sites), 
+					       objfile->inlined_call_sites, 
+					       address, -1);
 
-	  /* We found an inlining instance, but it has a different 
-	     file_index than was passed in.  Figure out what the file is,
-	     and make sure we have the appropriate subfile for it.  */
+	  /* We found an inlining instance, but it has a different
+	     file_index than was passed in.  We will have to igure out
+	     what the file is, and make sure we have the appropriate
+	     subfile for it.  */
 
 	  if (rb_node)
-	    {
-	      current = (struct dwarf_inlined_call_record *) rb_node->data;
-	      
-	      for (tmp_subfile = subfiles; tmp_subfile; 
-		   tmp_subfile = tmp_subfile->next)
-		{
-		  char *fname1;
-		  char *fname2;
-		  
-		  fname1 = strrchr (tmp_subfile->name, '/');
-		  fname2 = strrchr (lh->file_names[current->file_index-1].name,
-				    '/');
-		  
-		  if (fname1)
-		    fname1++;
-		  else
-		    fname1 = tmp_subfile->name;
-		  
-		  if (fname2)
-		    fname2++;
-		  else
-		    fname2 = lh->file_names[current->file_index - 1].name;
-		  
-		  if (strcmp (fname1, fname2) == 0)
-		    break;
-		}
-	    }
-	
-	  if (current && tmp_subfile == NULL)
-	    {
-	      struct file_entry *fe = &lh->file_names[current->file_index - 1];
-	      char *dir;
+	    current = (struct dwarf_inlined_call_record *) rb_node->data;
+	}
 
+      if (current
+	  && ((current->file_index > lh->num_file_names)
+	      || (current->decl_file_index > lh->num_file_names)))
+	{
+	  /* Something is seriously wrong: The dwarf record for the
+	     inlining says the inlined function is declared in or
+	     called from a file whose index did not make it into the
+	     dwarf line table.  The best thing to do at this point is
+	     to throw away the inlining record and hope for the
+	     best.  */
+	  current = NULL;
+	}
+
+      if (current)
+	{
+	  if (current->file_index == file_index)
+	    call_site_subfile = subfile;
+	  
+	  if (current->decl_file_index == file_index)
+	    decl_site_subfile = subfile;
+	  
+	  if (!call_site_subfile)
+	    {
+	      call_filename = 
+		        xstrdup (lh->file_names[current->file_index - 1].name);
+
+	      fname2 = strrchr (call_filename, '/');
+	      if (fname2)
+		fname2++;
+	      else
+		fname2 =  call_filename;
+	    }
+	  
+	  if (!decl_site_subfile)
+	    {
+	      decl_filename =  
+		   xstrdup (lh->file_names[current->decl_file_index - 1].name);
+	      
+	      fname3 = strrchr (decl_filename, '/');
+	      if (fname3)
+		fname3++;
+	      else
+		fname3 = decl_filename;
+	    }
+
+	  /* Look for subfiles for call site and decl site files,
+	     if necessary.  */
+
+	  for (tmp_subfile = subfiles; 
+	       tmp_subfile
+		 && (!call_site_subfile || !decl_site_subfile);
+	       tmp_subfile = tmp_subfile->next)
+	    {
+	      fname1 = strrchr (tmp_subfile->name, '/');
+	      if (fname1)
+		fname1++;
+	      else
+		fname1 = tmp_subfile->name;
+	      
+	      if (!call_site_subfile
+		  && (strcmp (fname1, fname2) == 0))
+		call_site_subfile = tmp_subfile;
+	      
+	      if (!decl_site_subfile
+		  && (strcmp (fname1, fname3) == 0))
+		decl_site_subfile = tmp_subfile;
+	      
+	    }
+	}
+      
+      /* If the subfile record for either the call site file or the decl 
+	 site file (or both) does not exist yet, we need to create the 
+	 record(s).  */
+      
+      if (current 
+	  && (!call_site_subfile || !decl_site_subfile))
+	{
+	  struct file_entry *fe;
+	  char *dir;
+	  
+	  if (!call_site_subfile)
+	    {
+	      fe = &lh->file_names[current->file_index - 1];
+	      
 	      if (fe->dir_index)
 		dir = lh->include_dirs[fe->dir_index - 1];
 	      else
 		dir = comp_dir;
+	      
+	      /* Create the new subfile record.  */
+	      
 	      dwarf2_start_subfile (fe->name, dir, cu->comp_dir);
-	      for (tmp_subfile = subfiles; tmp_subfile; 
-		   tmp_subfile = tmp_subfile->next)
-		{
-		  char *fname1;
-		  char *fname2;
-
-		  fname1 = strrchr (tmp_subfile->name, '/');
-		  fname2 = strrchr (lh->file_names[current->file_index-1].name,
-				    '/');
-
-		  if (fname1)
-		    fname1++;
-		  else
-		    fname1 = tmp_subfile->name;
-
-		  if (fname2)
-		    fname2++;
-		  else
-		    fname2 = lh->file_names[current->file_index - 1].name;
-
-		  if (strcmp (fname1, fname2) == 0)
-		    break;
-		}
-	      gdb_assert (tmp_subfile != NULL);
 	    }
+	  
+	  if (!decl_site_subfile)
+	    {
+	      fe = &lh->file_names[current->decl_file_index - 1];
+	      if (fe->dir_index)
+		dir = lh->include_dirs[fe->dir_index - 1];
+	      else
+		dir = comp_dir;
+	      
+	      /* Create the new subfile record.  */
+	      
+	      dwarf2_start_subfile (fe->name, dir, cu->comp_dir);
+	    }
+	  
+	  /* Now we have to find the newly created record(s).  */
+	  
+	  for (tmp_subfile = subfiles; tmp_subfile; 
+	       tmp_subfile = tmp_subfile->next)
+	    {
+	      fname1 = strrchr (tmp_subfile->name, '/');
+	      
+	      if (fname1)
+		fname1++;
+	      else
+		fname1 = tmp_subfile->name;
+	      
+	      if (!call_site_subfile
+		  && (strcmp (fname1, fname2) == 0))
+		call_site_subfile = tmp_subfile;
+	      
+	      if (!decl_site_subfile
+		  && (strcmp (fname1, fname3) == 0))
+		decl_site_subfile = tmp_subfile;
+	      
+	      if (call_site_subfile && decl_site_subfile)
+		break;
+	    }
+	  gdb_assert (call_site_subfile != NULL);
+	  gdb_assert (decl_site_subfile != NULL);
 	}
-
 
       /* Now we have the inlining instance and the files straight, write the
 	 appropriate entries in the line tables.  */
 
       if (current)
 	{
-	  if (tmp_subfile != subfile)
-	    record_line (tmp_subfile, current->line, address, 0, 
+	  if (call_site_subfile != decl_site_subfile)
+	    record_line (call_site_subfile, current->line, address, 0, 
 			 NORMAL_LT_ENTRY);
 
 	  if (dwarf2_debug_inlined_stepping)
 	    fprintf_unfiltered (gdb_stdout, "%s inlined into %s:\n", 
 				current->name, current->parent_name);
 	  
-	  record_line (tmp_subfile, current->line, current->lowpc, 
+	  record_line (call_site_subfile, current->line, current->lowpc, 
 		       current->highpc,
 		       INLINED_CALL_SITE_LT_ENTRY);
-	  record_line (subfile, current->decl_line + 1, current->lowpc, 
-		       current->highpc,
+	  record_line (decl_site_subfile, current->decl_line + 1, 
+		       current->lowpc, current->highpc,
 		       INLINED_SUBROUTINE_LT_ENTRY);
 	  /* APPLE LOCAL begin address ranges  */
 	  inlined_function_add_function_names (objfile,
@@ -8942,6 +9118,7 @@ dwarf2_record_line (struct line_header *lh, char *comp_dir, struct dwarf2_cu *cu
   else
     {
       /* We have a debug map and we need to translate the address.  */
+      const struct oso_final_addr_tuple *last_tuple = map->tuples + map->entries;
       struct oso_final_addr_tuple *match = NULL;
       if (map->entries == 1)
 	{
@@ -9008,8 +9185,7 @@ dwarf2_record_line (struct line_header *lh, char *comp_dir, struct dwarf2_cu *cu
 		{
 		  /* Set NEXT correctly if it already isn't is there is a next
 		     tuple.  */
-		  int match_index = match - map->tuples;
-		  if (match_index + 1 < map->entries)
+		  if (match + 1 < last_tuple)
 		    next = match + 1;
 		}
 	      
@@ -9163,12 +9339,6 @@ dwarf_decode_lines (struct line_header *lh, char *comp_dir, bfd *abfd,
   CORE_ADDR baseaddr;
   struct objfile *objfile = cu->objfile;
   const int decode_for_pst_p = (pst != NULL);
-
-  /* APPLE LOCAL */
-  if (debug_debugmap)
-    fprintf_unfiltered (gdb_stdlog,
-                        "debugmap: reading line program for %s\n",
-                        cu->per_cu->psymtab->filename);
 
   baseaddr = objfile_text_section_offset (objfile);
 
@@ -9405,12 +9575,6 @@ dwarf_decode_lines (struct line_header *lh, char *comp_dir, bfd *abfd,
               dwarf2_create_include_psymtab (include_name, pst, objfile);
           }
     }
-
-  /* APPLE LOCAL */
-  if (debug_debugmap)
-    fprintf_unfiltered (gdb_stdlog,
-                        "debugmap: finished reading line program for %s\n",
-                        cu->per_cu->psymtab->filename);
 }
 
 /* Start a subfile for DWARF.  FILENAME is the name of the file and
@@ -9979,7 +10143,7 @@ dwarf2_const_value_data (struct attribute *attr,
 
   if (bits < sizeof (l) * 8)
     {
-      if (TYPE_UNSIGNED (SYMBOL_TYPE (sym)))
+      if (TYPE_UNSIGNED (check_typedef (SYMBOL_TYPE (sym))))
 	l &= ((LONGEST) 1 << bits) - 1;
       else
 	l = (l << (sizeof (l) * 8 - bits)) >> (sizeof (l) * 8 - bits);
@@ -12043,13 +12207,12 @@ dwarf_decode_macros (struct line_header *lh, unsigned int offset,
       macinfo_type = read_1_byte (abfd, mac_ptr);
       mac_ptr++;
 
+      /* A zero macinfo type indicates the end of the macro information.  */
+      if (macinfo_type == 0)
+        return;
+
       switch (macinfo_type)
         {
-          /* A zero macinfo type indicates the end of the macro
-             information.  */
-        case 0:
-          return;
-
         case DW_MACINFO_define:
         case DW_MACINFO_undef:
           {
@@ -14039,7 +14202,7 @@ db_error (char *function_name, char *db_action_description, sqlite3 *db)
   strcpy (message, sqlite3_errmsg (db));
   finalize_stmts (db);
   sqlite3_close (db);
-  internal_error (__FILE__, __LINE__, _(message));
+  internal_error (__FILE__, __LINE__, "%s", message);
 }
 
 static struct dwarf2_cu *
@@ -14556,8 +14719,8 @@ rb_print_node (struct rb_tree_node *tree)
 	fprintf (stdout, "(Black");
       else
 	fprintf (stdout, "(Unknown");
-      fprintf (stdout, ", %Ld, %d, %Ld)\n", tree->key, tree->secondary_key,
-	       tree->third_key);
+      fprintf (stdout, ", 0x%s, %d, 0x%s)\n", paddr_nz (tree->key),
+               tree->secondary_key, paddr_nz (tree->third_key));
     }
 }
 

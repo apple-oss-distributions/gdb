@@ -599,6 +599,10 @@ c_value_print (struct value *val, struct ui_file *stream, int format,
       /* Otherwise, we end up at the return outside this "if" */
     }
 
+  real_type = get_closure_dynamic_type (val);
+  if (real_type)
+    type = real_type;
+
   return val_print (type, value_contents_all (val),
 		    value_embedded_offset (val),
 		    VALUE_ADDRESS (val) + value_offset (val),

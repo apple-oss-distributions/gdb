@@ -624,7 +624,7 @@ edit_command (char *arg, int from_tty)
   struct symtab_and_line sal;
   struct symbol *sym;
   char *arg1;
-  int cmdlen, log10;
+  int log10;
   unsigned m;
   char *editor;
   char *p, *fn;
@@ -937,7 +937,7 @@ disassemble_command (char *arg, int from_tty)
 {
   CORE_ADDR low, high;
   char *name;
-  CORE_ADDR pc, pc_masked;
+  CORE_ADDR pc;
   char *space_index;
 #if 0
   asection *section;

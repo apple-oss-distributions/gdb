@@ -584,8 +584,6 @@ frame_register_unwind (struct frame_info *frame, int regnum,
 		       enum opt_state *optimizedp, enum lval_type *lvalp,
 		       CORE_ADDR *addrp, int *realnump, gdb_byte *bufferp)
 {
-  struct frame_unwind_cache *cache;
-
   if (frame_debug)
     {
       fprintf_unfiltered (gdb_stdlog, "\
@@ -1264,8 +1262,6 @@ inside_entry_func (struct frame_info *this_frame)
 struct frame_info *
 get_prev_frame (struct frame_info *this_frame)
 {
-  struct frame_info *prev_frame;
-
   /* Return the inner-most frame, when the caller passes in NULL.  */
   /* NOTE: cagney/2002-11-09: Not sure how this would happen.  The
      caller should have previously obtained a valid frame using

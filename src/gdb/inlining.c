@@ -884,6 +884,42 @@ verify_stack (void)
     }
 }
 
+
+/* Given a red-black tree (ROOT) containing inlined subroutine
+   records, find all records whose inlining start address (main key)
+   is greater than or equal to START, and whose inlining end address
+   (third_key) is less than or equal to END.  Return all such records
+   in the list MATCHES.  */
+
+static void
+rb_tree_find_all_nodes_in_between (struct rb_tree_node *root, CORE_ADDR start,
+				   CORE_ADDR end, 
+				   struct rb_tree_node_list **matches)
+{
+  struct rb_tree_node_list *tmp_node;
+
+  if (!root)
+    return;
+
+    if (start <= root->key
+        && root->key < end
+	&& root->third_key < end)
+      {
+	tmp_node = (struct rb_tree_node_list *) xmalloc (sizeof (struct rb_tree_node_list));
+	tmp_node->node = root;
+	tmp_node->next = *matches;
+	*matches = tmp_node;
+      }
+
+    if (start <= root->key)
+      {
+	rb_tree_find_all_nodes_in_between (root->left, start, end, matches);
+	rb_tree_find_all_nodes_in_between (root->right, start, end, matches);
+      }
+    else if (start > root->key)
+      rb_tree_find_all_nodes_in_between (root->right, start, end, matches);
+}
+
 static void
 rb_tree_find_all_matching_nodes (struct rb_tree_node *root, CORE_ADDR key,
 				 int secondary_key, CORE_ADDR third_key,
@@ -1124,9 +1160,10 @@ add_item_to_inlined_subroutine_stack (struct linetable_entry *item,
 
   if (i > nelts)
     {
-      /* An existing entry was not found; we need to make a new entry on the
-	 top of the stack.  First we need to make sure we have enough space
-	 in the array for a new entry; otherwise we need to resize the array.  */
+      /* An existing entry was not found; we need to make a new entry
+	 on the top of the stack.  First we need to make sure we have
+	 enough space in the array for a new entry; otherwise we need
+	 to resize the array.  */
       if (nelts >= max_size - 1)
 	{
 	  if (max_size == 0)
@@ -1134,7 +1171,7 @@ add_item_to_inlined_subroutine_stack (struct linetable_entry *item,
 	      max_size = 10;
 	      global_inlined_call_stack.records = 
 		(struct inlined_call_stack_record *) xmalloc 
-	                   (max_size * sizeof (struct inlined_call_stack_record));
+	               (max_size * sizeof (struct inlined_call_stack_record));
 	      memset (global_inlined_call_stack.records, 0,
 		      max_size * sizeof (struct inlined_call_stack_record));
 
@@ -1227,7 +1264,8 @@ add_item_to_inlined_subroutine_stack (struct linetable_entry *item,
     {
       global_inlined_call_stack.records[i].start_pc = item->pc;
       global_inlined_call_stack.records[i].end_pc = item->end_pc;
-      global_inlined_call_stack.records[i].s = s;
+      if (global_inlined_call_stack.records[i].s == NULL)
+	global_inlined_call_stack.records[i].s = s;
     }
   else if (item->entry_type == INLINED_CALL_SITE_LT_ENTRY)
     {
@@ -1627,8 +1665,8 @@ inlined_function_add_function_names (struct objfile *objfile,
   if ((strcmp (fn_name, "<unknown function>") == 0)
       || (strcmp (calling_fn_name, "<unknown function>") == 0))
     complaint (&symfile_complaints, 
- _("Missing inlined function names:  %s calling %s, at line %d (address %Ld)"), 
-	       calling_fn_name, fn_name, line, low_pc);
+ _("Missing inlined function names:  %s calling %s, at line %d (address 0x%s)"), 
+	       calling_fn_name, fn_name, line, paddr_nz (low_pc));
 
   rb_tree_find_all_matching_nodes (objfile->inlined_subroutine_data,
 				   low_pc, 0, high_pc,
@@ -1882,6 +1920,8 @@ at_inlined_call_site_p (char **file_name, int *line_num, int *column)
       else if (low <= current_inlined_subroutine_stack_position ()
 	       && current_inlined_subroutine_stack_position() <= high)
 	i = current_inlined_subroutine_stack_position ();
+      else
+	i = low;
 
       if (i > 0)
 	{
@@ -2311,7 +2351,7 @@ print_inlined_frame (struct frame_info *fi, int print_level,
     {
       if (stack_ptr->records[i].s)
 	ui_out_field_string (uiout, "file", 
-			     stack_ptr->records[i].s->filename);
+			     symtab_to_fullname (stack_ptr->records[i].s));
       else if (sal.symtab)
 	ui_out_field_string (uiout, "file", sal.symtab->filename);
       else 
@@ -2416,8 +2456,6 @@ step_into_current_inlined_subroutine (void)
       if (cur_pos < global_inlined_call_stack.nelts)
 	adjust_current_inlined_subroutine_stack_position (1);
     }
-
-  gdb_assert (current_inlined_subroutine_call_stack_start_pc() == stop_pc);
 }
 
 /* Return the source position of the outermost call site (the bottom of
@@ -2711,6 +2749,7 @@ rest_of_line_contains_inlined_subroutine (CORE_ADDR *end_of_line)
   CORE_ADDR line_start_pc = 0;
   CORE_ADDR inline_start_pc = 0;
   int inlined_subroutine_found = 0;
+  int inlined_subroutine_record_found = 0;
 
   if (!dwarf2_allow_inlined_stepping)
     return 0;
@@ -2787,35 +2826,72 @@ rest_of_line_contains_inlined_subroutine (CORE_ADDR *end_of_line)
 	}
     }
 
+  /*  If we haven't discovered any inlined subroutines beyond the current end
+      pc (but on the same line) heck to see if the current start & end 
+      addresses encompass one or more inlined subroutines.  */
+
+  if (sal.symtab
+      && (!inlined_subroutine_found
+	  || inline_start_pc == stop_pc))
+
+    {
+      struct rb_tree_node_list *matches = NULL;
+      struct rb_tree_node_list *current;
+      struct rb_tree_node *tmp_node;
+      struct inlined_call_stack_record *tmp_record;
+      
+      rb_tree_find_all_nodes_in_between 
+	                         (sal.symtab->objfile->inlined_subroutine_data,
+				  stop_pc, current_end, &matches);
+      
+      for (current = matches; current; current = current->next)
+	{
+	  tmp_node = current->node;
+	  if (tmp_node != NULL)
+	    {
+	      tmp_record = (struct inlined_call_stack_record *) tmp_node->data;
+	      inlined_subroutine_record_found = 1;
+	      if (tmp_record->start_pc >= stop_pc
+		  && tmp_record->start_pc < inline_start_pc)
+		inline_start_pc = tmp_record->start_pc;
+	    }
+	}
+    }
+
   /* This function is looking for inlined subroutines BEYOND the
      current pc, but within the same source line.  If we find an
      inlined subroutine AT the current pc, we do NOT want to count
      that; it will be dealt with properly elsewhere.  */
 
-  if ((inline_start_pc != 0
-       && inline_start_pc == stop_pc)
-      || (current_end <= stop_pc))
+  if (inlined_subroutine_record_found)
+    inlined_subroutine_found = 1;
+  else if ((inline_start_pc != 0
+	    && inline_start_pc == stop_pc)
+	   || (current_end <= stop_pc))
     {
       inlined_subroutine_found = 0;
       current_end = 0;
     }
-
+  
   *end_of_line = current_end;
 
   return inlined_subroutine_found;
 }
 
 void
-find_next_inlined_subroutine (CORE_ADDR pc, CORE_ADDR *inline_start_pc)
+find_next_inlined_subroutine (CORE_ADDR pc, CORE_ADDR *inline_start_pc, 
+			      CORE_ADDR end_of_line)
 {
   struct symtab_and_line sal;
   int current_line;
   CORE_ADDR current_end;
+  struct symtab *sal_symtab = NULL;;
 
   *inline_start_pc = 0;
   sal = find_pc_line (pc, 0);
   current_line = sal.line;
   current_end = sal.end;
+  sal_symtab = sal.symtab;
 
   while (sal.line == current_line
 	 && !sal.next)
@@ -2827,6 +2903,30 @@ find_next_inlined_subroutine (CORE_ADDR pc, CORE_ADDR *inline_start_pc)
 	  && (sal.next->entry_type == INLINED_SUBROUTINE_LT_ENTRY
 	      || sal.next->entry_type == INLINED_CALL_SITE_LT_ENTRY))
 	*inline_start_pc = sal.pc;
+    }
+
+  if (*inline_start_pc == 0 && sal_symtab)
+    {
+      struct rb_tree_node_list *matches = NULL;
+      struct rb_tree_node_list *current;
+      struct rb_tree_node *tmp_node;
+      struct inlined_call_stack_record *tmp_record;
+
+      rb_tree_find_all_nodes_in_between 
+	                         (sal_symtab->objfile->inlined_subroutine_data,
+				  stop_pc, end_of_line, &matches);
+
+      for (current = matches; current; current = current->next)
+	{
+	  tmp_node = current->node;
+	  if (tmp_node != NULL)
+	    {
+	      tmp_record = (struct inlined_call_stack_record *) tmp_node->data;
+	      if (*inline_start_pc == 0
+		  || tmp_record->start_pc < *inline_start_pc)
+		*inline_start_pc = tmp_record->start_pc;
+	    }
+	}
     }
 }
 

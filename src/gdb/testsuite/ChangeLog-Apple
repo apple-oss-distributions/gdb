@@ -1,3 +1,59 @@
+2008-06-06  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/add-dsym.c: Terminate string.
+	* gdb.apple/add-dsym.exp: Don't hard code source line # for bar bp.
+
+2008-06-05  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.objc/myclass.exp: Build with -mmacosx-version-min=10.5.
+	* gdb.base/unload.exp: Build dylib with -mmacosx-version-min=10.5.
+
+2008-06-04  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/unload.exp: Set the min macosx version when compiling this.
+
+2008-06-04  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/nick.exp: Update regexp for Snow Leopard.
+	* gdb.apple/sections.exp: Update regexp.
+	* gdb.apple/r4183684.exp: Update regexp.
+	* gdb.apple/objc-rbreak.exp: Update regexp.
+	* gdb.apple/single-def.h: Updated for gcc-4.2 C++ happiness.
+	* gdb.apple/fix-and-continue/small-c/Makefile: Don't hardcode gcc-4.0.
+	* gdb.apple/fix-and-continue/small-objc/Makefile: Same.
+
+2008-06-04  Jason Molenda  (jmolenda@apple.com)
+
+	* lib/gdb.exp (default_gdb_start): Change gdb_opts from a host_info
+	to a target_info.
+	* lib/mi-support.exp (mi_gdb_start): Same.
+
+2008-06-04  Jason Molenda  (jmolenda@apple.com)
+
+	* configure: Regenerated to make gdb.apple/debug-in-ofile test dir.
+
+2008-05-30  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/add-dsym.exp: Make breakpoint in dylib a future-break.
+
+2008-05-29  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/mi1-varobj.exp: Types come back as 'MyClass *' instead of
+	'class MyClass *'.
+
+2008-05-29  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/arch-test.exp: Remove ppc64; won't build on SnowLeopard.
+
+2008-05-23  Jason Molenda  (jmolenda@apple.com)
+
+        * gdb.apple/objc-prog.m (newWithArg): Don't call super init.
+
+2008-05-22  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.base/relocate.exp: Don't look for "_addr" after the text segment
+	name.
+
 2008-03-19  Jason Molenda  (jmolenda@apple.com)
 
 	* lib/gdb.exp (default_gdb_start): Set locate-dsym to 0 so if the

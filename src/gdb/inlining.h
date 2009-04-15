@@ -231,6 +231,10 @@ extern void inlined_frame_prev_register (struct frame_info *, void **, int,
 					 int *, enum lval_type *, CORE_ADDR *, 
 					 int *, gdb_byte *);
 
+void restore_thread_inlined_call_stack (ptid_t ptid);
+
+void save_thread_inlined_call_stack (ptid_t ptid);
+
 extern void flush_inlined_subroutine_frames (void);
 
 extern void clear_inlined_subroutine_print_frames (void);
@@ -255,7 +259,7 @@ extern void inlined_subroutine_restore_after_dummy_call (void);
 
 extern int rest_of_line_contains_inlined_subroutine (CORE_ADDR *);
 
-extern void find_next_inlined_subroutine (CORE_ADDR, CORE_ADDR *);
+extern void find_next_inlined_subroutine (CORE_ADDR, CORE_ADDR *, CORE_ADDR);
 
 
 extern void print_inlined_frame (struct frame_info *, int, enum print_what,

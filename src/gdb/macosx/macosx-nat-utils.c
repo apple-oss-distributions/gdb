@@ -358,6 +358,36 @@ macosx_free_plist (const void **plist)
 }
 
 void
+macosx_print_extra_stop_info (int code, CORE_ADDR address)
+{
+  ui_out_text (uiout, "Reason: ");
+  switch (code)
+    {
+    case KERN_PROTECTION_FAILURE:
+      ui_out_field_string (uiout, "access-reason", "KERN_PROTECTION_FAILURE");
+      break;
+    case KERN_INVALID_ADDRESS:
+      ui_out_field_string (uiout, "access-reason", "KERN_INVALID_ADDRESS");
+      break;
+#if defined (TARGET_ARM)
+    case 0x101:
+      ui_out_field_string (uiout, "access-reason", "EXC_ARM_DA_ALIGN");
+      break;
+
+    case 0x102:
+      ui_out_field_string (uiout, "access-reason", "EXC_ARM_DA_DEBUG");
+      break;
+#endif
+    default:
+      ui_out_field_int (uiout, "access-reason", code);
+    }
+  ui_out_text (uiout, " at address: ");
+  ui_out_field_core_addr (uiout, "address", address);
+  ui_out_text (uiout, "\n");
+}
+
+
+void
 mach_check_error (kern_return_t ret, const char *file,
                   unsigned int line, const char *func)
 {

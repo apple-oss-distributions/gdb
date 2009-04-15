@@ -555,6 +555,51 @@ int varobj_runs_all_threads = 0;
 ((x) != NULL && (x)->fake_child)
 
 
+/* These wrappers of "evaluate_expression" and "evaluate_type" turn off
+   the automatic closure detection.  Otherwise changes in these won't show
+   up as a "dynamic" type, and we won't notice they have changed.  */
+extern int print_closure;
+
+int
+varobj_parse_exp_1 (char **stringptr, struct block *block, int comma,
+		 struct expression **expression)
+{
+  int old_print_closure = print_closure;
+  int ret_val;
+
+  print_closure = 0;
+  ret_val = gdb_parse_exp_1 (stringptr, block, comma, expression);
+  print_closure = old_print_closure;
+
+  return ret_val;
+}
+
+static int
+varobj_evaluate_expression (struct expression *exp, struct value **value)
+{
+  int old_print_closure = print_closure;
+  int ret_val;
+
+  print_closure = 0;
+  ret_val = gdb_evaluate_expression (exp, value);
+  print_closure = old_print_closure;
+
+  return ret_val;
+}
+
+int
+varobj_evaluate_type (struct expression *exp, struct value **value)
+{
+  int old_print_closure = print_closure;
+  int ret_val;
+
+  print_closure = 0;
+  ret_val = gdb_evaluate_type (exp, value);
+  print_closure = old_print_closure;
+
+  return ret_val;
+}
+
 /* API Implementation */
 
 /* APPLE LOCAL begin is_root_p */
@@ -669,29 +714,43 @@ varobj_fixup_value (struct value *in_value,
 	}
       else
 	{
-	  /* If we didn't find a C++ class, let's see if we can find
-	     an ObjC class. */
-	  int ret_val;
-	  char *dynamic_class_name;
+	  /* If it's not got a C++ dynamic type, let's see if it has
+	     a closure dynamic type.  We prefer the closure to ObjC
+	     because ObjC closures also masquerade as ObjC objects, so
+	     they WILL have an ObjC class type, just not a useful one.  */
 
-	  ret_val = safe_value_objc_target_type (in_value, block, &dynamic_type, &dynamic_class_name);
-	  if (!ret_val)
-	    dynamic_type = NULL;
-	  else if (dynamic_type)
-	    dynamic_type = lookup_pointer_type (dynamic_type);
-	  else if (dynamic_class_name != NULL)
+	  dynamic_type = get_closure_dynamic_type (in_value);
+	  if (dynamic_type == NULL)
 	    {
-	      if (dynamic_type_name == NULL)
-		xfree (dynamic_class_name);
-	      else
+	      /* If it hasn't got a C++ or closure dynamic type,
+		 see if it has an ObjC type.  */
+	      int ret_val;
+	      char *dynamic_class_name;
+	      
+	      ret_val = safe_value_objc_target_type (in_value, block, &dynamic_type, &dynamic_class_name);
+	      if (!ret_val
+		  || dynamic_type == 0)
 		{
-		  int namelen = strlen (dynamic_class_name);
-		  char *typestr;
-		  typestr = xmalloc (namelen + 3);
-		  memmove (typestr, dynamic_class_name, namelen);
-		  xfree (dynamic_class_name);
-		  strcpy (typestr + namelen, " *");
-		  *dynamic_type_name = typestr;
+		  if (dynamic_type != NULL)
+		    *dynamic_type_name = NULL;
+		}
+	      
+	      if (dynamic_type)
+		dynamic_type = lookup_pointer_type (dynamic_type);
+	      else if (dynamic_class_name != NULL)
+		{
+		  if (dynamic_type_name == NULL)
+		    xfree (dynamic_class_name);
+		  else
+		    {
+		      int namelen = strlen (dynamic_class_name);
+		      char *typestr;
+		      typestr = xmalloc (namelen + 3);
+		      memmove (typestr, dynamic_class_name, namelen);
+		      xfree (dynamic_class_name);
+		      strcpy (typestr + namelen, " *");
+		      *dynamic_type_name = typestr;
+		    }
 		}
 	    }
 	}
@@ -884,7 +943,7 @@ varobj_create (char *objname,
          create a dummy here that will get filled in later when 
          we get to a frame that actually has this variable.  */
       
-      if (gdb_parse_exp_1 (&p, block, 0, &var->root->exp))
+      if (varobj_parse_exp_1 (&p, block, 0, &var->root->exp))
 	{
 
 	  /* Don't allow variables to be created for types. */
@@ -941,7 +1000,7 @@ varobj_create (char *objname,
 	      	      
 	  if ((var->root->use_selected_frame || varobj_pc_in_valid_block_p (var)
 	       || type == NO_FRAME_NEEDED) 
-	      && gdb_evaluate_expression (var->root->exp, &var->value))
+	      && varobj_evaluate_expression (var->root->exp, &var->value))
 	    {
 	      /* no error */
 
@@ -972,7 +1031,7 @@ varobj_create (char *objname,
 		 implementation, and if the object is bad, the runtime can crash
 		 in the lookup call...  */
 
-	      retval = gdb_evaluate_type (var->root->exp, &var->value);
+	      retval = varobj_evaluate_type (var->root->exp, &var->value);
 	      if (retval != 0)
 		{
 		  var->type = value_type (var->value);
@@ -1393,13 +1452,13 @@ varobj_set_value (struct varobj *var, char *expression)
 
       input_radix = 10;		/* ALWAYS reset to decimal temporarily */
       
-      if (!gdb_parse_exp_1 (&s, 0, 0, &exp))
+      if (!varobj_parse_exp_1 (&s, 0, 0, &exp))
 	{
 	  /* We cannot proceed without a well-formed expression. */
 	  ret_val = 0;
 	  goto cleanup;
 	}
-      if (!gdb_evaluate_expression (exp, &value))
+      if (!varobj_evaluate_expression (exp, &value))
 	{
 	  /* We cannot proceed without a valid expression. */
 	  xfree (exp);
@@ -3080,7 +3139,7 @@ c_value_of_root (struct varobj **var_handle, enum varobj_type_change *type_chang
 
       schedlock_chain = make_cleanup_set_restore_scheduler_locking_mode (scheduler_locking_on);
 
-      if (gdb_evaluate_expression (var->root->exp, &new_val))
+      if (varobj_evaluate_expression (var->root->exp, &new_val))
 	{
 	  struct type *dynamic_type;
 	  char *dynamic_type_name;
@@ -4194,7 +4253,6 @@ cplus_type_of_child (struct varobj *parent, int index)
     case TYPE_CODE_UNION:
       if (CPLUS_FAKE_CHILD (parent))
 	{
-          struct varobj *child = child_exists (parent, index);
 	  /* APPLE LOCAL: Can't use the lookup_struct_elt_type, since
 	     that looks up by name which doesn't work for anonymous
 	     unions & structures.  */

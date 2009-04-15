@@ -41,10 +41,6 @@
    by the caller to be long enough to save BREAKPOINT_LEN bytes (this
    is accomplished via BREAKPOINT_MAX).  */
 
-/* APPLE LOCAL: Override trust-readonly-sections.  */
-extern int set_trust_readonly (int);
-/* END APPLE LOCAL */
-
 int
 default_memory_insert_breakpoint (CORE_ADDR addr, bfd_byte *contents_cache)
 {
@@ -63,7 +59,7 @@ default_memory_insert_breakpoint (CORE_ADDR addr, bfd_byte *contents_cache)
 
   /* APPLE LOCAL: For breakpoints we should override the trust_readonly setting.  */
   old_readonly = set_trust_readonly (0);
-  reset_trust_readonly = make_cleanup (set_trust_readonly, old_readonly);
+  reset_trust_readonly = make_cleanup (set_trust_readonly_cleanup, (void *) old_readonly);
   /* END APPLE LOCAL */
   /* Save the memory contents.  */
   val = target_read_memory (addr, contents_cache, bplen);
@@ -102,7 +98,7 @@ default_memory_remove_breakpoint (CORE_ADDR addr, bfd_byte *contents_cache)
      this we're counting on getting the value we wrote there.  */
 
   old_readonly = set_trust_readonly (0);
-  reset_trust_readonly = make_cleanup (set_trust_readonly, old_readonly);
+  reset_trust_readonly = make_cleanup (set_trust_readonly_cleanup, (void *) old_readonly);
   val = target_read_memory (addr, cur_contents, bplen);
   
   /* I don't know why we wouldn't be able to read the memory where we

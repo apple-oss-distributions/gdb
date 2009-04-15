@@ -782,11 +782,33 @@ variable:	name_not_typename
                               if (func 
                                   && TYPE_RUNTIME (SYMBOL_TYPE (func)) != OBJC_RUNTIME)
                                 {
-                                  if (SYMBOL_LANGUAGE(func) == language_cplus
-                                      || SYMBOL_LANGUAGE(func) == language_objcplus)
+                                  if (SYMBOL_LANGUAGE (func) == language_cplus)
                                     {
                                       runtime = CPLUS_RUNTIME;
                                     }
+                                  else if (SYMBOL_LANGUAGE (func) == language_objcplus)
+                                    {
+                                      /* If we didn't actually set the runtime for the
+                                         function type from the debug info, let's try
+                                         to determine it heuristically here.  The easiest
+                                         course is to see if this looks like an ObjC method
+                                         name.  That will start with "-[" or "+[", and since
+                                         those aren't legal C++ names that's a pretty good
+                                         test.  */
+
+                                      char *name = SYMBOL_NATURAL_NAME (func);
+                                      if (name != NULL
+                                          && strlen (name) > 2
+                                          && ((name[0] == '-' || name[0] == '+')
+                                              && name[1] == '['))
+                                        {
+                                          runtime = OBJC_RUNTIME;
+                                        }
+                                      else
+                                        {
+                                          runtime = CPLUS_RUNTIME;
+                                        }
+				    }
                                 }
 
                               if (runtime == OBJC_RUNTIME)

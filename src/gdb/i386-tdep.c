@@ -27,6 +27,7 @@
 #include "dummy-frame.h"
 #include "dwarf2-frame.h"
 #include "doublest.h"
+#include "exceptions.h"
 #include "floatformat.h"
 #include "frame.h"
 #include "frame-base.h"
@@ -249,6 +250,26 @@ i386_svr4_reg_to_regnum (int reg)
   return NUM_REGS + NUM_PSEUDO_REGS;
 }
 
+/* Translate a .eh_frame register to DWARF register 
+   gcc uses its internal numbering scheme in the eh_frame register numbers
+   or something like that ... v. gcc/config/i386/darwin.h:DWARF2_FRAME_REG_OUT */
+
+static int
+i386_adjust_frame_regnum (struct gdbarch *gdbarch, int num, int eh_frame_p)
+{
+  if (eh_frame_p == 0)
+    return i386_svr4_reg_to_regnum (num);
+
+  if (num == 5)
+    return i386_svr4_reg_to_regnum (4);
+  if (num == 4)
+    return i386_svr4_reg_to_regnum (5);
+  if (num >= 12 && num <= 19)
+    return i386_svr4_reg_to_regnum (num - 1);
+
+  return i386_svr4_reg_to_regnum (num);
+}
+
 #undef I387_ST0_REGNUM
 #undef I387_MM0_REGNUM
 #undef I387_NUM_XMM_REGS
@@ -315,15 +336,12 @@ struct i386_frame_cache
   long locals;
 };
 
-/* Allocate and initialize a frame cache.  */
+/* Initialize a frame cache.  */
 
-static struct i386_frame_cache *
-i386_alloc_frame_cache (void)
+static void
+i386_initialize_frame_cache (struct i386_frame_cache *cache)
 {
-  struct i386_frame_cache *cache;
   int i;
-
-  cache = FRAME_OBSTACK_ZALLOC (struct i386_frame_cache);
 
   /* Base address.  */
   cache->base = 0;
@@ -339,7 +357,19 @@ i386_alloc_frame_cache (void)
 
   /* Frameless until proven otherwise.  */
   cache->locals = -1;
+}
 
+/* Allocate a frame cache on the frame obstack.  */
+
+static struct i386_frame_cache *
+i386_alloc_frame_cache (void)
+{
+  struct i386_frame_cache *cache;
+
+  cache = FRAME_OBSTACK_ZALLOC (struct i386_frame_cache);
+
+  i386_initialize_frame_cache (cache);
+  
   return cache;
 }
 
@@ -562,6 +592,7 @@ i386_analyze_frame_setup (CORE_ADDR pc, CORE_ADDR limit,
      the latter instruction is the frame-setup insn in start ().  */
 
   while (!i386_push_ebp_pattern_p (pc + skip) 
+         && !i386_sub_esp_pattern_p (pc + skip)
          && pc + skip <= limit
          && insn_count++ < insn_limit)
     {
@@ -588,6 +619,25 @@ i386_analyze_frame_setup (CORE_ADDR pc, CORE_ADDR limit,
   /* APPLE LOCAL: If we're now at the limit, don't detect the push %ebp yet. */
   if (limit <= pc)  
     return end_of_frame_setup;
+
+  /* If we hit a 'sub $esp, imm8' type of instruction before we saw the
+     usual push $ebp, we'll assume that this is an -fomit-frame-pointer
+     function and the sub instruction represents the end of the prologue.  */
+  if (i386_sub_esp_pattern_p (pc))
+    {
+      int displacement = i386_sub_esp_pattern_p (pc);
+      int insn_len = i386_length_of_this_instruction (pc);
+      end_of_frame_setup = pc + insn_len;
+
+      /* I'm not sure if the following two settings are correct.... for
+         -fomit-frame-pointer code we *should* use the DWARF2 or EH CFI
+         info to do the real calculations -- all we're trying to do here
+         is skip over the prologue insns.  */
+      cache->locals = displacement;
+      cache->sp_offset = displacement;
+
+      return end_of_frame_setup;
+    }
 
   if (i386_push_ebp_pattern_p (pc))
     {
@@ -650,41 +700,16 @@ i386_analyze_frame_setup (CORE_ADDR pc, CORE_ADDR limit,
 
       /* Check for stack adjustment 
 
-	    subl $XXX, %esp
+	    subl $XXX, %esp  */
 
-	 NOTE: You can't subtract a 16-bit immediate from a 32-bit
-	 reg, so we don't have to worry about a data16 prefix.  */
-      op = read_memory_unsigned_integer (pc, 1);
-      if (op == 0x83)
-	{
-	  /* `subl' with 8-bit immediate.  */
-	  if (read_memory_unsigned_integer (pc + 1, 1) != 0xec)
-	    /* Some instruction starting with 0x83 other than `subl'.  */
-	    return pc;
+      int displacement = i386_sub_esp_pattern_p (pc);
+      int insn_len = i386_length_of_this_instruction (pc);
+      if (displacement == 0)
+        return end_of_frame_setup;
 
-	  /* `subl' with signed 8-bit immediate (though it wouldn't
-	     make sense to be negative).  */
-	  cache->locals = read_memory_integer (pc + 2, 1);
-          end_of_frame_setup = pc + 3;
-	  return end_of_frame_setup;
-	}
-      else if (op == 0x81)
-	{
-	  /* Maybe it is `subl' with a 32-bit immediate.  */
-	  if (read_memory_unsigned_integer (pc + 1, 1) != 0xec)
-	    /* Some instruction starting with 0x81 other than `subl'.  */
-	    return end_of_frame_setup;
-
-	  /* It is `subl' with a 32-bit immediate.  */
-	  cache->locals = read_memory_integer (pc + 2, 4);
-          end_of_frame_setup = pc + 6;
-	  return end_of_frame_setup;
-	}
-      else
-	{
-	  /* Some instruction other than `subl'.  */
-	  return end_of_frame_setup;
-	}
+      cache->locals = displacement;
+      end_of_frame_setup = pc + insn_len;
+      return end_of_frame_setup;
     }
   else 
     {
@@ -915,24 +940,64 @@ i386_analyze_register_saves (CORE_ADDR pc, CORE_ADDR current_pc,
 			     struct i386_frame_cache *cache)
 {
   CORE_ADDR offset = 0;
+  CORE_ADDR last_regsave_seen = pc;
   gdb_byte op;
   int i;
 
   if (cache->locals > 0)
     offset -= cache->locals;
-  for (i = 0; i < 8 && pc < current_pc; i++)
-    {
-      op = read_memory_unsigned_integer (pc, 1);
-      if (op < 0x50 || op > 0x57)
-	break;
 
-      offset -= 4;
-      cache->saved_regs[op - 0x50] = offset;
-      cache->sp_offset += 4;
-      pc++;
+  for (i = 0; i < 10 && pc < current_pc; i++)
+    {
+      CORE_ADDR next_insn;
+      next_insn = pc + i386_length_of_this_instruction (pc);
+
+      op = read_memory_unsigned_integer (pc, 1);
+
+      /* APPLE LOCAL: Detect a 'push %ebx' type instruction.  */
+      if (op >= 0x50 && op <= 0x57)
+        {
+          offset -= 4;
+          cache->saved_regs[op - 0x50] = offset;
+          cache->sp_offset += 4;
+          last_regsave_seen = next_insn;
+        }
+
+      /* Detect a 'mov %ebx,-0xc(%ebp)' type instruction.
+         aka 'MOV r/m32,r32' in Intel syntax terms.  */
+      if (op == 0x89)
+        {
+          op = read_memory_unsigned_integer (pc + 1, 1);
+          /* Look for a ModR/M byte with Mod bits 01 and R/M bits 101 
+             ([EBP] disp8), i.e. 01xxx101 */
+          if ((op & 0x45) == 0x45)
+            {
+              /* reg being saved is indicated by b4 - b6, i.e. bits nnn000 */
+              enum i386_regnum saved_reg = (op >> 3) & 0x7;
+              int off = (int8_t) read_memory_unsigned_integer (pc + 2, 1);
+
+              /* Only mark reg saves of preserved registers.  Volatile
+                 regs may have been overwritten with some other value already
+                 and this MOV that we're looking at is not a part of the 
+                 prologue.  
+                 Also don't record this save if the reg has already been 
+                 saved.  */
+              if (cache->saved_regs[saved_reg] != -1
+                  && (saved_reg == I386_EBX_REGNUM 
+                      || saved_reg == I386_EBP_REGNUM
+                      || saved_reg == I386_ESI_REGNUM
+                      || saved_reg == I386_EDI_REGNUM
+                      || saved_reg == I386_ESP_REGNUM))
+                {
+                  cache->saved_regs[saved_reg] = off;
+                  last_regsave_seen = next_insn;
+                }
+            }
+        }
+      pc = next_insn;
     }
 
-  return pc;
+  return last_regsave_seen;
 }
 
 /* Return number of args passed to a frame.
@@ -1068,7 +1133,8 @@ i386_skip_prologue (CORE_ADDR start_pc)
   gdb_byte op;
   int i;
 
-  cache.locals = -1;
+  i386_initialize_frame_cache (&cache);
+
   /* APPLE LOCAL: We may get an incorrect ENDADDR from find_pc_partial_function
      if there are multiple dylibs loading at address 0 - it's possible
      we'll end up the with endadr of another dylib's function instead of
@@ -1306,6 +1372,29 @@ i386_frame_this_id (struct frame_info *next_frame, void **this_cache,
 {
   struct i386_frame_cache *cache = i386_frame_cache (next_frame, this_cache);
 
+  /* If this is the sentinel frame, make sure the frame base we get
+     from it is readable, otherwise we aren't going to get anywhere,
+     and we should just stop now... */
+  if (get_frame_type (next_frame) == SENTINEL_FRAME)
+    {
+      struct gdb_exception e;
+      TRY_CATCH (e, RETURN_MASK_ERROR)
+	{
+	  gdb_byte buf[4];
+	  read_memory (cache->base, buf, 4);
+	}
+      if (e.reason != NO_ERROR)
+	{
+	  extern int frame_debug;
+	  if (frame_debug)
+	    printf ("Terminating backtrace of thread: 0x%lx with unreadible "
+		    "initial stack address at 0x%s.\n", 
+		    inferior_ptid.tid, paddr_nz (cache->base));
+	  *this_id = null_frame_id;
+	  return;
+	}
+    }
+
   /* This marks the outermost frame.  
      APPLE LOCAL: Don't do this if NEXT_FRAME is the sentinal
      frame, because then the id we are building should just
@@ -1445,7 +1534,10 @@ static const struct frame_unwind i386_frame_unwind =
 {
   NORMAL_FRAME,
   i386_frame_this_id,
-  i386_frame_prev_register
+  i386_frame_prev_register,
+  NULL,   /* const struct frame_data *unwind_data */
+  NULL,   /* frame_sniffer_ftype *sniffer */
+  NULL    /* frame_prev_pc_ftype *prev_pc */
 };
 
 static const struct frame_unwind *
@@ -1524,7 +1616,10 @@ static const struct frame_unwind i386_sigtramp_frame_unwind =
 {
   SIGTRAMP_FRAME,
   i386_sigtramp_frame_this_id,
-  i386_sigtramp_frame_prev_register
+  i386_sigtramp_frame_prev_register,
+  NULL,   /* const struct frame_data *unwind_data */
+  NULL,   /* frame_sniffer_ftype *sniffer */
+  NULL    /* frame_prev_pc_ftype *prev_pc */
 };
 
 static const struct frame_unwind *
@@ -2775,6 +2870,7 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Hook in the DWARF CFI frame unwinder.  */
   frame_unwind_append_sniffer (gdbarch, dwarf2_frame_sniffer);
+  dwarf2_frame_set_adjust_regnum (gdbarch, i386_adjust_frame_regnum);
 
   frame_base_set_default (gdbarch, &i386_frame_base);
 

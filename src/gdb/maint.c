@@ -40,6 +40,8 @@
 
 #include "cli/cli-decode.h"
 
+#include "objc-lang.h"
+
 extern void _initialize_maint_cmds (void);
 
 static void maintenance_command (char *, int);
@@ -167,7 +169,7 @@ maintenance_demangle (char *args, int from_tty)
       switch (current_language->la_language)
         {
         case language_objc:
-          demangled = objc_demangle (args);
+          demangled = objc_demangle (args, 0);
           break;
         case language_objcplus:
         case language_cplus:
@@ -958,8 +960,6 @@ start_timer (int *timer_var, char *timer_name, char *this_mssg)
 void
 _initialize_maint_cmds (void)
 {
-  struct cmd_list_element *tmpcmd;
-
   add_prefix_cmd ("maintenance", class_maintenance, maintenance_command, _("\
 Commands for use by GDB maintainers.\n\
 Includes commands to dump specific internal GDB structures in\n\

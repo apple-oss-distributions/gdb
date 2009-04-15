@@ -181,7 +181,6 @@ mi_interpreter_suspend (void *data)
 static struct gdb_exception
 mi_interpreter_exec (void *data, const char *command)
 {
-  static struct gdb_exception ok;
   char *tmp = alloca (strlen (command) + 1);
   strcpy (tmp, command);
   mi_execute_command_wrapper (tmp);

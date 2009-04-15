@@ -940,7 +940,6 @@ print_command_1 (char *exp, int inspect, int voidprint)
 
   if (exp && *exp)
     {
-      struct type *type;
       /* APPLE LOCAL initialize innermost_block  */
       innermost_block = NULL;
       expr = parse_expression (exp);

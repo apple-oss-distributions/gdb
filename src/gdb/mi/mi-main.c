@@ -1241,7 +1241,8 @@ mi_cmd_data_evaluate_expression (char *command, char **argv, int argc)
   
   old_chain = make_cleanup_set_restore_scheduler_locking_mode (scheduler_locking_on);
   if (unwinding_was_requested)
-    make_cleanup (set_unwind_on_signal, set_unwind_on_signal (1));
+    make_cleanup (set_unwind_on_signal_cleanup, 
+                  (void *) set_unwind_on_signal (1));
 
   expr = parse_expression (expr_string);
 
@@ -1265,19 +1266,39 @@ mi_cmd_data_evaluate_expression (char *command, char **argv, int argc)
 /* APPLE LOCAL: -target-attach
    This implements "-target-attach <PID>".  It is
    identical to the CLI command except that we raise
-   an error if we are already attached.  */
+   an error if we are already attached.  
+   We also support "-waitfor PROCESS_NAME" by passing
+   the two arguments put together to target_attach and
+   letting the implementation deal with it.  */
 
 enum mi_cmd_result
 mi_cmd_target_attach (char *command, char **argv, int argc)
 {
-  if (argc != 1) 
-    error ("mi_cmd_target_attach: Usage PID");
+  char *attach_arg;
+  struct cleanup *cleanups;
 
   if (target_has_execution)
     error ("mi_cmd_target_attach: Already debugging - detach first");
 
-  attach_command (argv[0], 0);
+  if (argc == 1)
+    {
+      attach_arg = argv[0];
+      cleanups = make_cleanup (null_cleanup, NULL);
+    }
+  else if (argc == 2 && strcmp (argv[0], "-waitfor") == 0)
+    {
+      int arg_len;
+      arg_len = strlen ("-waitfor \"") + strlen (argv[1]) + 2;
+      attach_arg = xmalloc (arg_len);
+      cleanups = make_cleanup (xfree, attach_arg);
+      snprintf (attach_arg, arg_len, "-waitfor \"%s\"", argv[1]);
+    }
+  else 
+    error ("mi_cmd_target_attach: Usage PID|-waitfor \"PROCESS\"");
 
+  attach_command (attach_arg, 0);
+
+  do_cleanups (cleanups);
   return MI_CMD_DONE;
 }
 
@@ -1832,7 +1853,6 @@ captured_mi_execute_command (struct ui_out *uiout, void *data)
 
     case CLI_COMMAND:
       {
-	char *argv[2];
 	/* A CLI command was read from the input stream.  */
 	/* This "feature" will be removed as soon as we have a
 	   complete set of mi commands.  */
@@ -1845,6 +1865,7 @@ captured_mi_execute_command (struct ui_out *uiout, void *data)
 	   mi_execute_cli_command, which isn't perfect either.  */
 
 #if 0
+	char *argv[2];
 	/* Call the "console" interpreter.  */
 	argv[0] = "console";
 	argv[1] = context->command;
@@ -2246,7 +2267,7 @@ mi_execute_async_cli_command (char *mi, char *args, int from_tty)
 	  /* If we didn't manage to set the inferior going, that's
 	     most likely an error... */
 	  discard_all_continuations ();
-	  if (arg->exec_error_cleanups != (struct cleanups *) -1)
+	  if (arg->exec_error_cleanups != (struct cleanup *) -1)
 	    discard_exec_error_cleanups (arg->exec_error_cleanups);
 	  free_continuation_arg (arg);
 	  if (except.message != NULL)
@@ -2312,10 +2333,10 @@ mi_exec_async_cli_cmd_continuation (struct continuation_arg *in_arg)
 	  arg->cleanups = NULL;
 	}
       
-      if (arg->exec_error_cleanups != (struct cleanups *) -1)
+      if (arg->exec_error_cleanups != (struct cleanup *) -1)
 	{
 	  discard_exec_error_cleanups (arg->exec_error_cleanups);
-	  arg->exec_error_cleanups = -1;
+	  arg->exec_error_cleanups = (struct cleanup *) -1;
 	}
 
       fputs_unfiltered ("*stopped", raw_stdout);

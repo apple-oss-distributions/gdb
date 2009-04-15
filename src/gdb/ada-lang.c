@@ -1616,13 +1616,11 @@ static struct type *
 decode_packed_array_type (struct type *type)
 {
   struct symbol *sym;
-  struct block **blocks;
   const char *raw_name = ada_type_name (ada_check_typedef (type));
   char *name = (char *) alloca (strlen (raw_name) + 1);
   char *tail = strstr (raw_name, "___XP");
   struct type *shadow_type;
   long bits;
-  int i, n;
 
   type = desc_base_type (type);
 
@@ -3750,7 +3748,6 @@ add_defn_to_vec (struct obstack *obstackp,
                  struct block *block, struct symtab *symtab)
 {
   int i;
-  size_t tmp;
   struct ada_symbol_info *prevDefns = defns_collected (obstackp, 0);
 
   if (SYMBOL_TYPE (sym) != NULL)
@@ -7145,7 +7142,7 @@ ada_evaluate_subexp (struct type *expect_type, struct expression *exp,
                      int *pos, enum noside noside)
 {
   enum exp_opcode op;
-  int tem, tem2, tem3;
+  int tem;
   int pc;
   struct value *arg1 = NULL, *arg2 = NULL, *arg3;
   struct type *type;

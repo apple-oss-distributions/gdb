@@ -38,6 +38,7 @@
 #include "wrapper.h"
 #include "cp-abi.h"
 #include "gdb_assert.h"
+#include "exceptions.h"
 
 /* These variables point to the objects
    representing the predefined C data types.  */
@@ -570,7 +571,6 @@ make_qualified_type (struct type *type, int new_flags,
 struct type *
 make_type_with_address_space (struct type *type, int space_flag)
 {
-  struct type *ntype;
   int new_flags = ((TYPE_INSTANCE_FLAGS (type)
 		    & ~(TYPE_FLAG_CODE_SPACE | TYPE_FLAG_DATA_SPACE
 		        | TYPE_FLAG_ADDRESS_CLASS_ALL))
@@ -594,8 +594,6 @@ struct type *
 make_cv_type (int cnst, int voltl, struct type *type, struct type **typeptr)
 {
   struct type *ntype;	/* New type */
-  struct type *tmp_type = type;	/* tmp type */
-  struct objfile *objfile;
 
   int new_flags = (TYPE_INSTANCE_FLAGS (type)
 		   & ~(TYPE_FLAG_CONST | TYPE_FLAG_VOLATILE));
@@ -1718,7 +1716,6 @@ check_typedef (struct type *type)
 	}
     }
 
- no_circular_types:
   /* FIXME - if you have a typedef for a struct where the typedef & the
   struct have the same name, the target_type of the TYPEDEF's type points
   back to the type itself.  This is wrong, and causes grief in many places
@@ -3836,6 +3833,7 @@ build_builtin_bitfield (const char *name, uint32_t size,
 {
   struct type *t;
   t = init_composite_type (xstrdup (name), TYPE_CODE_STRUCT);
+  TYPE_NAME (t) = name;
   TYPE_NFIELDS (t) = num_bitfields;
   const int fields_size = sizeof (struct field) * TYPE_NFIELDS (t);
   TYPE_FIELDS (t) = xmalloc (fields_size);
@@ -3854,15 +3852,87 @@ build_builtin_bitfield (const char *name, uint32_t size,
   return t;
 }
 
-/* APPLE LOCAL END.  */
+/* APPLE LOCAL: 
+   This returns the "dynamic type" of the generic Apple "Block"
+   structure.  Unlike the rtti get dynamic type functions, this returns
+   the dynamic type which is of the same type as the type passed in, so
+   if we get a TYPE_CODE_STRUCT we will return a TYPE_CODE_STRUCT for the
+   dynamic type, if we get a TYPE_CODE_PTR, we will return a pointer.
+
+   FIXME, at this point, we should have some extensible runtime
+   module that provides dynamic type callouts.  But for now just add 'em by 
+   hand.  */
+
+struct type *
+get_closure_dynamic_type (struct value *in_value)
+{
+  struct type *deref;
+  struct type *dynamic_type = NULL;
+  struct type *base_type = check_typedef (value_type (in_value));
+
+  if (TYPE_CODE (base_type) == TYPE_CODE_PTR
+      || TYPE_CODE (base_type) == TYPE_CODE_REF)
+    deref = TYPE_TARGET_TYPE (base_type);
+  else if (TYPE_CODE (base_type) == TYPE_CODE_STRUCT)
+    deref = base_type;
+  else
+    return NULL;
+
+  if (deref
+      && ((TYPE_FLAGS (deref) & TYPE_FLAG_APPLE_CLOSURE) != 0))
+    {
+      /* This is the Apple Closure.  It has a field "FuncPtr" whose
+	 value is the implementation function for this closure.  And the
+	 first argument of that function is has the real type for this
+	 block pointer structure.  */
+      struct value *funcPtr_val;
+      struct gdb_exception e;
+
+      TRY_CATCH (e, RETURN_MASK_ALL)
+	{
+	  funcPtr_val = value_struct_elt (&in_value, NULL, "FuncPtr", NULL, "");
+	  
+	  if (funcPtr_val != NULL)
+	    {
+	      CORE_ADDR func_addr;
+	      struct symbol *func_sym;
+	      func_addr = value_as_address (funcPtr_val);
+	      func_sym = find_pc_function (func_addr);
+	      if (func_sym != NULL)
+		{
+		  /* Look for the field called "_self".  That's
+		     the type pointer for the real type.  */
+		  struct type *func_type;
+		  func_type = SYMBOL_TYPE (func_sym);
+		  if (TYPE_NFIELDS (func_type) > 0)
+		    {
+		      dynamic_type = TYPE_FIELD_TYPE (func_type, 0);
+		      if (TYPE_CODE (dynamic_type) != TYPE_CODE_PTR)
+			dynamic_type = NULL;
+		      else
+			{
+			  if (TYPE_CODE (base_type) == TYPE_CODE_STRUCT)
+			    dynamic_type = TYPE_TARGET_TYPE (dynamic_type);
+			  else if (TYPE_CODE (base_type) == TYPE_CODE_REF)
+			    {
+			      dynamic_type = make_reference_type (dynamic_type, NULL);
+			    }
+			}
+		    }
+		}
+	    }
+	}
+    }
+
+  return dynamic_type;
+}
+/* END APPLE LOCAL  */
 
 
 extern void _initialize_gdbtypes (void);
 void
 _initialize_gdbtypes (void)
 {
-  struct cmd_list_element *c;
-
   builtin_type_int0 =
     init_type (TYPE_CODE_INT, 0 / 8,
 	       0,

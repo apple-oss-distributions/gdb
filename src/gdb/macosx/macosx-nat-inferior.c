@@ -94,8 +94,8 @@
 #elif defined (TARGET_POWERPC)
 #define SINGLE_STEP 5
 #elif defined (TARGET_ARM)
-#define SINGLE_STEP 5  /* ARM HACK - the system doesn't support 
-			  hardware single stepping...  */
+#define SINGLE_STEP 5
+#include "arm-macosx-tdep.h"
 #else
 #error "unknown architecture"
 #endif
@@ -2103,9 +2103,7 @@ macosx_child_create_inferior (char *exec_file, char *allargs, char **env,
   char *fileptr;
   posix_spawnattr_t attr;
   int retval;
-  size_t copied;
   cpu_type_t cpu = 0;
-  int count = 0;
   const char *osabi_name = gdbarch_osabi_name (gdbarch_osabi (current_gdbarch));
   struct gdb_exception e;
 
@@ -2143,35 +2141,42 @@ macosx_child_create_inferior (char *exec_file, char *allargs, char **env,
   if (strcmp (osabi_name, "Darwin") == 0)
     {
       cpu = CPU_TYPE_POWERPC;
-      count = 1;
     }
   else if (strcmp (osabi_name, "Darwin64") == 0)
     {
       cpu = CPU_TYPE_POWERPC64;
-      count = 1;
     }
 #elif defined (TARGET_I386)
   if (strcmp (osabi_name, "Darwin") == 0)
     {
       cpu = CPU_TYPE_I386;
-      count = 1;
     }
   else if (strcmp (osabi_name, "Darwin64") == 0)
     {
       cpu = CPU_TYPE_X86_64;
-      count = 1;
     }
 #elif defined (TARGET_ARM)
+
+#if 0
+  /* Don't set the CPU type for ARM as we currently can't reliably set
+     the CPU type with posix_spawnattr_setbinpref_np as it will pick the 
+     first CPU type that matches CPU_TYPE_ARM which isn't necessarily the
+     one that we want to run. If we ever want to use 
+     posix_spawnattr_setbinpref_np for ARM, we will also need a way to set
+     the CPU subtype.  */
   if (strcmp (osabi_name, "Darwin") == 0)
     {
       cpu = CPU_TYPE_ARM;
-      count = 1;
     }
   else if (strcmp (osabi_name, "DarwinV6") == 0)
     {
       cpu = CPU_TYPE_ARM;
-      count = 1;
     }
+  else if (strcmp (osabi_name, "DarwinV7") == 0)
+    {
+      cpu = CPU_TYPE_ARM;
+    }
+#endif
 #endif
 
   retval = posix_spawnattr_init (&attr);
@@ -2182,14 +2187,15 @@ macosx_child_create_inferior (char *exec_file, char *allargs, char **env,
   if (retval != 0)
     error ("Couldn't add POSIX_SPAWN_SETEXEC to attributes, error: %d", retval);
 
-  if (count == 1)
+  if (cpu != 0)
     {
+      size_t copied = 0;	
       retval = posix_spawnattr_setbinpref_np(&attr, 1, &cpu, &copied);
       if (retval != 0 || copied != 1)
 	  error ("Couldn't set the binary preferences, error: %d", retval);
     }
   retval = posix_spawnattr_setpgroup (&attr, debug_setpgrp);
-  if (retval != 0 || copied != 1)
+  if (retval != 0)
     error ("Couldn't set the process group, error: %d", retval);
 
   retval = posix_spawnp (&new_pid, fileptr, NULL,  &attr, argv, env);
@@ -2234,7 +2240,7 @@ macosx_child_create_inferior (char *exec_file, char *allargs, char **env,
   if (ptid_equal (inferior_ptid, null_ptid))
     return;
 
-  macosx_dyld_create_inferior_hook ();
+  macosx_dyld_create_inferior_hook ((CORE_ADDR) - 1);
 
   attach_flag = 0;
 
@@ -2519,26 +2525,6 @@ macosx_check_safe_call (void)
 			  CHECK_SCHEDULER_VALUE);
 }
 
-void
-macosx_print_extra_stop_info (int code, CORE_ADDR address)
-{
-  ui_out_text (uiout, "Reason: ");
-  switch (code)
-    {
-    case KERN_PROTECTION_FAILURE:
-      ui_out_field_string (uiout, "access-reason", "KERN_PROTECTION_FAILURE");
-      break;
-    case KERN_INVALID_ADDRESS:
-      ui_out_field_string (uiout, "access-reason", "KERN_INVALID_ADDRESS");
-      break;
-    default:
-      ui_out_field_int (uiout, "access-reason", code);
-    }
-  ui_out_text (uiout, " at address: ");
-  ui_out_field_core_addr (uiout, "address", address);
-  ui_out_text (uiout, "\n");
-}
-
 /* Info for a random fork (actually a random process). When fork-based checkpoints
    are fully functional, this can go away.  */
 
@@ -2585,7 +2571,7 @@ cpfork_info (char *args, int from_tty)
 
       if (info.protection & VM_PROT_WRITE)
 	{
-	  printf("addr 0x%x size 0x%x (", address, size);
+	  printf("addr 0x%s size 0x%s (", paddr_nz (address), paddr_nz (size));
 	  {
 	    int rslt;
 	    vm_offset_t mempointer;       /* local copy of inferior's memory */
@@ -2724,7 +2710,8 @@ fork_memcache_put (struct checkpoint *cp)
 	  mach_msg_type_number_t memcopied;     /* for vm_read to use */
 
 	  if (0)
-	    printf("count now %d addr 0x%x size 0x%x\n", count, address, size);
+	    printf("count now %d addr 0x%s size 0x%s\n", count, 
+                   paddr_nz (address), paddr_nz (size));
 	  
 	  rslt = mach_vm_read (itask, address, size, &mempointer, &memcopied);
 
@@ -2823,6 +2810,12 @@ _initialize_macosx_inferior ()
   macosx_child_ops.to_check_safe_call = macosx_check_safe_call;
   macosx_child_ops.to_allocate_memory = macosx_allocate_space_in_inferior;
   macosx_child_ops.to_check_is_objfile_loaded = dyld_is_objfile_loaded;
+#if defined (TARGET_ARM)
+  macosx_child_ops.to_keep_going = arm_macosx_keep_going;
+  macosx_child_ops.to_save_thread_inferior_status = arm_macosx_save_thread_inferior_status;
+  macosx_child_ops.to_restore_thread_inferior_status = arm_macosx_restore_thread_inferior_status;
+  macosx_child_ops.to_free_thread_inferior_status = arm_macosx_free_thread_inferior_status;
+#endif
   macosx_child_ops.to_has_thread_control = tc_schedlock | tc_switch;
 
   macosx_child_ops.to_find_exception_catchpoints

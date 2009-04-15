@@ -61,6 +61,9 @@
 
 #include "gdb_curses.h"
 
+#include "ui-out.h"
+#include "cli-out.h"
+
 #include "readline/readline.h"
 
 #ifdef USE_MMALLOC
@@ -329,6 +332,32 @@ static void
 do_restore_uiout_cleanup (void *arg)
 {
   uiout = (struct ui_out *) arg;
+}
+
+static void
+do_restore_output (void *data)
+{
+  ui_file_rewind (gdb_null);
+  uiout = (struct ui_out *) data;
+}
+
+/* Use this call if you want to suppress output.  It does this by
+   swapping the ui_out you pass in with another that we will just
+   dump later.  Then just call the cleanup returned to turn the
+   output back on again.  */
+struct cleanup *
+make_cleanup_ui_out_suppress_output (struct ui_out *cur_uiout)
+{
+  struct ui_out *stored_uiout;
+  static struct ui_out *null_uiout = NULL;
+  if (null_uiout == NULL)
+    null_uiout = cli_out_new (gdb_null);
+  if (null_uiout == NULL)
+    error ("Unable to open null uiout in utils.c.");
+  stored_uiout = uiout;
+  uiout = null_uiout;
+
+  return make_cleanup (do_restore_output, stored_uiout);
 }
 
 static void
@@ -998,7 +1027,7 @@ perror_with_name (const char *string)
   bfd_set_error (bfd_error_no_error);
   errno = 0;
 
-  error (_("%s."), combined);
+  error ("%s", combined);
 }
 
 /* Print the system error message for ERRCODE, and also mention STRING
@@ -1368,8 +1397,6 @@ xasprintf (char **ret, const char *format, ...)
 void
 xvasprintf (char **ret, const char *format, va_list ap)
 {
-  char *tmp;
-  int status = vasprintf (ret, format, ap);
   /* NULL could be returned due to a memory allocation problem; a
      badly format string; or something else. */
   if ((*ret) == NULL)
@@ -2845,8 +2872,6 @@ pagination_off_command (char *arg, int from_tty)
 void
 initialize_utils (void)
 {
-  struct cmd_list_element *c;
-
   add_setshow_uinteger_cmd ("width", class_support, &chars_per_line, _("\
 Set number of characters gdb thinks are in a line."), _("\
 Show number of characters gdb thinks are in a line."), NULL,

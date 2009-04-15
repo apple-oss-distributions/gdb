@@ -169,8 +169,6 @@ get_current_source_symtab_and_line (void)
 void
 set_default_source_symtab_and_line (void)
 {
-  struct symtab_and_line cursal;
-
   if (!have_full_symbols () && !have_partial_symbols ())
     error (_("No symbol table is loaded.  Use the \"file\" command."));
 
@@ -1160,7 +1158,6 @@ void
 find_source_lines (struct symtab *s, int desc)
 {
   struct stat st;
-  char *data, *p, *end;
   int nlines = 0;
   int lines_allocated = 1000;
   int *line_charpos;
@@ -1213,7 +1210,7 @@ find_source_lines (struct symtab *s, int desc)
   {
     struct cleanup *old_cleanups;
     int eol = 0;
-    char c, oldc;
+    char oldc;
     register char *data, *p, *end;
 
     /* st_size might be a large type, but we only support source files whose 
@@ -1916,7 +1913,7 @@ The matching line number is also stored as the value of \"$_\"."));
       add_com_alias ("?", "reverse-search", class_files, 0);
     }
 
-  add_setshow_uinteger_cmd ("listsize", class_support, &lines_to_list, _("\
+  add_setshow_integer_cmd ("listsize", class_support, &lines_to_list, _("\
 Set number of source lines gdb will list by default."), _("\
 Show number of source lines gdb will list by default."), NULL,
 			    NULL,

@@ -15,7 +15,6 @@
 @implementation MyClass
 + newWithArg: arg
 {
-  [super init];
   if (self) {
     id obj = [self new];
     [obj takeArg: arg];

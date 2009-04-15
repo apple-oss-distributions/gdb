@@ -34,11 +34,11 @@ set binfile ${objdir}/${subdir}/${testfile}
 # Objective-C program compilation isn't standard. We need to figure out
 # which libraries to link in. Most of the time it uses pthread
 #
-if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug "libs=-lobjc -lpthread"} ] != "" } {
+if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug "libs=-lobjc -lpthread -mmacosx-version-min=10.5"} ] != "" } {
   # Solaris requires posix4
-  if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug "libs=-lobjc -lpthread -lposix4"} ] != "" } {
+  if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug "libs=-lobjc -lpthread -lposix4 -mmacosx-version-min=10.5"} ] != "" } {
 
-    if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug "libs=-lobjc"} ] != "" } {
+    if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug "libs=-lobjc -mmacosx-version-min=10.5"} ] != "" } {
 
        gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
     }

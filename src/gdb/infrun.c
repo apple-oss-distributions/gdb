@@ -54,6 +54,8 @@
 /* APPLE LOCAL - subroutine inlining  */
 #include "inlining.h"
 
+#include "macosx-nat-dyld.h"
+
 /* APPLE LOCAL: need objfile.h for pc_set_load_state.  */
 #include "objfiles.h"
 
@@ -605,7 +607,7 @@ set_scheduler_locking_mode (enum scheduler_locking_mode new_mode)
   else if (scheduler_mode == schedlock_step)
     old_mode = scheduler_locking_step;
   else
-    error ("Invalid old scheduler mode: %d", (int) scheduler_mode);
+    error ("Invalid old scheduler mode: %s", scheduler_mode);
 
   switch (new_mode)
     {
@@ -1122,8 +1124,6 @@ struct execution_control_state
   enum infwait_states infwait_state;
   ptid_t waiton_ptid;
   int wait_some_more;
-  /* APPLE LOCAL: Arm switch jumptable hackery.  */
-  int stepping_through_switch_glue;
 };
 
 void init_execution_control_state (struct execution_control_state *ecs);
@@ -1289,8 +1289,6 @@ init_execution_control_state (struct execution_control_state *ecs)
   /* APPLE LOCAL: Set code to -1 - means nothing interesting here.  */
   ecs->ws.code = -1;
   ecs->wp = &(ecs->ws);
-  /* APPLE LOCAL: Start off with 0  */
-  ecs->stepping_through_switch_glue = 0;
 }
 
 /* Return the cached copy of the last pid/waitstatus returned by
@@ -2201,7 +2199,7 @@ process_event_stop_test:
 	  target_terminal_ours_for_output ();
 	  print_stop_reason (SIGNAL_RECEIVED, stop_signal);
 	  /* APPLE LOCAL begin extra stop info */
-#ifdef NM_NEXTSTEP
+#ifdef TM_NEXTSTEP
 	  /* We have more interesting info on the target
 	     side to print here.  If you want to do this correctly,
 	     you would change print_stop_reason to take the full
@@ -2588,25 +2586,19 @@ extern void macosx_print_extra_stop_info (int, CORE_ADDR);
      test for stepping.  But, if not stepping,
      do not stop.  */
 
-  /* If we are currently stepping through the glue that implements
-     switch then keep going till we're out.  */
+  /* APPLE LOCAL: complex step support. Check if the target to see if it 
+     needs to keep going.  */
 
-#ifdef IN_SWITCH_GLUE
-  if (ecs->stepping_through_switch_glue)
+  if (target_keep_going(stop_pc))
     {
-      if (IN_SWITCH_GLUE (stop_pc))
-	{
-	  if (debug_infrun)
-	    fprintf_unfiltered (gdb_stdlog, "infrun: stepping through switch glue at %s.\n",
-				paddr_nz (stop_pc));
-	  ecs->another_trap = 1;
-	  keep_going (ecs);
-	  return;
-	}
-      else
-	ecs->stepping_through_switch_glue = 0;
+      if (debug_infrun)
+	fprintf_unfiltered (gdb_stdlog, 
+			    "infrun: target_keep_going (%s) returned true.\n",
+			    paddr_nz (stop_pc));
+      ecs->another_trap = 1;
+      keep_going (ecs);
+      return;
     }
-#endif /* IN_SWITCH_GLUE */
 
   /* Are we stepping to get the inferior out of the dynamic linker's
      hook (and possibly the dld itself) after catching a shlib
@@ -2804,18 +2796,6 @@ extern void macosx_print_extra_stop_info (int, CORE_ADDR);
       if (debug_infrun)
 	 fprintf_unfiltered (gdb_stdlog, "infrun: stepped into subroutine\n");
 
-#ifdef IN_SWITCH_GLUE
-      if (IN_SWITCH_GLUE (stop_pc))
-	{
-	  ecs->stepping_through_switch_glue = 1;
-	  if (debug_infrun)
-	    fprintf_unfiltered (gdb_stdlog, "infrun: stepped into switch glue at %s.\n",
-				paddr_nz (stop_pc));
-	  ecs->another_trap = 1;
-	  keep_going (ecs);
-	  return;
-	}
-#endif
       if ((step_over_calls == STEP_OVER_NONE)
 	  || ((step_range_end == 1)
 	      && in_prologue (prev_pc, ecs->stop_func_start)))
@@ -3844,20 +3824,20 @@ done:
    call hook_stop - especially when running
    functions in the objc parser.  */
 
-static int suppress_hook_stop_p;
+static void *suppress_hook_stop_p;
 
 static void
 do_cleanup_suppress_hook_stop (void *arg)
 {
-  suppress_hook_stop_p = (int) arg;
+  suppress_hook_stop_p = arg;
 }
 
 struct cleanup *
 make_cleanup_suppress_hook_stop ()
 {
-  int old_value = suppress_hook_stop_p;
-  suppress_hook_stop_p = 1;
-  return make_cleanup (do_cleanup_suppress_hook_stop, (void *) old_value);
+  void *old_value = suppress_hook_stop_p;
+  suppress_hook_stop_p = (void *) 1;
+  return make_cleanup (do_cleanup_suppress_hook_stop, old_value);
 }
 /* END APPLE LOCAL */
 static int
@@ -4262,6 +4242,9 @@ struct inferior_status
   int breakpoint_proceeded;
   int restore_stack_info;
   int proceed_to_finish;
+
+  /* APPLE LOCAL target specific inferior_status support.  */
+  void *tdep_inferior_status;
 };
 
 void
@@ -4311,10 +4294,20 @@ save_inferior_status (int restore_stack_info)
 
   inf_status->registers = regcache_dup (current_regcache);
 
-  inf_status->selected_frame_id = get_frame_id (deprecated_selected_frame);
+  /* APPLE LOCAL: use get_selected_frame not deprecated_selected_frame 
+     otherwise we'll store a NULL frame here if there's nothing selected,
+     and the restore_selected_frame will complain.  */
+  inf_status->selected_frame_id = get_frame_id (get_selected_frame (NULL));
+
   /* APPLE LOCAL: Store stop_ptid.  */
   inf_status->stop_ptid = inferior_ptid;
 
+  /* APPLE LOCAL subroutine inlining  */
+  inlined_subroutine_save_before_dummy_call ();
+
+  /* APPLE LOCAL target specific inferior_status support.  */
+  inf_status->tdep_inferior_status = target_save_thread_inferior_status ();
+  
   return inf_status;
 }
 
@@ -4367,6 +4360,9 @@ restore_inferior_status (struct inferior_status *inf_status)
   regcache_xfree (stop_registers);
   stop_registers = inf_status->stop_registers;
 
+  /* APPLE LOCAL subroutine inlining  */
+  inlined_subroutine_restore_after_dummy_call ();
+
   flush_inlined_subroutine_frames ();
 
   /* The inferior can be gone if the user types "print exit(0)"
@@ -4398,6 +4394,12 @@ restore_inferior_status (struct inferior_status *inf_status)
 
     }
 
+  /* APPLE LOCAL target specific inferior_status support.  */
+  if (inf_status->tdep_inferior_status != NULL)
+    {
+      target_restore_thread_inferior_status (inf_status->tdep_inferior_status);
+      target_free_thread_inferior_status (inf_status->tdep_inferior_status);
+    }
   xfree (inf_status);
 }
 
@@ -4420,6 +4422,9 @@ discard_inferior_status (struct inferior_status *inf_status)
   bpstat_clear (&inf_status->stop_bpstat);
   regcache_xfree (inf_status->registers);
   regcache_xfree (inf_status->stop_registers);
+  /* APPLE LOCAL target specific inferior_status support.  */
+  if (inf_status->tdep_inferior_status != NULL)
+    target_free_thread_inferior_status (inf_status->tdep_inferior_status);
   xfree (inf_status);
 }
 

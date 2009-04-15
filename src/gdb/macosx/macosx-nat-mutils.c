@@ -1054,25 +1054,17 @@ macosx_allocate_space_in_inferior (int len)
 {
   int ret;
   struct macosx_alloc_data alloc;
-  struct ui_file *saved_gdb_stderr;
-  struct ui_out *null_uiout = NULL;
   struct cleanup *cleanups;
 
-  null_uiout = cli_out_new (gdb_null);
-  if (null_uiout == NULL)
-    error ("Unable to allocate memory: unable to allocate null uiout.");
-  cleanups = make_cleanup_ui_out_delete (null_uiout);
-  saved_gdb_stderr = gdb_stderr;
-  gdb_stderr = gdb_null;
+  cleanups = make_cleanup_ui_out_suppress_output (uiout);
 
   alloc.len = len;
   alloc.addr = 0;
 
-  ret = catch_exceptions (null_uiout, macosx_allocate_space_in_inferior_helper,
+  ret = catch_exceptions (uiout, macosx_allocate_space_in_inferior_helper,
                           &alloc, RETURN_MASK_ALL);
 
   do_cleanups (cleanups);
-  gdb_stderr = saved_gdb_stderr;
 
   if (ret >= 0)
     return alloc.addr;

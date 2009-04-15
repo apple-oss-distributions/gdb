@@ -115,14 +115,14 @@ mi_gdb_test "80-var-create objectVar * object" \
 mi_continue_to 1 {-\[MyClass randomFunc\]} ".*" $srcfile $randomFunc_line_number "continue to randomFunc"
 
 mi_gdb_test "101-var-create firstSelf * self" \
-    {101\^done,name="firstSelf",numchild="3",type="class MyClass \*",typecode="PTR",dynamic_type="class MyClass \*",in_scope="true",block_start_addr=".*",block_end_addr=".*"} "randomFunc called for MyClass object"
+    {101\^done,name="firstSelf",numchild="3",type="MyClass \*",typecode="PTR",dynamic_type="MyClass \*",in_scope="true",block_start_addr=".*",block_end_addr=".*"} "randomFunc called for MyClass object"
 mi_gdb_test "102-var-delete firstSelf" \
     {102\^done,ndeleted="1"} "Delete firstSelf"
 
 mi_finish_to main ".*" "$srcfile" ".*" ".*" {\(struct objc_object \*\) 0x.*} "finished from randomFunc first time"
 
 mi_gdb_test "103-var-update objectVar" \
-    {103\^done,changelist=\[varobj={name="objectVar",in_scope="true",type_changed="true",new_type="(id|struct objc_object \*)",new_dynamic_type="class MyClass \*",new_typecode="PTR",new_num_children="3"}\]} \
+    {103\^done,changelist=\[varobj={name="objectVar",in_scope="true",type_changed="true",new_type="(id|struct objc_object \*)",new_dynamic_type="MyClass \*",new_typecode="PTR",new_num_children="3"}\]} \
     "Update objectVar as MyClass"
 
 mi_gdb_test "104-var-list-children objectVar" \
@@ -131,7 +131,7 @@ mi_gdb_test "104-var-list-children objectVar" \
 mi_continue_to 1 {-\[MyClass randomFunc\]} ".*" $srcfile $randomFunc_line_number "continue to randomFunc"
 
 mi_gdb_test "105-var-create secondSelf * self" \
-    {105\^done,name="secondSelf",numchild="4",type="class MyClass \*",typecode="PTR",dynamic_type="class MyChild \*",in_scope="true",block_start_addr=".*",block_end_addr=".*"} "randomFunc called for MyChild object"
+    {105\^done,name="secondSelf",numchild="4",type="MyClass \*",typecode="PTR",dynamic_type="MyChild \*",in_scope="true",block_start_addr=".*",block_end_addr=".*"} "randomFunc called for MyChild object"
 
 mi_gdb_test "106-var-list-children secondSelf" \
     {106\^done,numchild="4",children=\[child={name="secondSelf.isa",exp="isa",numchild="0",type="(Class|struct objc_class \*)",typecode="PTR",dynamic_type=""},child={name="secondSelf.object",exp="object",numchild="3",type="(id|struct objc_object \*)",typecode="PTR",dynamic_type="class NSConstantString \*"},child={name="secondSelf._object2",exp="_object2",numchild="3",type="(id|struct objc_object \*)",typecode="PTR",dynamic_type="class NSConstantString \*"},child={name="secondSelf.some_val",exp="some_val",numchild="0",type="int",typecode="INT",dynamic_type=""}\]} "List secondSelf's children"
@@ -145,7 +145,7 @@ mi_gdb_test "108-var-delete secondSelf" \
 mi_finish_to main ".*" "$srcfile" ".*" ".*" {\(struct objc_object \*\) 0x.*} "finished from randomFunc second time"
 
 mi_gdb_test "109-var-update objectVar" \
-    {109\^done,changelist=\[varobj={name="objectVar",in_scope="true",type_changed="true",new_type="(id|struct objc_object \*)",new_dynamic_type="class MyChild \*",new_typecode="PTR",new_num_children="4"}\]} \
+    {109\^done,changelist=\[varobj={name="objectVar",in_scope="true",type_changed="true",new_type="(id|struct objc_object \*)",new_dynamic_type="MyChild \*",new_typecode="PTR",new_num_children="4"}\]} \
     "Update objectVar as MyChild"
 
 mi_gdb_test "110-var-list-children objectVar" \

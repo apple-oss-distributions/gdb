@@ -257,8 +257,6 @@ type_from_class (struct value *clas)
   struct value *utf8_name;
   char *nptr;
   CORE_ADDR addr;
-  struct block *bl;
-  struct dict_iterator iter;
   int is_array = 0;
 
   type = check_typedef (value_type (clas));
@@ -1015,7 +1013,6 @@ java_class_name_from_physname (const char *physname)
 {
   char *ret = NULL;
   const char *end;
-  int depth = 0;
   char *demangled_name = java_demangle (physname, DMGL_PARAMS | DMGL_ANSI);
 
   if (demangled_name == NULL)

@@ -141,7 +141,9 @@ proc mi_gdb_start { args } {
 	set mi_inferior_tty_name $spawn_out(slave,name)
     }
 
-    set res [remote_spawn host "$GDB -nw $GDBFLAGS $MIFLAGS [host_info gdb_opts]"];
+# APPLE LOCAL: Change gdb_opts from host_info to target_info because I don't
+# see how you're supposed to add stuff to the host_info collection.  whatever.
+    set res [remote_spawn host "$GDB -nw $GDBFLAGS $MIFLAGS [target_info gdb_opts]"];
     if { $res < 0 || $res == "" } {
 	perror "Spawning $GDB failed."
 	return 1;
