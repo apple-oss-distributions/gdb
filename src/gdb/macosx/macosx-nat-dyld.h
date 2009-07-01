@@ -75,13 +75,29 @@ struct macosx_dyld_thread_status
   CORE_ADDR dyld_addr;
   CORE_ADDR dyld_slide;
   const char *dyld_name;
-  
-  /* The dyld mach header as found in inferior memory.  */
-  struct mach_header dyld_mem_header;
+
+  /* When we're attaching to a process and dyld has slid (e.g. when attaching
+     to something running under Rosetta translation, there is a native dyld
+     which we don't see and a ppc dyld that we do see, the ppc dyld has been
+     slid to a new address range), at the very early startup the minsyms have
+     their unslid addresses and we need to apply dyld_slide to them.  But once
+     we slide the dyld objfile to its actual load address, we need to stop that
+     by-hand address translation in lookup_dyld_address() */
+  int dyld_minsyms_have_been_relocated;
+
   enum macosx_dyld_thread_state state;
 
   struct dyld_objfile_info current_info;
   struct dyld_path_info path_info;
+  
+  /* This supports the Leopard "shared cache".  If a dylib is 
+     in any of the "shared cache ranges" then it will have been
+     prebound into a cache.  */
+  CORE_ADDR dyld_shared_cache_ranges;
+  /* The number of cache ranges.  -1 means the cache
+     data hasn't been read yet.  */
+  int dyld_num_shared_cache_ranges;
+  struct dyld_cache_range *dyld_shared_cache_array;
 
   struct pre_run_memory_map *pre_run_memory_map;
 };
@@ -102,12 +118,11 @@ int macosx_solib_add (const char *filename, int from_tty,
 void macosx_dyld_thread_init (macosx_dyld_thread_status *s);
 void macosx_add_shared_symbol_files ();
 void macosx_init_dyld_from_core ();
-void macosx_dyld_create_inferior_hook (CORE_ADDR all_image_info_addr);
+void macosx_dyld_create_inferior_hook ();
 
 void macosx_init_dyld (struct macosx_dyld_thread_status *s,
                        struct objfile *o, bfd *abfd);
 void macosx_init_dyld_symfile (struct objfile *o, bfd *abfd);
-enum gdb_osabi macosx_get_osabi_from_dyld_entry (bfd *abfd);
 void macosx_dyld_mourn_inferior (void);
 
 int target_is_remote ();
@@ -122,6 +137,7 @@ int macosx_get_malloc_inited (void);
 struct section_offsets *get_sectoffs_for_shared_cache_dylib (struct dyld_objfile_entry *, CORE_ADDR);
 int target_read_mach_header (CORE_ADDR addr,
                             struct mach_header *mh);
+int target_get_mach_header_size (struct mach_header *mh);
 int target_read_load_command (CORE_ADDR addr,
                                     struct load_command *load_cmd);
 int target_read_uuid (CORE_ADDR addr, unsigned char *uuid);

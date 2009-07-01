@@ -97,14 +97,6 @@ extern void
 				   int (*signal_frame_p) (struct gdbarch *,
 							  struct frame_info *));
 
-/* Set the architecture-specific adjustment of .eh_frame and .debug_frame
-   register numbers.  */
-
-extern void
-  dwarf2_frame_set_adjust_regnum (struct gdbarch *gdbarch,
-				  int (*adjust_regnum) (struct gdbarch *,
-							int, int));
-
 /* Return the frame unwind methods for the function that contains PC,
    or NULL if it can't be handled by DWARF CFI frame unwinder.  */
 

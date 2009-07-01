@@ -104,7 +104,7 @@ int main (int argc, const char * argv[]) {
 void stringmaker (void) {
     NSString *mystr = @"Hello, World!"; /* this should be the first line in stringmaker */
 
-    NSLog (mystr);
+    NSLog (@"%@", mystr);
 }
 
 int return_5 (void ) { return 5; }

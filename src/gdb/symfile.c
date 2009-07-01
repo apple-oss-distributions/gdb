@@ -145,7 +145,7 @@ static void cashier_psymtab (struct partial_symtab *);
 static int compare_psymbols (const void *, const void *);
 
 /* APPLE LOCAL symfile bfd open */
-bfd *symfile_bfd_open (const char *, int mainline, int osabi);
+bfd *symfile_bfd_open (const char *, int mainline);
 
 int get_section_index (struct objfile *, char *);
 
@@ -754,6 +754,48 @@ syms_from_objfile (struct objfile *objfile,
   gdb_assert (! (addrs && offsets));
 
   init_entry_point_info (objfile);
+
+  /* The objfile might slide and so the entry point info from the bfd
+     might be wrong.  */
+  if (objfile->ei.entry_point != ~(CORE_ADDR) 0
+      && objfile->ei.entry_point != 0)
+    {
+      if (offsets != NULL)
+	{
+	  struct obj_section *s;
+	  int found = 0;
+
+	  /* Look the section up directly in this objfile, since you
+	     wouldn't want to find it in another one that overlapped
+	     this one.  */
+	  ALL_OBJFILE_OSECTIONS (objfile, s)
+	    {
+	      if (s->addr <= objfile->ei.entry_point 
+		  && objfile->ei.entry_point < s->endaddr)
+		{
+		  found = 1;
+		  break;
+		}
+	    }
+
+	  /* If we didn't find the section I'm just going to leave the
+	     start address alone.  I don't know what it would mean for
+	     the start address not to be in its objfile's sections.  */
+	  if (found)
+	    objfile->ei.entry_point += ANOFFSET (offsets, s->the_bfd_section->index);
+	}
+      else if (addrs != NULL)
+	{
+	  /* FIXME: When this gets run from dyld_load_symfile_internal
+	     we get an addrs array with no names.  That code should really
+	     use offsets not addrs since it's not taking advantage of the
+	     only point of the addrs - than names...  But I don't want to
+	     muck with that right now, so I'll assume a rigid offset.  */
+	  if (addrs->addrs_are_offsets == 1 && addrs->num_sections > 0)
+	      objfile->ei.entry_point += addrs->other[0].addr;
+	}
+    }
+
   find_sym_fns (objfile);
 
   if (objfile->sf == NULL)
@@ -1092,23 +1134,15 @@ add_objfile_prefix (struct objfile *objfile, const char* name)
 {
   char* prefixed_name;
   size_t prefixed_name_length;
-  char leading_char;
   /* Check to see if we need to add a prefix?  */
   if (name && name[0] && objfile && objfile->prefix && objfile->prefix[0])
     {
-      leading_char = bfd_get_symbol_leading_char (objfile->obfd);
-      if (leading_char == name[0])
-	name++;
-
       /* Get length for leading char, prefix, name and NULL terminator.  */
-      prefixed_name_length = 1 + strlen (objfile->prefix) + strlen (name) + 1;
+      prefixed_name_length = strlen (objfile->prefix) + strlen (name) + 1;
       prefixed_name = (char*) obstack_alloc (&objfile->objfile_obstack,
 					     prefixed_name_length);
 
-      sprintf (prefixed_name, "%c%s%s", 
-	       bfd_get_symbol_leading_char (objfile->obfd), 
-	       objfile->prefix, 
-	       name);
+      sprintf (prefixed_name, "%s%s", objfile->prefix, name);
 
       return prefixed_name;		
     }
@@ -1305,7 +1339,7 @@ struct dbxread_symloc
       1. The kext bundle executable, output by ld -r but whose addresses
          are all 0-based, i.e. not final.
       2. The dSYM for the kext bundle which also has 0-based addresses.
-      3. The kextload-generated symbol file when the kext is linked and
+      3. The kextutil-generated symbol file when the kext is linked and
          loaded into the kernel.  The debug map in this executable has
          the correct final addresses.
 
@@ -1372,7 +1406,7 @@ replace_psymbols_with_correct_psymbols (struct objfile *exe_obj)
                                SYMBOL_DOMAIN (*psym),
                                SYMBOL_CLASS (*psym),
                                &dsym_pst->objfile->global_psymbols,
-                               SYMBOL_VALUE (*psym),
+                               0,
                                SYMBOL_VALUE_ADDRESS (*psym),
                                SYMBOL_LANGUAGE (*psym),
                                dsym_pst->objfile);
@@ -1389,7 +1423,7 @@ replace_psymbols_with_correct_psymbols (struct objfile *exe_obj)
                                SYMBOL_DOMAIN (*psym),
                                SYMBOL_CLASS (*psym),
                                &dsym_pst->objfile->static_psymbols,
-                               SYMBOL_VALUE (*psym),
+                               0,
                                SYMBOL_VALUE_ADDRESS (*psym),
                                SYMBOL_LANGUAGE (*psym),
                                dsym_pst->objfile);
@@ -1458,7 +1492,8 @@ symbol_file_add_with_addrs_or_offsets_using_objfile (struct objfile *in_objfile,
     objfile = allocate_objfile (abfd, flags, symflags, mapaddr, prefix);
   else 
     {
-      allocate_objfile_using_objfile (in_objfile, abfd, flags, symflags, mapaddr, prefix);
+      allocate_objfile_using_objfile (in_objfile, abfd, flags, symflags, 
+                                      mapaddr, prefix);
       objfile = in_objfile;
     }
   discard_cleanups (my_cleanups);
@@ -1511,30 +1546,28 @@ symbol_file_add_with_addrs_or_offsets_using_objfile (struct objfile *in_objfile,
 	  int num_sym_offsets = 0;
 	  bfd *debug_bfd;
 	  int uuid_matches;
-	  enum gdb_osabi objfile_osabi = GDB_OSABI_UNKNOWN;
+
 	  if (addrs != NULL)
 	    addrs_to_use = orig_addrs;
 	  else
 	    addrs_to_use = NULL;
 	  
 	  /* APPLE LOCAL: Add OBJF_SEPARATE_DEBUG_FILE */
-#ifdef MACOSX_DYLD
- 	  objfile_osabi = macosx_get_osabi_from_dyld_entry (objfile->obfd);
-#endif
-          debug_bfd = symfile_bfd_open_safe (debugfile, mainline, objfile_osabi);
+          debug_bfd = symfile_bfd_open (debugfile, mainline);
 
 	  /* Don't bother to make the debug_objfile if the UUID's don't
 	     match.  */
 	  if (objfile->not_loaded_kext_filename)
-	    /* FIXME will kextload -s copy the uuid over to the output
+	    /* FIXME will kextutil -s copy the uuid over to the output
 	       binary?  Drop it?  Modify it?  That will determine what
-	       should be done here.  Right now kextload drops it.  
+	       should be done here.  Right now kextutil drops it.  
 	       NB we have the original unloaded kext over in
 	       objfile->not_loaded_kext_filename and we could try to
 	       match that file's UUID with the dSYM's.  */
 	    uuid_matches = 1;
 	  else
-	    uuid_matches = check_bfd_for_matching_uuid (objfile->obfd, debug_bfd);
+	    uuid_matches = check_bfd_for_matching_uuid (objfile->obfd, 
+                                                        debug_bfd);
 
 	  if (uuid_matches)
 	    {
@@ -1544,13 +1577,19 @@ symbol_file_add_with_addrs_or_offsets_using_objfile (struct objfile *in_objfile,
                  all the changes through for that right now.  Note, if we've 
                  called into here, we're using offsets, not the addrs_to_use, 
                  so NULL that out.  */
-	      macho_calculate_offsets_for_dsym (objfile, debug_bfd, addrs_to_use, offsets, num_offsets,
-						&sym_offsets, &num_sym_offsets);
+              /* Don't calculate the offset between the executable and the dSYM
+                 if we're dealing with a kext - we'll fix each symbol's address
+                 individually.  */
+              if (not_loaded_kext_bundle == 0)
+	        macho_calculate_offsets_for_dsym (objfile, debug_bfd, 
+                                             addrs_to_use, offsets, num_offsets,
+					     &sym_offsets, &num_sym_offsets);
 	      addrs_to_use = NULL;
 #endif /* TM_NEXTSTEP */
 	      
 	      objfile->separate_debug_objfile
-		= symbol_file_add_with_addrs_or_offsets_using_objfile (objfile->separate_debug_objfile,
+		= symbol_file_add_with_addrs_or_offsets_using_objfile 
+                                               (objfile->separate_debug_objfile,
 					       debug_bfd, from_tty, 
 					       addrs_to_use, 
 					       sym_offsets, num_sym_offsets, 0, 
@@ -1628,11 +1667,11 @@ symbol_file_add_with_addrs_or_offsets_using_objfile (struct objfile *in_objfile,
      in case it has been stripped. Stepping is very unhappy without 
      msymbols.  */
   if (objfile->separate_debug_objfile)
-    append_psymbols_as_msymbols (objfile);
+    append_psymbols_as_msymbols (objfile);  
 
   /* If OBJFILE is a kext binary that has final linked addresses (i.e. is the
-     output of kextload) and we have a dSYM file (which has ld -r'ed addresses
-     but not kextload'ed addresses so they are not final/correct), copy the
+     output of kextutil) and we have a dSYM file (which has ld -r'ed addresses
+     but not kextutil'ed addresses so they are not final/correct), copy the
      psymtabs from OBJFILE which are based on the debug map entries into
      the OBJFILE->separate_debug_objfile and unlink the dSYM's original psymtab
      entries.  */
@@ -1694,7 +1733,7 @@ symbol_file_add_name_with_addrs_or_offsets (const char *name, int from_tty,
 {
   bfd *abfd;
   
-  abfd = symfile_bfd_open (name, mainline, GDB_OSABI_UNKNOWN);
+  abfd = symfile_bfd_open (name, mainline);
   return symbol_file_add_with_addrs_or_offsets
     (abfd, from_tty, addrs, offsets, num_offsets, mainline, flags, symflags, 
      mapaddr, prefix, kext_bundle);
@@ -1711,12 +1750,8 @@ symbol_file_add_name_with_addrs_or_offsets_using_objfile (struct objfile *in_obj
 							  CORE_ADDR mapaddr, const char *prefix, char *kext_bundle)
 {
   bfd *abfd;
-  enum gdb_osabi in_objfile_osabi = GDB_OSABI_UNKNOWN;
-#ifdef MACOSX_DYLD
-  if (in_objfile)
-    in_objfile_osabi = macosx_get_osabi_from_dyld_entry (in_objfile->obfd);
-#endif
-  abfd = symfile_bfd_open (name, mainline, in_objfile_osabi);
+  
+  abfd = symfile_bfd_open (name, mainline);
   return symbol_file_add_with_addrs_or_offsets_using_objfile
     (in_objfile, abfd, from_tty, addrs, offsets, num_offsets, mainline, flags, symflags, mapaddr, prefix, kext_bundle);
 }
@@ -2138,13 +2173,15 @@ set_initial_language (void)
    MacOS X) do a little more magic to find the file.
    In case of trouble, error() is called.  */
 
-/* APPLE LOCAL symfile bfd open */
 bfd *
-symfile_bfd_open (const char *name, int mainline, enum gdb_osabi osabi)
+/* APPLE LOCAL symfile bfd open */
+symfile_bfd_open (const char *name, int mainline)
 {
-  bfd *sym_bfd = NULL;
+  bfd *sym_bfd;
   int desc;
-  char *absolute_name = NULL;
+  char *absolute_name;
+
+
 
   name = tilde_expand (name);	/* Returns 1st new malloc'd copy */
 
@@ -2219,7 +2256,7 @@ symfile_bfd_open (const char *name, int mainline, enum gdb_osabi osabi)
   if (bfd_check_format (sym_bfd, bfd_archive))
     {
       bfd *tmp_bfd;
-      tmp_bfd = open_bfd_matching_arch (sym_bfd, bfd_object, osabi);
+      tmp_bfd = open_bfd_matching_arch (sym_bfd, bfd_object);
       if (tmp_bfd != NULL)
 	sym_bfd = tmp_bfd;
     }
@@ -2723,16 +2760,16 @@ add_symbol_file_command (char *args, int from_tty)
 
   if (strstr (filename, ".dSYM"))
     {
-      if (address != NULL || flags != OBJF_USERLOADED || section_index != 0
-          || mapaddr != 0 || prefix != NULL)
+      /* If there's one argument (e.g. a filename), argcnt == 2 */
+      if (argcnt == 2)
         {
-          warning ("add-symbol-file doesn't work on dSYM files, use "
-                   "\"add-dsym\" instead.");
+          add_dsym_command (args, from_tty);
+          return;
         }
       else
         {
-          add_dsym_command (filename, from_tty);
-          return;
+          warning ("add-symbol-file doesn't work on dSYM files, use "
+                   "\"add-dsym\" instead.");
         }
     }
 
@@ -2795,7 +2832,7 @@ add_symbol_file_command (char *args, int from_tty)
   update_section_tables ();
 #endif
   update_current_target ();
-  breakpoint_update ();
+  re_enable_breakpoints_in_shlibs (0);
 
   /* Getting new symbols may change our opinion about what is
      frameless.  */
@@ -2807,7 +2844,7 @@ add_symbol_file_command (char *args, int from_tty)
    specifically for the oddness that is kexts.  In the kext case we have
    three components that we need to juggle:
 
-     1. The output symbol file from kextload -a/-s which has the final
+     1. The output symbol file from kextutil -a/-s which has the final
         addresses that the kext loaded at 
         (e.g. "com.osxbook.kext.DummySysctl.sym"), 
      2. The kext bundle with an Info.plist and executable inside 
@@ -2816,7 +2853,7 @@ add_symbol_file_command (char *args, int from_tty)
      3. The companion dSYM to the kext bundle (e.g. "DummySysctl.kext.dSYM")
 
    kexts are unusual in that the kext bundle and dSYM do not have the actual
-   final addresses -- kextload has a linker ("libkld") inside which may do
+   final addresses -- kextutil has a linker ("libkld") inside which may do
    more linkery things than simply applying a static offset to all the 
    symbols.  We need file #1 because it has the final addresses of all the
    symbols; we need file #3 because it has the DWARF debug information.  Less
@@ -2836,7 +2873,7 @@ add_kext_command (char *args, int from_tty)
   char *kext_bundle_filename;
   const char *bundle_executable_name_from_plist;
   const char *bundle_identifier_name_from_plist;
-  char *kextload_symbol_filename;
+  char *kextload_symbol_filename, *kextload_symbol_basename;
   char *kext_bundle_executable_filename;
   char *t;
 
@@ -2845,7 +2882,7 @@ add_kext_command (char *args, int from_tty)
     "Usage: add-kext <PATHNAME-OF-KEXT>\n"
     "PATHNAME-OF-KEXT is the path to the .kext bundle directory which has an\n"
     "Info.plist file in its Contents subdirectory.  The .sym file (output from\n"
-    "kextload) should be a sibling of the .kext bundle and the kext bundle's\n"
+    "kextutil) should be a sibling of the .kext bundle and the kext bundle's\n"
     "dSYM bundle should also be in this drectory.";
 
   struct cleanup *my_cleanups = make_cleanup (null_cleanup, NULL);
@@ -2880,25 +2917,29 @@ add_kext_command (char *args, int from_tty)
   if (t == NULL)
     error (usage_string, "dirname on the kext bundle filename failed");
 
+  kextload_symbol_basename = xmalloc 
+             (strlen (bundle_identifier_name_from_plist) + strlen (".sym") + 1);
+  strcpy (kextload_symbol_basename, bundle_identifier_name_from_plist);
+  strcat (kextload_symbol_basename, ".sym");
+
   /* A string of "." means that KEXT_BUNDLE_FILENAME has no dirname 
      component. */
   if (t[0] == '.' && t[1] == '\0')
     {
-      kextload_symbol_filename = xmalloc 
-                     (strlen (bundle_identifier_name_from_plist) + 
-                      strlen (".sym") + 1);
-      strcpy (kextload_symbol_filename, bundle_identifier_name_from_plist);
-      strcat (kextload_symbol_filename, ".sym");
+      kextload_symbol_filename = kextload_symbol_basename;
+    }
+  else if (file_exists_p (kextload_symbol_basename))
+    {
+      kextload_symbol_filename = kextload_symbol_basename;
     }
   else
     {
       kextload_symbol_filename = xmalloc (strlen (t) + 1 + 
-                                strlen (bundle_identifier_name_from_plist) + 
-                                strlen (".sym") + 1);
+                                strlen (kextload_symbol_basename) + 1);
       strcpy (kextload_symbol_filename, t);
       strcat (kextload_symbol_filename, "/");
-      strcat (kextload_symbol_filename, bundle_identifier_name_from_plist);
-      strcat (kextload_symbol_filename, ".sym");
+      strcat (kextload_symbol_filename, kextload_symbol_basename);
+      xfree (kextload_symbol_basename);
     }
 
   /* By default we assume the .sym file is next to the .kext bundle - but
@@ -3095,269 +3136,13 @@ add_shared_symbol_files_command (char *args, int from_tty)
 #endif
 }
 
-/* APPLE LOCAL: split out the rereading of symbols for a given objfile into
-   a function that can be called.  */
-int
-reread_symbols_for_objfile (struct objfile *objfile, long new_modtime, 
-			    enum gdb_osabi osabi)
-{
-  struct objfile *next;
-  struct cleanup *old_cleanups;
-  struct section_offsets *offsets;
-  int num_offsets;
-  char *obfd_filename;
-
-  if (objfile == NULL)
-    return 0;
-
-  /* APPLE LOCAL: Let the reread_separate_symbols take care of
-     remaking the separate_debug_objfile.  */
-  if (objfile->separate_debug_objfile_backlink)
-    return 0;
-
-  if (new_modtime == 0 && objfile->obfd != NULL)
-    {
-      struct stat buf;
-      if (stat (objfile->obfd->filename, &buf) != 0)
-	{
-	  /* Check for NULL iostream.  If that's NULL, then
-	     bfd_get_mtime is just going to abort, which is not
-	     very friendly.  Instead, use new_modtime of -1 to
-	     indicate we can't find the file right now.  */
-	  if (objfile->obfd->iostream != NULL)
-	    new_modtime = bfd_get_mtime (objfile->obfd);
-	  else 
-	    warning ("Can't find backing file for \"%s\".",
-		     objfile->obfd->filename);
-	}
-      else
-	new_modtime = buf.st_mtime;
-    }
-
-  printf_unfiltered (_("`%s' has changed; re-reading symbols.\n"),
-		   objfile->name);
-
-  /* There are various functions like symbol_file_add,
-     symfile_bfd_open, syms_from_objfile, etc., which might
-     appear to do what we want.  But they have various other
-     effects which we *don't* want.  So we just do stuff
-     ourselves.  We don't worry about mapped files (for one thing,
-     any mapped file will be out of date).  */
-
-  /* If we get an error, blow away this objfile (not sure if
-     that is the correct response for things like shared
-     libraries).  */
-  old_cleanups = make_cleanup_free_objfile (objfile);
-  /* We need to do this whenever any symbols go away.  */
-  make_cleanup (clear_symtab_users_cleanup, 0 /*ignore*/);
-
-
-  /* If this objfile has a separate debug objfile, clear it
-     out here.  */
-  if (objfile->separate_debug_objfile != NULL)
-    {
-      /* ALL_OBJFILES_SAFE isn't actually safe if you delete
-	 the NEXT objfile...  */
-      if (objfile->separate_debug_objfile == next)
-	next = objfile_get_next (next);
-
-      free_objfile (objfile->separate_debug_objfile);
-      objfile->separate_debug_objfile = NULL;
-    }
-
-  /* APPLE LOCAL: Before we clean up any state, tell the
-     breakpoint system that this objfile has changed so it
-     can clear the set state on any breakpoints in this
-     objfile. */
-
-  tell_breakpoints_objfile_changed (objfile);
-  tell_objc_msgsend_cacher_objfile_changed (objfile);
-
-  /* APPLE LOCAL cache lookup values for improved performance  */
-  symtab_clear_cached_lookup_values ();
-  /* APPLE LOCAL: Remove it's obj_sections from the 
-     ordered_section list.  */
-  objfile_delete_from_ordered_sections (objfile);
-
-  /* Clean up any state BFD has sitting around.  We don't need
-     to close the descriptor but BFD lacks a way of closing the
-     BFD without closing the descriptor.  */
-  obfd_filename = bfd_get_filename (objfile->obfd);
-  if (!bfd_close (objfile->obfd))
-    error (_("Can't close BFD for %s: %s"), objfile->name,
-	   bfd_errmsg (bfd_get_error ()));
-  objfile->obfd = bfd_openr (obfd_filename, gnutarget);
-  if (objfile->obfd == NULL)
-    error (_("Can't open %s to read symbols."), objfile->name);
-  /* bfd_openr sets cacheable to true, which is what we want.  */
-
-  /* APPLE LOCAL: If the file is an archive file (i.e. fat
-     binary), look for sub-files that match the current
-     osabi. */
-
-  if (bfd_check_format (objfile->obfd, bfd_archive))
-    {
-      bfd *tmp_bfd;
-      tmp_bfd = open_bfd_matching_arch (objfile->obfd, bfd_object, osabi);
-      if (tmp_bfd != NULL)
-	objfile->obfd = tmp_bfd;
-    }
-
-  if (!bfd_check_format (objfile->obfd, bfd_object))
-    error (_("Can't read symbols from %s: %s."), objfile->name,
-	   bfd_errmsg (bfd_get_error ()));
-
-  /* Save the offsets, we will nuke them with the rest of the
-     objfile_obstack.  */
-  num_offsets = objfile->num_sections;
-  offsets = ((struct section_offsets *)
-	     alloca (SIZEOF_N_SECTION_OFFSETS (num_offsets)));
-  memcpy (offsets, objfile->section_offsets,
-	  SIZEOF_N_SECTION_OFFSETS (num_offsets));
-
-  /* Nuke all the state that we will re-read.  Much of the following
-     code which sets things to NULL really is necessary to tell
-     other parts of GDB that there is nothing currently there.  */
-
-  /* FIXME: Do we have to free a whole linked list, or is this
-     enough?  */
-  if (objfile->global_psymbols.list)
-    xfree (objfile->global_psymbols.list);
-  memset (&objfile->global_psymbols, 0,
-	  sizeof (objfile->global_psymbols));
-  if (objfile->static_psymbols.list)
-    xfree (objfile->static_psymbols.list);
-  memset (&objfile->static_psymbols, 0,
-	  sizeof (objfile->static_psymbols));
-
-  /* Free the obstacks for non-reusable objfiles */
-  bcache_xfree (objfile->psymbol_cache);
-  objfile->psymbol_cache = bcache_xmalloc (NULL);
-  bcache_xfree (objfile->macro_cache);
-  objfile->macro_cache = bcache_xmalloc (NULL);
-  /* APPLE LOCAL: Also delete the table of equivalent symbols.  */
-  equivalence_table_delete (objfile);
-  /* END APPLE LOCAL */
-  if (objfile->demangled_names_hash != NULL)
-    {
-      htab_delete (objfile->demangled_names_hash);
-      objfile->demangled_names_hash = NULL;
-    }
-  obstack_free (&objfile->objfile_obstack, 0);
-  objfile->sections = NULL;
-  objfile->symtabs = NULL;
-  objfile->psymtabs = NULL;
-  objfile->free_psymtabs = NULL;
-  objfile->cp_namespace_symtab = NULL;
-  objfile->msymbols = NULL;
-  objfile->deprecated_sym_private = NULL;
-  objfile->minimal_symbol_count = 0;
-  memset (&objfile->msymbol_hash, 0,
-	  sizeof (objfile->msymbol_hash));
-  memset (&objfile->msymbol_demangled_hash, 0,
-	  sizeof (objfile->msymbol_demangled_hash));
-  objfile->minimal_symbols_demangled = 0;
-  objfile->fundamental_types = NULL;
-  clear_objfile_data (objfile);
-  if (objfile->sf != NULL)
-    {
-      (*objfile->sf->sym_finish) (objfile);
-    }
-
-  /* We never make this a mapped file.  */
-  objfile->md = NULL;
-  objfile->psymbol_cache = bcache_xmalloc (NULL);
-  objfile->macro_cache = bcache_xmalloc (NULL);
-  /* obstack_init also initializes the obstack so it is
-     empty.  We could use obstack_specify_allocation but
-     gdb_obstack.h specifies the alloc/dealloc
-     functions.  */
-  obstack_init (&objfile->objfile_obstack);
-  if (build_objfile_section_table (objfile))
-    {
-      error (_("Can't find the file sections in `%s': %s"),
-	     objfile->name, bfd_errmsg (bfd_get_error ()));
-    }
-  terminate_minimal_symbol_table (objfile);
-
-  /* We use the same section offsets as from last time.  I'm not
-     sure whether that is always correct for shared libraries.  */
-  objfile->section_offsets = (struct section_offsets *)
-    obstack_alloc (&objfile->objfile_obstack,
-		   SIZEOF_N_SECTION_OFFSETS (num_offsets));
-
-  /* APPLE LOCAL: instead of just stuffing the section offsets
-     back into the objfile structure, set the new objfile offsets to
-     0 and then relocate the objfile with the original offsets.  If the
-     original offsets were 0, this is a low-cost operation, because
-     relocate_objfile checks for no change.  
-     We have to do this because, at least on Mac OS X, the way
-     we would have gotten non-zero section offsets to begin with is 
-     that the objfile got relocated by the dyld layer when the library
-     was actually loaded.  However the dyld layer now thinks this 
-     objfile is correctly slid (it has its own copy of this information, 
-     and doesn't look at anything in the objfile to figure this out.
-     So IT won't apply the slide again and we have to do it here.  */
-  memset (objfile->section_offsets, 0, SIZEOF_N_SECTION_OFFSETS (num_offsets));
-
-  objfile->num_sections = num_offsets;
-  objfile_relocate (objfile, offsets);
-
-  /* What the hell is sym_new_init for, anyway?  The concept of
-     distinguishing between the main file and additional files
-     in this way seems rather dubious.  */
-  if (objfile == symfile_objfile)
-    {
-      (*objfile->sf->sym_new_init) (objfile);
-    }
-
-  (*objfile->sf->sym_init) (objfile);
-  clear_complaints (&symfile_complaints, 1, 1);
-
-  /* APPLE LOCAL: Re-read the separate symbols before we read in the symbols 
-     so we don't get spurious warnings about N_OSO objects not being 
-     available.  */
-  reread_separate_symbols (objfile);
-
-  /* The "mainline" parameter is a hideous hack; I think leaving it
-     zero is OK since dbxread.c also does what it needs to do if
-     objfile->global_psymbols.size is 0.  */
-  if ((objfile->symflags & ~OBJF_SYM_CONTAINER) & OBJF_SYM_LEVELS_MASK)
-    (*objfile->sf->sym_read) (objfile, 0);
-  /* APPLE LOCAL don't complain about lack of symbols */
-  objfile->flags |= OBJF_SYMS;
-
-  /* We're done reading the symbol file; finish off complaints.  */
-  clear_complaints (&symfile_complaints, 0, 1);
-
-  /* Getting new symbols may change our opinion about what is
-     frameless.  */
-
-  reinit_frame_cache ();
-
-  /* Discard cleanups as symbol reading was successful.  */
-  discard_cleanups (old_cleanups);
-
-  /* If the mtime has changed between the time we set new_modtime
-     and now, we *want* this to be out of date, so don't call stat
-     again now.  */
-  objfile->mtime = new_modtime;
-
-  /* APPLE LOCAL begin breakpoints */
-  /* Finally, remember to call breakpoint_re_set with this
-     objfile, so it will get on the change list.  */
-  breakpoint_re_set (objfile);
-  /* APPLE LOCAL end breakpoints */
-  return 1;
-}
-
 /* Re-read symbols if a symbol-file has changed.  */
 void
 reread_symbols (void)
 {
   struct objfile *objfile, *next;
   long new_modtime;
-  int num_reread = 0;
+  int reread_one = 0;
 
   /* With the addition of shared libraries, this should be modified,
      the load time should be saved in the partial symbol tables, since
@@ -3417,17 +3202,239 @@ reread_symbols (void)
 	    }
 	  else if (new_modtime != objfile->mtime)
 	    {
-	      /* APPLE LOCAL: put the re-reading of an objfile into a separate
-	         function so it can be called elsewhere to force re-reading of
-		 symbols without having to change modiciation times in some 
-		 way.  */
-	      num_reread += reread_symbols_for_objfile (objfile, new_modtime, 
-							GDB_OSABI_UNKNOWN);
+	      struct cleanup *old_cleanups;
+	      struct section_offsets *offsets;
+	      int num_offsets;
+	      char *obfd_filename;
+
+	      printf_unfiltered (_("`%s' has changed; re-reading symbols.\n"),
+			       objfile->name);
+
+	      /* There are various functions like symbol_file_add,
+	         symfile_bfd_open, syms_from_objfile, etc., which might
+	         appear to do what we want.  But they have various other
+	         effects which we *don't* want.  So we just do stuff
+	         ourselves.  We don't worry about mapped files (for one thing,
+	         any mapped file will be out of date).  */
+
+	      /* If we get an error, blow away this objfile (not sure if
+	         that is the correct response for things like shared
+	         libraries).  */
+	      old_cleanups = make_cleanup_free_objfile (objfile);
+	      /* We need to do this whenever any symbols go away.  */
+	      make_cleanup (clear_symtab_users_cleanup, 0 /*ignore*/);
+
+
+	      /* If this objfile has a separate debug objfile, clear it
+		 out here.  */
+	      if (objfile->separate_debug_objfile != NULL)
+		{
+		  /* ALL_OBJFILES_SAFE isn't actually safe if you delete
+		     the NEXT objfile...  */
+		  if (objfile->separate_debug_objfile == next)
+		    next = objfile_get_next (next);
+
+		  free_objfile (objfile->separate_debug_objfile);
+		  objfile->separate_debug_objfile = NULL;
+		}
+
+	      /* APPLE LOCAL: Before we clean up any state, tell the
+		 breakpoint system that this objfile has changed so it
+		 can clear the set state on any breakpoints in this
+		 objfile. */
+
+	      tell_breakpoints_objfile_changed (objfile);
+	      tell_objc_msgsend_cacher_objfile_changed (objfile);
+
+	      /* APPLE LOCAL cache lookup values for improved performance  */
+	      symtab_clear_cached_lookup_values ();
+	      /* APPLE LOCAL: Remove it's obj_sections from the 
+		 ordered_section list.  */
+	      objfile_delete_from_ordered_sections (objfile);
+
+	      /* Clean up any state BFD has sitting around.  We don't need
+	         to close the descriptor but BFD lacks a way of closing the
+	         BFD without closing the descriptor.  */
+	      obfd_filename = bfd_get_filename (objfile->obfd);
+
+	      /* APPLE LOCAL: Remember to remove its sections from the 
+		 target "to_sections".  Normally this is done in 
+		 free_objfile, but here we're remaking the objfile
+	         "in place" so we have to do it by hand.  */
+	      remove_target_sections (objfile->obfd);
+
+	      if (!bfd_close (objfile->obfd))
+		error (_("Can't close BFD for %s: %s"), objfile->name,
+		       bfd_errmsg (bfd_get_error ()));
+	      objfile->obfd = bfd_openr (obfd_filename, gnutarget);
+	      if (objfile->obfd == NULL)
+		error (_("Can't open %s to read symbols."), objfile->name);
+	      /* bfd_openr sets cacheable to true, which is what we want.  */
+
+	      /* APPLE LOCAL: If the file is an archive file (i.e. fat
+		 binary), look for sub-files that match the current
+		 osabi. */
+
+	      if (bfd_check_format (objfile->obfd, bfd_archive))
+		{
+		  bfd *tmp_bfd;
+		  tmp_bfd = open_bfd_matching_arch (objfile->obfd, bfd_object);
+		  if (tmp_bfd != NULL)
+		    objfile->obfd = tmp_bfd;
+		}
+
+	      if (!bfd_check_format (objfile->obfd, bfd_object))
+		error (_("Can't read symbols from %s: %s."), objfile->name,
+		       bfd_errmsg (bfd_get_error ()));
+
+	      /* Save the offsets, we will nuke them with the rest of the
+	         objfile_obstack.  */
+	      num_offsets = objfile->num_sections;
+	      offsets = ((struct section_offsets *)
+			 alloca (SIZEOF_N_SECTION_OFFSETS (num_offsets)));
+	      memcpy (offsets, objfile->section_offsets,
+		      SIZEOF_N_SECTION_OFFSETS (num_offsets));
+
+	      /* Nuke all the state that we will re-read.  Much of the following
+	         code which sets things to NULL really is necessary to tell
+	         other parts of GDB that there is nothing currently there.  */
+
+	      /* FIXME: Do we have to free a whole linked list, or is this
+	         enough?  */
+	      if (objfile->global_psymbols.list)
+		xfree (objfile->global_psymbols.list);
+	      memset (&objfile->global_psymbols, 0,
+		      sizeof (objfile->global_psymbols));
+	      if (objfile->static_psymbols.list)
+		xfree (objfile->static_psymbols.list);
+	      memset (&objfile->static_psymbols, 0,
+		      sizeof (objfile->static_psymbols));
+
+	      /* Free the obstacks for non-reusable objfiles */
+	      bcache_xfree (objfile->psymbol_cache);
+	      objfile->psymbol_cache = bcache_xmalloc (NULL);
+	      bcache_xfree (objfile->macro_cache);
+	      objfile->macro_cache = bcache_xmalloc (NULL);
+	      /* APPLE LOCAL: Also delete the table of equivalent symbols.  */
+	      equivalence_table_delete (objfile);
+	      /* END APPLE LOCAL */
+	      if (objfile->demangled_names_hash != NULL)
+		{
+		  htab_delete (objfile->demangled_names_hash);
+		  objfile->demangled_names_hash = NULL;
+		}
+	      obstack_free (&objfile->objfile_obstack, 0);
+	      objfile->sections = NULL;
+	      objfile->symtabs = NULL;
+	      objfile->psymtabs = NULL;
+	      objfile->free_psymtabs = NULL;
+	      objfile->cp_namespace_symtab = NULL;
+	      objfile->msymbols = NULL;
+	      objfile->deprecated_sym_private = NULL;
+	      objfile->minimal_symbol_count = 0;
+	      memset (&objfile->msymbol_hash, 0,
+		      sizeof (objfile->msymbol_hash));
+	      memset (&objfile->msymbol_demangled_hash, 0,
+		      sizeof (objfile->msymbol_demangled_hash));
+	      objfile->minimal_symbols_demangled = 0;
+	      objfile->fundamental_types = NULL;
+	      clear_objfile_data (objfile);
+	      if (objfile->sf != NULL)
+		{
+		  (*objfile->sf->sym_finish) (objfile);
+		}
+
+	      /* We never make this a mapped file.  */
+	      objfile->md = NULL;
+	      objfile->psymbol_cache = bcache_xmalloc (NULL);
+	      objfile->macro_cache = bcache_xmalloc (NULL);
+	      /* obstack_init also initializes the obstack so it is
+	         empty.  We could use obstack_specify_allocation but
+	         gdb_obstack.h specifies the alloc/dealloc
+	         functions.  */
+	      obstack_init (&objfile->objfile_obstack);
+	      if (build_objfile_section_table (objfile))
+		{
+		  error (_("Can't find the file sections in `%s': %s"),
+			 objfile->name, bfd_errmsg (bfd_get_error ()));
+		}
+              terminate_minimal_symbol_table (objfile);
+
+	      /* We use the same section offsets as from last time.  I'm not
+	         sure whether that is always correct for shared libraries.  */
+	      objfile->section_offsets = (struct section_offsets *)
+		obstack_alloc (&objfile->objfile_obstack,
+			       SIZEOF_N_SECTION_OFFSETS (num_offsets));
+
+ 	      /* APPLE LOCAL: instead of just stuffing the section offsets
+ 		 back into the objfile structure, set the new objfile offsets to
+ 		 0 and then relocate the objfile with the original offsets.  If the
+ 		 original offsets were 0, this is a low-cost operation, because
+ 		 relocate_objfile checks for no change.  
+ 		 We have to do this because, at least on Mac OS X, the way
+ 		 we would have gotten non-zero section offsets to begin with is 
+ 		 that the objfile got relocated by the dyld layer when the library
+ 		 was actually loaded.  However the dyld layer now thinks this 
+ 		 objfile is correctly slid (it has its own copy of this information, 
+ 		 and doesn't look at anything in the objfile to figure this out.
+ 		 So IT won't apply the slide again and we have to do it here.  */
+ 	      memset (objfile->section_offsets, 0, SIZEOF_N_SECTION_OFFSETS (num_offsets));
+
+	      objfile->num_sections = num_offsets;
+	      init_entry_point_info (objfile);
+
+ 	      objfile_relocate (objfile, offsets);
+
+	      /* What the hell is sym_new_init for, anyway?  The concept of
+	         distinguishing between the main file and additional files
+	         in this way seems rather dubious.  */
+	      if (objfile == symfile_objfile)
+		{
+		  (*objfile->sf->sym_new_init) (objfile);
+		}
+
+	      /* If the mtime has changed between the time we set new_modtime
+	         and now, we *want* this to be out of date, so don't call stat
+	         again now.  */
+	      objfile->mtime = new_modtime;
+	      reread_one = 1;
+              reread_separate_symbols (objfile);
+
+	      (*objfile->sf->sym_init) (objfile);
+	      clear_complaints (&symfile_complaints, 1, 1);
+	      /* The "mainline" parameter is a hideous hack; I think leaving it
+	         zero is OK since dbxread.c also does what it needs to do if
+	         objfile->global_psymbols.size is 0.  */
+	      if ((objfile->symflags & ~OBJF_SYM_CONTAINER) & OBJF_SYM_LEVELS_MASK)
+		(*objfile->sf->sym_read) (objfile, 0);
+	      /* APPLE LOCAL don't complain about lack of symbols */
+	      objfile->flags |= OBJF_SYMS;
+
+	      /* We're done reading the symbol file; finish off complaints.  */
+	      clear_complaints (&symfile_complaints, 0, 1);
+
+	      /* Getting new symbols may change our opinion about what is
+	         frameless.  */
+
+	      reinit_frame_cache ();
+
+	      /* Discard cleanups as symbol reading was successful.  */
+	      discard_cleanups (old_cleanups);
+
+	      /* APPLE LOCAL begin breakpoints */
+	      /* Finally, remember to call breakpoint_re_set with this
+		 objfile, so it will get on the change list.  */
+	      breakpoint_re_set (objfile);
+	      /* Also re-initialize the objc trampoline data in case it's the
+		 objc library that's either just been read in or has changed.  */
+	      if (objfile == find_libobjc_objfile ())
+		objc_init_trampoline_observer ();
+	      /* APPLE LOCAL end breakpoints */
 	    }
 	}
     }
 
-  if (num_reread > 0)
+  if (reread_one)
     {
       clear_symtab_users ();
       /* At least one objfile has changed, so we can consider that
@@ -3559,21 +3566,16 @@ reread_separate_symbols (struct objfile *objfile)
       int num_sym_offsets = 0;
       bfd *debug_bfd;
       int uuid_matches;
-      enum gdb_osabi objfile_osabi = GDB_OSABI_UNKNOWN;
 
       /* APPLE LOCAL: Handle the possible offset of file & separate debug file.  */
-#ifdef MACOSX_DYLD
-      objfile_osabi = macosx_get_osabi_from_dyld_entry (objfile->obfd);
-#endif
-
-      debug_bfd = symfile_bfd_open (debug_file, 0, objfile_osabi); 
+      debug_bfd = symfile_bfd_open (debug_file, 0);
 
       /* Don't bother to make the debug_objfile if the UUID's don't
 	 match.  */
       if (objfile->not_loaded_kext_filename)
-	/* FIXME will kextload -s copy the uuid over to the output
+	/* FIXME will kextutil -s copy the uuid over to the output
 	   binary?  Drop it?  Modify it?  That will determine what
-	   should be done here.  Right now kextload drops it.  
+	   should be done here.  Right now kextutil drops it.  
 	   NB we have the original unloaded kext over in
 	   objfile->not_loaded_kext_filename and we could try to
 	   match that file's UUID with the dSYM's.  */
@@ -4683,6 +4685,7 @@ find_pc_mapped_section (CORE_ADDR pc)
 	  return osect->the_bfd_section;
 	}
 
+  last_mapped_section_lookup_pc = INVALID_ADDRESS;
   cached_mapped_section = NULL;
   /* APPLE LOCAL end cache lookup values for improved performance  */
   return NULL;
@@ -5175,7 +5178,8 @@ struct symbol_file_info {
   char *kext_bundle;
 };  
  
-int symbol_file_add_bfd_helper (char *v)
+int 
+symbol_file_add_bfd_helper (void *v)
 {
   struct symbol_file_info *s = (struct symbol_file_info *) v;
   s->result = symbol_file_add_with_addrs_or_offsets
@@ -5251,27 +5255,25 @@ symbol_file_add_bfd_safe (bfd *abfd, int from_tty,
 struct bfd_file_info {
   const char *filename;
   int mainline;
-  enum gdb_osabi osabi;
   bfd *result;
 };  
  
 int 
-symfile_bfd_open_helper (char *v)
+symfile_bfd_open_helper (void *v)
 {
   struct bfd_file_info *s = (struct bfd_file_info *) v;
-  s->result = symfile_bfd_open (s->filename, s->mainline, s->osabi);
+  s->result = symfile_bfd_open (s->filename, s->mainline);
   return 1;
 }
  
 bfd *
-symfile_bfd_open_safe(const char *filename, int mainline, enum gdb_osabi osabi)
+symfile_bfd_open_safe (const char *filename, int mainline)
 {
   struct bfd_file_info s;
   int ret;
  
   s.filename = filename;
   s.mainline = mainline;
-  s.osabi = osabi;
   s.result = NULL;
  
   ret = catch_errors
@@ -5282,15 +5284,14 @@ symfile_bfd_open_safe(const char *filename, int mainline, enum gdb_osabi osabi)
 /* APPLE LOCAL end symfile */
 
 /* APPLE LOCAL: This routine opens the slice of a fat file (faking as a
-   bfd_archive) that matches OSABI if OSABI is set to a valid value, or it will
-   open the best architecture according to the user specified osabi, or fall 
-   back to the current architecture if not a cross build.  */
+   bfd_archive) that matches the current architecture.  */
 
 bfd *
-open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format, 
-			enum gdb_osabi osabi)
+open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format)
 {
+  enum gdb_osabi osabi = GDB_OSABI_UNINITIALIZED;
   bfd *abfd = NULL;
+  
 #if defined (TARGET_ARM) && defined (TM_NEXTSTEP)
 
   /* APPLE LOCAL: The model for Darwin ARM stuff doesn't fit well
@@ -5300,31 +5301,29 @@ open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format,
      armv4t...  */
 
   bfd *fallback = NULL;
-  enum gdb_osabi fallback_osabi = GDB_OSABI_UNKNOWN;
-
-#ifdef MACOSX_DYLD
-  if (osabi == GDB_OSABI_UNKNOWN)
-    osabi = macosx_get_osabi_from_dyld_entry (archive_bfd);
-#endif
 
 #ifdef NM_NEXTSTEP
-  extern enum gdb_osabi arm_host_osabi ();
 
-  if (osabi == GDB_OSABI_UNKNOWN)
-      osabi = arm_host_osabi();
+  /* We have a native ARM gdb, so query for V6 from the system.  */
+  extern int arm_mach_o_query_v6 (void);
+  if (arm_mach_o_query_v6 ())
+    osabi = GDB_OSABI_DARWINV6;
+  else
+    osabi = GDB_OSABI_DARWIN;
 
-#else	/* NM_NEXTSTEP  */
+#else	/* NM_NEXTSTEP */
 
-  if (osabi == GDB_OSABI_UNKNOWN)
-    {
-      /* We have a cross ARM gdb, so check if the user has set the ABI 
-	 manually. If the osabi hasn't been set manually, just get the
-	 best one from this file. If ARCHIVE_BFD is fat or an archive, then 
-	 we will get GDB_OSABI_UNKNOWN back.  */
-      osabi = gdbarch_lookup_osabi (archive_bfd);
-    }
-
-#endif	/* NM_NEXTSTEP  */
+  /* We have a cross ARM gdb, so check if the user has set the ABI 
+     manually. If the osabi hasn't been set manually, just get the
+     best one from this file.  */
+  
+  /* Get the user set osabi, or the default one.  */
+  enum gdb_osabi default_osabi = gdbarch_lookup_osabi (NULL);
+  
+  /* Get the osabi for the bfd.  */
+  osabi = gdbarch_lookup_osabi (archive_bfd);
+  
+#endif	/* NM_NEXTSTEP */
 
   for (;;)
     {
@@ -5332,38 +5331,15 @@ open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format,
       abfd = bfd_openr_next_archived_file (archive_bfd, abfd);
       if (abfd == NULL)
 	break;
-      if (!(bfd_check_format (abfd, bfd_object) ||
-	   (bfd_check_format (abfd, bfd_archive))))
+      if (! bfd_check_format (abfd, bfd_object))
 	continue;
       this_osabi = gdbarch_lookup_osabi_from_bfd (abfd);
       if (this_osabi == osabi)
-        return abfd;
-      else if (fallback_osabi < this_osabi)
-        {
-	  /* The OSBABI for this slice of the BFD is larger than the best
-	     osabi that we have found, so check it further to see if we
-	     can use it. This can happen in a few cases: we have a cross 
-	     ARM gdb where the user didn't specify the the architecture
-	     (osabi == GDB_OSABI_UNKNOWN), or we have an osabi slice that
-	     is less that the user specified value (this_osabi < osabi).  */
-	  if (osabi == GDB_OSABI_UNKNOWN || this_osabi < osabi)
-	    {
-	      /* Only ARM compatible OSABI slices can be used as a 
-	         fallback.  */
-	      switch (this_osabi)
-		{
-		case GDB_OSABI_DARWIN:
-		case GDB_OSABI_DARWINV6:
-		case GDB_OSABI_DARWINV7:
-		  fallback = abfd;
-		  fallback_osabi = this_osabi;
-		  break;
-
-		default:
-		  break;
-		}
-	    }
+	{
+	  return abfd;
 	}
+      else if (this_osabi == GDB_OSABI_DARWIN)
+	fallback = abfd;
     }
   return fallback;
 #else	/* defined (TARGET_ARM) && defined (TM_NEXTSTEP)  */
@@ -5434,7 +5410,7 @@ with the text.  SECT is a section name to be loaded at SECT_ADDR."),
 Usage: add-kext KEXTBUNDLE\n\
 Load the symbols from KEXTBUNDLE, where KEXTBUNDLE is the bundle directory\n\
 including a Contents/Info.plist file.  In the same directory you need the\n\
-output from kextload(8) -s/-a/etc which has the addresses where the kext\n\
+output from kextutil(8) -s/-a/etc which has the addresses where the kext\n\
 was loaded in the kernel and you need the .dSYM file in that directory as well.\n"),
 	       &cmdlist);
   set_cmd_completer (c, filename_completer);
@@ -5522,12 +5498,12 @@ cache."),
   /* APPLE LOCAL: For the add-kext command.  */
   add_setshow_optional_filename_cmd ("kext-symbol-file-path", class_support,
 				     &kext_symbol_file_path, _("\
-Set the directory where kextload-generated sym files are searched for."), _("\
-Show the directory where kextload-generated sym files are searched for."), _("\
-The kextload-generated sym file is first searched for in the same\n\
+Set the directory where kextutil-generated sym files are searched for."), _("\
+Show the directory where kextutil-generated sym files are searched for."), _("\
+The kextutil-generated sym file is first searched for in the same\n\
 directory as the kext bundle, then in the directory specified by \n\
 kext-symbol-file-path.  A common use would be to have kext-symbol-file-path\n\
-set to /tmp and the kextload-generated .sym files put in /tmp with the kext\n\
+set to /tmp and the kextutil-generated .sym files put in /tmp with the kext\n\
 bundle and dSYM in another location."),
 				     NULL,
 				     NULL,

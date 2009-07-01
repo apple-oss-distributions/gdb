@@ -39,7 +39,6 @@
 #include "mach-o.h"
 #include "gdb_assert.h"
 #include "macosx-nat-dyld-io.h"
-#include "macosx-nat-inferior.h"
 
 #include <string.h>
 
@@ -82,7 +81,6 @@ macho_symfile_init (struct objfile *objfile)
   memset (objfile->deprecated_sym_private, 0, sizeof (struct macho_symfile_info));
 
   objfile->flags |= OBJF_REORDERED;
-  init_entry_point_info (objfile);
 }
 
 /* Scan and build partial symbols for a file with special sections for stabs
@@ -374,58 +372,31 @@ macho_build_psymtabs (struct objfile *objfile, int mainline,
   else
     {
 #endif
-#if defined (TARGET_ARM) && defined (NM_NEXTSTEP)
-      /* Hack for ARM native MacOSX targets where we can rely on anything
-	 in the shared cache being mapped in our process at the same 
-	 address. This can save us 10MB - 11MB which is a about a tenth
-	 of our available memory.   */
-      if (bfd_mach_o_in_shared_cached_memory (sym_bfd))
+      /* Only check the length if our bfd is not in memory since the bfd
+         read iovec functions we define in macosx-nat-dyld-info.c do not
+	 always have a length as our in memory executable images can now
+	 be scattered about memory with any segment data appearing at a
+	 lower address than our mach header.  */
+      if (bfd_in_memory == 0)
 	{
-	  /* If the bfd is in the shared cache, all images will share the
-	     same string table, so we need to make one copy of the shared
-	     string table and keep it around.  */
-	  asection *linkedit_sect = NULL;
-	  CORE_ADDR strtab_addr = 0;
-	  linkedit_sect = bfd_get_section_by_name (sym_bfd, 
-						   "LC_SEGMENT.__LINKEDIT");
-	  if (linkedit_sect == NULL)
-	    error ("error parsing symbol file: no __LINKEDIT section was found");
-
-	  strtab_addr = bfd_section_vma (sym_bfd, linkedit_sect) + 
-			(stabstrsect->filepos - linkedit_sect->filepos);
-     	  DBX_STRINGTAB (objfile) = (char *)strtab_addr;
+	  if (DBX_STRINGTAB_SIZE (objfile) > bfd_get_size (sym_bfd))
+	    error
+	      ("error parsing symbol file: invalid string table size (%d bytes)",
+	       DBX_STRINGTAB_SIZE (objfile));
 	}
-      else
-	{	
-#endif
-	  /* Only check the length if our bfd is not in memory since the bfd
-	     read iovec functions we define in macosx-nat-dyld-info.c do not
-	     always have a length as our in memory executable images can now
-	     be scattered about memory with any segment data appearing at a
-	     lower address than our mach header.  */
-	  if (bfd_in_memory == 0)
-	    {
-	      if (DBX_STRINGTAB_SIZE (objfile) > bfd_get_size (sym_bfd))
-		error
-		  ("error parsing symbol file: invalid string table size (%d bytes)",
-		   DBX_STRINGTAB_SIZE (objfile));
-	    }
-	  DBX_STRINGTAB (objfile) =
-	    (char *) obstack_alloc (&objfile->objfile_obstack,
-				    DBX_STRINGTAB_SIZE (objfile) + 1);
-	  OBJSTAT (objfile, sz_strtab += DBX_STRINGTAB_SIZE (objfile) + 1);
+      DBX_STRINGTAB (objfile) =
+        (char *) obstack_alloc (&objfile->objfile_obstack,
+                                DBX_STRINGTAB_SIZE (objfile) + 1);
+      OBJSTAT (objfile, sz_strtab += DBX_STRINGTAB_SIZE (objfile) + 1);
 
-	  /* Now read in the string table in one big gulp.  */
+      /* Now read in the string table in one big gulp.  */
 
-	  val = bfd_get_section_contents
-	    (sym_bfd, stabstrsect, DBX_STRINGTAB (objfile), 0,
-	     DBX_STRINGTAB_SIZE (objfile));
+      val = bfd_get_section_contents
+        (sym_bfd, stabstrsect, DBX_STRINGTAB (objfile), 0,
+         DBX_STRINGTAB_SIZE (objfile));
 
-	  if (!val)
-	    perror_with_name (name);
-#if defined (TARGET_ARM) && defined (NM_NEXTSTEP)
-	}
-#endif
+      if (!val)
+        perror_with_name (name);
 #if HAVE_MMAP
     }
 #endif
@@ -526,13 +497,11 @@ macho_symfile_read (struct objfile *objfile, int mainline)
 
   if (dwarf2_has_info (objfile))
     {
-      /* DWARF 2 sections */
       dwarf2_build_psymtabs (objfile, mainline);
-#if 0
-      dwarf2_build_frame_info (objfile);
-#endif
+      if (use_eh_frames_info)
+        dwarf2_build_frame_info (objfile);
     }
-  if (dwarf_eh_frame_section != NULL && use_eh_frames_info)
+  else if (dwarf_eh_frame_section != NULL && use_eh_frames_info)
     {
       dwarf2_build_frame_info (objfile);
     }
@@ -601,10 +570,10 @@ macho_read_indirect_symbols (bfd *abfd,
                              struct objfile *objfile)
 {
 
-  unsigned long i, nsyms, ret;
+  unsigned int i, nsyms, ret;
   asymbol sym;
   asection *bfdsec = NULL;
-  long section_count;
+  int section_count;
   struct bfd_mach_o_section *section = NULL;
   struct bfd_mach_o_load_command *lcommand = NULL;
 
@@ -664,7 +633,7 @@ macho_read_indirect_symbols (bfd *abfd,
       for (i = 0; i < nsyms; i++)
         {
 
-          unsigned long cursym = section->reserved1 + i;
+          CORE_ADDR cursym = section->reserved1 + i;
           CORE_ADDR stubaddr = section->addr + (i * section->reserved2);
           const char *sname = NULL;
           char nname[4096];
@@ -672,7 +641,7 @@ macho_read_indirect_symbols (bfd *abfd,
           if (cursym >= dysymtab->nindirectsyms)
             {
               warning
-                ("Indirect symbol entry out of range in \"%s\" (%lu >= %lu)",
+                ("Indirect symbol entry out of range in \"%s\" (%llu >= %lu)",
                  abfd->filename, cursym,
                  (unsigned long) dysymtab->nindirectsyms);
               return 0;

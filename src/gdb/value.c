@@ -567,6 +567,14 @@ value_free_to_mark (struct value *mark)
   all_values = val;
 }
 
+/* APPLE LOCAL: Define a value_free rather than making it a #define
+   so we can use it in cleanups.  */
+void
+value_free (struct value *val)
+{
+  xfree (val);
+}
+
 /* Free all the values that have been allocated (except for those released).
    Called after each command, successful or not.  */
 

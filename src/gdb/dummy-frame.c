@@ -186,7 +186,7 @@ dummy_frame_sniffer (const struct frame_unwind *self,
 static void
 dummy_frame_prev_register (struct frame_info *next_frame,
 			   void **this_prologue_cache,
-			   int regnum, int *optimized,
+			   int regnum, enum opt_state *optimized,
 			   enum lval_type *lvalp, CORE_ADDR *addrp,
 			   int *realnum, gdb_byte *bufferp)
 {

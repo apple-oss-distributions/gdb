@@ -498,6 +498,10 @@ run_command_1 (char *args, int from_tty, int tbreak_at_main)
   /* APPLE LOCAL checkpoints */
   clear_all_checkpoints ();
 
+  /* APPLE LOCAL: discard ObjC Runtime cleanups, and reset proceed_from_hand_call.  */
+  do_hand_call_cleanups (ALL_CLEANUPS);
+  proceed_from_hand_call = 0;
+  
   /* Purge old solib objfiles. */
   objfile_purge_solibs ();
 
@@ -840,8 +844,9 @@ step_1_no_inlining (int skip_subroutines, int single_inst, char *count_string)
 	      if (step_range_end == 0)
 		{
 		  char *name;
-		  if (find_pc_partial_function (stop_pc, &name, &step_range_start,
-						&step_range_end) == 0)
+		  if (find_pc_partial_function_no_inlined (stop_pc, &name, 
+							   &step_range_start,
+							   &step_range_end) == 0)
 		    error (_("Cannot find bounds of current function"));
 
 		  target_terminal_ours ();
@@ -1233,6 +1238,10 @@ step_1_inlining (int skip_subroutines, int single_inst, char *count_string)
 		  if (inline_start_pc)
 		    {
 		      step_range_end = inline_start_pc;
+		      /* APPLE LOCAL remember stepping into inlined
+			 subroutine across intervening function
+			 calls.  */
+		      inlined_step_range_end = inline_start_pc;
 		      stepping_into_inlined_subroutine = 1;
 		      if (dwarf2_debug_inlined_stepping)
 			ui_out_text (uiout,
@@ -1462,6 +1471,8 @@ step_once (int skip_subroutines, int single_inst, int count)
   else if (!single_inst 
 	   && at_inlined_call_site_p (&file_name, &line_num, &column))
     {
+      /* APPLE LOCAL radar 6130399  */
+      struct frame_info *fi;
       struct symtab_and_line sal;
       struct symtab_and_line *cur = NULL;
       int func_first_line = 0;
@@ -1562,10 +1573,16 @@ step_once (int skip_subroutines, int single_inst, int count)
       annotate_frames_invalid ();
       breakpoints_changed ();
       annotate_frames_invalid ();
+
+      /* APPLE LOCAL begin radar 6130399  */
+      fi = get_current_frame ();
+      print_inlined_frame (fi, 0, SRC_AND_LOC, 1, sal, func_first_line);
       if (annotation_level == 0)
-	print_source_lines (sal.symtab, func_first_line, 1, 0);
+	print_source_lines (sal.symtab, func_first_line, 1, 0); 
       else
 	identify_source_line (sal.symtab, func_first_line, 0, sal.pc);
+      /* APPLE LOCAL end radar 6130399  */
+
       annotate_frame_end ();
       annotate_stopped ();
 	  
@@ -1608,6 +1625,9 @@ step_once (int skip_subroutines, int single_inst, int count)
 	      if (inline_start_pc)
 		{
 		  step_range_end = inline_start_pc;
+		  /* APPLE LOCAL remember stepping into inlined
+		     subroutine across intervening function calls.  */
+		  inlined_step_range_end = inline_start_pc;
 		  stepping_into_inlined_subroutine = 1;
 		  if (dwarf2_debug_inlined_stepping)
 		    ui_out_text (uiout, 

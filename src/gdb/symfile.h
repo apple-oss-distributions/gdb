@@ -279,7 +279,7 @@ extern void discard_psymtab (struct partial_symtab *);
 extern void find_lowest_section (bfd *, asection *, void *);
 
 /* APPLE LOCAL begin symfile bfd open */
-extern bfd *symfile_bfd_open (const char *, int mainline, enum gdb_osabi osabi);
+extern bfd *symfile_bfd_open (const char *, int mainline);
 
 extern int get_section_index (struct objfile *, char *);
 
@@ -345,11 +345,16 @@ extern void dwarf2_debug_map_psymtab_to_symtab (struct partial_symtab *);
 /* APPLE LOCAL: Scanning pubtypes tables for psymbols.  */
 extern void dwarf2_scan_pubtype_for_psymbols (struct partial_symtab *, 
 					      struct objfile *, enum language);
+/*  APPLE LOCAL debug inlined section  */
+extern void dwarf2_scan_inlined_section_for_psymbols (struct partial_symtab *, 
+						      struct objfile *, 
+						      enum language);
 
 /* From dbxread.c */
 
 extern struct bfd *open_bfd_from_oso (struct partial_symtab *pst, int *cached);
 extern void clear_containing_archive_cache (void);
+extern void close_bfd_or_archive (bfd *abfd);
 
 struct nlist_rec 
 {
@@ -380,12 +385,7 @@ extern void elfmdebug_build_psymtabs (struct objfile *,
 				      const struct ecoff_debug_swap *,
 				      asection *);
 
-extern bfd *symfile_bfd_open_safe (const char *filename, int mainline, 
-				   enum gdb_osabi osabi);
-
-int reread_symbols_for_objfile (struct objfile *objfile, 
-				long new_modtime, 
-				enum gdb_osabi osabi);
+extern bfd *symfile_bfd_open_safe (const char *filename, int mainline);
 
 extern struct objfile *symbol_file_add_bfd_safe
 (bfd *abfd, int from_tty, struct section_addr_info *addrs, struct section_offsets *offsets,
@@ -398,8 +398,7 @@ extern struct objfile *symbol_file_add_bfd_using_objfile
  int mainline, int flags, int symflags, CORE_ADDR mapaddr, const char *prefix);
 
 /* APPLE LOCAL: pick the slice of a fat file matching the current arch.  */
-bfd *open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format,
-			     enum gdb_osabi osabi);
+bfd *open_bfd_matching_arch (bfd *archive_bfd, bfd_format expected_format);
 
 struct objfile *symbol_file_add_with_addrs_or_offsets_using_objfile (struct objfile *, bfd *, int, struct section_addr_info *, struct section_offsets *, int, int, int, int, CORE_ADDR, const char *, char *);
 

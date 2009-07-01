@@ -468,7 +468,7 @@ find_pc_offset (CORE_ADDR start, CORE_ADDR *result, int offset, int funclimit,
 
   if (funclimit)
     {
-      if (find_pc_partial_function (start, NULL, &low, &high) == 0)
+      if (find_pc_partial_function_no_inlined (start, NULL, &low, &high) == 0)
 	{
 	  /* We were unable to find the start of the function. */
 	  return -1;

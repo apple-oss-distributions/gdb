@@ -731,30 +731,13 @@ dwarf2_frame_signal_frame_p (struct gdbarch *gdbarch,
   return ops->signal_frame_p (gdbarch, next_frame);
 }
 
-/* Set the architecture-specific adjustment of .eh_frame and .debug_frame
-   register numbers.  */
-
-void
-dwarf2_frame_set_adjust_regnum (struct gdbarch *gdbarch,
-				int (*adjust_regnum) (struct gdbarch *,
-						      int, int))
-{
-  struct dwarf2_frame_ops *ops = gdbarch_data (gdbarch, dwarf2_frame_data);
-
-  ops->adjust_regnum = adjust_regnum;
-}
-
 /* Translate a .eh_frame register to DWARF register, or adjust a .debug_frame
    register.  */
 
 int
 dwarf2_frame_adjust_regnum (struct gdbarch *gdbarch, int regnum, int eh_frame_p)
 {
-  struct dwarf2_frame_ops *ops = gdbarch_data (gdbarch, dwarf2_frame_data);
-
-  if (ops->adjust_regnum == NULL)
-    return regnum;
-  return ops->adjust_regnum (gdbarch, regnum, eh_frame_p);
+  return gdbarch_adjust_ehframe_regnum (gdbarch, regnum, eh_frame_p);
 }
 
 static void
@@ -1059,7 +1042,7 @@ dwarf2_signal_frame_this_id (struct frame_info *next_frame, void **this_cache,
 
 static void
 dwarf2_frame_prev_register (struct frame_info *next_frame, void **this_cache,
-			    int regnum, int *optimizedp,
+			    int regnum, enum opt_state *optimizedp,
 			    enum lval_type *lvalp, CORE_ADDR *addrp,
 			    int *realnump, gdb_byte *valuep)
 {

@@ -27,13 +27,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
 
 #include "kdp-udp.h"
 
 #include "defs.h"
 #define assert CHECK_FATAL
 
-static inline unsigned short
+static uint16_t
 read16u (const unsigned char *s, int bigendian)
 {
   if (bigendian)
@@ -46,7 +47,7 @@ read16u (const unsigned char *s, int bigendian)
     }
 }
 
-static inline unsigned long
+static uint32_t
 read32u (const unsigned char *s, int bigendian)
 {
   if (bigendian)
@@ -59,10 +60,10 @@ read32u (const unsigned char *s, int bigendian)
     }
 }
 
-static inline unsigned long long
+static uint64_t
 read64u (const unsigned char *s, int bigendian)
 {
-#define U(a) ((unsigned long long)(a))
+#define U(a) ((uint64_t)(a))
   if (bigendian)
     {
       return (U(s[7]) << 56) + (U(s[6]) << 48) + (U(s[5]) << 40) + (U(s[4]) << 32) + (U(s[3]) << 24) + (U(s[2]) << 16) + (U(s[1]) << 8) + U(s[0]);
@@ -75,7 +76,7 @@ read64u (const unsigned char *s, int bigendian)
 }
 
 static inline void
-write16u (unsigned char *s, unsigned short i, int bigendian)
+write16u (unsigned char *s, uint16_t i, int bigendian)
 {
   if (bigendian)
     {
@@ -90,7 +91,7 @@ write16u (unsigned char *s, unsigned short i, int bigendian)
 }
 
 static inline void
-write32u (unsigned char *s, unsigned long i, int bigendian)
+write32u (unsigned char *s, uint32_t i, int bigendian)
 {
   if (bigendian)
     {
@@ -109,7 +110,7 @@ write32u (unsigned char *s, unsigned long i, int bigendian)
 }
 
 static inline void
-write64u (unsigned char *s, unsigned long long i, int bigendian)
+write64u (unsigned char *s, uint64_t i, int bigendian)
 {
   if (bigendian)
     {
@@ -661,7 +662,7 @@ kdp_marshal (kdp_connection *c,
             for (i = 0; i < (reglen / KDP_REGISTER_SIZE); i++)
               {
                 write32u (s + 12 + (i * KDP_REGISTER_SIZE),
-                          ((unsigned long *) p->readregs_reply.data)[i],
+                          ((uint32_t *) p->readregs_reply.data)[i],
                           c->bigendian);
               }
             break;
@@ -778,7 +779,7 @@ kdp_marshal (kdp_connection *c,
             for (i = 0; i < (reglen / KDP_REGISTER_SIZE); i++)
               {
                 write32u (s + 16 + (i * KDP_REGISTER_SIZE),
-                          ((unsigned long *) p->writeregs_req.data)[i],
+                          ((uint32_t *) p->writeregs_req.data)[i],
                           c->bigendian);
               }
             break;
@@ -1034,7 +1035,7 @@ kdp_unmarshal (kdp_connection *c,
             p->readregs_reply.nbytes = reglen;
             for (i = 0; i < (reglen / KDP_REGISTER_SIZE); i++)
               {
-                ((unsigned long *) p->readregs_reply.data)[i] =
+                ((uint32_t *) p->readregs_reply.data)[i] =
                   read32u (s + 12 + (i * KDP_REGISTER_SIZE), c->bigendian);
               }
             break;
@@ -1173,7 +1174,7 @@ kdp_unmarshal (kdp_connection *c,
             p->writeregs_req.nbytes = reglen;
             for (i = 0; i < (reglen / KDP_REGISTER_SIZE); i++)
               {
-                ((unsigned long *) p->writeregs_req.data)[i] =
+                ((uint32_t *) p->writeregs_req.data)[i] =
                   read32u (s + 16 + (i * KDP_REGISTER_SIZE), c->bigendian);
               }
             break;

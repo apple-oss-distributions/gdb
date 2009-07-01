@@ -1,27 +1,50 @@
-2009-07-17  Greg Clayton  <gclayton@apple.com>
+2009-06-16  Caroline Tice <ctice@apple.com>
 
-	* Makefile: Find gcc using xcrun for cross builds and use -isysroot.
+	* Makefile:  Add -D_DARWIN_UNLIMITED_STREAMS to CDEBUGFLAGS, to
+	allow more than 256 streams to be open at a time.
+	
+2009-04-07  Jason Molenda  (jmolenda@apple.com)
 
-2009-02-03  Greg Clayton  <gclayton@apple.com>
+	* Makefile: Only add -Wno-error=deprecated-declarations to CFLAGS
+	on specific OS releases; some compilers don't recognize the flag.
 
-	* Makefile: Modified installhdrs to work for cross builds and also
-	fixed an issue where /private/etc/gdb.conf wasn't being generated.
+2009-02-23  Jason Molenda  (jmolenda@apple.com)
 
-2009-02-02  Greg Clayton  <gclayton@apple.com>
+	* gdb.sh: Print --help messages to stdout not stderr to match
+	gdb's behavior.
 
-	* gdb.sh: Only use lipo if we have an executable and redirect stdout
-	and stderr to /dev/null to omit any shell spew.
+2008-11-17  Jason Molenda  (jmolenda@apple.com)
 
-2009-01-06  Greg Clayton  <gclayton@apple.com>
+	* gdb.sh: Tighten up pattern matching for core files.
 
-	* gdb.sh: If the host arch is "arm", we check the cpusubtype so we can
-	get a more descriptive arch name for HOST_ARCHITECTURE. Use 'lipo -info'
-	instead of the 'file' command as it returns more descriptive 
-	architectures.
+2008-11-06  Jason Molenda  (jmolenda@apple.com)
 
-2008-12-04  Greg Clayton  <gclayton@apple.com>
+	* Makefile (install-macosx): Call install-chmod-macosx-noprocmod
+	unconditionally - build everything without setgid procmod.
+	(install): Ditto.
 
-	* Makefile (cross): Modified the cross build to handle all ARM variants.
+2008-09-17  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.sh: Get the executable name of the translate binary via
+	a sysctl instead of hardcoding.  Fall back on the hardcoded
+	value if necessary.
+
+2008-08-29  Greg Clayton  <gclayton@apple.com>
+
+	* gdb.sh: Only specify an arch to gdb when we have a core file.
+
+2008-08-29  Greg Clayton  <gclayton@apple.com>
+
+	* gdb.sh: Only specify an arch to gdb when we need to.
+
+2008-08-20  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.sh: Recognize the file(1) output for an x86_64 core file.
+	Rename "requested_architecture" to "requested_arch" and 
+	"host_architecture" to "host_arch".
+	Add code, commented out currently, to tell if the current system is
+	an x86_64 capable one and set host_arch to that.
+	Handle cases where a host_arch of x86_64 would have caused problems.
 
 2008-08-20  Greg Clayton  <gclayton@apple.com>
 
@@ -35,49 +58,42 @@
 	auto-detecting and launching the correct gdb, and preferring the
 	core file over the executable.
 
-2008-08-18  Greg Clayton  <gclayton@apple.com>
+2008-08-15  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.sh: Improved the executable architecture detection by searching
-	for the last executable gdb argument and ignoring options.
+	* gdb.sh: Back out Greg's change for a little more refining.
 
 2008-08-14  Greg Clayton  <gclayton@apple.com>
 
 	* gdb.sh: Added support for auto-detecting an executable's architecture
 	and launching the correct gdb.
 
-2008-08-07  Greg Clayton  <gclayton@apple.com>
+2008-08-07  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.sh: Added armv4 and armv4t support, and let gdb auto detect
-	the arm version when the arch is specified as anything that starts
-	with "arm" that isn't one of "armv4", "armv4t", "armv6", or "armv7".
+	* Makefile: This will be run with RC_ARCHS set to i386 ppc x86_64 --
+	handle all three being specified instead if implicitly building x86_64.
+	* template.h: Update to handle x86_64, arm.
 
-2008-07-31  Greg Clayton  <gclayton@apple.com>
+2008-07-28  Jason Molenda  (jmolenda@apple.com)
 
-	* Makefile (CANONICAL_ARCHS): Sort the items in this variable
-	so check-args can have fewer permutations.
-	(check-args): Recognize arm, i386 and ppc as a plausible variant and
-	rely on sorted CANONICAL_ARCHS.
-	(CONFIGURE_OPTIONS): Added a "filter-out" make command to remove
-	extra whitespace when some settings don't have any value.
-	(EFLAGS): Ditto.
-	(cross): Cleaned up redundant defintions for cross_arch_full shell
-	variable.
+	* Makefile (CFLAGS): Add  -Werror-implicit-function-declaration.
 
-2008-07-08  Greg Clayton  <gclayton@apple.com>
+2008-07-25  Jason Molenda  (jmolenda@apple.com)
 
-	* Makefile (GDB_RC_VERSION): Bump armv7 branch gdb version up 
-	to gdb-1100.
+	* Makefile (build-gdb): Build the cross gdb's first (e.g. i386 x ppc) 
+	because those are the ones that fail to build the most often so let's 
+	do them up front.
 
-2008-07-02  Greg Clayton  <gclayton@apple.com>
+2008-07-25  Jason Molenda  (jmolenda@apple.com)
 
-	* Makefile: Modified the "cross" target to support building multiple
-	variants into the same file.
+	* Makefile: Also build an x86_64 x ppc gdb so we've got both binaries
+	3-way fat.
+	Only do the installhdrs for ppc native and i386 native; not for each of
+	the six gdb combos we're building now when -arch ppc -arch i386 is used.
 
-2008-07-01  Greg Clayton  <gclayton@apple.com>
+2008-07-25  Jason Molenda  (jmolenda@apple.com)
 
-	* gdb.sh: Added armv7 as an arch that calls the correct gdb with
-	the correct osabi options.
-	* Makefile: Added armv7 as a potential arch.
+	* Makefile: Change up the Makefile to build x86_64 when we're building
+	i386, various small changes/cleanups.
 
 2008-06-06  Jason Molenda  (jmolenda@apple.com)
 

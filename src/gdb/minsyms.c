@@ -1195,6 +1195,11 @@ msymbols_sort (struct objfile *objfile)
   qsort (objfile->msymbols, objfile->minimal_symbol_count,
 	 sizeof (struct minimal_symbol), compare_minimal_symbols);
   build_minimal_symbol_hash_tables (objfile);
+  /* APPLE LOCAL: sorting the msymbols shuffles them around so that
+     the pointers inthe equivalence table are no longer valid.  So
+     we have to rebuild them too.  */
+  equivalence_table_delete (objfile);
+  equivalence_table_build (objfile);
 }
 
 /* Check if PC is in a shared library trampoline code stub.

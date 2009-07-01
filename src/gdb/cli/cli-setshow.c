@@ -230,7 +230,7 @@ do_setshow_command (char *arg, int from_tty, struct cmd_list_element *c)
 	  {
 	    int i;
 	    int len;
-	    int nmatches;
+	    int nmatches = 0;
 	    const char *match = NULL;
 	    char *p;
 

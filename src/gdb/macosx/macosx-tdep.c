@@ -754,11 +754,11 @@ gdb_DBGCopyMatchingUUIDsForURL (const char *path)
   CFAllocatorRef alloc = kCFAllocatorDefault;
   CFMutableArrayRef uuid_array = NULL;
   struct gdb_exception e;
-  bfd *abfd = NULL;
+  bfd *abfd;
 
   TRY_CATCH (e, RETURN_MASK_ERROR)
   {
-    abfd = symfile_bfd_open (path, 0, GDB_OSABI_UNKNOWN);
+    abfd = symfile_bfd_open (path, 0);
   }
   
   if (abfd == NULL || e.reason == RETURN_ERROR)
@@ -785,7 +785,7 @@ gdb_DBGCopyMatchingUUIDsForURL (const char *path)
               CFRelease (nbfd_uuid);
             }
         }
-
+      bfd_free_cached_info (abfd);
     }
   else
    {
@@ -872,13 +872,17 @@ create_dsym_uuids_for_path (char *dsym_bundle_path)
 	{
 	  CFURLRef path_url = NULL;
 	  CFArrayRef uuid_array = NULL;
+	  CFStringRef path_cfstr = NULL;
 	  /* Re-use the path each time and only copy the 
 	     directory entry name just past the 
 	     ".../Contents/Resources/DWARF/" part of PATH.  */
 	  strcpy(&path[path_len], dp->d_name);
-	  path_url = CFURLCreateWithBytes (NULL, (UInt8 *) path, full_path_len, 
-					   kCFStringEncodingUTF8, NULL);
+	  path_cfstr = CFStringCreateWithCString (NULL, path,  
+						  kCFStringEncodingUTF8);
+	  path_url = CFURLCreateWithFileSystemPath (NULL, path_cfstr,
+                                                    kCFURLPOSIXPathStyle, 0);
 	  
+	  CFRelease (path_cfstr), path_cfstr = NULL;
 	  if (path_url == NULL)
 	    continue;
 	  
@@ -1572,48 +1576,18 @@ fast_show_stack_trace_prologue (unsigned int count_limit,
     {
       char *name;
       struct minimal_symbol *msymbol;
-      struct objfile *libsystem_objfile;
 
-      /* Grab the libSystem objfile.  */
-      libsystem_objfile = find_objfile_by_name ("libSystem.B.dylib", 0);
-
-      /* If libSystem isn't loaded yet, NULL it out so we don't look up 
-         and cache incorrect un-slid or faux-slid address values.  */
-      if (!target_check_is_objfile_loaded (libsystem_objfile))
-	libsystem_objfile = NULL;
-
-      /* If we have libSystem and it was loaded we should lookup sigtramp.  */
-      if (libsystem_objfile)
-	{
-	  /* Raise the load level and lookup the sigtramp symbol.  */
-	  objfile_set_load_state (libsystem_objfile, OBJF_SYM_ALL, 1);
-	  msymbol = lookup_minimal_symbol ("_sigtramp", NULL, libsystem_objfile);
-	}
-      else
-	{
-	  /* We either don't have libSystem, or it isn't loaded yet. Lets not
-	     do anything WRT sigtramp yet.  */
-	  msymbol = NULL;
-	}
-      
+      msymbol = lookup_minimal_symbol ("_sigtramp", NULL, NULL);
       if (msymbol == NULL)
-	{
-	  /* Only warn if we found libSystem and it was loaded.  */
-	  if (libsystem_objfile != NULL)
-	    warning ("Couldn't find minimal symbol for \"_sigtramp\" - "
-		     "backtraces may be unreliable");
-	}
+        warning
+          ("Couldn't find minimal symbol for \"_sigtramp\" - "
+	   "backtraces may be unreliable");
       else
         {
-	  /* Shared libraries must be loaded for the code below to work since
-	     we are getting the MSYMBOL value, then using that to look the
-	     sigtramp range. If shared libraries aren't loaded, we could end
-	     up getting and un-slid or faux-slid value that we will then try
-	     and get the function bounds for which could return us the range
-	     for a totally different function.  */
           pc = SYMBOL_VALUE_ADDRESS (msymbol);
-          if (find_pc_partial_function (pc, &name, sigtramp_start_ptr, 
-					sigtramp_end_ptr) == 0)
+          if (find_pc_partial_function_no_inlined (pc, &name,
+						   sigtramp_start_ptr, 
+						   sigtramp_end_ptr) == 0)
             {
               warning
 		("Couldn't find minimal bounds for \"_sigtramp\" - "

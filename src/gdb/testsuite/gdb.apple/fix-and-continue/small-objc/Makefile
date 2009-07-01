@@ -1,14 +1,14 @@
 CC := gcc
 override CFLAGS :=
 
-MAINPROG_CFLAGS := -g -mfix-and-continue
+MAINPROG_CFLAGS := -arch $(ARCH) -g -mfix-and-continue
 
-MAINPROG_LDFLAGS := -framework Foundation \
+MAINPROG_LDFLAGS := -arch $(ARCH) -framework Foundation \
      -L/System/Library/PrivateFrameworks/ZeroLink.framework/Versions/A/Resources
 
-FIX_CFLAGS := $(MAINPROG_CFLAGS) -mno-dynamic-no-pic -freplace-objc-classes
+FIX_CFLAGS := -arch $(ARCH) $(MAINPROG_CFLAGS) -mno-dynamic-no-pic -freplace-objc-classes
 
-MAKE_A_BUNDLE_FLAGS := -bundle -flat_namespace -undefined suppress
+MAKE_A_BUNDLE_FLAGS := -arch $(ARCH) -bundle -flat_namespace -undefined suppress
 
 all: stage1 stage2
 

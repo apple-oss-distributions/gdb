@@ -736,9 +736,9 @@ ui_out_notify_begin (struct ui_out *uiout, char *class)
 }
 
 static void
-ui_out_notify_end (struct ui_out *uiout)
+ui_out_notify_end (void *uiout)
 {
-  uo_notify_end (uiout);
+  uo_notify_end ((struct ui_out *) uiout);
 }
 
 struct cleanup *

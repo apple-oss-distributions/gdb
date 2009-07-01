@@ -482,7 +482,9 @@ extern int unop_user_defined_p (enum exp_opcode op, struct value *arg1);
 
 extern int destructor_name_p (const char *name, const struct type *type);
 
-#define value_free(val) xfree (val)
+/* APPLE LOCAL: Replace the #define with a real function so we can 
+   use it in cleanups.  */
+extern void value_free (struct value *);
 
 extern void free_all_values (void);
 
@@ -507,6 +509,9 @@ extern void print_longest (struct ui_file *stream, int format,
 			   int use_local, LONGEST val);
 
 extern void print_floating (const gdb_byte *valaddr, struct type *type,
+			    struct ui_file *stream);
+
+extern void print_floating_in_hex (const gdb_byte *valaddr, struct type *type,
 			    struct ui_file *stream);
 
 extern int value_print (struct value *val, struct ui_file *stream, int format,
@@ -617,7 +622,9 @@ extern int check_safe_call (regex_t unsafe[],
 /* APPLE LOCAL end check safe call  */
 int set_unwind_on_signal (int new_val);
 /* APPLE LOCAL: Variant for use in make_cleanup calls.  */
-void set_unwind_on_signal_cleanup (void *new_val);
+struct cleanup *make_cleanup_set_restore_unwind_on_signal (int newval);
 
+/* APPLE LOCAL: control casting closures to dynamic type.  */
+struct cleanup *make_cleanup_set_restore_print_closure (int newval);
 
 #endif /* !defined (VALUE_H) */

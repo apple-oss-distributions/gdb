@@ -193,10 +193,6 @@ static void
 kdp_open (char *name, int from_tty)
 {
   push_target (&kdp_ops);
-#if KDP_TARGET_ARM
-  extern int set_arm_single_step_mode (struct gdbarch *, int);
-  set_arm_single_step_mode (current_gdbarch, arm_single_step_mode_software);
-#endif
 }
 
 static void
@@ -1158,7 +1154,7 @@ kdp_fetch_registers_i386 (int regno)
           (GDB_i386_THREAD_FPSTATE_COUNT * 4))
         {
           error
-            ("kdp_fetch_registers_i386: kdp returned %lu bytes of register data (expected %u)",
+            ("kdp_fetch_registers_i386: kdp returned %lu bytes of register data (expected %lu)",
              c.response->readregs_reply.nbytes,
              (GDB_i386_THREAD_FPSTATE_COUNT * 4));
         }
@@ -1362,77 +1358,34 @@ kdp_fetch_registers_arm (int regno)
 #if KDP_TARGET_SUPPORTS_FP
   if ((regno == -1) || ARM_MACOSX_IS_VFP_RELATED_REGNUM (regno))
     {
-      enum arm_vfp_version vfp_version;
-      vfp_version = gdbarch_tdep (current_gdbarch)->vfp_version;
+      kdp_return_t kdpret;
+      gdb_arm_thread_fpstate_t fp_regs;
 
-      switch (vfp_version)
-	{
-	  case ARM_VFP_UNSUPPORTED:
-	    /* No VFP support, so nothing to do.  */
-	    break;
-	  case ARM_VFP_VERSION_1:
-	  case ARM_VFP_VERSION_3:
-	    {
-	      kdp_return_t kdpret;
-	      c.request->readregs_req.hdr.request = KDP_READREGS;
-	      c.request->readregs_req.cpu = 0;
-	      c.request->readregs_req.flavor = GDB_ARM_THREAD_FPSTATE;
+      c.request->readregs_req.hdr.request = KDP_READREGS;
+      c.request->readregs_req.cpu = 0;
+      c.request->readregs_req.flavor = GDB_ARM_THREAD_FPSTATE;
 
-	      kdpret = kdp_transaction (&c, c.request, c.response,
-					"kdp_fetch_registers_arm");
-	      if (kdpret != RR_SUCCESS)
-		{
-		  error
-		    ("kdp_fetch_registers_arm: unable to fetch ARM_THREAD_FPSTATE: %s",
-		     kdp_return_string (kdpret));
-		}
-	    
-	      if (vfp_version == ARM_VFP_VERSION_1)
-		{
-		  if (c.response->readregs_reply.nbytes == 
-		      sizeof (gdb_arm_thread_vfpv1_state_t))
-		    {
-		      gdb_arm_thread_vfpv1_state_t fp_regs;
-		      memcpy (&fp_regs, c.response->readregs_reply.data,
-			      c.response->readregs_reply.nbytes);
-		      arm_macosx_fetch_vfpv1_regs (&fp_regs);
-		    }
-		  else
-		    {
-		      error
-			("kdp_fetch_registers_arm: kdp returned %lu bytes of "
-			  "register data (expected %lu)",
-			  c.response->readregs_reply.nbytes, 
-			  sizeof (gdb_arm_thread_vfpv1_state_t));
-		    }
-		}
-	      else if (vfp_version == ARM_VFP_VERSION_3)
-		{
-		  if (c.response->readregs_reply.nbytes == 
-		      sizeof (gdb_arm_thread_vfpv3_state_t))
-		    {
-		      gdb_arm_thread_vfpv3_state_t fp_regs;
-		      memcpy (&fp_regs, c.response->readregs_reply.data,
-			      c.response->readregs_reply.nbytes);
-		      arm_macosx_fetch_vfpv3_regs (&fp_regs);
-		    }
-		  else
-		    {
-		      error
-			("kdp_fetch_registers_arm: kdp returned %lu bytes of "
-			  "register data (expected %lu)",
-			  c.response->readregs_reply.nbytes, 
-			  sizeof (gdb_arm_thread_vfpv3_state_t));
-		    }
-		}
-	    }
-	    break;
-	    
-	  default:
-	    error ("kdp_fetch_registers_arm: unable to fetch ARM_THREAD_FPSTATE: "
-		 "unsupported vfp version: %d", (int)vfp_version);
-	    break;
-	}
+      kdpret =
+        kdp_transaction (&c, c.request, c.response,
+                         "kdp_fetch_registers_arm");
+      if (kdpret != RR_SUCCESS)
+        {
+          error
+            ("kdp_fetch_registers_arm: unable to fetch ARM_THREAD_FPSTATE: %s",
+             kdp_return_string (kdpret));
+        }
+      if (c.response->readregs_reply.nbytes !=
+          (GDB_ARM_THREAD_FPSTATE_COUNT * 4))
+        {
+          error
+            ("kdp_fetch_registers_arm: kdp returned %lu bytes of register data (expected %lu)",
+             c.response->readregs_reply.nbytes,
+             (GDB_ARM_THREAD_FPSTATE_COUNT * 4));
+        }
+
+      memcpy (&fp_regs, c.response->readregs_reply.data,
+              (GDB_ARM_THREAD_FPSTATE_COUNT * 4));
+      arm_macosx_fetch_vfp_registers (&fp_regs);
     }
 #else
   if ((regno == -1) || ARM_MACOSX_IS_VFP_RELATED_REGNUM (regno))
@@ -1441,9 +1394,9 @@ kdp_fetch_registers_arm (int regno)
          the kernel. */
       if (gdbarch_tdep (current_gdbarch)->fp_model == ARM_FLOAT_VFP)
 	{
-	  for (i = 0; i <= ARM_MACOSX_NUM_VFP_REGS; i++)
-	    set_register_cached (ARM_VFP_REGNUM_S0 + i, 1);
-	  set_register_cached (ARM_VFP_REGNUM_FPSCR, 1);
+	  for (i = ARM_FIRST_VFP_REGNUM; i <= ARM_LAST_VFP_REGNUM; i++)
+	    set_register_cached (i, 1);
+	  set_register_cached (ARM_FPSCR_REGNUM, 1);
 	}
     }
 #endif
@@ -1495,62 +1448,28 @@ kdp_store_registers_arm (int regno)
 #if KDP_TARGET_SUPPORTS_FP
   if ((regno == -1) || ARM_MACOSX_IS_VFP_RELATED_REGNUM (regno))
     {
+
+      gdb_arm_thread_fpstate_t fp_regs;
       kdp_return_t kdpret;
-      enum arm_vfp_version vfp_version;
-      vfp_version = gdbarch_tdep (current_gdbarch)->vfp_version;
-      int fp_data_size = -1;
-      union vfp_regs
-      {
-	gdb_arm_thread_vfpv1_state_t v1;
-	gdb_arm_thread_vfpv3_state_t v3;
-      } fp_regs;
 
-      switch (vfp_version)
-	{
-	  case ARM_VFP_UNSUPPORTED:
-	    /* No VFP support, so nothing to do.  */
-	    fp_data_size = 0;
-	    break;
-	  case ARM_VFP_VERSION_1:
-	    {
-	      arm_macosx_store_vfpv1_regs(&fp_regs.v1);
-	      fp_data_size = sizeof(gdb_arm_thread_vfpv1_state_t);
-	    }
-	    break;
-	  case ARM_VFP_VERSION_3:
-	    {
-	      arm_macosx_store_vfpv3_regs(&fp_regs.v3);
-	      fp_data_size = sizeof(gdb_arm_thread_vfpv3_state_t);
-	    }
-	    break;
-	  
-	  default:
-	    break;
-	}
+      arm_macosx_store_vfp_registers (&fp_regs);
 
-      if (fp_data_size < 0)
-	{
-	    error ("kdp_store_registers_arm: unable to store ARM_THREAD_FPSTATE: "
-		   "unsupported vfp version: %d", (int)vfp_version);
-	}
-      else if (fp_data_size > 0)
-	{
-	  memcpy (c.response->readregs_reply.data, &fp_regs, fp_data_size);
+      memcpy (c.response->readregs_reply.data, &fp_regs,
+              (GDB_ARM_THREAD_FPSTATE_COUNT * 4));
 
-	  c.request->writeregs_req.hdr.request = KDP_WRITEREGS;
-	  c.request->writeregs_req.cpu = 0;
-	  c.request->writeregs_req.flavor = GDB_ARM_THREAD_FPSTATE;
-	  c.request->writeregs_req.nbytes = fp_data_size;
+      c.request->writeregs_req.hdr.request = KDP_WRITEREGS;
+      c.request->writeregs_req.cpu = 0;
+      c.request->writeregs_req.flavor = GDB_ARM_THREAD_FPSTATE;
+      c.request->writeregs_req.nbytes = GDB_ARM_THREAD_FPSTATE_COUNT * 4;
 
-	  kdpret = kdp_transaction (&c, c.request, c.response,
-				    "kdp_store_registers_arm");
-      
-	  if (kdpret != RR_SUCCESS)
-	    {
-	      error
-		("kdp_store_registers_arm: unable to store ARM_THREAD_FPSTATE: %s",
-		kdp_return_string (kdpret));
-	    }
+      kdpret =
+        kdp_transaction (&c, c.request, c.response,
+                         "kdp_store_registers_arm");
+      if (kdpret != RR_SUCCESS)
+        {
+          error
+            ("kdp_store_registers_arm: unable to store ARM_THREAD_FPSTATE: %s",
+             kdp_return_string (kdpret));
         }
     }
 #endif
@@ -1820,7 +1739,7 @@ kdp_load (char *args, int from_tty)
 }
 
 static void
-kdp_create_inferior (char *execfile, char *args, char **env, int from_tty)
+kdp_create_inferior (char *execfile, char *args, char **env, int fromtty)
 {
   error ("unsupported operation kdp_create_inferior");
 }

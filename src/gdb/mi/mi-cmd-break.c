@@ -42,7 +42,7 @@ enum
 /* Output a single breakpoint. */
 
 static void
-breakpoint_notify (int b, int pending_bp)
+breakpoint_notify (int b)
 {
   gdb_breakpoint_query (uiout, b, NULL);
 }

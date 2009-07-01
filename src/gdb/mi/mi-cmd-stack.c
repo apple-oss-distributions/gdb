@@ -548,6 +548,8 @@ list_args_or_locals (int locals, enum print_values values,
   struct cleanup *cleanup_list;
   static struct ui_stream *stb = NULL;
   struct frame_id stack_frame_id = get_frame_id (fi);
+  /* APPLE LOCAL radar 6404668 locals vs. inlined subroutines  */
+  struct bfd_section *section;
 
   stb = ui_out_stream_new (uiout);
   
@@ -589,11 +591,18 @@ list_args_or_locals (int locals, enum print_values values,
       /* APPLE LOCAL begin address ranges  */
       containing_block = block;
 
+      /* APPLE LOCAL radar 6404668 locals vs. inlined subroutines  */
+      section = find_pc_mapped_section (fstart);
+
       while (contained_in (block, containing_block))
       /* APPLE LOCAL end address ranges  */
 	{
-	  print_syms_for_block (block, fi, stb, locals, 1, 
-				values, NULL);
+	  /* APPLE LOCAL begin radar 6404668 locals vs. inlined subroutines  */
+	  if (block == containing_block
+	      || (block_inlined_function (block, section) == NULL))
+	    print_syms_for_block (block, fi, stb, locals, 1, 
+				  values, NULL);
+	  /* APPLE LOCAL end radar 6404668 locals vs. inlined subroutines  */
 	  index++;
           /* Re-fetch FI in case we ran the inferior and the frame cache
              was flushed.  */

@@ -713,6 +713,14 @@ openp (const char *path, int opts, const char *string,
 	  fd = open (filename, mode, prot);
 	  if (fd >= 0)
 	    goto done;
+
+          /* If we failed to open the file and it actually exists in this place
+             then we're looking at a permissions error.  Instead of searching
+             for the binary in all of the $PATH directories and reporting a
+             "No such file exists" error, stop searching right now and print
+             the correct error message. */
+          if (file_exists_p (filename) && fd < 0)
+            goto done;
 	}
       else
 	{
@@ -1106,6 +1114,12 @@ symtab_to_fullname (struct symtab *s)
   if (!s)
     return NULL;
 
+  /* APPLE LOCAL: If we found fullname once before, just re-use the same
+     value.  Bob Rossi removed this shortcut from the FSF gdb sources on
+     2004-06-10; it's a very expensive choice and of dubious correctness.  */
+  if (s->fullname)
+    return s->fullname;
+
   /* Don't check s->fullname here, the file could have been 
      deleted/moved/..., look for it again */
   r = find_and_open_source (s->objfile, s->filename, s->dirname,
@@ -1134,6 +1148,12 @@ psymtab_to_fullname (struct partial_symtab *ps)
 
   if (!ps)
     return NULL;
+
+  /* APPLE LOCAL: If we found fullname once before, just re-use the same 
+     value.  Bob Rossi removed this shortcut from the FSF gdb sources on
+     2004-06-10; it's a very expensive choice and of dubious correctness.  */
+  if (ps->fullname)
+    return ps->fullname;
 
   /* Don't check ps->fullname here, the file could have been
      deleted/moved/..., look for it again */
@@ -1375,6 +1395,7 @@ print_source_lines_base (struct symtab *s, int line, int nlines, int noerror)
   int stopline = line + nlines;
   int c, oldc;
   int eol;
+  int just_kidding_about_error = 0;
 
   /* Regardless of whether we can open the file, set current_source_symtab. */
   current_source_symtab = s;
@@ -1400,11 +1421,18 @@ print_source_lines_base (struct symtab *s, int line, int nlines, int noerror)
     {
       desc = -1;
       noerror = 1;
+      /* We're overloading desc == 0 here to get the case where the ui_out
+	 doesn't want to do source listing not to do that.  But if we allow
+	 that to set last_source_error we permanently scotch any more source
+	 listing (for instance through "interpreter-exec" in the mi.  So
+	 remind ourselves we didn't mean that...  */
+      just_kidding_about_error = 1;
     }
 
   if (desc < 0)
     {
-      last_source_error = desc;
+      if (!just_kidding_about_error)
+	last_source_error = desc;
 
       if (!noerror)
 	{

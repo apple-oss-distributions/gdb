@@ -74,7 +74,6 @@ static const char * const gdb_osabi_names[] =
   "Darwin",
   "Darwin64",
   "DarwinV6",
-  "DarwinV7",
   /* APPLE LOCAL end Darwin */
 
   "QNX Neutrino",
@@ -374,10 +373,11 @@ gdbarch_init_osabi (struct gdbarch_info info, struct gdbarch *gdbarch)
     }
 
   warning
-    ("A handler for the OS ABI \"%s\" is not built into this configuration\n"
-     "of GDB.  Attempting to continue with the default %s settings.\n",
-     gdbarch_osabi_name (info.osabi),
-     info.bfd_arch_info->printable_name);
+    ("This configuration supports \"%s\" but is attempting to load\n"
+      "an executable of type %s which is unlikely to work.\n"
+      "Attempting to continue.",
+      gdbarch_osabi_name (info.osabi),
+      info.bfd_arch_info->printable_name);
 }
 
 /* Limit on the amount of data to be read.  */

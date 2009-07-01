@@ -165,7 +165,9 @@ typedef struct
   unsigned nregions;
   struct
   {
-    unsigned long address;
+    /* FIXME: Should this be uint64_t all the time?  Or uint64_t for K64
+       but uint32_t otherwise?  It was originally 'unsigned long'.  */
+    uint32_t address;  
     size_t nbytes;
     unsigned int protection;
   } regions[0];
@@ -206,7 +208,7 @@ typedef struct
 typedef struct
 {
   kdp_hdr_t hdr;
-  unsigned long long address;
+  uint64_t address;
   unsigned int nbytes;
 } kdp_readmem64_req_t;
 
@@ -239,7 +241,7 @@ typedef struct
 typedef struct
 {
   kdp_hdr_t hdr;
-  unsigned long long address;
+  uint64_t address;
   unsigned int nbytes;
   unsigned char data[0];
 } kdp_writemem64_req_t;
@@ -342,7 +344,7 @@ typedef struct
   kdp_hdr_t hdr;
   unsigned int address;
 #if 0
-  unsigned long ccache;
+  uint32_t ccache;
 #endif
 } kdp_breakpoint_req_t;
 
@@ -356,9 +358,9 @@ typedef struct
 typedef struct
 {
   kdp_hdr_t hdr;
-  unsigned long long address;
+  uint64_t address;
 #if 0
-  unsigned long ccache;
+  uint32_t ccache;
 #endif
 } kdp_breakpoint64_req_t;
 

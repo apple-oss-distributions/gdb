@@ -38,6 +38,7 @@
 #include "dummy-frame.h"
 #include <sys/time.h>
 #include "exceptions.h"
+#include "objc-lang.h"
 
 /* APPLE LOCAL checkpointing */
 extern void begin_inferior_call_checkpoints (void);
@@ -52,6 +53,10 @@ extern void end_inferior_call_checkpoints (void);
 int inferior_function_calls_disabled_p = 0;
 #endif
 
+/* APPLE LOCAL: Usually you want to interrupt an inferior function call if it
+   is about to raise an ObjC exception.  But somebody might not want to...  */
+int objc_exceptions_interrupt_hand_call = 1;
+
 /* APPLE LOCAL: Record the ptid of the thread we are calling functions on.
    If we get more than one exception while calling a function, prefer the
    one that we were hand-calling a function on.  */
@@ -65,6 +70,12 @@ static void
 do_reset_hand_call_ptid ()
 {
   hand_call_ptid = minus_one_ptid;
+}
+
+static void
+do_unset_proceed_from_hand_call (void *unused)
+{
+  proceed_from_hand_call = 0;
 }
 /* END APPLE LOCAL  */
 
@@ -125,10 +136,19 @@ set_unwind_on_signal (int new_val)
 /* A variant that can be registered with make_cleanup() without any
    sizeof int == sizeof void* assumptions.  */
 
-void
+static void
 set_unwind_on_signal_cleanup (void *new_val)
 {
   unwind_on_signal_p = (int) new_val;
+}
+
+struct cleanup *
+make_cleanup_set_restore_unwind_on_signal (int newval)
+{
+  struct cleanup *cleanup 
+    = make_cleanup (set_unwind_on_signal_cleanup, (void *) unwind_on_signal_p);
+  unwind_on_signal_p = newval;
+  return cleanup;
 }
 
 static void
@@ -402,6 +422,7 @@ hand_function_call (struct value *function, struct type *expect_type,
   CORE_ADDR struct_addr = 0;
   struct regcache *retbuf;
   struct cleanup *retbuf_cleanup;
+  struct cleanup *runtime_cleanup;
   struct inferior_status *inf_status;
   struct cleanup *inf_status_cleanup;
   CORE_ADDR funaddr;
@@ -412,6 +433,7 @@ hand_function_call (struct value *function, struct type *expect_type,
   struct regcache *caller_regcache;
   struct cleanup *caller_regcache_cleanup;
   struct frame_id dummy_id;
+  int runtime_check_level;
 
   if (!target_has_execution)
     noprocess ();
@@ -452,6 +474,41 @@ hand_function_call (struct value *function, struct type *expect_type,
      (restored or discarded) without having the retbuf freed.  */
   retbuf = regcache_xmalloc (current_gdbarch);
   retbuf_cleanup = make_cleanup_regcache_xfree (retbuf);
+
+  /* APPLE LOCAL: Calling into the ObjC runtime can block against other threads
+     that hold the runtime lock.  Since any random function call might go into 
+     the runtime, we added a gdb mode where hand_function_call ALWAYS checks
+     whether the runtime is going to be a problem.  */
+
+  runtime_check_level = get_objc_runtime_check_level ();
+  if (runtime_check_level >= 0)
+    {
+      enum objc_debugger_mode_result retval;
+      retval = make_cleanup_set_restore_debugger_mode (&runtime_cleanup, 
+                                                       runtime_check_level);
+      if (retval == objc_debugger_mode_fail_objc_api_unavailable)
+        if (target_check_safe_call (OBJC_SUBSYSTEM, CHECK_SCHEDULER_VALUE))
+          retval = objc_debugger_mode_success;
+
+      if (retval != objc_debugger_mode_success)
+        {
+	  if  (retval == objc_debugger_mode_fail_spinlock_held
+                   || retval == objc_debugger_mode_fail_malloc_lock_held)
+	    error ("Cancelling call as the malloc lock is held so it isn't safe to call the runtime.\n"
+	         "Set objc-non-blocking-mode to off to override this check if you are sure your call doesn't use the ObjC runtime.");
+
+         else
+	    error ("Cancelling call as the ObjC runtime would deadlock.\n"
+	         "Set objc-non-blocking-mode to off to override this check if you are sure your call doesn't use the ObjC runtime.");
+        }
+    }
+  else
+    runtime_cleanup = make_cleanup (null_cleanup, 0);
+
+  /* APPLE LOCAL: Always arrange to stop on ObjC exceptions thrown while in 
+     a hand-called function: */
+  if (objc_exceptions_interrupt_hand_call)
+    make_cleanup_init_objc_exception_catcher ();
 
   /* APPLE LOCAL begin inferior function call */
 #if defined (NM_NEXTSTEP)
@@ -636,7 +693,14 @@ hand_function_call (struct value *function, struct type *expect_type,
 	
 	/* FIXME drow/2002-05-31: Should just always mark methods as
 	   prototyped.  Can we respect TYPE_VARARGS?  Probably not.  */
-	if (TYPE_CODE (ftype) == TYPE_CODE_METHOD)
+	/* APPLE LOCAL: If we don't have debug information for the
+	   function being called, assume that it IS prototyped.  That
+	   way if the person who has called it set the argument types 
+	   correctly, we won't override them (like coercing floats to 
+	   doubles.  */
+	if (ftype_has_debug_info_p (ftype) == 0)
+	  prototyped = 1;
+	else if (TYPE_CODE (ftype) == TYPE_CODE_METHOD)
 	  prototyped = 1;
 	else if (i < TYPE_NFIELDS (ftype))
 	  prototyped = TYPE_PROTOTYPED (ftype);
@@ -856,6 +920,8 @@ You must use a pointer to function type variable. Command ignored."), arg_name);
     /* APPLE LOCAL checkpointing */
     begin_inferior_call_checkpoints ();
     proceed_to_finish = 1;	/* We want stop_registers, please... */
+    proceed_from_hand_call = 1;
+    make_cleanup (do_unset_proceed_from_hand_call, NULL);
 
     if (hand_call_function_hook != NULL)
       hand_call_function_hook ();
@@ -913,6 +979,7 @@ You must use a pointer to function type variable. Command ignored."), arg_name);
     enable_watchpoints_after_interactive_call_stop ();
       
     discard_cleanups (old_cleanups);
+    proceed_from_hand_call = 0;
   }
 
   if (timer_fired)
@@ -921,7 +988,8 @@ You must use a pointer to function type variable. Command ignored."), arg_name);
       error ("User called function timer expired.  Aborting call.");
     }
 
-  if (stopped_by_random_signal || !stop_stack_dummy)
+  if (stopped_by_random_signal 
+      || !stop_stack_dummy)
     {
       /* Find the name of the function we're about to complain about.  */
       const char *name = NULL;
@@ -947,8 +1015,24 @@ You must use a pointer to function type variable. Command ignored."), arg_name);
 	    name = a;
 	  }
       }
-      if (stopped_by_random_signal)
+      /* APPLE LOCAL: Check to see if we were stopped at the ObjC fail breakpoint.  
+	 If we are, then unwind if requested & then just fail.  */
+
+      if (stopped_by_random_signal 
+	  || objc_pc_at_fail_point (stop_pc) != objc_no_fail)
 	{
+	  char *errstr;
+
+	  if (stopped_by_random_signal)
+	    errstr = "The program being debugged was signaled while in a function called from GDB.";
+	  else if (objc_pc_at_fail_point (stop_pc) == objc_debugger_mode_fail)
+	    errstr = "The program being debugged tried to modify the ObjC runtime at an unsafe "
+	      "time while in a function called from gdb";
+	  else if (objc_pc_at_fail_point (stop_pc) == objc_exception_thrown)
+	    errstr = "The program being debugged hit an ObjC exception while in a function called from gdb.\n\
+If you don't want exception throws to interrupt functions called by gdb\n\
+set objc-exceptions-interrupt-hand-call-fns to off.";
+
 	  /* We stopped inside the FUNCTION because of a random
 	     signal.  Further execution of the FUNCTION is not
 	     allowed. */
@@ -964,11 +1048,11 @@ You must use a pointer to function type variable. Command ignored."), arg_name);
 	      /* FIXME: Insert a bunch of wrap_here; name can be very
 		 long if it's a C++ name with arguments and stuff.  */
 	      error (_("\
-The program being debugged was signaled while in a function called from GDB.\n\
+%s\n\
 GDB has restored the context to what it was before the call.\n\
 To change this behavior use \"set unwindonsignal off\"\n\
 Evaluation of the expression containing the function (%s) will be abandoned."),
-		     name);
+		     errstr, name);
 	    }
 	  else
 	    {
@@ -984,11 +1068,11 @@ Evaluation of the expression containing the function (%s) will be abandoned."),
 	      /* FIXME: Insert a bunch of wrap_here; name can be very
 		 long if it's a C++ name with arguments and stuff.  */
 	      error (_("\
-The program being debugged was signaled while in a function called from GDB.\n\
+%s\n\
 GDB remains in the frame where the signal was received.\n\
 To change this behavior use \"set unwindonsignal on\"\n\
 Evaluation of the expression containing the function (%s) will be abandoned."),
-		     name);
+		     errstr, name);
 	    }
 	}
 
@@ -1061,6 +1145,9 @@ the function call)."), name);
 			      value_contents_raw (retval) /*read*/,
 			      NULL /*write*/);
       }
+    /* APPLE LOCAL: I could piggyback on retbuf_cleanup for this, but
+       I'd prefer it to be explicit since this HAS to get cleaned up.  */
+    do_cleanups (runtime_cleanup);
     do_cleanups (retbuf_cleanup);
     /* APPLE LOCAL: Now reset this value to the original return
        type.  That way, if the function was returning a typedef,
@@ -1117,6 +1204,19 @@ The default is to stop in the frame where the signal was received."),
 			   show_unwind_on_signal_p,
 			   &setlist, &showlist);
 
+  add_setshow_boolean_cmd ("objc-exceptions-interrupt-hand-call-fns", class_obscure,
+			   &objc_exceptions_interrupt_hand_call, _("\
+Set whether hitting an ObjC exception throw interrupts a function called by hand from the debugger."), _("\
+Show whether hitting an ObjC exception throw interrupts a function called by hand from the debugger."), _("\
+The objc-exceptions-interrupt-hand-call-fns setting lets the user prevent gdb from\n\
+stopping on objc exceptions while calling functions by hand.  If the function you\n\
+are calling relies on being able to throw and catch exceptions, you may need to turn this\n\
+off.  An uncaught exception, however, will unwind past the point where you were stopped\n\
+in the debugger, so for the most part you will want to leave this on."),
+			   NULL,
+			   NULL,
+			   &setlist, &showlist);
+
 #if defined (NM_NEXTSTEP)
 /* APPLE LOCAL for Greg */
   add_setshow_boolean_cmd ("disable-inferior-function-calls", no_class,
@@ -1132,6 +1232,7 @@ to disable these inferior function calls."),
 			   NULL,
 			   &setlist, &showlist);
 #endif
+/* APPLE LOCAL: one way to protect against deadlocking inferior function calls.  */
   add_setshow_zinteger_cmd ("target-function-call-timeout", class_obscure,
 			    &hand_call_function_timeout, "\
 Set a timeout for gdb issued function calls in the target program.", "	\
@@ -1143,5 +1244,4 @@ A value of zero disables the timer.",
                             NULL,
 			    &setlist, &showlist);
    
-
 }

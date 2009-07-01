@@ -517,8 +517,8 @@ bfd_cache_lookup_worker (bfd *abfd)
         {
           if (abfd->filename)
             printf ("ERROR: File '%s' has disappeared!\n", abfd->filename);
-	abort ();
-    }
+	  abort ();
+        }
     }
 
   return (FILE *) abfd->iostream;

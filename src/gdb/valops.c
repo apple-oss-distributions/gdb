@@ -194,7 +194,7 @@ allocate_space_in_inferior_malloc (int len)
   struct cleanup *cleanup_chain;
   int unwind;
 
-  if (target_check_safe_call () != 1)
+  if (target_check_safe_call (MALLOC_SUBSYSTEM, CHECK_SCHEDULER_VALUE) != 1)
     error ("No memory available to program now: unsafe to call malloc");
 
   if (fval == NULL) 
@@ -202,8 +202,7 @@ allocate_space_in_inferior_malloc (int len)
 
   blocklen = value_from_longest (builtin_type_int, (LONGEST) len);
 
-  unwind = set_unwind_on_signal (1);
-  cleanup_chain = make_cleanup (set_unwind_on_signal_cleanup, (void *) unwind);
+  cleanup_chain = make_cleanup_set_restore_unwind_on_signal (1);
 
   val = call_function_by_hand (lookup_cached_function (fval), 1, &blocklen);
 
@@ -3123,7 +3122,7 @@ do_check_is_thread_unsafe (void *argptr)
                   ui_out_text (uiout, "Unsafe to call functions on thread ");
 		  ui_out_field_int (uiout, "thread", pid_to_thread_id (inferior_ptid));
 		  ui_out_text (uiout, ": ");
-                  ui_out_field_fmt (uiout, "reason", "function: %s on stack",
+                  ui_out_field_fmt (uiout, "problem", "function: %s on stack",
                                     sym_name);
 		  ui_out_text (uiout, "\n");
                   (args->unsafe_p)++;

@@ -450,7 +450,7 @@ i386_macosx_thread_state_addr_1 (CORE_ADDR start_of_func, CORE_ADDR pc,
    the form,
          DW_CFA_expression (1, expr(breg3 +48, deref , plus uconst 0x0018))
    On function entry we can find the ucontext_t structure off of R8; when 
-   _sigtramp calls down into the handler we should look at RDX (reg3) to
+   _sigtramp calls down into the handler we should look at RBX (reg3) to
    find it.
  */
 
@@ -467,7 +467,7 @@ amd64_macosx_thread_state_addr (struct frame_info *next_frame)
     }
   else
     {
-      frame_unwind_register (next_frame, AMD64_RDX_REGNUM, buf);
+      frame_unwind_register (next_frame, AMD64_RBX_REGNUM, buf);
       mcontext_addr = extract_unsigned_integer (buf, 8);
     }
 

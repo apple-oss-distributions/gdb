@@ -44,6 +44,8 @@
 #include "interps.h"
 #include "main.h"
 
+#include <pthread.h>
+
 /* If nonzero, display time usage both at startup and for each command.  */
 
 int display_time;
@@ -115,6 +117,8 @@ captured_command_loop (void *data)
 static int
 captured_main (void *data)
 {
+  /* If you add initializations here, you also need to add then to the
+     proc do_steps_and_nexts in selftest.exp.  */
   struct captured_main_args *context = data;
   int argc = context->argc;
   char **argv = context->argv;
@@ -214,6 +218,11 @@ captured_main (void *data)
   gdb_stdin = stdio_fileopen (stdin);
   gdb_stdtargerr = gdb_stderr;	/* for moment */
   gdb_stdtargin = gdb_stdin;	/* for moment */
+
+  /* APPLE LOCAL: set our main thread's name */
+#ifdef HAVE_PTHREAD_SETNAME_NP
+  pthread_setname_np ("gdb main thread");
+#endif
 
   /* Set the sysroot path.  */
 #ifdef TARGET_SYSTEM_ROOT_RELOCATABLE
@@ -387,8 +396,8 @@ captured_main (void *data)
 	    break;
 	  /* APPLE LOCAL: */
 	  case OPT_WAITFOR:
-	    attach_waitfor = (char *) xmalloc (10 + strlen (optarg));
-	    sprintf (attach_waitfor, "-waitfor %s", optarg);
+	    attach_waitfor = (char *) xmalloc (12 + strlen (optarg));
+	    sprintf (attach_waitfor, "-waitfor \"%s\"", optarg);
 	    break;
 	  /* APPLE LOCAL: */
 	  case OPT_ARCH:
@@ -678,6 +687,13 @@ extern int gdbtk_test (char *);
   do_cleanups (ALL_CLEANUPS);
   /* APPLE LOCAL end global gdbinit */
  
+  /* APPLE LOCAL: Set the $_Xcode convenience variable at '0' before sourcing
+     any .gdbinit files.  Xcode will override this to 1 when it is launching
+     gdb but we need to start with a value of 0 so .gdbinit files can use it 
+     in conditional expressions.  */
+  set_internalvar (lookup_internalvar ("_Xcode"),
+                   value_from_longest (builtin_type_int, (LONGEST) 0));
+
   /* Read and execute $HOME/.gdbinit file, if it exists.  This is done
      *before* all the command line arguments are processed; it sets
      global parameters, which are independent of what file you are
@@ -719,19 +735,19 @@ extern int gdbtk_test (char *);
       char *arch_string = NULL;
       char *osabi_string;
 #if defined (TARGET_POWERPC)
-      if (strcmp (initial_arch, "ppc64") == 0)
-	{
-	  arch_string = "powerpc:common64";
-	  osabi_string = "Darwin64";
-	}
-      else if (strstr (initial_arch, "ppc") == initial_arch)
+      if (strcmp (initial_arch, "ppc") == 0)
 	{
 	  arch_string = "powerpc:common";
 	  osabi_string = "Darwin";
 	}
+      else if (strcmp (initial_arch, "ppc64") == 0)
+	{
+	  arch_string = "powerpc:common64";
+	  osabi_string = "Darwin64";
+	}
       else
 	  warning ("invalid argument \"%s\" for \"--arch\", should be one of "
-		 "\"ppc*\" or \"ppc64\"\n", initial_arch);
+		 "\"ppc\" or \"ppc64\"\n", initial_arch);
 #elif defined (TARGET_I386)
       if (strcmp (initial_arch, "i386") == 0)
 	{
@@ -752,51 +768,21 @@ extern int gdbtk_test (char *);
 	  arch_string = "arm";
 	  osabi_string = "Darwin";
 	}
-      else if (strstr (initial_arch, "armv4") == initial_arch)
-	{
-	  arch_string = "armv4t";
-	  osabi_string = "Darwin";
-	}
-      else if (strstr (initial_arch, "armv6") == initial_arch)
+      else if (strcmp (initial_arch, "armv6") == 0)
 	{
 	  arch_string = "armv6";
 	  osabi_string = "DarwinV6";
 	}
-      else if (strstr (initial_arch, "armv7") == initial_arch)
-	{
-	  arch_string = "armv7";
-	  osabi_string = "DarwinV7";
-	}
       else
 	warning ("invalid argument \"%s\" for \"--arch\", should be one of "
-		 "\"arm\", \"armv4*\", \"armv6*\", or \"armv7*\"\n", 
-		 initial_arch);
+		 "\"armv\" or \"armv6\"\n", initial_arch);
 #endif
       if (arch_string != NULL)
 	{
 	  set_architecture_from_string (arch_string);
 	  set_osabi_from_string (osabi_string);
 	}
-      else
-	{
-#if defined (TARGET_ARM) && defined (NM_NEXTSTEP)
-	  /* Always set the OSABI so we are sure to pick up the right slices 
-	     for ARM.  */
-	  extern enum gdb_osabi arm_set_osabi_from_host_info ();
-	  arm_set_osabi_from_host_info ();
-#endif	
-	}
     }
-#if defined (TARGET_ARM) && defined (NM_NEXTSTEP)
-  else
-    {
-      /* Always set the OSABI so we are sure to pick up the right slices 
-         for ARM.  */
-      extern enum gdb_osabi arm_set_osabi_from_host_info ();
-      arm_set_osabi_from_host_info ();
-    }
-#endif	
-
 #else
   warning ("--arch option not supported in this gdb.");
 #endif

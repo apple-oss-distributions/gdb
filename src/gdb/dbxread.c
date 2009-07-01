@@ -70,12 +70,6 @@ static int end_fun_absolute_p = 0;
 /* APPLE LOCAL */
 #include "block.h"
 
-/* APPLE LOCAL: prototype for macosx_get_osabi_from_dyld_entry */
-#ifdef MACOSX_DYLD
-#include "macosx-nat-dyld.h"
-#endif
-
-
 #include "gdb_assert.h"
 #include "gdb_string.h"
 
@@ -626,7 +620,7 @@ dbx_symfile_read (struct objfile *objfile, int mainline)
   int dbx_symtab_count;
   /* APPLE LOCAL: timers */
   static int timer = -1;
-  struct cleanup *timer_cleanup = NULL;
+  struct cleanup *timer_cleanup;
 
   /* APPLE LOCAL: If this is a dSYM that has minimal symbols, don't read the
      minsyms or we'll end up with duplicated minsyms.  */
@@ -661,14 +655,7 @@ dbx_symfile_read (struct objfile *objfile, int mainline)
      || (0 == strncmp (bfd_get_target (sym_bfd), "nlm", 3)));
 
   /* APPLE LOCAL shared cache begin.  */
-  /* FIXME: On SnowLeopard and later systems, this is not true.  The
-     shared cache mach-o's are pretty much the same as the on disk
-     ones.  To be truely correct here we would need to check whether
-     we are on Leopard, or looking at a Leopard core file.  But till
-     we need to deploy this on Leopard I'm just going to turn it off
-     by hand here.  */
-
-  if (0) /* bfd_mach_o_in_shared_cached_memory (objfile->obfd))  */
+  if (bfd_mach_o_in_shared_cached_memory (objfile->obfd))
     {
       /* All shared libraries being read from memory that are in the new 
          shared cache share a single large symbol and string table. These
@@ -2352,8 +2339,13 @@ read_dbx_symtab (struct objfile *objfile, int dbx_symcount)
 		   if we are asked not to.  */
 		if (read_type_psym_p && objfile->separate_debug_objfile == NULL
                     && objfile->not_loaded_kext_filename == NULL)
-		  dwarf2_scan_pubtype_for_psymbols (pst, objfile, 
-						    psymtab_language);
+		  {
+		    dwarf2_scan_pubtype_for_psymbols (pst, objfile, 
+						      psymtab_language);
+		    /* APPLE LOCAL debug inlined section  */
+		    dwarf2_scan_inlined_section_for_psymbols (pst, objfile,
+							      psymtab_language);
+		  }
               }
 
             continue;
@@ -3279,6 +3271,19 @@ close_containing_archive_and_contents (bfd *containing_archive)
   bfd_close (containing_archive);
 }
 
+/* This is a convenience routine for closing a BFD that might
+   be a fat file, where you want to make sure that the archive
+   gets closed if there is one (and all its contents.)  */
+
+void
+close_bfd_or_archive (bfd *abfd)
+{
+  if (abfd->my_archive)
+    close_containing_archive_and_contents (abfd->my_archive);
+  else
+    bfd_close (abfd);
+}
+
 /* For DWARF files with debug info in .o files, we scan all the .o's for type
    symbols in the "pubtypes" section.  If the debug info is from an archive file
    we'll end up opening & closing that .a file MANY times.  So this array stores
@@ -3348,7 +3353,10 @@ clear_containing_archive_cache ()
 
 /* Given OSO_NAME, returns the bfd for the .o file containing
    that .o.  If the .o is fat, it returns the fork for the current
-   architecture.  If the name is of the form:
+   architecture.  So you should probably check the my_archive field
+   of the bfd & close that if it is not NULL...
+
+   If the name is of the form:
 
    /Foo/Bar/libfoo.a(member.o)
 
@@ -3367,7 +3375,7 @@ struct bfd *
 open_bfd_from_oso (struct partial_symtab *pst, int *cached)
 {
   struct bfd *oso_bfd, *retval;
-  long mtime = 0;
+  long mtime;
   char *oso_name;
   long oso_mtime;
   char *archive_name;
@@ -3375,34 +3383,31 @@ open_bfd_from_oso (struct partial_symtab *pst, int *cached)
 
   *cached = 0;
 
-  oso_bfd = NULL;
-  retval = NULL;
   oso_name = PSYMTAB_OSO_NAME (pst);
   oso_mtime = PSYMTAB_OSO_MTIME (pst);
 
   if (parse_archive_name (oso_name, &archive_name, &member_name) == 0)
     {
+      errno = 0;
       oso_bfd = bfd_openr (oso_name, gnutarget);
       if (!oso_bfd)
         {
 	  /* Only error if we do not have a separate debug objfile (dSYM).  */
-	  if (pst->objfile && pst->objfile->separate_debug_objfile != NULL)
-            return NULL;
-	  else
-            error ("Could not find object file: \"%s\"", oso_name);
+	  if (!pst->objfile || pst->objfile->separate_debug_objfile == NULL)
+            warning ("Could not open object file: \"%s\": %s", oso_name, strerror (errno));
+	  return NULL;
         }
       if (bfd_check_format (oso_bfd, bfd_archive))
 	{
-	  enum gdb_osabi oso_osabi = GDB_OSABI_UNKNOWN;
-#ifdef MACOSX_DYLD
-	  if (pst->objfile && pst->objfile->obfd)
-	    oso_osabi = macosx_get_osabi_from_dyld_entry (pst->objfile->obfd);
-#endif
-	  oso_bfd = open_bfd_matching_arch (oso_bfd, bfd_object, oso_osabi);
+	  oso_bfd = open_bfd_matching_arch (oso_bfd, bfd_object);
 	  if (oso_bfd == NULL)
-	    error ("Could not open OSO file matching current "
-		   "architecture for \"%s\".",
-		   oso_name);
+	    {
+	      warning ("Could not open OSO file matching current "
+		       "architecture for \"%s\".",
+		       oso_name);
+	      return NULL;
+	    }
+	  
 	}
       retval = oso_bfd;
       mtime = bfd_get_mtime (retval);
@@ -3446,21 +3451,15 @@ open_bfd_from_oso (struct partial_symtab *pst, int *cached)
 	  /* GRRR...  Archives of type mach-o-fat are fat files, not 
 	     .a files.  So look for the .a file matching the current'
 	     architecture.  */
-	  enum gdb_osabi oso_osabi = GDB_OSABI_UNKNOWN;
-#ifdef MACOSX_DYLD
-	  if (pst->objfile && pst->objfile->obfd)
-	    oso_osabi = macosx_get_osabi_from_dyld_entry (pst->objfile->obfd);
-#endif
-	  archive_bfd = open_bfd_matching_arch (archive_bfd, bfd_archive, 
-					        oso_osabi);
+	  archive_bfd = open_bfd_matching_arch (archive_bfd, bfd_archive);
 
 	  if (archive_bfd == NULL)
 	    {
 	      warning ("Could not open fork matching current "
 		       "architecture for OSO archive \"%s\"",
 		       archive_name);
-	      goto do_cleanups;
 	      retval = NULL;
+	      goto do_cleanups;
 	    }
 	  if (!bfd_check_format (archive_bfd, bfd_archive))
 	    {
@@ -3505,7 +3504,21 @@ open_bfd_from_oso (struct partial_symtab *pst, int *cached)
     }
 
   if (retval != NULL && mtime && oso_mtime && mtime != oso_mtime)
-    warning (".o file \"%s\" more recent than executable timestamp", oso_name);
+    {
+      char *name;
+      if (pst->objfile->name != NULL)
+	name = pst->objfile->name;
+      else
+	name = "<Unknown objfile>";
+
+      warning (".o file \"%s\" more recent than executable timestamp in \"%s\"", oso_name, name);
+      if (cached)
+	clear_containing_archive_cache ();
+      else 
+	close_bfd_or_archive (retval);
+
+      return NULL;
+    }
 
   return retval;
 }
@@ -3529,7 +3542,7 @@ oso_scan_partial_symtab (struct partial_symtab *pst)
   unsigned char type;
   const char *prefix;
   int current_list_element = -1;
-  struct partial_symtab *current_pst = NULL;
+  struct partial_symtab *current_pst;
   struct objfile *objfile;
   char leading_char;
   /* Index within current psymtab dependency list */
@@ -3553,7 +3566,11 @@ oso_scan_partial_symtab (struct partial_symtab *pst)
 
   oso_bfd = open_bfd_from_oso (pst, &cached);
   if (oso_bfd == NULL)
-    error ("Couldn't open bfd for .o file: %s\n", PSYMTAB_OSO_NAME (pst));
+    {
+      warning ("Couldn't open bfd for .o file: %s.", PSYMTAB_OSO_NAME (pst));
+      return;
+    }
+
   if (!bfd_check_format (oso_bfd, bfd_object))
     warning ("Not in bfd_object form");
   
@@ -3710,8 +3727,8 @@ oso_scan_partial_symtab (struct partial_symtab *pst)
 
   if (cached)
     clear_containing_archive_cache ();
-  else
-    bfd_close(oso_bfd);
+  else 
+    close_bfd_or_archive (oso_bfd);
 }
 
 /* APPLE LOCAL: Called from dwarf2read.c, this function reads all the
@@ -3994,7 +4011,9 @@ dbx_psymtab_to_symtab_1 (struct partial_symtab *pst)
 		or just the one oso_bfd.  */
 	      if (cached)
 		clear_containing_archive_cache ();
-	      else
+	      else if (oso_bfd->my_archive)
+		bfd_close (oso_bfd->my_archive);
+	      else		  
 		bfd_close(oso_bfd);
 	    }
 	}
@@ -4571,7 +4590,7 @@ read_ofile_symtab_from_oso (struct partial_symtab *pst, struct bfd *oso_bfd)
        symnum < num_syms;
        symnum++)
     {
-      CORE_ADDR offset = 0;
+      CORE_ADDR offset;
 
       QUIT;			/* Allow this to be interruptable */
 
@@ -4596,7 +4615,7 @@ read_ofile_symtab_from_oso (struct partial_symtab *pst, struct bfd *oso_bfd)
       if (type == N_BNSYM)
 	{
 	  struct internal_nlist tmp_nlist;
-	  struct partial_symbol *fun_psym = NULL;
+	  struct partial_symbol *fun_psym;
 	  char *fun_namestring;
 	  int scan_ptr = symnum;
 	  int old_symbuf_idx = symbuf_idx;

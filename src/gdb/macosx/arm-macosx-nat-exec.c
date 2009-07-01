@@ -39,37 +39,19 @@
 #include "arm-macosx-thread-status.h"
 #include "arm-macosx-tdep.h"
 
-extern enum gdb_osabi arm_set_osabi_from_host_info ();
-
-static inline uint32_t
-collect_uint32 (int regnum)
+static inline unsigned int
+collect_unsigned_int (int regnum)
 {
-  gdb_byte buf[sizeof(uint32_t)];
+  gdb_byte buf[4];
   regcache_raw_collect (current_regcache, regnum, buf);
-  return extract_unsigned_integer (buf, sizeof(uint32_t));
-}
-
-static inline uint64_t
-collect_uint64 (int regnum)
-{
-  gdb_byte buf[sizeof(uint64_t)];
-  regcache_raw_collect (current_regcache, regnum, buf);
-  return extract_unsigned_integer (buf, sizeof(uint64_t));
+  return extract_unsigned_integer (buf, 4);
 }
 
 static inline void
-supply_uint32 (int regnum, uint32_t val)
+supply_unsigned_int (int regnum, unsigned int val)
 {
-  gdb_byte buf[sizeof(val)];
-  store_unsigned_integer (buf, sizeof(val), val);
-  regcache_raw_supply (current_regcache, regnum, buf);
-}
-
-static inline void
-supply_uint64 (int regnum, uint64_t val)
-{
-  gdb_byte buf[sizeof(val)];
-  store_unsigned_integer (buf, sizeof(val), val);
+  gdb_byte buf[4];
+  store_unsigned_integer (buf, 4, val);
   regcache_raw_supply (current_regcache, regnum, buf);
 }
 
@@ -79,8 +61,8 @@ arm_macosx_fetch_gp_registers (struct gdb_arm_thread_state *gp_regs)
 {
   int i;
   for (i = 0; i < ARM_MACOSX_NUM_GP_REGS; i++)
-    supply_uint32 (ARM_R0_REGNUM + i, gp_regs->r[i]);
-  supply_uint32 (ARM_PS_REGNUM, gp_regs->cpsr);
+    supply_unsigned_int (ARM_R0_REGNUM + i, gp_regs->r[i]);
+  supply_unsigned_int (ARM_PS_REGNUM, gp_regs->cpsr);
 }
 
 void
@@ -88,7 +70,7 @@ arm_macosx_fetch_gp_registers_raw (struct gdb_arm_thread_state *gp_regs)
 {
   int i;
   for (i = 0; i < ARM_MACOSX_NUM_GP_REGS; i++)
-    regcache_raw_supply (current_regcache, ARM_R0_REGNUM + i, &gp_regs->r[i]);
+	regcache_raw_supply (current_regcache, ARM_R0_REGNUM + i, &gp_regs->r[i]);
   regcache_raw_supply (current_regcache, ARM_PS_REGNUM, &gp_regs->cpsr);
 }
 
@@ -99,8 +81,8 @@ arm_macosx_store_gp_registers (struct gdb_arm_thread_state *gp_regs)
 {
   int i;
   for (i = 0; i < ARM_MACOSX_NUM_GP_REGS; i++)
-    gp_regs->r[i] = collect_uint32 (ARM_R0_REGNUM + i);
-  gp_regs->cpsr = collect_uint32 (ARM_PS_REGNUM);
+    gp_regs->r[i] = collect_unsigned_int (ARM_R0_REGNUM + i);
+  gp_regs->cpsr = collect_unsigned_int (ARM_PS_REGNUM);
 }
 
 void
@@ -108,100 +90,55 @@ arm_macosx_store_gp_registers_raw (struct gdb_arm_thread_state *gp_regs)
 {
   int i;
   for (i = 0; i < ARM_MACOSX_NUM_GP_REGS; i++)
-    regcache_raw_collect (current_regcache, ARM_R0_REGNUM + i, &gp_regs->r[i]);
+	regcache_raw_collect (current_regcache, ARM_R0_REGNUM + i, &gp_regs->r[i]);
   regcache_raw_collect (current_regcache, ARM_PS_REGNUM, &gp_regs->cpsr);
 }
 
 /* Fetch VFP Registers.  */
 
 void
-arm_macosx_fetch_vfpv1_regs (gdb_arm_thread_vfpv1_state_t *fp_regs)
+arm_macosx_fetch_vfp_registers (struct gdb_arm_thread_fpstate *fp_regs)
 {
   int i;
+  uint32_t *r = fp_regs->r;
   for (i = 0; i < ARM_MACOSX_NUM_VFP_REGS; i++)
-    supply_uint32 (ARM_VFP_REGNUM_S0 + i, fp_regs->r[i]);
-  supply_uint32 (ARM_VFP_REGNUM_FPSCR, fp_regs->fpscr);
+	regcache_raw_supply (current_regcache, ARM_FIRST_VFP_REGNUM + i, &r[i]);
+  regcache_raw_supply (current_regcache, ARM_FPSCR_REGNUM, &fp_regs->fpscr);
 }
 
 void
-arm_macosx_fetch_vfpv3_regs (gdb_arm_thread_vfpv3_state_t *fp_regs)
+arm_macosx_fetch_vfp_registers_raw (struct gdb_arm_thread_fpstate *fp_regs)
 {
   int i;
+  uint32_t *r = fp_regs->r;
   for (i = 0; i < ARM_MACOSX_NUM_VFP_REGS; i++)
-    supply_uint32 (ARM_VFP_REGNUM_S0 + i, fp_regs->s[i]);
-  for (i = 0; i < ARM_MACOSX_NUM_VFPV3_REGS; i++)
-    supply_uint64 (ARM_VFPV3_REGNUM_D16 + i, fp_regs->d[i]);
-  supply_uint32 (ARM_VFP_REGNUM_FPSCR, fp_regs->fpscr);
-
-}
-
-void
-arm_macosx_fetch_vfpv1_regs_raw (gdb_arm_thread_vfpv1_state_t *fp_regs)
-{
-  int i;
-  for (i = 0; i < ARM_MACOSX_NUM_VFP_REGS; i++)
-    regcache_raw_supply (current_regcache, ARM_VFP_REGNUM_S0 + i, 
-			 &fp_regs->r[i]);
-  regcache_raw_supply (current_regcache, ARM_VFP_REGNUM_FPSCR, &fp_regs->fpscr);
-}
-
-void
-arm_macosx_fetch_vfpv3_regs_raw (gdb_arm_thread_vfpv3_state_t *fp_regs)
-{
-  int i;
-  for (i = 0; i < ARM_MACOSX_NUM_VFP_REGS; i++)
-    regcache_raw_supply (current_regcache, ARM_VFP_REGNUM_S0 + i, 
-			 &fp_regs->s[i]);
-  regcache_raw_supply (current_regcache, ARM_VFP_REGNUM_FPSCR, &fp_regs->fpscr);
-  for (i = 0; i < ARM_MACOSX_NUM_VFPV3_REGS; i++)
-    regcache_raw_supply (current_regcache, ARM_VFPV3_REGNUM_D16 + i, 
-			 &fp_regs->d[i]);
+	regcache_raw_supply (current_regcache, ARM_FIRST_VFP_REGNUM + i, &r[i]);
+  regcache_raw_supply (current_regcache, ARM_FPSCR_REGNUM, &fp_regs->fpscr);
 }
 
 /* Store VFP Registers.  */
 
 void
-arm_macosx_store_vfpv1_regs (gdb_arm_thread_vfpv1_state_t *fp_regs)
+arm_macosx_store_vfp_registers (struct gdb_arm_thread_fpstate *fp_regs)
 {
   int i;
+  uint32_t *r = fp_regs->r;
   for (i = 0; i < ARM_MACOSX_NUM_VFP_REGS; i++)
-    fp_regs->r[i] = collect_uint32 (ARM_VFP_REGNUM_S0 + i);
-  fp_regs->fpscr = collect_uint32 (ARM_VFP_REGNUM_FPSCR);
+    r[i] = collect_unsigned_int (ARM_FIRST_VFP_REGNUM + i);
+  fp_regs->fpscr = collect_unsigned_int (ARM_FPSCR_REGNUM);
 }
 
 void
-arm_macosx_store_vfpv3_regs (gdb_arm_thread_vfpv3_state_t *fp_regs)
+arm_macosx_store_vfp_registers_raw (struct gdb_arm_thread_fpstate *fp_regs)
 {
   int i;
+  uint32_t *r = fp_regs->r;
   for (i = 0; i < ARM_MACOSX_NUM_VFP_REGS; i++)
-    fp_regs->s[i] = collect_uint32 (ARM_VFP_REGNUM_S0 + i);
-  for (i = 0; i < ARM_MACOSX_NUM_VFPV3_REGS; i++)
-    fp_regs->d[i] = collect_uint64 (ARM_VFPV3_REGNUM_D16 + i);
-  fp_regs->fpscr = collect_uint32 (ARM_VFP_REGNUM_FPSCR);
+	regcache_raw_collect (current_regcache, ARM_FIRST_VFP_REGNUM + i, &r[i]);
+  regcache_raw_collect (current_regcache, ARM_FPSCR_REGNUM, &fp_regs->fpscr);
 }
 
-void
-arm_macosx_store_vfpv1_regs_raw (gdb_arm_thread_vfpv1_state_t *fp_regs)
-{
-  int i;
-  for (i = 0; i < ARM_MACOSX_NUM_VFP_REGS; i++)
-    regcache_raw_collect (current_regcache, ARM_VFP_REGNUM_S0 + i, 
-			  &fp_regs->r[i]);
-  regcache_raw_collect (current_regcache, ARM_VFP_REGNUM_FPSCR, &fp_regs->fpscr);
-}
 
-void
-arm_macosx_store_vfpv3_regs_raw (gdb_arm_thread_vfpv3_state_t *fp_regs)
-{
-  int i;
-  for (i = 0; i < ARM_MACOSX_NUM_VFP_REGS; i++)
-    regcache_raw_collect (current_regcache, ARM_VFP_REGNUM_S0 + i, 
-			  &fp_regs->s[i]);
-  regcache_raw_collect (current_regcache, ARM_VFP_REGNUM_FPSCR, &fp_regs->fpscr);
-  for (i = 0; i < ARM_MACOSX_NUM_VFPV3_REGS; i++)
-    regcache_raw_collect (current_regcache, ARM_VFPV3_REGNUM_D16 + i, 
-			  &fp_regs->d[i]);
-}
 
 static void
 validate_inferior_registers (int regno)
@@ -232,16 +169,39 @@ fetch_inferior_registers (int regno)
 {
   int i;
   thread_t current_thread = ptid_get_tid (inferior_ptid);
-  kern_return_t ret = KERN_SUCCESS;
 
   if (TARGET_OSABI == GDB_OSABI_UNKNOWN)
-    arm_set_osabi_from_host_info ();
-
+    {
+      /* Attaching to a process.  Let's figure out what kind of system
+         we're on. */
+      struct gdb_arm_thread_fpstate vfp_regs;
+      struct gdbarch_info info;
+      unsigned int vfp_count = GDB_ARM_THREAD_FPSTATE_COUNT;
+      kern_return_t ret = thread_get_state
+        (current_thread, GDB_ARM_THREAD_FPSTATE, (thread_state_t) & vfp_regs,
+        &vfp_count);
+      
+      gdbarch_info_init (&info);
+      gdbarch_info_fill (current_gdbarch, &info);
+      info.byte_order = gdbarch_byte_order (current_gdbarch);
+      if (ret == KERN_SUCCESS)
+        {
+          info.osabi = GDB_OSABI_DARWINV6;
+          info.bfd_arch_info = bfd_lookup_arch (bfd_arch_arm, bfd_mach_arm_6);
+        }
+      else
+        {
+          info.osabi = GDB_OSABI_DARWIN;
+          info.bfd_arch_info = bfd_lookup_arch (bfd_arch_arm, 0);
+        }
+      gdbarch_update_p (info);
+    }
+  
   if ((regno == -1) || ARM_MACOSX_IS_GP_RELATED_REGNUM (regno))
     {
       struct gdb_arm_thread_state gp_regs;
       unsigned int gp_count = GDB_ARM_THREAD_STATE_COUNT;
-      ret = thread_get_state
+      kern_return_t ret = thread_get_state
         (current_thread, GDB_ARM_THREAD_STATE, (thread_state_t) & gp_regs,
          &gp_count);
       if (ret != KERN_SUCCESS)
@@ -264,73 +224,23 @@ fetch_inferior_registers (int regno)
       set_register_cached (ARM_FPS_REGNUM, 1);
     }
 
-  if ((regno == -1) || ARM_MACOSX_IS_VFP_RELATED_REGNUM (regno))
+  if (((regno == -1) || ARM_MACOSX_IS_VFP_RELATED_REGNUM (regno))
+      && (gdbarch_osabi (current_gdbarch) == GDB_OSABI_DARWINV6))
     {
-      enum arm_vfp_version vfp_version;
-      vfp_version = gdbarch_tdep (current_gdbarch)->vfp_version;
-      int fp_byte_size = -1;
+      struct gdb_arm_thread_fpstate fp_regs;
+      unsigned int fp_count = GDB_ARM_THREAD_FPSTATE_COUNT;
+      kern_return_t ret;
+      ret = thread_get_state (current_thread, GDB_ARM_THREAD_FPSTATE,
+                              (thread_state_t) & fp_regs,
+                              &fp_count);
 
-      switch (vfp_version)
-	{
-	  case ARM_VFP_UNSUPPORTED:
-	    /* No VFP support, so nothing to do.  */
-	    fp_byte_size = 0;
-	    break;
-
-	  case ARM_VFP_VERSION_1:
-	    {
-	      gdb_arm_thread_vfpv1_state_t fp_regs;
-	      mach_msg_type_number_t fp_count = GDB_ARM_THREAD_FPSTATE_VFPV1_COUNT;
-	      ret = thread_get_state (current_thread, GDB_ARM_THREAD_FPSTATE,
-				      (thread_state_t) & fp_regs,
-				      &fp_count);
-	      if (ret != KERN_SUCCESS)
-		{
-		  printf ("Error calling thread_get_state for VFP registers for thread 0x%ulx", 
-			  current_thread);
-		  MACH_CHECK_ERROR (ret);
-		}
-	      arm_macosx_fetch_vfpv1_regs (&fp_regs);
-	    }
-	    break;
-
-	  case ARM_VFP_VERSION_3:
-	    {
-	      gdb_arm_thread_vfpv3_state_t fp_regs;
-	      mach_msg_type_number_t fp_count = GDB_ARM_THREAD_FPSTATE_VFPV3_COUNT;
-	      ret = thread_get_state (current_thread, GDB_ARM_THREAD_FPSTATE,
-				      (thread_state_t) & fp_regs,
-				      &fp_count);
-	      if (ret != KERN_SUCCESS)
-		{
-		  printf ("Error calling thread_get_state for VFP registers for thread 0x%ulx", 
-			  current_thread);
-		  MACH_CHECK_ERROR (ret);
-		}
-
-	      if (fp_count == GDB_ARM_THREAD_FPSTATE_VFPV1_COUNT)
-		{
-		  /* We asked for VFPv3 registers but we got VFPv1 registers 
-		     back. We may have our VFP settings incorrectly set.  */
-		  gdb_arm_thread_vfpv1_state_t *v1 = 
-				      (gdb_arm_thread_vfpv1_state_t *)&fp_regs;
-
-		  warning ("\nthread_get_state called with VFPv3 register count "
-			   "returned VFPv1 register count.\nUse '--osabi "
-			   "DarwinV6' when launching gdb to avoid this issue.");
-		  fp_regs.fpscr = v1->fpscr;
-		  memset (fp_regs.d, 0, sizeof(fp_regs.d));
-		}
-
-	      arm_macosx_fetch_vfpv3_regs (&fp_regs);
-	    }
-	    break;
-
-	  default:
-	    error ("fetch_inferior_registers: unable to fetch ARM_THREAD_FPSTATE: "
-		   "unsupported vfp version: %d", (int)vfp_version);
-	    break;
-	}
+      if (ret != KERN_SUCCESS)
+       {
+         printf ("Error calling thread_get_state for VFP registers for thread 0x%ulx", 
+		  current_thread);
+         MACH_CHECK_ERROR (ret);
+       }
+      arm_macosx_fetch_vfp_registers (&fp_regs);
     }
 }
 
@@ -343,7 +253,6 @@ store_inferior_registers (int regno)
 {
   int current_pid;
   thread_t current_thread;
-  kern_return_t ret;
 
   current_pid = ptid_get_pid (inferior_ptid);
   current_thread = ptid_get_tid (inferior_ptid);
@@ -353,53 +262,23 @@ store_inferior_registers (int regno)
   if ((regno == -1) || ARM_MACOSX_IS_GP_RELATED_REGNUM (regno))
     {
       struct gdb_arm_thread_state gp_regs;
+      kern_return_t ret;
       arm_macosx_store_gp_registers (&gp_regs);
       ret = thread_set_state (current_thread, GDB_ARM_THREAD_STATE,
                               (thread_state_t) & gp_regs,
                               GDB_ARM_THREAD_STATE_COUNT);
       MACH_CHECK_ERROR (ret);
     }
-
-  if ((regno == -1) || ARM_MACOSX_IS_VFP_RELATED_REGNUM (regno))
+  if (((regno == -1) || ARM_MACOSX_IS_VFP_RELATED_REGNUM (regno))
+      && (gdbarch_osabi (current_gdbarch) == GDB_OSABI_DARWINV6))
     {
-      enum arm_vfp_version vfp_version;
-      vfp_version = gdbarch_tdep (current_gdbarch)->vfp_version;
-      int fp_byte_size = -1;
-
-      switch (vfp_version)
-	{
-	  case ARM_VFP_UNSUPPORTED:
-	    /* No VFP support, so nothing to do.  */
-	    fp_byte_size = 0;
-	    break;
-
-	  case ARM_VFP_VERSION_1:
-	    {
-	      gdb_arm_thread_vfpv1_state_t fp_regs;
-	      arm_macosx_store_vfpv1_regs (&fp_regs);
-	      ret = thread_set_state (current_thread, GDB_ARM_THREAD_FPSTATE,
-				      (thread_state_t) & fp_regs,
-				      GDB_ARM_THREAD_FPSTATE_VFPV1_COUNT);
-	      MACH_CHECK_ERROR (ret);
-	    }
-	    break;
-	    
-	  case ARM_VFP_VERSION_3:
-	    {
-	      gdb_arm_thread_vfpv3_state_t fp_regs;
-	      arm_macosx_store_vfpv3_regs (&fp_regs);
-	      ret = thread_set_state (current_thread, GDB_ARM_THREAD_FPSTATE,
-				      (thread_state_t) & fp_regs,
-				      GDB_ARM_THREAD_FPSTATE_VFPV3_COUNT);
-	      MACH_CHECK_ERROR (ret);
-	    }
-	    break;
-
- 	  default:
-	    error ("store_inferior_registers: unable to store ARM_THREAD_FPSTATE: "
-		   "unsupported vfp version: %d", (int)vfp_version);
-	    break;
-	}
+      struct gdb_arm_thread_fpstate fp_regs;
+      kern_return_t ret;
+      arm_macosx_store_vfp_registers (&fp_regs);
+      ret = thread_set_state (current_thread, GDB_ARM_THREAD_FPSTATE,
+                              (thread_state_t) & fp_regs,
+                              GDB_ARM_THREAD_FPSTATE_COUNT);
+      MACH_CHECK_ERROR (ret);
     }
 }
 

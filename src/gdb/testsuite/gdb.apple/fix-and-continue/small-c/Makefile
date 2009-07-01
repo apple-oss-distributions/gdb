@@ -1,13 +1,13 @@
 CC := gcc
 override CFLAGS :=
 
-MAINPROG_CFLAGS := -g -mfix-and-continue
+MAINPROG_CFLAGS := -arch $(ARCH) -g -mfix-and-continue
 
-MAINPROG_LDFLAGS :=
+MAINPROG_LDFLAGS := -arch $(ARCH)
 
-FIX_CFLAGS := $(MAINPROG_CFLAGS) -mno-dynamic-no-pic
+FIX_CFLAGS := $(MAINPROG_CFLAGS) -arch $(ARCH) -mno-dynamic-no-pic
 
-MAKE_A_BUNDLE_FLAGS := -bundle -flat_namespace -undefined suppress
+MAKE_A_BUNDLE_FLAGS := -bundle -flat_namespace -undefined suppress -arch $(ARCH)
 
 all: stage1 stage2
 

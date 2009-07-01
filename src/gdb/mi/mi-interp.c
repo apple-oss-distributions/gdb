@@ -38,6 +38,7 @@
 #include "mi-common.h"
 #include "inlining.h"
 /* APPLE LOCAL end subroutine inlining  */
+#include "gdbthread.h"
 
 struct mi_interp
 {
@@ -320,6 +321,9 @@ mi_cmd_interpreter_exec (char *command, char **argv, int argc)
       ui_out_field_string (uiout, "reason",
 			   async_reason_lookup
 			   (EXEC_ASYNC_END_STEPPING_RANGE));
+
+      ui_out_print_annotation_int (uiout, 0, "thread-id",
+				   pid_to_thread_id (inferior_ptid));
     }
 
   /* APPLE LOCAL end subroutine inlining  */

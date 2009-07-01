@@ -43,14 +43,18 @@ NATDEPFILES = \
 
 MH_CFLAGS = -I$(srcdir)/macosx
 
-MH_CFLAGS += -DUSE_PTHREADS=1 -Wall -Wimplicit
+# APPLE LOCAL - Allow more than 256 streams to be open at a time.
+
+MH_CFLAGS += -DUSE_PTHREADS=1 -Wall -Wimplicit -D_DARWIN_UNLIMITED_STREAMS
 
 CFM_CFLAGS = -DWITH_CFM=0
+
+XM_CLIBS = -framework Security
 
 _all: all
 
 excServer.c excUser.c: macosx.defs
-	$(NEXT_ROOT)/usr/bin/mig -arch armv6 -I. $<
+	$(NEXT_ROOT)/usr/bin/mig -I. $<
 
 clean::
 	rm -f excServer.c excUser.c exc.h

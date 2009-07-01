@@ -1167,6 +1167,13 @@ value_binop (struct value *arg1, struct value *arg2, enum exp_opcode op)
 	    case BINOP_EQUAL:
 	      v = v1 == v2;
 	      break;
+	      
+	      /* APPLE LOCAL: This BINOP_NOTEQUAL was missing
+		 here.  I don't know if we ever reach this
+		 case, but for completeness...  */
+            case BINOP_NOTEQUAL:
+              v = v1 != v2;
+              break;
 
 	    case BINOP_LESS:
 	      v = v1 < v2;

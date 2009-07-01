@@ -311,8 +311,7 @@ exec_file_attach (char *filename, int from_tty)
       if (bfd_check_format (exec_bfd, bfd_archive))
 	{
 	  bfd *tmp_bfd;
-	  tmp_bfd = open_bfd_matching_arch (exec_bfd, bfd_object, 
-					    GDB_OSABI_UNKNOWN);
+	  tmp_bfd = open_bfd_matching_arch (exec_bfd, bfd_object);
 	  if (tmp_bfd != NULL)
 	    exec_bfd = tmp_bfd;
 	}

@@ -950,7 +950,7 @@ disassemble_command (char *arg, int from_tty)
 	error (_("No frame selected."));
 
       pc = get_frame_pc (deprecated_selected_frame);
-      if (find_pc_partial_function (pc, &name, &low, &high) == 0)
+      if (find_pc_partial_function_no_inlined (pc, &name, &low, &high) == 0)
 	error (_("No function contains program counter for selected frame."));
 #if defined(TUI)
       /* NOTE: cagney/2003-02-13 The `tui_active' was previously
@@ -965,7 +965,7 @@ disassemble_command (char *arg, int from_tty)
     {
       /* One argument.  */
       pc = parse_and_eval_address (arg);
-      if (find_pc_partial_function (pc, &name, &low, &high) == 0)
+      if (find_pc_partial_function_no_inlined (pc, &name, &low, &high) == 0)
 	error (_("No function contains specified address."));
 #if defined(TUI)
       /* NOTE: cagney/2003-02-13 The `tui_active' was previously

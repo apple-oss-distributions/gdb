@@ -68,6 +68,20 @@ static LONGEST init_array_element (struct value *, struct value *,
 /* APPLE LOCAL: Closures.  */
 int print_closure = 1;
 
+static void
+do_restore_print_closure (void *in_oldval)
+{
+  print_closure = (int) in_oldval;
+}
+
+struct cleanup *
+make_cleanup_set_restore_print_closure (int newval)
+{
+  int oldval = print_closure;
+  print_closure = newval;
+  return make_cleanup (do_restore_print_closure, (void *) oldval);
+}
+
 static struct value *
 evaluate_subexp (struct type *expect_type, struct expression *exp,
 		 int *pos, enum noside noside)
