@@ -1,5 +1,5 @@
 GDB_VERSION = 6.3.50-20050815
-GDB_RC_VERSION = 1119
+GDB_RC_VERSION = 1128
 
 BINUTILS_VERSION = 2.13-20021117
 BINUTILS_RC_VERSION = 46
@@ -273,8 +273,9 @@ crossarm:;
 	for i in $(RC_ARCHS); do \
 		$(RM) -r $(OBJROOT)/$${i}-apple-darwin--arm-apple-darwin; \
 		$(INSTALL) -c -d $(OBJROOT)/$${i}-apple-darwin--arm-apple-darwin; \
+		sdk_cc=`xcrun -sdk $(SDKROOT) -find gcc`; \
 		(cd $(OBJROOT)/$${i}-apple-darwin--arm-apple-darwin/ && \
-			$(CONFIGURE_ENV) CC="cc -arch $${i}" $(MACOSX_FLAGS) $(SRCTOP)/src/configure \
+			$(CONFIGURE_ENV) CC="$${sdk_cc} -arch $${i}" $(MACOSX_FLAGS) $(SRCTOP)/src/configure \
 				--host=$${i}-apple-darwin \
 				--target=arm-apple-darwin \
                                 --build=$(BUILD_ARCH) \
@@ -311,10 +312,8 @@ crossarm:;
 # building a cross target as you don't have to build all permutations of
 # RC_ARCHS. 
 #
-# SDKROOT can be used to specify a system root for native builds, and
-# CROSS_BUILD_SDKROOT can be used to specify a root for cross builds (this
-# is usually omitted and the current macos is used, but it can be specified
-# if a specifiec MacOSX SDK (10.4, 10.5, etc) is to be used).
+# SDKROOT can be used to specify a system root for cross builds, and
+# the current macos is used will be used for others.
 #
 # The command below will build a cross armv6 gdb to be hosted on i386, ppc,
 # and natively on armv6:
@@ -345,19 +344,19 @@ cross:;
 			curr_objroot="$(OBJROOT)/$${host_arch_full}-apple-darwin--$${cross_arch_full}-apple-darwin"; \
 			$(RM) -r "$${curr_objroot}"; \
 			$(INSTALL) -c -d "$${curr_objroot}"; \
-			if [[ "$${cross_arch}" == "$${host_arch}" ]] ; then \
-				echo BUILDING native with -isystem = $(SDKROOT)/usr/include; \
-				curr_sdkroot="$(SDKROOT)/usr/include"; \
+			if [[ "$${host_arch}" == "arm" ]] ; then \
+				sdk_cc=`xcrun -sdk $(SDKROOT) -find gcc`; \
+				sdk_cflags=" -isysroot $(SDKROOT)"; \
 			else \
-				echo BUILDING cross with -isystem = $(CROSS_BUILD_SDKROOT)/usr/include; \
-				curr_sdkroot="$(CROSS_BUILD_SDKROOT)/usr/include"; \
+				sdk_cc="cc"; \
+				sdk_cflags=""; \
 			fi; \
 			(cd "$${curr_objroot}"/ && \
-				$(CONFIGURE_ENV) CC="cc -arch $${host_arch_full}" $(MACOSX_FLAGS) $(SRCTOP)/src/configure \
+				$(CONFIGURE_ENV) CC="$${sdk_cc} -arch $${host_arch_full}$${sdk_cflags}" $(MACOSX_FLAGS) $(SRCTOP)/src/configure \
 					--host=$${host_arch_vendor_os} \
 					--target=$${target_arch_vendor_os} \
 					--build=$(BUILD_ARCH) \
-					CFLAGS=" -isystem $${curr_sdkroot} $(CDEBUGFLAGS)" \
+					CFLAGS="$(CDEBUGFLAGS)" \
 					$(CONFIGURE_OPTIONS) \
 				); \
 			mkdir -p $(SYMROOT)/$(LIBEXEC_GDB_DIR); \
@@ -399,19 +398,19 @@ cross-installhdrs:
 			curr_objroot="$(OBJROOT)/$${host_arch_full}-apple-darwin--$${cross_arch_full}-apple-darwin"; \
 			$(RM) -r "$${curr_objroot}"; \
 			$(INSTALL) -c -d "$${curr_objroot}"; \
-			if [[ "$${cross_arch}" == "$${host_arch}" ]] ; then \
-				echo INSTALLHDRS native with -isystem = $(SDKROOT)/usr/include; \
-				curr_sdkroot="$(SDKROOT)/usr/include"; \
+			if [[ "$${host_arch}" == "arm" ]] ; then \
+				sdk_cc=`xcrun -sdk $(SDKROOT) -find gcc`; \
+				sdk_cflags=" -isysroot $(SDKROOT)"; \
 			else \
-				echo INSTALLHDRS cross with -isystem = $(CROSS_BUILD_SDKROOT)/usr/include; \
-				curr_sdkroot="$(CROSS_BUILD_SDKROOT)/usr/include"; \
+				sdk_cc="cc"; \
+				sdk_cflags=""; \
 			fi; \
 			(cd "$${curr_objroot}"/ && \
-				$(CONFIGURE_ENV) CC="cc -arch $${host_arch_full}" $(MACOSX_FLAGS) $(SRCTOP)/src/configure \
+				$(CONFIGURE_ENV) CC="$${sdk_cc} -arch $${host_arch_full}$${sdk_cflags}" $(MACOSX_FLAGS) $(SRCTOP)/src/configure \
 					--host=$${host_arch_vendor_os} \
 					--target=$${target_arch_vendor_os} \
 					--build=$(BUILD_ARCH) \
-					CFLAGS=" -isystem $${curr_sdkroot} $(CDEBUGFLAGS)" \
+					CFLAGS="$(CDEBUGFLAGS)" \
 					$(CONFIGURE_OPTIONS) \
 				); \
 			$(SUBMAKE) $${curr_objroot}/stamp-build-headers ; \

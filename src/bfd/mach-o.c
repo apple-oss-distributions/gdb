@@ -913,6 +913,8 @@ bfd_mach_o_write_contents (bfd *abfd)
 	case BFD_MACH_O_LC_SUB_FRAMEWORK:
 	case BFD_MACH_O_LC_LAZY_LOAD_DYLIB:
 	case BFD_MACH_O_LC_ENCRYPTION_INFO:
+	case BFD_MACH_O_LC_DYLD_INFO:
+	case BFD_MACH_O_LC_DYLD_INFO_ONLY:
 	  break;
 	default:
 	  fprintf (stderr,
@@ -2147,6 +2149,8 @@ bfd_mach_o_scan_read_command (bfd *abfd, bfd_mach_o_load_command *command)
     case BFD_MACH_O_LC_CODE_SIGNATURE:
     case BFD_MACH_O_LC_SEGMENT_SPLIT_INFO:
     case BFD_MACH_O_LC_LAZY_LOAD_DYLIB:
+    case BFD_MACH_O_LC_DYLD_INFO:
+    case BFD_MACH_O_LC_DYLD_INFO_ONLY:
       break;
     case BFD_MACH_O_LC_ENCRYPTION_INFO:
       {
@@ -2215,6 +2219,14 @@ bfd_mach_o_scan_start_address (bfd *abfd)
   bfd_mach_o_data_struct *mdata = abfd->tdata.mach_o_data;
   bfd_mach_o_thread_command *cmd = NULL;
   unsigned long i;
+
+  /* dyld for instance DOES have LC_UNIXTHREAD commands - the kernel
+     needs this to load dyld and let it go - which in turn loads the
+     binary...  But this isn't what we mean by the start address.  
+     You can't have a start address if you aren't an executable...  */
+
+  if (mdata->header.filetype != BFD_MACH_O_MH_EXECUTE)
+    return 0;
 
   for (i = 0; i < mdata->header.ncmds; i++)
     {
@@ -2919,10 +2931,12 @@ bfd_mach_o_core_file_failing_signal (bfd *abfd ATTRIBUTE_UNUSED)
 }
 
 bfd_boolean
-bfd_mach_o_core_file_matches_executable_p (bfd *core_bfd ATTRIBUTE_UNUSED,
-					   bfd *exec_bfd ATTRIBUTE_UNUSED)
+bfd_mach_o_core_file_matches_executable_p (bfd *core_bfd, bfd *exec_bfd)
 {
-  return TRUE;
+  if (core_bfd->tdata.mach_o_data->header.cputype == exec_bfd->tdata.mach_o_data->header.cputype)
+    return TRUE;
+  else
+    return FALSE;
 }
 
 bfd_boolean        

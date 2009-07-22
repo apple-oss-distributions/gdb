@@ -193,6 +193,10 @@ static void
 kdp_open (char *name, int from_tty)
 {
   push_target (&kdp_ops);
+#if KDP_TARGET_ARM
+  extern int set_arm_single_step_mode (struct gdbarch *, int);
+  set_arm_single_step_mode (current_gdbarch, arm_single_step_mode_software);
+#endif
 }
 
 static void

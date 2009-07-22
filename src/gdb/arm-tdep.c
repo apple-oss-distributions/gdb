@@ -179,8 +179,8 @@ static register_info_t g_register_info[] =
   { "f5",   0, &builtin_type_arm_ext_littlebyte_bigword },
   { "f6",   0, &builtin_type_arm_ext_littlebyte_bigword },
   { "f7",   0, &builtin_type_arm_ext_littlebyte_bigword },
-  { "fps",  0, &builtin_type_arm_ext_littlebyte_bigword },
-  { "cpsr", 0, &builtin_type_arm_ext_littlebyte_bigword }
+  { "fps",  0, &builtin_type_uint32 },
+  { "cpsr", 0, &builtin_type_uint32 }
 };
 
 const uint32_t g_register_info_count = sizeof(g_register_info)/
@@ -4824,11 +4824,37 @@ arm_software_single_step (enum target_signal sig, int insert_bpt)
 
 #include "bfd-in2.h"
 #include "libcoff.h"
+extern char g_examine_i_size;
 
 static int
 gdb_print_insn_arm (bfd_vma memaddr, disassemble_info *info)
 {
-  if (arm_pc_is_thumb (memaddr))
+  int is_thumb = 0;
+  /* To allow random code to be disassembled in ARM or Thumb (overriding any
+     special symbols), we watch to the g_examine_i_size global that is set
+     in printcmd.c. It defaults to 'b' for byte when no size is specified with
+     the 'i' examine format, but it can be overridden to allow disassembly
+     to be told the width of the instruction that should be used to disassemble.
+     'h' indicates a half word, or Thumb mode. 'w' indicates a word size or
+     ARM mode. Anything else will auto detect the ARM/Thumb-ness of an address.
+     The global is reset immediately following the disassembly call so that
+     normal disassembly using the "disassemble" command won't be affecting, only
+     the instruction examine format ("x/4ih") is affected.  */
+  switch (g_examine_i_size)
+    {
+    default:
+    case 'b':
+      is_thumb = arm_pc_is_thumb (memaddr);
+      break;
+    case 'h':
+      is_thumb = 1;
+      break;
+    case 'w':
+      is_thumb = 0;
+      break;
+    }
+
+  if (is_thumb)
     {
       static asymbol *asym;
       static combined_entry_type ce;
@@ -6054,7 +6080,7 @@ _initialize_arm_tdep (void)
       rdptr += length;
       rest -= length;
       /* Copy the default names (if found) and synchronize disassembler.  */
-      if (!strcmp (setname, "gcc"))
+      if (!strcmp (setname, "std"))
 	{
           disassembly_style = setname;
           current_option = i;

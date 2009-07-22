@@ -620,6 +620,18 @@ addresses have not been bound by the dynamic loader. Try again when executable i
 	 moment enable this when/where applicable.  */
       if (frame == 0 && SYMBOL_OPS (var)->read_needs_frame (var))
 	return 0;
+
+      /* APPLE LOCAL begin radar 6529939  */
+      /* If there is no block for the frame, then there can be no
+	 symbol information for the frame, so attempting to look up
+	 the variable in the frame can only lead to problems.  */
+      if (frame
+	  && (get_frame_block (frame, 0) == 0)
+	  && SYMBOL_OPS (var)
+	  && SYMBOL_OPS (var)->read_needs_frame (var))
+	return 0;
+      /* APPLE LOCAL end radar 6529939  */
+
       return SYMBOL_OPS (var)->read_variable (var, frame);
 
     case LOC_UNRESOLVED:

@@ -43,6 +43,7 @@
 #include "value.h"
 #include "gdb_regex.h"
 #include "osabi.h"
+#include "gdb_assert.h"
 
 #include "bfd.h"
 
@@ -2208,6 +2209,11 @@ macosx_child_create_inferior (char *exec_file, char *allargs, char **env,
       macosx_child_attach (pid_str, from_tty);
     }
   announce_attach = 1;
+  /* Clear the attach flag that was set by calling macosx_child_attach() so
+     if/when gdb is quit it won't keep the child process around and 
+     running.  */
+  attach_flag = 0;
+
   if (e.reason != NO_ERROR)
     throw_exception (e);
 

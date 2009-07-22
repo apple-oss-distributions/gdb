@@ -621,6 +621,7 @@ get_join_type (struct type *in_type)
   switch (TYPE_CODE (type))
     {
     case TYPE_CODE_PTR:
+    case TYPE_CODE_REF:
       {
 	struct type *target = get_target_type (type);
 	switch (TYPE_CODE (target))
@@ -868,6 +869,8 @@ varobj_create (char *objname,
   struct frame_id old_frame_id = null_frame_id;
   struct cleanup *old_chain, *schedlock_chain;
   int expr_len;
+  /* APPLE LOCAL radar 6529939  */
+  struct block *superblock;
 
   /* Fill out a varobj structure for the (root) variable being constructed. */
   var = new_root_variable ();
@@ -910,6 +913,33 @@ varobj_create (char *objname,
 
       if (fi != NULL)
 	var_frame_id = get_frame_id (fi);
+
+      /* APPLE LOCAL begin radar 6529939  */
+      /* If we're trying to create a variable using a block for a 
+	 particular frame, verify that the frame and block being used
+	 actually correspond!  */
+
+      superblock = block;
+      if ((type == USE_BLOCK_IN_FRAME)
+	  && block)
+	{
+	  /* For purposes of the test below, find the outermost
+	     block for the current function.  */
+	  while (!superblock->function
+		 && superblock->superblock)
+	    superblock = superblock->superblock;
+	}
+
+
+      if (type == USE_BLOCK_IN_FRAME
+	  && block && fi 
+	  && ((get_frame_pc (fi) <  superblock->startaddr)
+	      || get_frame_pc (fi) > superblock->endaddr))
+	{
+	  warning ("Attempting to create USE_BLOCK_IN_FRAME variable with block that isn't in the frame.");
+	  goto error_cleanup;
+	}
+      /* APPLE LOCAL end radar 6529939  */
 
       /* frame = -2 means always use selected frame */
       if (type == USE_SELECTED_FRAME)

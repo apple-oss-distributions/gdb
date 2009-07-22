@@ -105,14 +105,15 @@ typedef enum bfd_mach_o_load_command_type
                                            mapped.  */
   BFD_MACH_O_LC_ROUTINES_64 = 0x1a,      /* Address of the dyld init routine 
                                             in a dylib.  */
-  /* APPLE LOCAL entries */
   BFD_MACH_O_LC_UUID = 0x1b,             /* 128-bit UUID of the executable.  */
   BFD_MACH_O_LC_RPATH = 0x1c | BFD_MACH_O_LC_REQ_DYLD,  
   BFD_MACH_O_LC_CODE_SIGNATURE = 0x1d,   
   BFD_MACH_O_LC_SEGMENT_SPLIT_INFO = 0x1e, 
   BFD_MACH_O_LC_REEXPORT_DYLIB = 0x1f | BFD_MACH_O_LC_REQ_DYLD,
   BFD_MACH_O_LC_LAZY_LOAD_DYLIB = 0x20,  /* delay load of dylib until first use */
-  BFD_MACH_O_LC_ENCRYPTION_INFO = 0x21   /* encrypted segment information */
+  BFD_MACH_O_LC_ENCRYPTION_INFO = 0x21,  /* encrypted segment information */
+  BFD_MACH_O_LC_DYLD_INFO = 0x22,        /* compressed dyld information */
+  BFD_MACH_O_LC_DYLD_INFO_ONLY = 0x22 | BFD_MACH_O_LC_REQ_DYLD  /* compressed dyld information only */
 }
 bfd_mach_o_load_command_type;
 
@@ -159,7 +160,9 @@ typedef enum bfd_mach_o_filetype
   BFD_MACH_O_MH_DYLIB = 6,
   BFD_MACH_O_MH_DYLINKER = 7,
   BFD_MACH_O_MH_BUNDLE = 8,
-  BFD_MACH_O_MH_DYLIB_STUB = 9
+  BFD_MACH_O_MH_DYLIB_STUB = 9,
+  BFD_MACH_O_MH_DSYM = 10,
+  BFD_MACH_O_MH_BUNDLE_KEXT = 11
 }
 bfd_mach_o_filetype;
 

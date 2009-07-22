@@ -1905,16 +1905,33 @@ dyld_info_process_raw (struct macosx_dyld_thread_status *s,
 	     dyld_load_library would use for directly linked files, and what
 	     would happen if I didn't open it here.  */
 
-	  dyld_load_library (&(s->path_info), entry);
+#ifdef ALWAYS_READ_FROM_MEMORY
+          int old_always_read = dyld_always_read_from_memory_flag;
+          dyld_always_read_from_memory_flag = 1;
+	  entry->dyld_valid = 1;
+	  entry->loaded_addr = header_addr;
+	  entry->loaded_addrisoffset = 0;
+#endif
+          dyld_load_library (&(s->path_info), entry);
+
+#ifdef ALWAYS_READ_FROM_MEMORY
+          dyld_always_read_from_memory_flag = old_always_read;
+#endif
 	  this_bfd = entry->abfd;
 
 	  if (this_bfd == NULL)
 	    {
-	      error ("Couldn't open the on disk version of library \"%s\""
-		       " for library in shared cache at %s", entry->dyld_name,
-		       paddr_nz (header_addr));
+	      entry->dyld_valid = 1;
+	      entry->loaded_addr = header_addr;
+	      entry->loaded_addrisoffset = 0;
+	      dyld_load_library_from_memory (&(s->path_info), entry, 1);
+	      this_bfd = entry->abfd;
+
+	      if (this_bfd == NULL)
+		error ("Could not read in on disk or the memory version of library \"%s\".", entry->dyld_name);
 	    }
-	  else if (macosx_bfd_is_in_memory (this_bfd))
+	  
+	  if (macosx_bfd_is_in_memory (this_bfd))
 	    {
 	      int cur_section;
 	      sect_offsets = (struct section_offsets *)

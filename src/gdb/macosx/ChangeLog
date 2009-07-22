@@ -1,3 +1,59 @@
+2009-07-21  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-tdep.c (fast_show_stack_trace_prologue): Only lookup 
+	"_sigtramp" if we have libSystem.B.dylib and it is loaded to avoid
+	caching incorrect values, and only warn if we have a valid loaded
+	libSystem and weren't able to find the "_sigtramp" symbol.
+
+2009-07-09  Greg Clayton  <gclayton@apple.com>
+
+	* remote-kdp.c (kdp_open): For ARM targets, always use software single
+	stepping.
+
+2009-06-30  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat-inferior.c (macosx_child_create_inferior): Set the global
+	attach_flag to zero after calling macosx_child_attach() to avoid gdb
+	from thinking we attached to the process. We posix_spawn processes and
+	attach to them on the phone since processes can't survive a 
+	fork/posix_spawn with exec (the task port is invalidated on fork).
+
+2009-06-04  Greg Clayton  <gclayton@apple.com>
+
+	* macosx-nat.c: Include <sys/socket.h> so builds don't fail.
+
+2009-06-02  Greg Clayton  <gclayton@apple.com>
+
+	* machoread.c (macho_build_psymtabs): Revert to normal string
+	table behavior for all targets except native ARM where we share
+	the string table if it is in the shared cache.
+	* macosx-nat-inferior.h (macosx_get_shared_cache_strtab): Removed. 
+ 	prototype.
+	(macosx_free_shared_cache_strtab): Removed prototype.
+	* macosx-nat-inferior.c (macosx_mourn_inferior): Removed call that
+	frees the globally cache shared cache string table.
+	(macosx_get_shared_cache_strtab): Removed function.
+	(macosx_free_shared_cache_strtab): Removed function.
+
+2009-04-30  Greg Clayton  <gclayton@apple.com>
+
+	* machoread.c (macho_build_psymtabs): Share a global copy of the
+	bfd string table for memory based bfd's that are in the shared cache
+	to avoid duplicates a huge string table in each image's obstack.
+	* macosx-nat-dyld-process.c (dyld_load_library_from_file): Don't warn
+	about not being able to read files from disk on native ARM builds.
+	(dyld_load_library_from_memory): Don't warn about images not being
+	mapped into memory on ARM native builds.
+	* macosx-nat-dyld.c (dyld_info_process_raw): Try reading the image
+	from disk first, then read it from memory if that fails.
+	* macosx-nat-inferior.c (macosx_mourn_inferior): Free the shared copy
+	of the shared cache string table.
+	(macosx_get_shared_cache_strtab): New function.
+	(macosx_free_shared_cache_strtab): New function.
+	* macosx-nat-inferior.h (macosx_get_shared_cache_strtab): New 
+	prototype.
+	(macosx_free_shared_cache_strtab): New prototype.
+
 2009-04-06  Greg Clayton  <gclayton@apple.com>
 
 	* macosx-nat-infthread.c (modify_trace_bit): Only reset the value in

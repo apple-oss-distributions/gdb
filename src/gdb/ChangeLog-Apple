@@ -1,3 +1,63 @@
+2009-07-21  Greg Clayton  <gclayton@apple.com>
+
+	* breakpoint.c (enable_command): Use the ALL_BREAKPOINTS_SAFE macro
+	instead of ALL_BREAKPOINTS so we don't crash.
+
+2009-07-07  Greg Clayton  <gclayton@apple.com>
+
+	* arm-tdep.c (g_register_info): Fixed the register format for the
+	"fps" and "cpsr" to be uint32_t types.
+
+2009-06-30  Greg Clayton  <gclayton@apple.com>
+	
+	* arm-tdep.c (gdb_print_insn_arm): Check the G_EXAMINE_I_SIZE global
+	to see if it has a custom size, and if so, force disassembling of
+	ARM for the 'w' (word) size, and Thumb for the 'h' (half word) size.
+	Auto detect ARM/Thumb for the default 'b' (byte) size.
+	* printcmd.c (decode_format): Default the 'i' examine format size to 'b'
+	(byte).
+	(g_examine_i_size): New global size variable that can be used by
+	print_insn() functions to force different disassembly to be displayed.
+	(print_formatted): Set G_EXAMINE_I_SIZE to be the size specified in the
+	format specification prior to calling gdb_print_insn(), and reset it to
+	'b' (byte) after the call.
+
+2009-06-30  Greg Clayton  <gclayton@apple.com>
+
+	* arm-tdep.c (_initialize_arm_tdep): Default disassembly
+	registers to "std" instead of "gcc".
+
+2009-06-30  Caroline Tice  <ctice@apple.com>
+
+	* findvar.c (read_var_value):  For variables with computed
+	locations, and a frame to use for looking up the variable,
+	make sure the frame actually contains a block before
+	attempting to look up the variable (ie. that we have symbol
+	info for the frame).
+	* varobj.c (varobj_create):  When doing USE_BLOCK_IN_FRAME,
+	make sure the block and frame being used actually correspond to
+	each other.
+
+2009-06-29  Greg Clayton  <gclayton@apple.com>
+
+	* remote.c (pack_string_as_ascii_hex): New function.
+	(remote_macosx_create_inferior): Use the new pack_string_as_ascii_hex
+	function instead of manually replicating the code.
+	(remote_macosx_attach): Prepend the executable directory to
+	the 'vAttachWait' packet if the argument to "-target-attach -waitfor
+	NAME" doesn't contain path information and if the executable 
+	directory has been set with the "-gdb-set remote executable-directory 
+	PATH" command. 
+
+2009-05-14  Greg Clayton  <gclayton@apple.com>
+
+	* linespec.c (symbols_found): Check canonical arg for NULL.
+
+2009-04-30  Greg Clayton  <gclayton@apple.com
+
+	* dbxread.c (dbx_symfile_read): Don't skip local symbols when bfd
+	memory based and is in the shared cache.
+
 2008-09-12  Jim Ingham  <jingham@apple.com>
 
 	* infrun.c (save_inferior_status): Use get_selected_frame, not the

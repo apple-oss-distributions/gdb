@@ -1101,9 +1101,13 @@ dyld_load_library_from_file (const struct dyld_path_info *d,
     {
       if ((print_errors) && (! (e->reason & dyld_reason_weak_mask)))
 	{
+      /* On the phone we read everything from the shared cached and need not
+         worry about when we aren't able to read files from disk.  */
+#if !(defined (TARGET_ARM) && defined (NM_NEXTSTEP))
 	  char *s = dyld_entry_string (e, 1);
 	  warning ("Unable to read symbols for %s (file not found).", s);
 	  xfree (s);
+#endif
 	}
       return;
     }
@@ -1145,9 +1149,11 @@ dyld_load_library_from_memory (const struct dyld_path_info *d,
     {
       if (print_errors)
 	{
+#if !(defined (TARGET_ARM) && defined (NM_NEXTSTEP))
 	  char *s = dyld_entry_string (e, dyld_print_basenames_flag);
 	  warning ("Unable to read symbols from %s (not yet mapped into memory).", s);
 	  xfree (s);
+#endif
 	}
       return;
     }

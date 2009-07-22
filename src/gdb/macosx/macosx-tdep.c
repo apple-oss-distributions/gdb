@@ -1572,17 +1572,48 @@ fast_show_stack_trace_prologue (unsigned int count_limit,
     {
       char *name;
       struct minimal_symbol *msymbol;
+      struct objfile *libsystem_objfile;
 
-      msymbol = lookup_minimal_symbol ("_sigtramp", NULL, NULL);
+      /* Grab the libSystem objfile.  */
+      libsystem_objfile = find_objfile_by_name ("libSystem.B.dylib", 0);
+
+      /* If libSystem isn't loaded yet, NULL it out so we don't look up 
+         and cache incorrect un-slid or faux-slid address values.  */
+      if (!target_check_is_objfile_loaded (libsystem_objfile))
+	libsystem_objfile = NULL;
+
+      /* If we have libSystem and it was loaded we should lookup sigtramp.  */
+      if (libsystem_objfile)
+	{
+	  /* Raise the load level and lookup the sigtramp symbol.  */
+	  objfile_set_load_state (libsystem_objfile, OBJF_SYM_ALL, 1);
+	  msymbol = lookup_minimal_symbol ("_sigtramp", NULL, libsystem_objfile);
+	}
+      else
+	{
+	  /* We either don't have libSystem, or it isn't loaded yet. Lets not
+	     do anything WRT sigtramp yet.  */
+	  msymbol = NULL;
+	}
+      
       if (msymbol == NULL)
-        warning
-          ("Couldn't find minimal symbol for \"_sigtramp\" - "
-	   "backtraces may be unreliable");
+	{
+	  /* Only warn if we found libSystem and it was loaded.  */
+	  if (libsystem_objfile != NULL)
+	    warning ("Couldn't find minimal symbol for \"_sigtramp\" - "
+		     "backtraces may be unreliable");
+	}
       else
         {
+	  /* Shared libraries must be loaded for the code below to work since
+	     we are getting the MSYMBOL value, then using that to look the
+	     sigtramp range. If shared libraries aren't loaded, we could end
+	     up getting and un-slid or faux-slid value that we will then try
+	     and get the function bounds for which could return us the range
+	     for a totally different function.  */
           pc = SYMBOL_VALUE_ADDRESS (msymbol);
-          if (find_pc_partial_function (pc, &name,
-                                        sigtramp_start_ptr, sigtramp_end_ptr) == 0)
+          if (find_pc_partial_function (pc, &name, sigtramp_start_ptr, 
+					sigtramp_end_ptr) == 0)
             {
               warning
 		("Couldn't find minimal bounds for \"_sigtramp\" - "

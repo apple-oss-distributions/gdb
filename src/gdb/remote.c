@@ -1668,6 +1668,26 @@ pack_hex_byte (char *pkt, int byte)
   return pkt;
 }
 
+/* APPLE LOCAL: Pack a C string as ASCII hex bytes. A string of "123" gets
+   encoded as "313233" (each character is encoded as two hex characters that
+   repesent the hex encoding of the character itself).  If END is NULL, then
+   STR is assumed to be a NULL terminated C string. If END is not NULL it
+   specifies where in STR to stop appending characters. This allows substrings 
+   of a string to be output without having to NULL terminate the substrings 
+   within a larger C string, or it can allow a NULL character to be encoded
+   into PKT.  */
+static char *
+pack_string_as_ascii_hex (char *pkt, const char *str, const char *end)
+{
+  const char *s;
+  if (end == NULL)
+    end = str + strlen (str);
+
+  for (s = str; s < end; s++)
+    pkt = pack_hex_byte (pkt, *s);
+  return pkt;
+}
+
 static char *
 unpack_byte (char *buf, int *value)
 {
@@ -6243,6 +6263,7 @@ remote_macosx_create_inferior (char *exec_file, char *allargs, char **env, int f
   struct remote_state *rs = get_remote_state ();
   char *buf = alloca (rs->remote_packet_size);
   char *pkt_buffer = NULL;
+  char *pkt_buffer_end = NULL;
   int exec_len;
   int args_len;
   int argnum;
@@ -6329,33 +6350,28 @@ remote_macosx_create_inferior (char *exec_file, char *allargs, char **env, int f
   /* This is likely an overestimate, since if there's more than one
      argument we won't include the spaces...  */
   args_len = strlen (allargs);
-  
-  pkt_buffer = xmalloc (1 + INT_PRINT_MAX + 1 + INT_PRINT_MAX + 1 + 2 * exec_len 
-		      + argc * (1 + INT_PRINT_MAX + 1 + INT_PRINT_MAX + 1) + 2 * args_len + 1);
+  const size_t pkt_buffer_length = 1 + INT_PRINT_MAX + 1 + INT_PRINT_MAX + 1 +
+				   2 * exec_len + argc * (1 + INT_PRINT_MAX + 
+				   1 + INT_PRINT_MAX + 1) + 2 * args_len + 1;
+
+  pkt_buffer = xmalloc (pkt_buffer_length);
+  pkt_buffer_end = pkt_buffer + pkt_buffer_length;
   make_cleanup (xfree, pkt_buffer);
-  print_len = snprintf (pkt_buffer, INT_PRINT_MAX + 5, "A%d,0,", 2 * exec_len);
+  print_len = snprintf (pkt_buffer, pkt_buffer_length, "A%d,0,", 2 * exec_len);
   ptr = pkt_buffer + print_len;
 
-  for (i = 0; i < exec_len; i++)
-    {
-      snprintf (hexval, sizeof (hexval), "%02hhx", remote_exec_file[i]);
-      *ptr++ = hexval[0];
-      *ptr++ = hexval[1];
-    }
+  ptr = pack_string_as_ascii_hex (ptr, remote_exec_file, 
+				  remote_exec_file + exec_len);
+
   for (argnum = 0; argnum < argc; argnum++)
     {
       char *arg = argv[argnum];
       int arglen = strlen (arg);
       *ptr++ = ',';
-      *ptr = '\0';
-      print_len = snprintf (ptr, 2 * INT_PRINT_MAX + 3, "%d,%d,", 2 * arglen, argnum + 1);
+      print_len = snprintf (ptr, pkt_buffer_end - ptr, "%d,%d,", 2 * arglen, 
+			    argnum + 1);
       ptr += print_len;
-      for (i = 0; i < arglen; i++)
-	{
-	  snprintf (hexval, sizeof (hexval), "%02hhx", arg[i]);
-	  *ptr++ = hexval[0];
-	  *ptr++ = hexval[1];
-	}
+      ptr = pack_string_as_ascii_hex (ptr, arg, arg + arglen);
     }
   *ptr = '\0';
   putpkt (pkt_buffer);
@@ -6416,38 +6432,46 @@ remote_macosx_attach (char *args, int from_tty)
     {
       char *process = args + strlen ("-waitfor");
       int name_len;
+      int prepend_path = 0;
       char *out_ptr;
-
-      while (*process == ' ')
-	process++;
-      if (*process == '"')
-	{
-	  process++;
-	  quote_found = 1;
-	}
 
       if (*process == '\0')
 	error ("No process name supplied for \"-waitfor\"");
-      
+
+	while (*process == ' ')
+	  process++;
+	if (*process == '"')
+	  {
+	    process++;
+	    quote_found = 1;
+	  }
+
       name_len = strlen (process);
+
+      /* Prepend the remote executable directory if PROCESS doesn't contain
+         any path information and if REMOTE_MACOSX_EXEC_DIR is valid.  */ 
+      if (strchr(process, '/') == NULL && remote_macosx_exec_dir != NULL)
+	{
+	  prepend_path = 1;
+	  /* Allow room for the path and an extra directory delimiter.  */
+	  name_len += strlen (remote_macosx_exec_dir) + 1;
+	}
+
       if (2 * name_len + strlen ("vAttachWait;") > rs->remote_packet_size)
 	error ("Process name too long.");
 
       strncpy (buf, "vAttachWait;", strlen ("vAttachWait;"));
       out_ptr = buf + strlen ("vAttachWait;");
 
-      while (*process != '\0')
+      if (prepend_path)
 	{
-	  char hexval[3];
-	  if (quote_found
-	      && *process == '"'
-	      && *(process - 1) != '\\')
-             break;
-
-	  snprintf (hexval, sizeof (hexval), "%02hhx", *process++);
-	  *out_ptr++ = hexval[0];
-	  *out_ptr++ = hexval[1];
+	  out_ptr = pack_string_as_ascii_hex (out_ptr, remote_macosx_exec_dir, 
+					      NULL);
+	  out_ptr = pack_hex_byte (out_ptr, '/');
 	}
+
+      out_ptr = pack_string_as_ascii_hex (out_ptr, process, quote_found ? 
+					  strchr (process, '"') : NULL);
       *out_ptr = '\0';
       forever = 1;
     }

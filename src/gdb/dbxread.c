@@ -661,7 +661,14 @@ dbx_symfile_read (struct objfile *objfile, int mainline)
      || (0 == strncmp (bfd_get_target (sym_bfd), "nlm", 3)));
 
   /* APPLE LOCAL shared cache begin.  */
-  if (bfd_mach_o_in_shared_cached_memory (objfile->obfd))
+  /* FIXME: On SnowLeopard and later systems, this is not true.  The
+     shared cache mach-o's are pretty much the same as the on disk
+     ones.  To be truely correct here we would need to check whether
+     we are on Leopard, or looking at a Leopard core file.  But till
+     we need to deploy this on Leopard I'm just going to turn it off
+     by hand here.  */
+
+  if (0) /* bfd_mach_o_in_shared_cached_memory (objfile->obfd))  */
     {
       /* All shared libraries being read from memory that are in the new 
          shared cache share a single large symbol and string table. These
