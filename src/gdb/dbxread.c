@@ -5891,7 +5891,12 @@ read_so_stab_language_hint (short unsigned n_desc)
 static int
 objfile_contains_objc (struct objfile *objfile)
 {
+  /* This case works for i386...  */
   if (bfd_get_section_by_name (objfile->obfd, "LC_SEGMENT.__OBJC"))
+    return 1;
+  /* ...and this case works for x86_64.  */
+  else if (bfd_get_section_by_name (objfile->obfd, 
+				    "LC_SEGMENT.__DATA.__objc_imageinfo"))
     return 1;
 
   return 0;

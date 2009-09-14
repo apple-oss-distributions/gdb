@@ -964,8 +964,16 @@ hole_at_p (struct pre_run_memory_map *map,
            int buckets)
 {
   int i = starting_bucket;
-  while (i - starting_bucket < buckets && map->buckets[i] == 0)
-    i++;
+
+  if (starting_bucket >= map->number_of_buckets)
+    return 0;
+
+  while (i - starting_bucket < buckets 
+         && i < map->number_of_buckets
+         && map->buckets[i] == 0)
+    {
+      i++;
+    }
 
   if (i - starting_bucket == buckets)
     return 1;

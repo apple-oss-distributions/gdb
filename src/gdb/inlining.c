@@ -3336,15 +3336,19 @@ restore_thread_inlined_call_stack (ptid_t ptid)
   struct thread_info *tp;
   int num_bytes;
   int i;
+  CORE_ADDR current_pc;
 
   tp = find_thread_id (pid_to_thread_id (ptid));
   if (tp == NULL)
     return;
 
+  current_pc = read_pc_pid (ptid);
+
   if (tp->thread_inlined_call_stack == NULL
       || tp->thread_inlined_call_stack->nelts == 0)
     {
       inlined_function_reinitialize_call_stack ();
+      inlined_function_update_call_stack (current_pc);
       return;
     }
 
@@ -3370,6 +3374,13 @@ restore_thread_inlined_call_stack (ptid_t ptid)
       memcpy (&(global_inlined_call_stack.records[i]), 
 	      &(tp->thread_inlined_call_stack->records[i]), 
 	      sizeof (struct inlined_call_stack_record));
+
+  /* Check to see if the thread's pc has changed since we last updated the
+     inlined call stack.  */
+
+  if (current_pc != global_inlined_call_stack.last_pc)
+    inlined_function_update_call_stack (current_pc);
+
 
   /* APPLE LOCAL remember stepping into inlined subroutine.  */
   inlined_step_range_end = tp->inlined_step_range_end;

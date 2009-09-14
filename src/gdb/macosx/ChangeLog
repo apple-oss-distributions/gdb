@@ -1,3 +1,8 @@
+2009-08-24  Jason Molenda  (jmolenda@apple.com)
+
+        * macosx-nat-dyld-process.c (hole_at_p):  Guard against running off
+        the end of the memory map array.
+
 2009-06-24  Jason Molenda  (jmolenda@apple.com)
 
         * macosx-nat-inferior.c (macosx_unsafe_regexes): Look for __spin_lock,

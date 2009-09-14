@@ -3422,6 +3422,12 @@ bpstat_stop_status (CORE_ADDR bp_addr, ptid_t ptid, int stopped_by_watchpoint)
 				  RETURN_MASK_ALL);
 		/* FIXME-someday, should give breakpoint # */
 		free_all_values ();
+                /* The above conditional evaluation may have added something
+                   to the hand call cleanups chain which needs to be cleaned
+                   up before we resume execution, e.g. an ObjC inferior 
+                   function call which caused us to enter the objc runtime's
+                   debugger mode.  */
+                do_hand_call_cleanups (ALL_CLEANUPS);
 	      }
 	  }
 	if (b->cond && value_is_zero)
