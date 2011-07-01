@@ -21,16 +21,11 @@ if $tracelevel then {
 set prms_id 0
 set bug_id 0
 
-if [target_info exists noobjc64] {
-    verbose "Disable Objective-C tests on 64-bit PowerPC."
-    return
-}
-
-set testfile "objc-prog"
-set srcfile ${testfile}.m
+set testfile "shared-cache-sym"
+set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
 
-if  { [gdb_compile "${srcdir}/${subdir}/$srcfile" "${binfile}" executable {debug additional_flags=-framework\ Foundation}] != "" } {
+if  { [gdb_compile "${srcdir}/${subdir}/$srcfile" "${binfile}" executable {debug}] != "" } {
      gdb_suppress_entire_file "Testcase compile failed, so all tests in this file will automatically fail."
 }
 
@@ -39,25 +34,15 @@ gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
 gdb_load ${binfile}
 
-# The FSF gdb's rbreak command doesn't correctly match ObjC class
-# functions right now (2004-04-29); we have a local mod to 
-# symtab.c:rbreak_command to handle this.  Make sure that mod isn't lost
-# in merges.
-
 set timeout 5
 
 runto_main
 
-gdb_test "rbreak WithArg:" \
-    "Breakpoint 2 at.* file.*objc-prog.m.*Breakpoint 3 at.* file.*objc-prog.m.*"  \
-    "rbreak Arg matches at least two functions"
+gdb_test "b sleep" "Breakpoint 2 at.*"  "add breakpoint for sleep"
 
-gdb_continue_to_breakpoint "newWithArg breakpoint"
+gdb_test "continue" ".*Breakpoint \[1-9\], $hex in sleep.*"
 
-gdb_test "next" ".*" "step #1 in newWithArg:"
-gdb_test "next" ".*" "step #2 in newWithArg:"
-gdb_test "step" "-.MyClass takeArg:.*" "step into ObjC member function"
-gdb_test "fin" "Run till exit.*Value returned is .*struct objc_object.*" "finish out of ObjC member function"
+gdb_test "bt" "#0  $hex in sleep.*#1  $hex in main.*" "backtrace shows sleep and main symbols"
 
 gdb_exit
 return 0
